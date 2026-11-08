@@ -43,3 +43,5 @@ jobs:
         env:
           PYTHONPATH: src
         run: python tools/check_sqlite_parity.py --reader target/debug/examples/sqlite_reader.exe
+      - name: Synthetic-only migration and Python v1 compatibility
+        run: cargo run --locked -p acp-rehearsal --example synthetic_rehearsal -- --synthetic-only

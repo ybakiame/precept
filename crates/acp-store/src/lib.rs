@@ -14,6 +14,7 @@ use std::{
 pub enum Schema {
     Legacy,
     Fingerprinted,
+    Version1,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
@@ -68,87 +69,8 @@ impl SqliteStore {
         store.schema()?;
         Ok(store)
     }
-    /// Both Python P0 variants are unversioned (user_version=0). Recheck before
-    /// every read so an external DDL/version change is not silently accepted.
     pub fn schema(&self) -> Result<Schema> {
-        let version: i64 = self
-            .db
-            .pragma_query_value(None, "user_version", |r| r.get(0))
-            .map_err(|_| Error::IncompatibleSchema)?;
-        if version != 0 {
-            return Err(Error::UnsupportedVersion);
-        }
-        let mut stmt = self.db.prepare("SELECT name, type FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*' AND type != 'index'")
-            .map_err(|_| Error::IncompatibleSchema)?;
-        let objects: BTreeMap<String, String> = stmt
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
-            .map_err(|_| Error::IncompatibleSchema)?
-            .collect::<rusqlite::Result<_>>()
-            .map_err(|_| Error::IncompatibleSchema)?;
-        let expected = ["projects", "preferences", "handoffs"]
-            .into_iter()
-            .map(|n| (n.to_owned(), "table".to_owned()))
-            .collect();
-        if objects != expected {
-            return Err(Error::IncompatibleSchema);
-        }
-        self.check_columns("projects", "name:TEXT:1,root:TEXT:0,created_at:TEXT:0")?;
-        self.check_columns("preferences", "id:INTEGER:1,scope:TEXT:0,project:TEXT:0,pref_key:TEXT:0,value:TEXT:0,status:TEXT:0,source:TEXT:0,created_at:TEXT:0,updated_at:TEXT:0")?;
-        let columns = self.columns("handoffs")?;
-        let schema = if columns.contains_key("worktree_fingerprint") {
-            Schema::Fingerprinted
-        } else {
-            Schema::Legacy
-        };
-        let base = "project:TEXT:1,task_id:TEXT:2,objective:TEXT:0,base_sha:TEXT:0,branch:TEXT:0,worktree_state:TEXT:0,completed:TEXT:0,next_action:TEXT:0,validation_json:TEXT:0,updated_at:TEXT:0";
-        let spec = if schema == Schema::Fingerprinted {
-            format!("{base},worktree_fingerprint:TEXT:0")
-        } else {
-            base.to_owned()
-        };
-        self.check_columns("handoffs", &spec)?;
-        Ok(schema)
-    }
-    fn columns(&self, table: &str) -> Result<BTreeMap<String, (String, i64)>> {
-        let mut stmt = self
-            .db
-            .prepare("SELECT name, type, pk, hidden FROM pragma_table_xinfo(?1)")
-            .map_err(|_| Error::IncompatibleSchema)?;
-        let rows = stmt
-            .query_map([table], |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, i64>(2)?,
-                    r.get::<_, i64>(3)?,
-                ))
-            })
-            .map_err(|_| Error::IncompatibleSchema)?;
-        let mut result = BTreeMap::new();
-        for row in rows {
-            let (name, ty, pk, hidden) = row.map_err(|_| Error::IncompatibleSchema)?;
-            if hidden != 0 {
-                return Err(Error::IncompatibleSchema);
-            }
-            result.insert(name, (ty.to_ascii_uppercase(), pk));
-        }
-        Ok(result)
-    }
-    fn check_columns(&self, table: &str, spec: &str) -> Result<()> {
-        let expected = spec
-            .split(',')
-            .map(|part| {
-                let mut fields = part.split(':');
-                let name = fields.next().unwrap().to_owned();
-                let ty = fields.next().unwrap().to_owned();
-                let pk = fields.next().unwrap().parse::<i64>().unwrap();
-                (name, (ty, pk))
-            })
-            .collect();
-        if self.columns(table)? != expected {
-            return Err(Error::IncompatibleSchema);
-        }
-        Ok(())
+        inspect_schema(&self.db)
     }
     pub fn read_project(&self, name: &str) -> Result<Project> {
         self.schema()?;
@@ -224,7 +146,7 @@ impl SqliteStore {
         self.read_project(project)?;
         let fingerprint = match self.schema()? {
             Schema::Legacy => "NULL",
-            Schema::Fingerprinted => "worktree_fingerprint",
+            Schema::Fingerprinted | Schema::Version1 => "worktree_fingerprint",
         };
         let sql = format!(
             "SELECT project,task_id,objective,base_sha,branch,worktree_state,{fingerprint},completed,next_action,validation_json,updated_at FROM handoffs WHERE project=?1 AND task_id=?2"
@@ -266,6 +188,105 @@ impl PreferenceRepository for SqliteStore {
 impl HandoffRepository for SqliteStore {
     fn handoff(&self, project: &str, task: &str) -> acp_core::Result<Handoff> {
         self.read_handoff(project, task).map_err(core_error)
+    }
+}
+
+/// Inspect supported schema metadata on a borrowed connection; never mutates it.
+/// V0 has two shapes; v1 requires the nullable fingerprint column.
+pub fn inspect_schema(db: &Connection) -> Result<Schema> {
+    SchemaInspector { db }.schema()
+}
+struct SchemaInspector<'a> {
+    db: &'a Connection,
+}
+impl SchemaInspector<'_> {
+    /// Both Python P0 variants are unversioned (user_version=0); v1 is additive. Recheck before
+    /// every read so an external DDL/version change is not silently accepted.
+    pub fn schema(&self) -> Result<Schema> {
+        let version: i64 = self
+            .db
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .map_err(|_| Error::IncompatibleSchema)?;
+        if !matches!(version, 0 | 1) {
+            return Err(Error::UnsupportedVersion);
+        }
+        let mut stmt = self.db.prepare("SELECT name, type FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*' AND type != 'index'")
+            .map_err(|_| Error::IncompatibleSchema)?;
+        let objects: BTreeMap<String, String> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(|_| Error::IncompatibleSchema)?
+            .collect::<rusqlite::Result<_>>()
+            .map_err(|_| Error::IncompatibleSchema)?;
+        let expected = ["projects", "preferences", "handoffs"]
+            .into_iter()
+            .map(|n| (n.to_owned(), "table".to_owned()))
+            .collect();
+        if objects != expected {
+            return Err(Error::IncompatibleSchema);
+        }
+        self.check_columns("projects", "name:TEXT:1,root:TEXT:0,created_at:TEXT:0")?;
+        self.check_columns("preferences", "id:INTEGER:1,scope:TEXT:0,project:TEXT:0,pref_key:TEXT:0,value:TEXT:0,status:TEXT:0,source:TEXT:0,created_at:TEXT:0,updated_at:TEXT:0")?;
+        let columns = self.columns("handoffs")?;
+        let schema = if columns.contains_key("worktree_fingerprint") {
+            Schema::Fingerprinted
+        } else {
+            Schema::Legacy
+        };
+        let base = "project:TEXT:1,task_id:TEXT:2,objective:TEXT:0,base_sha:TEXT:0,branch:TEXT:0,worktree_state:TEXT:0,completed:TEXT:0,next_action:TEXT:0,validation_json:TEXT:0,updated_at:TEXT:0";
+        let spec = if schema == Schema::Fingerprinted {
+            format!("{base},worktree_fingerprint:TEXT:0")
+        } else {
+            base.to_owned()
+        };
+        self.check_columns("handoffs", &spec)?;
+        if version == 1 {
+            if schema != Schema::Fingerprinted {
+                return Err(Error::IncompatibleSchema);
+            }
+            return Ok(Schema::Version1);
+        }
+        Ok(schema)
+    }
+    fn columns(&self, table: &str) -> Result<BTreeMap<String, (String, i64)>> {
+        let mut stmt = self
+            .db
+            .prepare("SELECT name, type, pk, hidden FROM pragma_table_xinfo(?1)")
+            .map_err(|_| Error::IncompatibleSchema)?;
+        let rows = stmt
+            .query_map([table], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, i64>(3)?,
+                ))
+            })
+            .map_err(|_| Error::IncompatibleSchema)?;
+        let mut result = BTreeMap::new();
+        for row in rows {
+            let (name, ty, pk, hidden) = row.map_err(|_| Error::IncompatibleSchema)?;
+            if hidden != 0 {
+                return Err(Error::IncompatibleSchema);
+            }
+            result.insert(name, (ty.to_ascii_uppercase(), pk));
+        }
+        Ok(result)
+    }
+    fn check_columns(&self, table: &str, spec: &str) -> Result<()> {
+        let expected = spec
+            .split(',')
+            .map(|part| {
+                let mut fields = part.split(':');
+                let name = fields.next().unwrap().to_owned();
+                let ty = fields.next().unwrap().to_owned();
+                let pk = fields.next().unwrap().parse::<i64>().unwrap();
+                (name, (ty, pk))
+            })
+            .collect();
+        if self.columns(table)? != expected {
+            return Err(Error::IncompatibleSchema);
+        }
+        Ok(())
     }
 }
 
