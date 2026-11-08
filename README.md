@@ -96,4 +96,4 @@ The standalone [agent-development-protocol](https://github.com/ybakiame/agent-de
 
 ## Test status
 
-`python -m unittest discover -s tests -v` runs the P0 checks. Tests do not establish end-to-end interoperability with Codex/Pi/OpenCode, production-grade MCP conformance, multi-process reliability, or native desktop support. Those are explicit next milestones.
+`python -m unittest discover -s tests -v` runs the P0 checks. Tests include isolated MCP preference/project-boundary negative checks; see [P0 MCP negative-test plan](docs/evaluation/p0-mcp-negative-boundaries.md). These do not establish end-to-end interoperability with every external harness, production-grade MCP conformance, OS sandboxing, multi-process reliability, or native desktop support. Those are explicit next milestones.
