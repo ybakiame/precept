@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-control-plane"
+version = "0.1.0a0"
+description = "Local-first, read-only MCP context hub for coding agents"
+requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+authors = [{name = "Agent Control Plane Contributors"}]
+dependencies = []
+
+[project.scripts]
+acpctl = "agent_control_plane.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
