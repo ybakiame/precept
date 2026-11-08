@@ -530,6 +530,18 @@ impl Session {
     }
     fn inspect(&self, path: &Path, writable: bool) -> Result<Schema> {
         safe_meta(path, true)?;
+        if [ROLES[1], ROLES[3]]
+            .iter()
+            .any(|role| path == self.permit.root.join(role))
+        {
+            for suffix in ["-wal", "-shm", "-journal"] {
+                let mut sidecar = path.as_os_str().to_os_string();
+                sidecar.push(suffix);
+                if fs::symlink_metadata(PathBuf::from(sidecar)).is_ok() {
+                    return Err(Failure::Database);
+                }
+            }
+        }
         let db = open(path, writable).map_err(|_| Failure::Database)?;
         integrity(&db).map_err(|_| Failure::Database)?;
         let schema = verify_schema(&db).map_err(|_| Failure::Database)?;

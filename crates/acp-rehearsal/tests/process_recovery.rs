@@ -265,7 +265,7 @@ fn live_wal_writer_and_real_output_lock_survive_worker_death() {
 }
 #[test]
 fn backup_missing_changed_corrupt_and_future_outputs_are_refused() {
-    for change in ["missing", "changed", "corrupt", "collision"] {
+    for change in ["missing", "changed", "corrupt", "sidecar", "collision"] {
         let root = TestRoot::new(true);
         let cap = root.authorize(false);
         let source = fs::read(root.source()).unwrap();
@@ -279,6 +279,15 @@ fn backup_missing_changed_corrupt_and_future_outputs_are_refused() {
                     .unwrap();
             }
             "corrupt" => fs::write(&backup, b"corrupt").unwrap(),
+            "sidecar" => {
+                let path = root.path().join("backup.sqlite3-wal");
+                fs::write(&path, b"unexpected").unwrap();
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
+                }
+            }
             _ => {
                 fs::write(root.path().join("output.sqlite3"), b"collision").unwrap();
             }
@@ -288,7 +297,7 @@ fn backup_missing_changed_corrupt_and_future_outputs_are_refused() {
             &cap,
             match change {
                 "missing" => "MissingBackup",
-                "changed" | "corrupt" => "BackupChanged",
+                "changed" | "corrupt" | "sidecar" => "BackupChanged",
                 _ => "Collision",
             },
         );
