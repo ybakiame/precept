@@ -15,7 +15,7 @@ MCP operates on newline-delimited UTF-8 JSON-RPC; stdout is reserved for valid J
 | `get_effective_context` | `include_documents` boolean (default false) | confirmed effective preferences, live metadata, optional allowlisted document contents, warnings | read only |
 | `get_handoff` | `task_id` string | recorded task snapshot, current repository state, stale/dirty warnings | read only |
 
-2025-11-25: supports `initialize`, `notifications/initialized`, `ping`, `tools/list`, `tools/call` for a local stdio client. 2026-07-28: supports basic per-request `_meta` protocol version and server info for `ping`, `tools/list`, `tools/call`; no initialize needed. This is a **small subset**, not a full certified implementation. No resources, prompts, tools/call mutations, cancellation, batching, HTTP, auth, subscriptions, logging notifications or task augmentation. Live integration with multiple real harnesses remains unverified.
+2025-11-25: supports `initialize`, `notifications/initialized`, `ping`, `tools/list`, `tools/call` for a local stdio client. 2026-07-28: supports basic per-request `_meta` protocol version and server info for `ping`, `tools/list`, `tools/call`; no initialize needed. This is a **small subset**, not a full certified implementation. No resources, prompts, tools/call mutations, cancellation, batching, HTTP, auth, subscriptions, logging notifications or task augmentation. Two read-only harness integrations have been reported for Codex and Kimi Code; see [2026-11-08 E2E evidence](evaluation/2026-11-08-codex-kimi-handoff.md). Broader compatibility remains unverified.
 
 MCP specification references:
 - https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/basic/transports/stdio.mdx
@@ -24,7 +24,7 @@ MCP specification references:
 
 ## Handoff evidence
 
-A handoff stores the HEAD at capture, branch, recorded worktree state, task objective, completed work and a structured list of checks. Accepted check statuses: `PASS`, `FAIL`, `SKIPPED`, `NOT_RUN`. A later `get_handoff` inspects the current checkout and explicitly warns if HEAD, branch or worktree changed. Even when unchanged, device/host verification has its own scope and cannot be inferred by presence of an entry.
+A handoff stores the HEAD at capture, branch, recorded worktree state, task objective, completed work and a structured list of checks. Accepted check statuses: `PASS`, `FAIL`, `SKIPPED`, `NOT_RUN`. New handoffs also store a bounded SHA-256 worktree fingerprint derived from tracked Git diffs plus untracked file contents (up to 16 MiB / 500 files). No raw diff, filename list, or file contents are persisted in the handoff. A later `get_handoff` compares the fingerprint and warns on changed uncommitted content even if HEAD, branch, and dirty count remain identical. Existing databases are migrated by adding a nullable field; old handoffs remain readable but cannot be retroactively fingerprint-verified. If fingerprint computation fails or its bounds are exceeded, the result is explicitly unverified. Ignored files, submodule internals, configuration and external environment are not covered. A matching fingerprint **does not establish complete state or validation equivalence**. Even when unchanged, device/host verification has its own scope and cannot be inferred by presence of an entry.
 
 ## Future external clients
 
