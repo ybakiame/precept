@@ -35,4 +35,6 @@
 5. A changed HEAD/branch or dirty worktree is reported on handoff resume; old validation is not treated as current.
 6. Legacy and stateless MCP clients can list/call supported tools in in-process tests; the actual stdio subprocess is exercised.
 
+Seven isolated preference and project-scope negative checks, including a real stdio subprocess, are documented in [P0 MCP negative-boundary tests](evaluation/p0-mcp-negative-boundaries.md). Real Codex/Kimi Code adversarial-tool trials are still pending; these tests do not establish operating-system sandboxing.
+
 No passed test here proves production security or compatibility with a specific external harness. Real A/B evaluation belongs in the existing agent-development-protocol's cross-agent evaluation workflow.
