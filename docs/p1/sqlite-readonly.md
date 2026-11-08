@@ -37,7 +37,8 @@ without setting it and distinguishes these shapes:
 | Legacy | No column | `None` |
 | Fingerprinted | Nullable TEXT column, regardless of column order | NULL => `None`, otherwise recorded string |
 
-Any nonzero user_version is rejected as UnsupportedVersion. An uninitialized,
+P1-C2A extends read support to user_version=1 with the fingerprinted shape;
+opening still never migrates. Other versions are rejected as UnsupportedVersion. An uninitialized,
 corrupt or incompatible database yields IncompatibleSchema. Detection requires
 exact known table/column sets, declared types and primary-key positions; extra
 views/triggers/tables/columns and generated columns are rejected. Internal SQLite
@@ -70,7 +71,7 @@ Tests compare main database bytes and SQL dumps before/after reads while no
 external writer mutates the data. This establishes those observed invariants in
 the tested scenarios, not immutability of every filesystem metadata field.
 
-## Future P1-C2 design only (not implemented)
+## Production P1-C2B design only (not implemented)
 
 The operator owns the database and backup location. An explicit later write tool
 must identify the source version, reject unknown future versions, stop/quiesce
@@ -88,7 +89,8 @@ a committed migration, quiesce processes, close connections, verify the retained
 backup and restore consistently without orphaned WAL/SHM files. Crash injection,
 lock contention, disk-full, interrupted backup/migration/restore, idempotence and
 rollback tests on synthetic data are prerequisites to any real write rollout.
-None of those write capabilities or real-data migrations is authorized here.
+No real-data migrations are authorized here. P1-C2A implements only an
+[owned temporary synthetic rehearsal](synthetic-migration.md), in a separate crate.
 
 ## Reproduction and observed local evidence
 

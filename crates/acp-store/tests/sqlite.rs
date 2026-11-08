@@ -144,7 +144,7 @@ fn missing_empty_and_invalid_databases_never_get_initialized() {
 #[test]
 fn future_versions_and_incompatible_shapes_fail_closed() {
     for ddl in [
-        "PRAGMA user_version=1",
+        "PRAGMA user_version=2",
         "ALTER TABLE projects ADD COLUMN future TEXT",
         "DROP TABLE preferences",
         "ALTER TABLE projects RENAME COLUMN root TO other",
@@ -249,4 +249,27 @@ fn independent_concurrent_readers_observe_committed_wal_updates() {
     drop(first);
     drop(second);
     drop(writer);
+}
+
+#[test]
+fn v1_requires_fingerprint_but_open_never_performs_migration() {
+    for legacy in [true, false] {
+        let (_temp, path) = fixture(legacy, false);
+        let writer = Connection::open(&path).unwrap();
+        writer.pragma_update(None, "user_version", 1).unwrap();
+        drop(writer);
+        let before = fs::read(&path).unwrap();
+        if legacy {
+            assert!(matches!(
+                SqliteStore::open(&path),
+                Err(Error::IncompatibleSchema)
+            ));
+        } else {
+            assert_eq!(
+                SqliteStore::open(&path).unwrap().schema().unwrap(),
+                Schema::Version1
+            );
+        }
+        assert_eq!(fs::read(path).unwrap(), before);
+    }
 }

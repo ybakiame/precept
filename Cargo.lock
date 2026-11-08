@@ -13,6 +13,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "acp-rehearsal"
+version = "0.1.0"
+dependencies = [
+ "acp-store",
+ "rusqlite",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "acp-store"
 version = "0.1.0"
 dependencies = [
