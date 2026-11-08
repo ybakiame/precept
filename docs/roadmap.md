@@ -5,9 +5,12 @@
 - [x] Local SQLite project registry, explicit suggestion/review lifecycle, scope-based resolution.
 - [x] Live narrow project-contract discovery, revision/dirty-worktree inspection.
 - [x] Task Handoff snapshot and stale-state warning on resume.
+- [x] Optional bounded worktree fingerprint on new handoffs; old snapshots remain readable without claiming verification.
 - [x] Two read-only MCP tools through stdio, project scoped at process start.
 - [x] CLI operator workflow and standard-library unit/integration tests.
-- [ ] Real interoperability trials on Codex, Pi and OpenCode; record versions, exact configuration, request/response traces, privacy boundaries.
+- [x] Isolated negative tests for unconfirmed/rejected preference hiding, project-specific scope and read-only MCP; [evidence and real-harness limits](evaluation/p0-mcp-negative-boundaries.md).
+- [x] User-reported read-only context and Handoff E2E across Codex + GPT-6.1 Sol and Kimi Code + Kimi K3.1 Pro; [evidence and limits](evaluation/2026-11-08-codex-kimi-handoff.md).
+- [ ] Repeat under independently captured tool traces and add Pi/OpenCode and production task handoff trials; record versions, permissions and privacy boundaries.
 - [ ] Versioned schema migrations, database backup/export/import, explicit user profile lifecycle and fuzz testing.
 - [ ] Full 2026 MCP conformance and a tested backward-compatibility matrix.
 
@@ -32,9 +35,7 @@
 2. Confirmed project-scoped preferences override global preferences of the same key, without replacing project rules.
 3. A client launched for project A cannot query project B using MCP tool arguments.
 4. A symlink escaping the project root is not followed.
-5. A changed HEAD/branch or dirty worktree is reported on handoff resume; old validation is not treated as current.
+5. A changed HEAD/branch or dirty worktree is reported on handoff resume; old validation is not treated as current. New handoffs should detect bounded uncommitted content drift even at identical HEAD and dirty count; older handoffs report that the fingerprint is missing.
 6. Legacy and stateless MCP clients can list/call supported tools in in-process tests; the actual stdio subprocess is exercised.
-
-Seven isolated preference and project-scope negative checks, including a real stdio subprocess, are documented in [P0 MCP negative-boundary tests](evaluation/p0-mcp-negative-boundaries.md). Real Codex/Kimi Code adversarial-tool trials are still pending; these tests do not establish operating-system sandboxing.
 
 No passed test here proves production security or compatibility with a specific external harness. Real A/B evaluation belongs in the existing agent-development-protocol's cross-agent evaluation workflow.

@@ -1,11 +1,12 @@
 import json
 import os
+import sqlite3
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
-from agent_control_plane.context import effective_context, inspect_handoff
+from agent_control_plane.context import effective_context, inspect_handoff, worktree_snapshot
 from agent_control_plane.store import Store
 
 
@@ -68,6 +69,64 @@ class StoreTests(unittest.TestCase):
                         "commit", "--allow-empty", "-qm", "second"], check=True)
         h = inspect_handoff(self.store, "sample", "TASK-1")
         self.assertTrue(any("HEAD changed" in w for w in h["resume_warnings"]))
+
+
+    def test_handoff_detects_dirty_content_change_without_head_change(self):
+        # AGENTS.md is untracked; name/count/HEAD remain unchanged.
+        before = worktree_snapshot(self.root, include_fingerprint=True)
+        self.assertTrue(before["dirty"])
+        self.assertIsNotNone(before["worktree_fingerprint"])
+        self.store.save_handoff(
+            "sample", "TASK-2", "Resume test", "Read diff",
+            before["head"], before["branch"], "dirty", "setup",
+            [{"check": "host", "status": "PASS"}],
+            worktree_fingerprint=before["worktree_fingerprint"],
+        )
+        (self.root / "AGENTS.md").write_text("Changed untracked file", encoding="utf8")
+        after = worktree_snapshot(self.root, include_fingerprint=True)
+        self.assertEqual(before["head"], after["head"])
+        self.assertEqual(before["change_count"], after["change_count"])
+        self.assertNotEqual(before["worktree_fingerprint"], after["worktree_fingerprint"])
+        resumed = inspect_handoff(self.store, "sample", "TASK-2")
+        self.assertTrue(any("Worktree fingerprint changed" in warning
+                            for warning in resumed["resume_warnings"]))
+        self.assertEqual("PASS", resumed["validation"][0]["status"])
+
+    def test_handoff_detects_tracked_content_change(self):
+        subprocess.run(["git", "-C", str(self.root), "add", "AGENTS.md"], check=True)
+        subprocess.run(["git", "-C", str(self.root),
+                        "-c", "user.name=Test", "-c", "user.email=a@b.c",
+                        "commit", "-qm", "track AGENTS"], check=True)
+        (self.root / "AGENTS.md").write_text("First tracked edit", encoding="utf8")
+        before = worktree_snapshot(self.root, include_fingerprint=True)
+        self.store.save_handoff(
+            "sample", "TASK-3", "Resume test", "Read diff",
+            before["head"], before["branch"], "dirty", "setup", [],
+            worktree_fingerprint=before["worktree_fingerprint"],
+        )
+        (self.root / "AGENTS.md").write_text("Second tracked edit", encoding="utf8")
+        resumed = inspect_handoff(self.store, "sample", "TASK-3")
+        self.assertTrue(any("Worktree fingerprint changed" in warning
+                            for warning in resumed["resume_warnings"]))
+
+    def test_sqlite_migration_adds_nullable_fingerprint(self):
+        legacy_dir = Path(self.tmp.name) / "legacy"
+        legacy_dir.mkdir()
+        with sqlite3.connect(legacy_dir / "context.sqlite3") as db:
+            db.execute(
+                "CREATE TABLE handoffs ("
+                "project TEXT, task_id TEXT, objective TEXT, base_sha TEXT,"
+                "branch TEXT, worktree_state TEXT, completed TEXT,"
+                "next_action TEXT, validation_json TEXT, updated_at TEXT,"
+                "PRIMARY KEY(project,task_id))"
+            )
+        with Store(legacy_dir) as store:
+            columns = {row[1] for row in store.db.execute("PRAGMA table_info(handoffs)")}
+            self.assertIn("worktree_fingerprint", columns)
+        # Idempotent second open.
+        with Store(legacy_dir) as store:
+            columns = {row[1] for row in store.db.execute("PRAGMA table_info(handoffs)")}
+            self.assertIn("worktree_fingerprint", columns)
 
     def test_unknown_project(self):
         with self.assertRaises(ValueError):

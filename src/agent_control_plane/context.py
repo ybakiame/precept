@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import stat
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -26,13 +28,83 @@ def run_git(root: Path, *args: str) -> str | None:
     return cmd.stdout.strip() if cmd.returncode == 0 else None
 
 
-def worktree_snapshot(root: Path) -> dict[str, Any]:
+
+# A bounded content fingerprint for resuming dirty worktrees.
+# Persist only the digest, never tracked diff, untracked file data or paths.
+MAX_FINGERPRINT_BYTES = 16 * 1024 * 1024
+MAX_UNTRACKED_FILES = 500
+
+
+def worktree_fingerprint(root: Path) -> str | None:
+    """Detect changes to tracked diffs and bounded untracked files.
+
+    Ignored files, submodule internals and external environment remain
+    outside this best-effort snapshot. Unavailable means NOT verified.
+    """
+    try:
+        status = subprocess.run(
+            ["git", "-C", str(root), "status", "--porcelain=v1", "-z",
+             "--untracked-files=all"],
+            capture_output=True, check=False, timeout=6,
+        )
+        diff = subprocess.run(
+            ["git", "-C", str(root), "diff", "--binary", "--no-ext-diff",
+             "--no-textconv", "HEAD", "--"],
+            capture_output=True, check=False, timeout=6,
+        )
+        if status.returncode != 0 or diff.returncode != 0:
+            return None
+        total = len(status.stdout) + len(diff.stdout)
+        if total > MAX_FINGERPRINT_BYTES:
+            return None
+        digest = hashlib.sha256()
+        digest.update(b"acp-worktree-v1\0")
+        digest.update(status.stdout)
+        digest.update(b"tracked-diff\0")
+        digest.update(diff.stdout)
+        untracked = [item[3:] for item in status.stdout.split(b"\0")
+                     if item.startswith(b"?? ")]
+        if len(untracked) > MAX_UNTRACKED_FILES:
+            return None
+        project_root = root.resolve(strict=True)
+        for raw in sorted(untracked):
+            file = root / os.fsdecode(raw)
+            # Do not follow symlinked parent directories outside this project.
+            file.parent.resolve(strict=True).relative_to(project_root)
+            info = file.lstat()
+            digest.update(b"untracked\0")
+            digest.update(raw)
+            digest.update(str(info.st_mode).encode("ascii"))
+            if stat.S_ISLNK(info.st_mode):
+                digest.update(os.fsencode(os.readlink(file)))
+            elif stat.S_ISREG(info.st_mode):
+                if info.st_size > MAX_FINGERPRINT_BYTES - total:
+                    return None
+                flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+                fd = os.open(file, flags)
+                with os.fdopen(fd, "rb") as stream:
+                    while chunk := stream.read(65536):
+                        total += len(chunk)
+                        if total > MAX_FINGERPRINT_BYTES:
+                            return None
+                        digest.update(chunk)
+            else:
+                return None
+        return digest.hexdigest()
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
+
+
+def worktree_snapshot(root: Path, *, include_fingerprint: bool = False) -> dict[str, Any]:
     sha = run_git(root, "rev-parse", "HEAD")
     branch = run_git(root, "branch", "--show-current")
     state = run_git(root, "status", "--porcelain=v1", "--untracked-files=normal")
     # Presence of sensitive filenames is possible; return counts, not file names.
-    return {"head": sha, "branch": branch, "dirty": None if state is None else bool(state),
-            "change_count": None if state is None else len(state.splitlines()) if state else 0}
+    result = {"head": sha, "branch": branch, "dirty": None if state is None else bool(state),
+              "change_count": None if state is None else len(state.splitlines()) if state else 0}
+    if include_fingerprint:
+        result["worktree_fingerprint"] = worktree_fingerprint(root) if sha else None
+    return result
 
 
 def document_metadata(root: Path, *, include_content: bool) -> list[dict]:
@@ -80,7 +152,7 @@ def effective_context(store: Store, project: str, *, include_documents: bool = F
 def inspect_handoff(store: Store, project: str, task_id: str) -> dict:
     obj = store.handoff(project, task_id)
     root = Path(store.project(project)["root"])
-    current = worktree_snapshot(root)
+    current = worktree_snapshot(root, include_fingerprint=True)
     obj["current_repository"] = current
     obj["resume_warnings"] = []
     if not current["head"] or current["head"] != obj["base_sha"]:
@@ -89,5 +161,13 @@ def inspect_handoff(store: Store, project: str, task_id: str) -> dict:
         obj["resume_warnings"].append("Branch differs from handoff; inspect worktree before proceeding")
     if current["dirty"] is None or current["dirty"]:
         obj["resume_warnings"].append("Current worktree has changes or cannot be inspected; preserve user edits")
+    saved_fp = obj.get("worktree_fingerprint")
+    current_fp = current.get("worktree_fingerprint")
+    if not saved_fp:
+        obj["resume_warnings"].append("Handoff has no worktree fingerprint; uncommitted changes cannot be compared")
+    elif not current_fp:
+        obj["resume_warnings"].append("Worktree fingerprint unavailable; inspect differences manually")
+    elif saved_fp != current_fp:
+        obj["resume_warnings"].append("Worktree fingerprint changed since handoff; inspect uncommitted edits")
     obj["resume_warnings"].append("Earlier validation is scoped to its recorded revision and environment")
     return obj
