@@ -4,7 +4,7 @@ Status: **implementation proposal** (not a claim that Rust code or GUI exists).
 
 ## Preconditions: stabilize P0 on main
 
-Review and merge PR #1 (Handoff worktree fingerprint) before PR #2 (MCP negative tests). Both PRs were created against the same P0 main; PR #2 must be updated against the new main and CI rerun, because their README/roadmap edits overlap. Do not treat independent green checks as proof that the combined tree passed. The owner decides whether to merge; no automatic merges.
+PR #1 (Handoff worktree fingerprint) and PR #2 (MCP negative tests) were both merged into `main` after updating PR #2 against PR #1 and passing combined CI run #46. This implementation plan now targets that combined P0 baseline. Before implementation, run `python -m unittest discover -s tests -v` on the actual target revision and record current CI separately.
 
 Retain the Python P0 as the executable reference until a Rust implementation passes the same behavioral checks. Do not change the public MCP names, confirmed-preference semantics, task handoff states, or project scope while replacing internals.
 

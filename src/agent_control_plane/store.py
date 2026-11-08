@@ -81,6 +81,7 @@ class Store:
                     base_sha TEXT NOT NULL,
                     branch TEXT NOT NULL,
                     worktree_state TEXT NOT NULL,
+                    worktree_fingerprint TEXT,
                     completed TEXT NOT NULL,
                     next_action TEXT NOT NULL,
                     validation_json TEXT NOT NULL,
@@ -88,6 +89,11 @@ class Store:
                     PRIMARY KEY (project, task_id)
                 );
             """)
+            # Existing P0 installations already have the handoffs table.
+            # Add the nullable field in place without deleting task history.
+            cols = {row[1] for row in self.db.execute("PRAGMA table_info(handoffs)")}
+            if "worktree_fingerprint" not in cols:
+                self.db.execute("ALTER TABLE handoffs ADD COLUMN worktree_fingerprint TEXT")
 
     def register_project(self, name: str, root: str) -> dict:
         if not name or any(x in name for x in ("/", "\\", "\n", "\x00")):
@@ -171,7 +177,7 @@ class Store:
 
     def save_handoff(self, project: str, task_id: str, objective: str, next_action: str,
                      base_sha: str, branch: str, worktree_state: str, completed: str,
-                     validation: list[dict]) -> None:
+                     validation: list[dict], worktree_fingerprint: str | None = None) -> None:
         self.project(project)
         if not all((task_id.strip(), objective.strip(), next_action.strip())):
             raise ValueError("task-id, objective and next-action are required")
@@ -187,13 +193,14 @@ class Store:
             raise ValueError("Validation detail exceeds limit")
         with self.db:
             self.db.execute(
-                "INSERT INTO handoffs(project,task_id,objective,base_sha,branch,worktree_state,completed,next_action,validation_json,updated_at) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(project,task_id) DO UPDATE SET "
+                "INSERT INTO handoffs(project,task_id,objective,base_sha,branch,worktree_state,worktree_fingerprint,completed,next_action,validation_json,updated_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(project,task_id) DO UPDATE SET "
                 "objective=excluded.objective,base_sha=excluded.base_sha,branch=excluded.branch,"
-                "worktree_state=excluded.worktree_state,completed=excluded.completed,next_action=excluded.next_action,"
+                "worktree_state=excluded.worktree_state,worktree_fingerprint=excluded.worktree_fingerprint,"
+                "completed=excluded.completed,next_action=excluded.next_action,"
                 "validation_json=excluded.validation_json,updated_at=excluded.updated_at",
-                (project, task_id, objective, base_sha, branch, worktree_state, completed,
-                 next_action, encoded, utc_now()),
+                (project, task_id, objective, base_sha, branch, worktree_state, worktree_fingerprint,
+                 completed, next_action, encoded, utc_now()),
             )
 
     def handoff(self, project: str, task_id: str) -> dict:

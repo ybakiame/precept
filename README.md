@@ -69,7 +69,7 @@ The proof-of-concept supports MCP 2025-11-25 legacy initialization and basic 202
 - All preference proposals start as **suggested** and are **not** sent to an agent. `confirm` requires deliberate CLI operator action. Confirmed preferences can be deprecated or deleted.
 - Project-scoped confirmed values mask global confirmed values with the same key. **Neither overrides the project's rules.**
 - Project files are re-read live when requested; default output includes only allowlisted document paths, sizes and hashes. `--include-documents` explicitly includes small allowlisted files. Symlinks escaping the registered checkout are blocked.
-- A handoff is **evidence about past work**, not proof a check passed on the current HEAD. Resuming checks git revision/branch/worktree changes and reports warnings.
+- A handoff is **evidence about past work**, not proof a check passed on the current HEAD. Resuming checks git revision/branch/worktree changes and reports warnings. New handoffs also include a bounded worktree fingerprint to detect uncommitted drift; older snapshots remain readable and explicitly unverified.
 - Do not store secrets, credentials, personal device identifiers, raw transcripts, private customer data, or unredacted logs. MCP clients run under the user account and can read exposed data; only attach to trusted local harnesses.
 
 ## Repository structure
@@ -90,10 +90,12 @@ docs/            # architecture, interfaces, risks, roadmap, UI ADR
 - [Wire interfaces and conformance boundaries](docs/interfaces.md)
 - [Threat model](docs/security.md)
 - [P0/P1/P2 roadmap and acceptance](docs/roadmap.md)
+- [Codex/Kimi context and Handoff E2E evidence (2026-11-08)](docs/evaluation/2026-11-08-codex-kimi-handoff.md)
+- [P0 MCP negative-boundary test plan](docs/evaluation/p0-mcp-negative-boundaries.md)
 - [ADR-0001: Core before GPUI / NSH interface](docs/adr/0001-core-before-ui.md)
 
 The standalone [agent-development-protocol](https://github.com/ybakiame/agent-development-protocol) remains authoritative for agent-neutral engineering procedures. This repository **consumes** the protocol; it does not rewrite a project's `AGENTS.md`, dependencies, or CI gates.
 
 ## Test status
 
-`python -m unittest discover -s tests -v` runs the P0 checks. Tests do not establish end-to-end interoperability with Codex/Pi/OpenCode, production-grade MCP conformance, multi-process reliability, or native desktop support. Those are explicit next milestones.
+`python -m unittest discover -s tests -v` runs the P0 checks. Two real-harness, read-only Codex/Kimi trials were reported by the operator; they do not establish independently measured end-to-end interoperability with every version of Codex/Pi/OpenCode, production-grade MCP conformance, multi-process reliability, or native desktop support. Seven isolated MCP negative-boundary tests are included, but real-harness negative trials and platform security boundaries remain unverified. Those are explicit next milestones.
