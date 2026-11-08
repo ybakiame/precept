@@ -4,6 +4,7 @@ import sqlite3
 import subprocess
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from agent_control_plane.context import effective_context, inspect_handoff, worktree_snapshot
@@ -112,7 +113,9 @@ class StoreTests(unittest.TestCase):
     def test_sqlite_migration_adds_nullable_fingerprint(self):
         legacy_dir = Path(self.tmp.name) / "legacy"
         legacy_dir.mkdir()
-        with sqlite3.connect(legacy_dir / "context.sqlite3") as db:
+        # The SQLite transaction context does not close the connection. Close it
+        # before reopening the store and before TemporaryDirectory cleanup on Windows.
+        with closing(sqlite3.connect(legacy_dir / "context.sqlite3")) as db, db:
             db.execute(
                 "CREATE TABLE handoffs ("
                 "project TEXT, task_id TEXT, objective TEXT, base_sha TEXT,"

@@ -19,9 +19,12 @@ Retain the Python P0 as the executable reference until a Rust implementation pas
 | P1-E | Compare GPUI Kit and NSH in a throwaway UI spike | Measured target-OS, accessibility, state handling and packaging evidence; ADR selects UI |
 | P1-F | Optional ACP/PTY session adapters after boundaries pass | Explicit capability matrix, no invented session state |
 
-Only P1-A is started here. P1-B onward require a native Rust toolchain and CI builds; **do not mark complete from documentation**.
+P1-A supplies the design and reference fixture. P1-B now has a read-only `acp-core`
+library and cross-language checks; see [implementation and validation evidence](p1-b-validation.md).
+P1-C onward remain unimplemented. Remote CI/platform results must be reported
+separately from local validation.
 
-## Suggested new crate layout (not created yet)
+## Crate layout (only acp-core exists in P1-B)
 
 ```text
 crates/

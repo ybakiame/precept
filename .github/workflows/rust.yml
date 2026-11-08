@@ -1,0 +1,34 @@
+name: Rust core parity
+on:
+  push:
+  pull_request:
+jobs:
+  core:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: rustup show
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --all-targets --locked
+      - run: cargo build --locked --example contract_reader
+      - name: Python regression
+        env:
+          PYTHONPATH: src
+        run: python -m unittest discover -s tests -v
+      - name: Cross-language parity (Unix)
+        if: runner.os != 'Windows'
+        env:
+          PYTHONPATH: src
+        run: python tools/check_p1_parity.py
+      - name: Cross-language parity (Windows)
+        if: runner.os == 'Windows'
+        env:
+          PYTHONPATH: src
+        run: python tools/check_p1_parity.py --reader target/debug/examples/contract_reader.exe
