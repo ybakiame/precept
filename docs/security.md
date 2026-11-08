@@ -13,6 +13,7 @@ A trusted user invokes `acpctl` and configures a trusted local coding-agent proc
 - Shell-free, bounded Git commands inspect only the registered checkout. No `git reset`, `git clean`, `git checkout`, or service restarts.
 - Preferences are opt-in through explicit confirmation. Suggested/rejected/deprecated values are invisible to agent-facing effective context. Provenance remains visible to the operator.
 - No automatic history scraping, remote synchronization, telemetry, memory plugin or third-party network call.
+- New Handoff snapshots may hash tracked Git diffs and bounded untracked file contents locally. The store contains only a SHA-256 digest, not diff text or filenames. Fingerprinting fails closed if the configured limits are exceeded. This is an advisory drift detector, not an isolation boundary or complete repository attestation.
 
 ## Known limitations / do not deploy as enterprise policy enforcement
 

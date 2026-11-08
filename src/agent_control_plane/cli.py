@@ -84,14 +84,15 @@ def run(args: argparse.Namespace) -> object:
             if args.action == "get":
                 return inspect_handoff(store, args.project, args.task_id)
             project = store.project(args.project)
-            snap = worktree_snapshot(Path(project["root"]))
+            snap = worktree_snapshot(Path(project["root"]), include_fingerprint=True)
             if not snap["head"]:
                 raise ValueError("Cannot determine git HEAD; handoff requires a git repository")
             validation = json.loads(args.validation_json)
             store.save_handoff(args.project, args.task_id, args.objective, args.next_action,
                                snap["head"], snap["branch"] or "", "dirty" if snap["dirty"] else "clean",
-                               args.completed, validation)
+                               args.completed, validation, worktree_fingerprint=snap["worktree_fingerprint"])
             return {"project": args.project, "task_id": args.task_id, "saved_at_head": snap["head"],
+                    "fingerprint_available": snap["worktree_fingerprint"] is not None,
                     "warning": "Capture does not prove validation; prior results require independent evidence"}
         if args.entity == "mcp":
             serve_stdio(store, args.project)
