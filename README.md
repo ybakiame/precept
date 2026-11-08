@@ -91,10 +91,11 @@ docs/            # architecture, interfaces, risks, roadmap, UI ADR
 - [Threat model](docs/security.md)
 - [P0/P1/P2 roadmap and acceptance](docs/roadmap.md)
 - [Codex/Kimi context and Handoff E2E evidence (2026-11-08)](docs/evaluation/2026-11-08-codex-kimi-handoff.md)
+- [P0 MCP negative-boundary test plan](docs/evaluation/p0-mcp-negative-boundaries.md)
 - [ADR-0001: Core before GPUI / NSH interface](docs/adr/0001-core-before-ui.md)
 
 The standalone [agent-development-protocol](https://github.com/ybakiame/agent-development-protocol) remains authoritative for agent-neutral engineering procedures. This repository **consumes** the protocol; it does not rewrite a project's `AGENTS.md`, dependencies, or CI gates.
 
 ## Test status
 
-`python -m unittest discover -s tests -v` runs the P0 checks. Two real-harness, read-only Codex/Kimi trials were reported by the operator; they do not establish independently measured end-to-end interoperability with every version of Codex/Pi/OpenCode, production-grade MCP conformance, multi-process reliability, or native desktop support. Those are explicit next milestones.
+`python -m unittest discover -s tests -v` runs the P0 checks. Two real-harness, read-only Codex/Kimi trials were reported by the operator; they do not establish independently measured end-to-end interoperability with every version of Codex/Pi/OpenCode, production-grade MCP conformance, multi-process reliability, or native desktop support. Seven isolated MCP negative-boundary tests are included, but real-harness negative trials and platform security boundaries remain unverified. Those are explicit next milestones.

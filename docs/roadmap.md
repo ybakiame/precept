@@ -8,6 +8,7 @@
 - [x] Optional bounded worktree fingerprint on new handoffs; old snapshots remain readable without claiming verification.
 - [x] Two read-only MCP tools through stdio, project scoped at process start.
 - [x] CLI operator workflow and standard-library unit/integration tests.
+- [x] Isolated negative tests for unconfirmed/rejected preference hiding, project-specific scope and read-only MCP; [evidence and real-harness limits](evaluation/p0-mcp-negative-boundaries.md).
 - [x] User-reported read-only context and Handoff E2E across Codex + GPT-6.1 Sol and Kimi Code + Kimi K3.1 Pro; [evidence and limits](evaluation/2026-11-08-codex-kimi-handoff.md).
 - [ ] Repeat under independently captured tool traces and add Pi/OpenCode and production task handoff trials; record versions, permissions and privacy boundaries.
 - [ ] Versioned schema migrations, database backup/export/import, explicit user profile lifecycle and fuzz testing.
