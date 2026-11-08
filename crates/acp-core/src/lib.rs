@@ -76,6 +76,9 @@ pub enum ValidationStatus {
 pub struct Validation {
     pub check: String,
     pub status: ValidationStatus,
+    /// Python P0 preserves additional evidence/provenance keys unchanged.
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Handoff {

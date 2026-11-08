@@ -267,3 +267,25 @@ fn injected_metadata_and_explicit_denial_errors() {
         Err(Error::UnknownTool)
     );
 }
+
+#[test]
+fn handoff_preserves_validation_provenance_without_relaxing_status() {
+    let (_temp, mut mem, _) = fixture();
+    let mut source = serde_json::to_value(handoff()).unwrap();
+    let validation = json!([
+        {"check":"unit", "status":"PASS", "environment":"linux", "revision":"synthetic-revision",
+         "evidence":{"log":"synthetic-log-ref", "id":"evidence-id", "updated_at":"recorded",
+                     "steps":["unit", {"passed":true}], "optional":null}, "attempts":2},
+        {"check":"legacy", "status":"NOT_RUN"}
+    ]);
+    source["validation"] = validation.clone();
+    mem.handoff = Some(serde_json::from_value(source.clone()).unwrap());
+    let result = mem.resolver("alpha").unwrap().handoff("task").unwrap();
+    assert_eq!(result["validation"], validation);
+    assert_eq!(
+        serde_json::to_value(mem.handoff.as_ref().unwrap()).unwrap(),
+        source
+    );
+    source["validation"][0]["status"] = json!("SUCCESS");
+    assert!(serde_json::from_value::<Handoff>(source).is_err());
+}

@@ -44,13 +44,20 @@ def main():
                                [{"check": status, "status": status} for status in ["PASS", "FAIL", "SKIPPED", "NOT_RUN"]],
                                worktree_fingerprint="saved")
         store.save_handoff("alpha", "legacy", "legacy", "inspect", "base", "main", "clean", "", [])
+        store.save_handoff(
+            "alpha", "provenance", "synthetic evidence", "inspect", "base", "main", "clean", "",
+            [{"check": "unit", "status": "PASS", "environment": "linux", "revision": "synthetic-revision",
+              "evidence": {"log": "synthetic-log-ref", "id": "evidence-id", "updated_at": "recorded",
+                           "steps": ["unit", {"passed": True}], "optional": None},
+              "attempts": 2}], worktree_fingerprint="saved",
+        )
         preferences = []
         for row in store.db.execute("SELECT * FROM preferences"):
             item = dict(row)
             item["key"] = item.pop("pref_key")
             preferences.append(item)
         projects = store.projects()
-        handoffs = [store.handoff(p, t) for p, t in [("alpha", "shared"), ("beta", "shared"), ("beta", "beta-only"), ("alpha", "legacy")]]
+        handoffs = [store.handoff(p, t) for p, t in [("alpha", "shared"), ("beta", "shared"), ("beta", "beta-only"), ("alpha", "legacy"), ("alpha", "provenance")]]
         requests = []
         for project in oracle.data["projects"]:
             for include in [False, True]:
@@ -64,7 +71,7 @@ def main():
                                 ("get_handoff", {}),
                                 ("get_handoff", {"task_id": "shared", "project_id": "beta"})]:
             requests.append(dict(project="alpha", name=name, arguments=arguments))
-        for p, task in [("alpha", "shared"), ("beta", "shared"), ("alpha", "beta-only"), ("alpha", "legacy"), ("alpha", "missing")]:
+        for p, task in [("alpha", "shared"), ("beta", "shared"), ("alpha", "beta-only"), ("alpha", "legacy"), ("alpha", "missing"), ("alpha", "provenance")]:
             requests.append(dict(project=p, name="get_handoff", arguments={"task_id": task}))
         requests.append(dict(project="unknown", name="get_effective_context", arguments={}))
         snapshots = [
@@ -99,6 +106,10 @@ def main():
             assert len(actual) == len(expected)
             for request, rust, python in zip(requests, actual, expected):
                 assert normalize(rust) == normalize(python), (request, rust, python)
+                if "data" in python and "validation" in python["data"]:
+                    # Evidence is opaque data: normalization must not hide losses
+                    # in user-provided keys such as evidence.id or updated_at.
+                    assert rust["data"]["validation"] == python["data"]["validation"], (request, rust, python)
                 if request["project"] == "alpha" and "data" in rust:
                     for marker in oracle.data["forbidden_alpha_strings"]:
                         assert marker not in json.dumps(rust)
