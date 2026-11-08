@@ -101,7 +101,7 @@ not rewrite an untrusted manifest to log the failure.
 Every new worker verifies authority/inventory, original source, backup integrity,
 exact schema, all logical records and any previously authenticated physical hash.
 Sources are read-only. Backups/restores are frozen with DELETE journaling and
-independently reopened as single-file artifacts; source WAL is never copied as
+independently reopened as single-file artifacts (unexpected backup/restore sidecars refuse); source WAL is never copied as
 an ordinary main-file copy. Output recovery opens only the authorized output
 read-write so SQLite can replay/roll back its own hot journal before inspection.
 No existing candidate is overwritten or removed by the restart protocol.
@@ -204,3 +204,15 @@ quiescence and ownership, stale-lock recovery, durable recovery authority/manife
 validated platform flush policy and version-aware rollback. Rehearse power-loss/
 disk-full/parent-loss behavior before a staged opt-in rollout. V1 and a manifest
 confer no permission to access personal data or switch writes away from Python.
+
+### CI-driven portability corrections
+
+The first remote process matrix exposed a collision-fixture permission assumption:
+Unix CI umask 022 created 0644, so the private-file policy correctly refused with
+Permissions before reaching Collision. The collision fixture now explicitly sets
+0600; a local umask-022 run verifies the intended collision branch. Windows Clippy
+also rejected set_readonly(false) in fixture cleanup; it now restores the saved
+original permissions object. No policy or lint was disabled. A bounded CI wrapper
+retains Cargo's exact status/output while exposing sanitized failure headlines as
+check annotations, allowing diagnosis when log-archive egress is unavailable.
+Final remote outcomes and exact corrected SHA are recorded in the Draft PR.

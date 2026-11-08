@@ -289,7 +289,13 @@ fn backup_missing_changed_corrupt_and_future_outputs_are_refused() {
                 }
             }
             _ => {
-                fs::write(root.path().join("output.sqlite3"), b"collision").unwrap();
+                let path = root.path().join("output.sqlite3");
+                fs::write(&path, b"collision").unwrap();
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
+                }
             }
         }
         refused(
@@ -420,11 +426,12 @@ fn windows_reparse_and_readonly_permission_policy_are_enforced() {
         let root = TestRoot::new(false);
         let cap = root.authorize(false);
         let path = latest(root.path());
+        let original_permissions = fs::metadata(&path).unwrap().permissions();
         if kind == "symlink" {
             fs::remove_file(&path).unwrap();
             std::os::windows::fs::symlink_file(root.source(), &path).unwrap();
         } else {
-            let mut perms = fs::metadata(&path).unwrap().permissions();
+            let mut perms = original_permissions.clone();
             perms.set_readonly(true);
             fs::set_permissions(&path, perms).unwrap();
         }
@@ -438,9 +445,7 @@ fn windows_reparse_and_readonly_permission_policy_are_enforced() {
             },
         );
         if kind == "permissions" {
-            let mut perms = fs::metadata(&path).unwrap().permissions();
-            perms.set_readonly(false);
-            fs::set_permissions(path, perms).unwrap();
+            fs::set_permissions(path, original_permissions).unwrap();
         }
     }
 }
