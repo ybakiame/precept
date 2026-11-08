@@ -21,15 +21,16 @@ Retain the Python P0 as the executable reference until a Rust implementation pas
 
 P1-A supplies the design and reference fixture. P1-B now has a read-only `acp-core`
 library and cross-language checks; see [implementation and validation evidence](p1-b-validation.md).
-P1-C onward remain unimplemented. Remote CI/platform results must be reported
+P1-C1 adds a [read-only SQLite adapter](sqlite-readonly.md); P1-C2 write/migration
+work and P1-D onward remain unimplemented. Remote CI/platform results must be reported
 separately from local validation.
 
-## Crate layout (only acp-core exists in P1-B)
+## Crate layout (acp-core and read-only acp-store exist)
 
 ```text
 crates/
   acp-core/       # portable domain types, precedence and validation
-  acp-store/      # SQLite adapters and versioned migrations
+  acp-store/      # read-only SQLite adapter; migrations deferred
   acp-ipc/        # local transport, DTOs and capability boundary
   acp-daemon/     # supervisor process, local endpoint and audit events
   acp-mcp/        # project-scoped MCP compatibility surface
