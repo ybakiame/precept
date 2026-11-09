@@ -55,12 +55,12 @@ task-local sysroot; no system install or published environment edit was performe
 | NSH Rust native + actual component test | BUILD_PASS / RUN_PASS / TEST_PASS | Actual GTK window; engine headless project/state/reconnect test |
 | NSH terminal | BUILD_PASS / RUN_PASS / TEST_PASS | Actual ratatui process in PTY; Tab/Enter selects beta, resize, clean q exit |
 | NSH offline web | BUILD_PASS / RUN_PASS / TEST_PASS | Actual Rust WASM + browser DOM; Chromium 156.0.8078.79, offline selection/Enter/theme/states/resize; zero external requests |
-| Kit host + NSH view | BUILD_PASS; actual surface runtime being finalized | Host window alone is not embedded-view proof |
-| Kit WASM showcase | BLOCKED on stable toolchain | Upstream wasm_thread requests nightly `stdarch_wasm_atomic_wait`; no full browser-app support claim |
-| Shared model iOS/Android target checks | Results recorded with final evidence | Model-only checks do not validate a native UI backend |
+| Kit host + NSH view | BUILD_PASS / RUN_PASS on Linux | Actual NSH content inside Kit captured, not just a host window; independent selection/theme instances |
+| Kit WASM showcase | BUILD_PASS with isolated nightly-2026-11-08, browser smoke pending | Stable 1.99.1 correctly rejects wasm_thread's nightly feature; documented default renderer builds; Fast gallery variant has an upstream mixed-type error |
+| Shared model iOS/Android target checks | TEST_PASS (typecheck only) | Model-only checks do not validate a native UI backend |
 | NSH iOS / Android component target checks | BLOCKED | Missing xcrun/Apple SDK and aarch64-linux-android-clang/NDK respectively |
 | iOS simulator / Android emulator/device | NOT_RUN | No local SDK/runtime/hardware; no packaged mobile app claim |
-| macOS / Windows | CI pending | Never inferred from Linux or framework platform lists |
+| macOS / Windows independent native apps | BUILD_PASS / RUN_PASS in initial CI | Exact logs below; final-head rerun pending |
 
 Initial Kit build failed without Fontconfig. Initial GTK rendering produced a
 black screenshot when Xvfb and the client were started by different managed exec
@@ -74,6 +74,24 @@ The optional UI workflow has separate native candidate/OS jobs, component tests,
 shared authenticated synthetic IPC, PTY and offline-browser gates. Production CI
 is unchanged. Final CI links/statuses and actual screenshot/metric artifacts will
 be recorded in the Draft PR and finalized below.
+
+Initial optional [CI run 42560141479](https://github.com/ybakiame/agent-control-plane/actions/runs/42560141479),
+at `3269ddb`, ran ten jobs: nine passed; Windows hybrid failed in wgpu-hal 29.0.4
+DX12 because gpu-allocator 0.28 selected windows 0.58 while wgpu used 0.62.
+All six independent native app/OS combinations actually enumerated visible windows,
+loaded the synthetic authenticated model and passed nonblank screenshot checks.
+Hybrid Linux/macOS and the shared IPC/PTY/offline-web job passed. It was not an
+all-green run. The isolated spike lock now resolves allocator to windows 0.62.2
+(within its declared range), matching the vendor NSH GPUI lock. A Windows GNU
+cross-check of actual wgpu-hal/allocator DX12 types passes; this is compile-only
+evidence, and the final native Windows CI must independently verify the fix.
+
+The frozen Kit web docs require nightly. Isolated nightly-2026-11-08 is Rust
+1.102.0-nightly f5cedb83a; it does not change ACP's Rust 1.99.1. The Fast gallery
+attempt exposed a pinned upstream fps-monitor type mismatch between gpui-pre and
+gpui-fast. The documented default gallery renderer then built successfully.
+Cargo.lock requires wasm-bindgen 0.2.127, despite the web docs' install example
+naming 0.2.121; generated glue must match the lock, not that stale example.
 
 ## Measurements and their limits
 

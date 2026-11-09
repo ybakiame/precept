@@ -55,6 +55,7 @@ struct Console {
 impl Console {
     fn new(inputs: Inputs, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let mut model = Model::loading();
+        model.live = inputs.runtime_dir.is_some();
         if inputs.runtime_dir.is_none() {
             model.receive(inputs.fetch());
         } else {
@@ -287,6 +288,11 @@ mod tests {
             assert_eq!(view.read(cx).model.project().unwrap().name, "alpha");
             window.click("next", cx);
             assert_eq!(view.read(cx).model.project().unwrap().name, "beta");
+            window.focus_next(cx);
+            let focused = window.focused(cx);
+            assert!(focused.is_some());
+            window.focus_next(cx);
+            assert_ne!(window.focused(cx), focused);
             window.click("theme", cx);
             assert!(view.read(cx).model.dark);
             window.click("filter", cx);

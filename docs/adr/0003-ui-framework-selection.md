@@ -1,6 +1,6 @@
 # ADR-0003: compare read-only UI frontends before selecting a framework
 
-Status: **Proposed**
+Status: Proposed
 Date: 2026-11-09
 Authority: Issue #14; this document does not accept a framework or production rollout.
 

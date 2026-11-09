@@ -3,6 +3,18 @@ use acp_ui_spike_model::{Model, Phase};
 use nsh_base::{button, theme};
 use nsh_core::prelude::*;
 
+/// Disables framework profile persistence as well as ACP data writes.
+pub fn ephemeral_storage() -> std::sync::Arc<dyn nsh_core::storage::StorageBackend> {
+    struct Empty;
+    impl nsh_core::storage::StorageBackend for Empty {
+        fn load(&self) -> Result<std::collections::BTreeMap<String, String>, String> {
+            Ok(Default::default())
+        }
+        fn write(&self, _: nsh_core::storage::StorageChange) {}
+    }
+    std::sync::Arc::new(Empty)
+}
+
 #[native_module("acp-spike/native")]
 fn native(registry: &mut Registry) {
     registry.register::<App>();
@@ -51,7 +63,14 @@ fn control(label: &'static str, callback: impl Fn() + 'static) -> impl IntoEleme
 }
 #[component]
 pub fn App() -> impl IntoElement {
-    let model = signal(Model::loading());
+    #[cfg(feature = "ipc")]
+    let live = INPUTS.get().is_some_and(|i| i.runtime_dir.is_some());
+    #[cfg(not(feature = "ipc"))]
+    let live = false;
+    let model = signal(Model {
+        live,
+        ..Model::loading()
+    });
     load(model);
     #[cfg(not(target_arch = "wasm32"))]
     effect(move || {
@@ -141,6 +160,12 @@ pub fn App() -> impl IntoElement {
                 .child(scroll().flex_1().child(dynamic(move || {
                     view()
                         .gap_2()
+                        .on_layout(move |_: &Bounds<Points>| {
+                            #[cfg(not(target_arch = "wasm32"))]
+                            if model.get().phase == Phase::Ready {
+                                eprintln!("ACP_NSH_LAYOUT_READY");
+                            }
+                        })
                         .children(model.get().detail_lines().into_iter().map(text))
                 }))),
         )

@@ -15,6 +15,8 @@ fn main() -> impl std::process::Termination {
             #[cfg(any(target_os = "linux", target_os = "windows"))]
             app_id: "org.example.acp.spike".into(),
             size: (1080, 760),
+            storage: Some(acp_nsh_spike::ephemeral_storage()),
+            cache: platform::CacheOptions::off(),
             ..Default::default()
         },
     )

@@ -22,7 +22,10 @@ fn main() -> io::Result<()> {
     let _restore = Restore;
     execute!(io::stdout(), EnterAlternateScreen)?;
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
-    let mut view = AppView::new(AppOptions::default());
+    let mut options = AppOptions::default();
+    options.storage = Some(acp_nsh_spike::ephemeral_storage());
+    options.cache = nsh_platform_tui::CacheOptions::off();
+    let mut view = AppView::new(options);
     view.load(App::Rust(Root::of::<acp_nsh_spike::App>()))?;
     loop {
         view.draw_terminal(&mut terminal)?;

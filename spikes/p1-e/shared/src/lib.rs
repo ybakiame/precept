@@ -98,6 +98,7 @@ pub struct Model {
     pub dark: bool,
     pub detail_focus: bool,
     pub filter: String,
+    pub live: bool,
 }
 impl Model {
     pub fn loading() -> Self {
@@ -108,6 +109,7 @@ impl Model {
             dark: false,
             detail_focus: false,
             filter: String::new(),
+            live: false,
         }
     }
     pub fn fixture() -> Self {
@@ -171,8 +173,14 @@ impl Model {
             }
             Phase::Ready => match &self.data {
                 Some(d) if d.health.ready => format!(
-                    "Ready · {} · schema {} · read-only",
-                    d.health.service, d.health.schema
+                    "{} · {} · schema {} · read-only",
+                    if self.live {
+                        "Connected"
+                    } else {
+                        "Offline synthetic snapshot (captured health)"
+                    },
+                    d.health.service,
+                    d.health.schema
                 ),
                 _ => "Not ready".into(),
             },

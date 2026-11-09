@@ -26,7 +26,9 @@ try {
   await context.setOffline(true);
   await page.getByRole('button',{name:'Next project',exact:true}).click();
   await page.getByText('Project: beta',{exact:true}).waitFor();
-  await page.getByRole('button',{name:'Next project',exact:true}).focus();
+  await page.getByRole('button',{name:'Reconnect',exact:true}).focus();
+  await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(()=>document.activeElement.getAttribute('aria-label')),'Next project');
   await page.keyboard.press('Enter');
   await page.getByText('Project: alpha',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Light / dark',exact:true}).click();
@@ -43,7 +45,7 @@ try {
   assert.equal(await page.locator('#error').innerText(),'');
   assert.deepEqual(errors,[]);
   assert(requests.every(u=>u.startsWith(origin+'/')));
-  const result={status:'TEST_PASS',backend:'actual NSH Rust WASM + browser DOM',browser:await browser.version(),offlineInteraction:true,keyboardEnter:true,resize:[1080,760,640,480],requests:requests.map(u=>new URL(u).pathname),externalRequests:0,daemonConnection:'NOT_RUN: offline fixture only; no native IPC or gateway'};
+  const result={status:'TEST_PASS',backend:'actual NSH Rust WASM + browser DOM',browser:await browser.version(),offlineInteraction:true,keyboardTabAndEnter:true,resize:[1080,760,640,480],requests:requests.map(u=>new URL(u).pathname),externalRequests:0,daemonConnection:'NOT_RUN: offline fixture only; no native IPC or gateway'};
   await writeFile(path.join(out,'web-result.json'),JSON.stringify(result,null,2));
   console.log(JSON.stringify(result));
 } finally {await browser?.close();server.kill();}

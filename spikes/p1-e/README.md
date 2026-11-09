@@ -15,6 +15,10 @@ The release CLI `nsh 0.4.0 (e626a8d)` was used only to actually try
 `nsh init <temporary-directory> --template rust`; application builds use the
 exact Git dependencies above, not that release's prebuilt renderer.
 Each workspace has its own Cargo.lock. The ACP workspace/lockfile is unchanged.
+The Kit spike lock explicitly resolves gpu-allocator's broad Windows binding range
+to windows 0.62.2, matching wgpu-hal 29's DX12 types in the hybrid. A broad Cargo
+update can choose an older binding and recreate the Windows type mismatch; verify
+that relationship when refreshing this optional lock. No production dependency is changed.
 
 ## Build and run
 
@@ -55,6 +59,9 @@ it never falls back to a synthetic success. Reconnect is read-only and runs off
 the UI thread. Closing a UI never sends a daemon shutdown message. Task `shared`
 is the fixed read-only handoff query in this narrow trial. There are no writes,
 profile discovery, UI SQLite opens, automatic daemon launch or browser IPC gateway.
+Offline status explicitly says captured synthetic health; it is not a claim of
+a connected daemon. NSH native/TUI/hybrid use empty in-memory framework storage
+and disable its disk image cache, rather than reading a framework profile.
 
 ## Web: offline Rust app only
 

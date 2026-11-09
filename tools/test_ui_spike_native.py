@@ -76,7 +76,7 @@ with Fixture() as f:
             else:raise AssertionError("No native visible window before timeout")
         else:
             startup=time.monotonic()-started
-            markers=["ACP_UI_READY","ACP_NSH_READY"] if args.candidate=="hybrid" else ["ACP_NSH_READY" if args.candidate=="nsh" else "ACP_UI_READY"]
+            markers=["ACP_UI_READY","ACP_NSH_LAYOUT_READY"] if args.candidate=="hybrid" else ["ACP_NSH_LAYOUT_READY" if args.candidate=="nsh" else "ACP_UI_READY"]
             while not all(marker in "".join(diagnostics) for marker in markers):
                 assert proc.poll() is None,"native UI stopped before loaded-model render"
                 if time.monotonic()>deadline:raise AssertionError("Native window exists but model never became ready")
