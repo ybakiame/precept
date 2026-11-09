@@ -85,9 +85,9 @@ def main():
         env.pop("CARGO_TARGET_DIR", None)
         for name, relative, before, after, selected in mutations:
             file = checkout / relative
-            original = file.read_text()
+            original = file.read_text(encoding="utf-8")
             assert original.count(before) == 1, "mutation anchor drifted"
-            file.write_text(original.replace(before, after))
+            file.write_text(original.replace(before, after), encoding="utf-8")
             started = time.monotonic()
             try:
                 with (args.out / (name + ".log")).open("wb") as log:
@@ -125,7 +125,7 @@ def main():
                         stderr=subprocess.STDOUT,
                         timeout=120,
                     )
-                output = (args.out / (name + ".log")).read_text(errors="replace")
+                output = (args.out / (name + ".log")).read_text(encoding="utf-8", errors="replace")
                 assert (
                     test.returncode != 0
                     and "test result: FAILED" in output
@@ -140,7 +140,7 @@ def main():
                     )
                 )
             finally:
-                file.write_text(original)
+                file.write_text(original, encoding="utf-8")
     (args.out / "mutations.json").write_text(json.dumps(results, indent=2) + "\n")
     print(
         "PASS: "

@@ -279,7 +279,8 @@ def live_views(fixture, label, out):
             # The preference empty state belongs to its own page in E4.
             terminal.focus(b"\x06", "Filter confirmed preferences")
             terminal.wait("Empty — no confirmed preferences match")
-            terminal.send(b"\x1b")
+            terminal.send(b"\x1b1")  # Alt+1 returns to the Dashboard before project/reconnect checks.
+            terminal.wait("Project: " + label)
             terminal.send(b"\x10")  # Ctrl+P selects the single allowlisted root.
             terminal.wait("Project: " + label)
             # Actual live disconnect/reconnect while the terminal remains mounted.
