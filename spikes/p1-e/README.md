@@ -56,8 +56,9 @@ The client loads the existing operator capability privately through acp-ipc;
 no token value is an argument, asset, environment variable or log. The daemon
 enforces its allowlist unchanged. A failed connection clears displayed data;
 it never falls back to a synthetic success. Reconnect is read-only and runs off
-the UI thread. Closing a UI never sends a daemon shutdown message. Task `shared`
-is the fixed read-only handoff query in this narrow trial. There are no writes,
+the UI thread. Closing a UI never sends a daemon shutdown message. NSH uses an
+explicit task input and queries only the selected project; omitting the task is
+an unqueried state. GPUI Kit/hybrid remain benchmark references. There are no writes,
 profile discovery, UI SQLite opens, automatic daemon launch or browser IPC gateway.
 Offline status explicitly says captured synthetic health; it is not a claim of
 a connected daemon. NSH native/TUI/hybrid use empty in-memory framework storage
@@ -113,3 +114,8 @@ enumerable interactive desktop report NOT_RUN, not fabricated runtime parity.
 [Measured comparison](../../docs/p1/ui-spike-evaluation.md) and
 [Proposed ADR](../../docs/adr/0003-ui-framework-selection.md) distinguish actual
 results, blocked experiments, missing coverage and decision criteria.
+
+P1-E2's [local console quickstart](../../docs/p1/local-codex-e2.md) supersedes the
+old NSH demonstration controls and adds Windows/ConPTY and explicit Windows-owner
+WSL queries. Use [local verification](../../tools/local_verify.py), with cached
+locked dependencies and `[skip ci]` commits while Actions quota is exhausted.

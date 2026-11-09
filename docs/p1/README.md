@@ -30,6 +30,12 @@ write/migration rollout remains unimplemented. P1-D now provides a
 framework or production UI rollout. P1-F remains unimplemented. Remote CI/platform results must be reported
 separately from local validation.
 
+P1-E2 develops the [read-only NSH operator console](local-codex-e2.md), prioritizing
+Windows desktop/ConPTY and explicit Windows-owner access to WSL. Verification is
+local-only while Actions quota is exhausted; see the
+[sanitized measured evidence](../evaluation/p1-e2-local-validation.md).
+ADR-0003 remains Proposed and mobile work is deferred.
+
 ## Crate layout (core/store/rehearsal and local service crates exist)
 
 ```text

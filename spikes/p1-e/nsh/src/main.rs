@@ -1,3 +1,5 @@
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 #[cfg(target_os = "linux")]
 use nsh_platform_linux as platform;
 #[cfg(target_os = "macos")]
@@ -11,7 +13,7 @@ fn main() -> impl std::process::Termination {
     platform::run_app(
         platform::AppSource::Rust(platform::Root::of::<acp_nsh_spike::App>()),
         platform::AppOptions {
-            title: "ACP NSH Rust — synthetic read-only spike".into(),
+            title: "Agent Control Plane — read-only console".into(),
             #[cfg(any(target_os = "linux", target_os = "windows"))]
             app_id: "org.example.acp.spike".into(),
             size: (1080, 760),
