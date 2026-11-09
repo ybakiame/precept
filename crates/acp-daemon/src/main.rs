@@ -61,7 +61,7 @@ impl Service {
         if request.method == "daemon.health" {
             let _: Empty = decode(params)?;
             return Ok(
-                json!({"api_version":1,"service":"acp-daemon","version":env!("CARGO_PKG_VERSION"),"schema":format!("{:?}",store.schema().map_err(|_|Error::Unavailable)?),"ready":true,"worktree_fingerprint":"unavailable"}),
+                json!({"api_version":1,"service":"acp-daemon","version":env!("CARGO_PKG_VERSION"),"schema":format!("{:?}",store.schema().map_err(|_|Error::Unavailable)?),"ready":true,"worktree_fingerprint":"on-demand-acp-worktree-v1"}),
             );
         }
         if request.method == "project.list" {

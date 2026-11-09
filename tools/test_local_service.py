@@ -25,7 +25,8 @@ from unittest.mock import patch
 from sqlite_fixture import create_fixture, ROOT
 from check_sqlite_parity import ReadOnlyOracle
 from agent_control_plane.mcp import MCPServer
-from agent_control_plane.context import worktree_snapshot
+from agent_control_plane.context import worktree_snapshot, inspect_handoff
+from agent_control_plane.store import Store
 
 MAX_FRAME = 1024 * 1024
 BIN = ROOT / "target/debug"
@@ -451,29 +452,131 @@ class LocalServiceTests(unittest.TestCase):
             assert bad.returncode != 0
             assert f.cli("health")["ready"]
 
-    def test_live_git_and_explicit_unavailable_fingerprint_delta(self):
-        with Fixture() as f:
+    def test_live_git_exact_fingerprint_handoff_oracle_and_warning_parity(self):
+        with Fixture(start=False) as f:
             root = f.root / "fixture/alpha"
-            subprocess.run(["git", "-C", str(root), "-c", "user.name=Synthetic", "-c", "user.email=synthetic@example.invalid",
-                            "add", "AGENTS.md"], check=True, capture_output=True)
-            subprocess.run(["git", "-C", str(root), "-c", "user.name=Synthetic", "-c", "user.email=synthetic@example.invalid",
-                            "commit", "-qm", "synthetic"], check=True, capture_output=True)
+            subprocess.run(
+                ["git", "-C", str(root), "add", "AGENTS.md"],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(root),
+                    "-c",
+                    "user.name=Synthetic",
+                    "-c",
+                    "user.email=synthetic@example.invalid",
+                    "commit",
+                    "-qm",
+                    "synthetic",
+                ],
+                check=True,
+                capture_output=True,
+            )
+            (root / "untracked.txt").write_bytes(b"first bytes")
             reference = worktree_snapshot(root, include_fingerprint=True)
-            context = f.cli("context", "alpha")
-            assert context["repository"] == {k: v for k, v in reference.items() if k != "worktree_fingerprint"}
-            handoff = f.cli("handoff", "alpha", "shared")
-            assert reference["worktree_fingerprint"] is not None
-            assert handoff["current_repository"]["worktree_fingerprint"] is None
-            assert "Worktree fingerprint unavailable; inspect differences manually" in handoff["resume_warnings"]
-            (root / "AGENTS.md").write_text("synthetic changed document", encoding="utf-8")
-            assert f.cli("context", "alpha")["repository"]["dirty"] is True
-            print("VERIFIED DELTA: Python computes a Git fingerprint; Rust reports null plus incomplete-evidence warning")
+            with Store(f.db.parent) as store:
+                original = store.handoff("alpha", "shared")
+                store.save_handoff(
+                    "alpha",
+                    "shared",
+                    original["objective"],
+                    original["next_action"],
+                    reference["head"],
+                    reference["branch"],
+                    "dirty",
+                    original["completed"],
+                    original["validation"],
+                    worktree_fingerprint=reference["worktree_fingerprint"],
+                )
+            f.before = f.db.read_bytes()
+            f.start()
+            bridge = Bridge(f, "alpha")
+            initial = None
+            for change in (
+                "matching",
+                "same-name-untracked-drift",
+                "tracked-drift",
+                "branch-head-drift",
+            ):
+                if change == "same-name-untracked-drift":
+                    (root / "untracked.txt").write_bytes(b"other bytes")
+                elif change == "tracked-drift":
+                    (root / "AGENTS.md").write_bytes(b"synthetic tracked change")
+                elif change == "branch-head-drift":
+                    subprocess.run(
+                        ["git", "-C", str(root), "checkout", "-qb", "synthetic-other"],
+                        check=True,
+                        capture_output=True,
+                    )
+                    subprocess.run(
+                        [
+                            "git",
+                            "-C",
+                            str(root),
+                            "-c",
+                            "user.name=Synthetic",
+                            "-c",
+                            "user.email=synthetic@example.invalid",
+                            "commit",
+                            "--allow-empty",
+                            "-qm",
+                            "synthetic next",
+                        ],
+                        check=True,
+                        capture_output=True,
+                    )
+                with ReadOnlyOracle(f.db) as store:
+                    expected = inspect_handoff(store, "alpha", "shared")
+                actual = f.cli("handoff", "alpha", "shared")
+                assert (
+                    actual == expected
+                ), "full Python/Rust Handoff/fingerprint/warning/evidence parity differs"
+                response = bridge.request(
+                    dict(
+                        jsonrpc="2.0",
+                        id=1,
+                        method="tools/call",
+                        params=dict(
+                            name="get_handoff",
+                            arguments=dict(task_id="shared"),
+                            _meta={
+                                "io.modelcontextprotocol/protocolVersion": "2026-07-28"
+                            },
+                        ),
+                    )
+                )
+                assert json.loads(response["result"]["content"][0]["text"]) == expected
+                context = f.cli("context", "alpha")
+                assert "worktree_fingerprint" not in context["repository"]
+                if initial is None:
+                    initial = actual["current_repository"]
+                elif change == "same-name-untracked-drift":
+                    assert (
+                        initial["head"] == actual["current_repository"]["head"]
+                        and initial["change_count"]
+                        == actual["current_repository"]["change_count"]
+                    )
+                    assert (
+                        initial["worktree_fingerprint"]
+                        != actual["current_repository"]["worktree_fingerprint"]
+                    )
+                assert actual["validation"] == original["validation"]
+            assert f.db.read_bytes() == f.before
+            print(
+                "PASS: exact acp-worktree-v1 + full Handoff/evidence/warning parity through daemon, IPC and MCP"
+            )
         with Fixture(start=False) as f:
             empty = f.root / "no-git"
             empty.mkdir()
             f.environment = {**os.environ, "PATH": str(empty)}
             f.start()
-            assert f.cli("context", "alpha")["repository"] == dict(head=None, branch=None, dirty=None, change_count=None)
+            assert f.cli("context", "alpha")["repository"] == dict(
+                head=None, branch=None, dirty=None, change_count=None
+            )
 
     def test_graceful_signal_and_runtime_credentials_cleanup(self):
         with Fixture() as f:

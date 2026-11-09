@@ -1,6 +1,10 @@
 # P0 negative tests: unconfirmed preferences and project isolation
 
-**Status:** Automated tests exercised locally on Python 3.13; GitHub CI provides independent verification. Real Codex / Kimi Code negative trials are still pending.
+**Historical P0 record:** the seven Python checks below were superseded in E4 by
+Rust core + actual daemon/IPC/MCP subprocess tests. See the [migration matrix](../p1/rust-test-migration.md)
+and [local E4 evidence](p1-e4-local-ux.md). The old module was removed only after
+Windows/WSL parity; Python runtime compatibility tests remain. No Actions run is
+part of E4. The original P0 trial scope below is preserved for provenance.
 
 **Scope:** Local P0 application-level MCP behavior. This is not a same-user filesystem sandbox or authorization boundary for a coding agent that can use shell/file tools directly.
 
@@ -13,7 +17,7 @@ python -m pip install --no-deps -e .
 python -m unittest discover -s tests -v
 ```
 
-The new `tests/test_security_boundaries.py` creates two **temporary Git repositories and a temporary SQLite state directory**. It never writes to a real Lanpath checkout or the operator's existing preference database.
+The historical `tests/test_security_boundaries.py` created two **temporary Git repositories and a temporary SQLite state directory**. It never writes to a real Lanpath checkout or the operator's existing preference database.
 
 The seven negative checks cover:
 1. Only confirmed preferences are exposed; `suggested`, `rejected` and `deprecated` values are absent.

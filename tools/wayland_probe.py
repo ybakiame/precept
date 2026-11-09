@@ -26,7 +26,11 @@ def control(nonce, action, **values):
     ), "explicit ACP_WINDOWS_PYTHON required for WSLg OS input/capture"
     # Running a stdlib/test-only worker through stdin avoids shell execution and
     # does not require writing to a Windows checkout or forwarding credentials.
-    source = (ROOT / "tools/wslg_window.py").read_text()
+    source = (
+        (ROOT / "tools/window_capture.py").read_text()
+        + "\n"
+        + (ROOT / "tools/wslg_window.py").read_text()
+    )
     deps = os.environ.get("ACP_WINDOWS_TEST_ROOT")
     if deps:
         path = Path(deps)
@@ -42,8 +46,9 @@ def control(nonce, action, **values):
         source = "import sys\nsys.path.insert(0," + repr(value) + ")\n" + source
     if action == "capture":
         output = Path(values["output"]).resolve()
-        assert output.is_relative_to(
-            ROOT / "artifacts/local-p1-e3"
+        assert any(
+            output.is_relative_to(ROOT / folder)
+            for folder in ("artifacts/local-p1-e3", "artifacts/local-p1-e4")
         ), "synthetic captures must stay in private E3 artifacts"
         output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         values["output"] = subprocess.run(

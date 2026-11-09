@@ -146,6 +146,9 @@ pub struct Model {
     pub expanded: bool,
     pub evidence_page: usize,
     pub high_contrast: bool,
+    pub selected_preference: Option<usize>,
+    pub detail_page: usize,
+    pub copied: bool,
     pub data: Option<Arc<Snapshot>>,
     pub phase: Phase,
     pub selected: usize,
@@ -169,6 +172,9 @@ impl Model {
             expanded: false,
             evidence_page: 0,
             high_contrast: false,
+            selected_preference: None,
+            detail_page: 0,
+            copied: false,
             data: None,
             phase: Phase::Loading,
             selected: 0,
@@ -197,6 +203,8 @@ impl Model {
     pub fn begin_read(&mut self) -> Result<ReadRequest, &'static str> {
         self.epoch = self.epoch.checked_add(1).expect("request epoch exhausted");
         self.data = None;
+        self.selected_preference = None;
+        self.copied = false;
         self.permission_denied = false;
         if !self.task_id.is_empty() && !valid_task(&self.task_id) {
             self.phase = Phase::Error;
@@ -285,6 +293,8 @@ impl Model {
             self.selected = index;
             self.selected_project = Some(name);
             self.page = 0;
+            self.selected_preference = None;
+            self.detail_page = 0;
             self.evidence_page = 0;
             self.expanded = false;
         }
@@ -370,10 +380,14 @@ impl Model {
             .take(120)
             .collect();
         self.page = 0;
+        self.selected_preference = None;
+        self.detail_page = 0;
     }
     pub fn page_by(&mut self, delta: isize) {
         let last = self.rows().len().saturating_sub(1) / PAGE_SIZE;
         self.page = self.page.saturating_add_signed(delta).min(last);
+        self.selected_preference = None;
+        self.detail_page = 0;
     }
     pub fn page_label(&self) -> String {
         let count = self.rows().len();
@@ -384,6 +398,45 @@ impl Model {
             count.div_ceil(PAGE_SIZE).max(1)
         )
     }
+    pub fn cancel_read(&mut self) {
+        if self.phase == Phase::Loading {
+            self.epoch += 1;
+            self.phase = Phase::Unavailable;
+            self.data = None;
+        }
+    }
+    pub fn select_preference(&mut self, index: usize) {
+        self.selected_preference = (index < self.rows().len()).then_some(index);
+        self.detail_page = 0;
+        self.copied = false;
+    }
+    pub fn preference_detail(&self) -> Option<&Preference> {
+        self.rows().get(self.selected_preference?).copied()
+    }
+    pub fn detail_chunk(&self) -> String {
+        self.preference_detail()
+            .map(|row| {
+                presentation::sanitize(
+                    &row.value
+                        .chars()
+                        .skip(self.detail_page * 512)
+                        .take(512)
+                        .collect::<String>(),
+                    512,
+                )
+            })
+            .unwrap_or_default()
+    }
+    pub fn detail_pages(&self) -> usize {
+        self.preference_detail()
+            .map_or(1, |p| p.value.chars().count().div_ceil(512).max(1))
+    }
+    pub fn detail_by(&mut self, delta: isize) {
+        self.detail_page = self
+            .detail_page
+            .saturating_add_signed(delta)
+            .min(self.detail_pages() - 1);
+    }
     /// Compatibility entry point for the pinned optional desktop benchmark.
     pub fn detail_lines(&self) -> Vec<String> {
         self.visible_lines()
@@ -393,6 +446,30 @@ impl Model {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn cancel_invalidates_pending_results_and_detail_follows_visible_scope() {
+        let mut m = Model::fixture();
+        let pending = m.begin_read().unwrap();
+        m.cancel_read();
+        assert_eq!(m.phase, Phase::Unavailable);
+        assert!(!m.complete_read(&pending, Ok(Snapshot::fixture()), 1));
+        assert!(m.project().is_none());
+        let mut snapshot = Snapshot::fixture();
+        snapshot.projects[0].context.preferences[0].value = "中文\u{1b}".repeat(600);
+        m.receive(Ok(snapshot));
+        m.select_preference(0);
+        assert!(m.detail_chunk().chars().count() <= 512);
+        assert!(!m.detail_chunk().contains('\u{1b}'));
+        m.detail_by(1000);
+        assert_eq!(m.detail_page + 1, m.detail_pages());
+        m.set_filter("absent");
+        assert!(m.preference_detail().is_none());
+        m.set_filter("");
+        m.select_preference(0);
+        m.select(1);
+        assert!(m.preference_detail().is_none());
+        assert_eq!(m.detail_page, 0);
+    }
     #[test]
     fn delayed_responses_cannot_restore_scope_or_revoked_authority() {
         let mut fixture = Snapshot::fixture();

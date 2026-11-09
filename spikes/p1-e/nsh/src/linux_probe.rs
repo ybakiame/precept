@@ -3,9 +3,7 @@ use nsh_platform_linux::gtk4::{self as gtk, glib, prelude::*};
 use std::{cell::Cell, rc::Rc, time::Duration};
 
 pub fn install() {
-    if std::env::var_os("ACP_UI_PROBE").is_none() {
-        return;
-    }
+    let probe = std::env::var_os("ACP_UI_PROBE").is_some();
     let mut last = String::new();
     let attached = Rc::new(Cell::new(false));
     glib::timeout_add_local(Duration::from_millis(50), move || {
@@ -24,11 +22,21 @@ pub fn install() {
                 window.width(),
                 window.height()
             );
-            if state != last {
+            if let Some(renderer) = window.renderer() {
+                let _ = acp_nsh_spike::DESKTOP_RUNTIME.set((
+                    gtk::prelude::WidgetExt::display(window)
+                        .type_()
+                        .name()
+                        .to_string(),
+                    renderer.type_().name().to_string(),
+                ));
+            }
+            if probe && state != last {
                 eprintln!("{state} elapsed={:.6}", acp_nsh_spike::probe_elapsed());
                 last = state;
             }
-            if !attached.replace(true)
+            if probe
+                && !attached.replace(true)
                 && let Some(clock) = window.frame_clock()
             {
                 let count = Cell::new(0);

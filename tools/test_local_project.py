@@ -37,6 +37,18 @@ def inspect(root):
         assert top == root, "selected path must be the checkout root"
         head = git(root, "rev-parse", "HEAD").strip()
         branch = git(root, "branch", "--show-current").strip()
+        keys = (
+            git(root, "config", "--includes", "--name-only", "--list")
+            .decode("utf-8", "replace")
+            .lower()
+            .splitlines()
+        )
+        assert not (root / ".gitmodules").exists() and not any(
+            k.startswith("submodule.")
+            or k.startswith("filter.")
+            and (k.endswith(".clean") or k.endswith(".process"))
+            for k in keys
+        ), "configured external filters are not permitted in a read-only trial"
         status = git(root, "status", "--porcelain=v1", "-z", "--untracked-files=normal")
         git_dir = Path(os.fsdecode(git(root, "rev-parse", "--absolute-git-dir")).strip())
     else:

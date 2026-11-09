@@ -103,6 +103,23 @@ def verify(binary, out):
     )
     try:
         w.state(rows=10000)
+        start = w.key("alt+3")
+        w.wait("section=Preferences", after=start)
+        time.sleep(0.2)
+        control(w.nonce, "click", position=[340, 201])
+        w.wait("page=1")
+        start = w.key("alt+Right")
+        w.wait("page=2", after=start)
+        control(w.nonce, "click", position=[1005, 275])
+        w.wait("detail=true")
+        time.sleep(0.2)
+        w.capture(out / "wayland-detail.png")
+        start = w.key("ctrl+d")
+        w.wait("dark=false", after=start)
+        w.capture(out / "wayland-light.png")
+        start = w.key("ctrl+shift+h")
+        w.wait("contrast=true", after=start)
+        w.capture(out / "wayland-contrast.png")
         rss = psutil.Process(w.proc.pid).memory_info().rss
         started = time.monotonic()
         start = w.key("ctrl+f")
@@ -125,6 +142,7 @@ def verify(binary, out):
             model_ack_seconds=round(model_seconds, 4),
             capture_completed_seconds=round(captured_seconds, 4),
             capture=capture,
+            paging_detail_themes="PASS: actual pointer next page/detail, Alt+Right, light and contrast",
             input="real Win32 keys -> WSLg RAIL -> Wayland keyboard -> GTK",
             rss_before_filter=rss,
             rss_after_filter=psutil.Process(w.proc.pid).memory_info().rss,
@@ -201,7 +219,7 @@ def verify(binary, out):
         binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
         binary_bytes=binary.stat().st_size,
         acceleration="NOT_VERIFIED: GskGLRenderer is not proof of hardware acceleration",
-        painted_screen="actual content-only WSLg OS captures; model/GTK paint markers are separate observations",
+        painted_screen="target HWND PrintWindow captures (no desktop pixels); model/GTK paint markers are separate observations",
     )
     (out / "wayland-result.json").write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result))

@@ -20,9 +20,12 @@ dependencies = [
  "acp-ipc",
  "acp-store",
  "clap",
+ "libc",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
+ "windows-sys",
 ]
 
 [[package]]
@@ -49,6 +52,7 @@ dependencies = [
  "clap",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 
