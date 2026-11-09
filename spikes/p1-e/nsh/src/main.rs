@@ -6,14 +6,29 @@ use nsh_platform_linux as platform;
 use nsh_platform_macos as platform;
 #[cfg(target_os = "windows")]
 use nsh_platform_windows as platform;
+#[cfg(target_os = "linux")]
+mod linux_probe;
 fn main() -> impl std::process::Termination {
+    acp_nsh_spike::PROBE_STARTED
+        .set(std::time::Instant::now())
+        .ok();
     acp_nsh_spike::INPUTS
         .set(acp_ui_spike_model::native::Inputs::parse())
         .ok();
+    #[cfg(target_os = "linux")]
+    linux_probe::install();
+    let mut title = String::from("Agent Control Plane — read-only console");
+    if std::env::var_os("ACP_UI_PROBE").is_some()
+        && let Ok(id) = std::env::var("ACP_UI_PROBE_ID")
+        && id.len() == 16
+        && id.bytes().all(|c| c.is_ascii_hexdigit())
+    {
+        title.push_str(&format!(" [{id}]"));
+    }
     platform::run_app(
         platform::AppSource::Rust(platform::Root::of::<acp_nsh_spike::App>()),
         platform::AppOptions {
-            title: "Agent Control Plane — read-only console".into(),
+            title,
             #[cfg(any(target_os = "linux", target_os = "windows"))]
             app_id: "org.example.acp.spike".into(),
             size: (1080, 760),

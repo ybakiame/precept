@@ -1,8 +1,15 @@
 //! One read-only presentation and interaction surface for NSH desktop and TUI.
-use acp_ui_spike_model::{Model, Phase, valid_task};
+use acp_ui_spike_model::{Model, Phase};
 use nsh_base::{button, theme};
-use nsh_core::element::input;
 use nsh_core::prelude::*;
+mod components;
+pub static PROBE_STARTED: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+pub fn probe_elapsed() -> f64 {
+    PROBE_STARTED
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_secs_f64()
+}
 
 pub fn ephemeral_storage() -> std::sync::Arc<dyn nsh_core::storage::StorageBackend> {
     struct Empty;
@@ -31,90 +38,71 @@ pub static INPUTS: std::sync::OnceLock<acp_ui_spike_model::native::Inputs> =
     std::sync::OnceLock::new();
 
 fn load(model: Signal<Model>) {
-    let current = model.get();
-    let task = current.task_id.clone();
-    if !task.is_empty() && !valid_task(&task) {
-        model.update(|m| {
-            m.phase = Phase::Error;
-            m.data = None;
-        });
-        return;
-    }
     #[cfg(feature = "ipc")]
     let inputs = INPUTS.get().cloned().unwrap_or_default();
-    let project = current
-        .data
-        .as_ref()
-        .and_then(|s| s.projects.get(current.selected))
-        .map(|p| p.name.clone())
-        .or(current.selected_project.clone());
-    #[cfg(feature = "ipc")]
-    let project = project.or_else(|| inputs.project.clone());
+    let mut request = None;
     model.update(|m| {
-        m.phase = Phase::Loading;
-        m.queried_task = task.clone();
+        request = m.begin_read().ok();
     });
+    let Some(request) = request else { return };
     spawn(async move {
         #[cfg(feature = "ipc")]
-        let selected = project.clone();
+        let selected = request.clone();
         #[cfg(feature = "ipc")]
-        let result = blocking(move || inputs.fetch_for(selected.as_deref(), &task))
-            .await
-            .unwrap_or(Err("Client unavailable"));
+        let result =
+            blocking(move || inputs.fetch_for(selected.project.as_deref(), &selected.task))
+                .await
+                .unwrap_or(Err("Client unavailable"));
         #[cfg(not(feature = "ipc"))]
         let result = {
             timer(std::time::Duration::from_millis(20)).await;
             let mut s = acp_ui_spike_model::Snapshot::fixture();
             for p in &mut s.projects {
-                if p.handoff.as_ref().is_some_and(|h| h.task_id != task) {
+                if p.handoff
+                    .as_ref()
+                    .is_some_and(|h| h.task_id != request.task)
+                {
                     p.handoff = None;
                 }
             }
             Ok(s)
         };
+        #[cfg(target_arch = "wasm32")]
+        let now = 0;
+        #[cfg(not(target_arch = "wasm32"))]
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|t| t.as_millis() as u64)
+            .unwrap_or_default();
         model.update(|m| {
-            m.receive(result);
-            if let Some(name) = project
-                && let Some(index) = m
-                    .data
-                    .as_ref()
-                    .and_then(|s| s.projects.iter().position(|p| p.name == name))
-            {
-                m.select(index);
-            }
+            m.complete_read(&request, result, now);
         });
     });
 }
 fn reconnect(model: Signal<Model>) {
-    if model.get().phase != Phase::Loading {
-        load(model);
-    }
+    load(model);
 }
 fn next_project(model: Signal<Model>) {
-    if model.get().phase == Phase::Loading {
-        return;
-    }
-    model.update(|m| {
-        m.next();
-        m.task_id.clear();
-        m.queried_task.clear();
-    });
-    if model.get().live {
-        load(model);
-    }
+    let next = (model.get().selected + 1) % model.get().project_names.len().max(1);
+    switch_project(model, next);
 }
 fn switch_project(model: Signal<Model>, index: usize) {
-    if model.get().phase == Phase::Loading {
-        return;
-    }
     model.update(|m| {
         m.select(index);
         m.task_id.clear();
         m.queried_task.clear();
+        if m.live {
+            m.phase = Phase::Loading;
+        }
     });
-    if model.get().live {
+    if model.get().live || model.get().phase == Phase::Loading {
         load(model);
+    } else {
+        model.update(|m| m.epoch += 1);
     }
+}
+fn toggle_contrast(model: Signal<Model>) {
+    model.update(|m| m.high_contrast = !m.high_contrast);
 }
 fn toggle_theme(model: Signal<Model>) {
     model.update(|m| m.dark = !m.dark);
@@ -126,7 +114,7 @@ fn toggle_theme(model: Signal<Model>) {
 }
 fn copy_page(model: Signal<Model>) {
     if model.get().phase == Phase::Ready {
-        set_clipboard(model.get().detail_lines().join("\n"));
+        set_clipboard(model.get().visible_lines().join("\n"));
     }
 }
 fn control(label: &'static str, callback: impl Fn() + 'static) -> impl IntoElement {
@@ -150,6 +138,7 @@ pub fn App() -> impl IntoElement {
     {
         initial.live = inputs.is_live();
         initial.task_id = inputs.task_id.unwrap_or_default();
+        initial.selected_project = inputs.project;
     }
     initial.dark = true;
     set_color_scheme(Appearance::Dark);
@@ -165,6 +154,17 @@ fn console(model: Signal<Model>) -> impl IntoElement {
     on_key("mod+p", move |_| next_project(model));
     on_key("mod+f", move |_| filter_ref.focus());
     on_key("mod+k", move |_| task_ref.focus());
+    on_key("mod+shift+h", move |_| toggle_contrast(model));
+    on_key("Escape", move |_| {
+        filter_ref.blur();
+        task_ref.blur();
+    });
+    for (key, section) in ["mod+1", "mod+2", "mod+3", "mod+4", "mod+5"]
+        .into_iter()
+        .zip(acp_ui_spike_model::Section::ALL)
+    {
+        on_key(key, move |_| model.update(|m| m.set_section(section)));
+    }
     on_key("mod+d", move |_| toggle_theme(model));
     on_key("mod+shift+c", move |_| copy_page(model));
     on_key("alt+ArrowRight", move |_| model.update(|m| m.page_by(1)));
@@ -174,60 +174,18 @@ fn console(model: Signal<Model>) -> impl IntoElement {
         if std::env::var_os("ACP_UI_PROBE").is_some() {
             let current = model.get();
             eprintln!(
-                "ACP_NSH_STATE phase={:?} selected={} rows={}",
+                "ACP_NSH_STATE phase={:?} selected={} rows={} queried_chars={} filter_chars={} section={:?} elapsed={:.6}",
                 current.phase,
                 current.selected,
-                current.rows().len()
+                current.rows().len(),
+                current.queried_task.chars().count(),
+                current.filter.chars().count(),
+                current.section,
+                probe_elapsed()
             );
         }
     });
-    view().flex_1().bg(move || theme().background).text_color(move || theme().foreground)
-        .p_3().gap_2()
-        .child(text("Agent Control Plane").text_size(px(22.0)))
-        .child(text("Read-only operator console · Tab moves focus · Ctrl/Cmd R reconnect · P project · F filter · K task · D theme"))
-        .child(view().flex_row().flex_wrap().gap_2()
-            .child(control("Reconnect", move || reconnect(model)))
-            .child(control("Next project", move || next_project(model)))
-            .child(control("Light / dark", move || toggle_theme(model)))
-            .child(control("Copy visible page", move || copy_page(model))))
-        .child(view().accessible(true).label("Daemon connection state").child(text(move || model.get().status())))
-        .child(view().flex_row().flex_1().gap_3()
-            .child(scroll().w(px(160.0)).child(view().gap_2()
-                .child(text("PROJECTS"))
-                .child(dynamic(move || {
-                    let current = model.get();
-                    let names = current.data.as_ref().map(|s| s.projects.iter().map(|p| p.name.clone()).collect::<Vec<_>>()).unwrap_or_default();
-                    view().gap_2().children(names.into_iter().enumerate().map(move |(index, name)| {
-                        let label = if index == current.selected { format!("> {name}") } else { name.clone() };
-                        button().accessibility_label(name).py_2()
-                            .focus(|s| s.border_2().border_color(theme().primary))
-                            .on_press(move || switch_project(model, index)).child(text(label))
-                    }))
-                }))))
-            .child(view().flex_1().gap_2()
-                .child(text("Task ID · exact project-scoped lookup (max 120 characters)"))
-                .child(view().flex_row().gap_2()
-                    .child(input().element_ref(&task_ref).label("Task ID").flex_1().h(px(30.0))
-                        .value(move || model.get().task_id).placeholder("Enter a task ID")
-                        .on_change(move |v: &str| model.update(|m| m.task_id = v.chars().take(121).collect()))
-                        .on_submit(move |_: &str| reconnect(model)))
-                    .child(control("Lookup", move || reconnect(model))))
-                .child(text("Filter confirmed preferences · key, value, scope or source"))
-                .child(input().element_ref(&filter_ref).label("Filter preferences").h(px(30.0))
-                    .value(move || model.get().filter).placeholder("Filter preferences")
-                    .on_change(move |v: &str| model.update(|m| m.set_filter(v))))
-                .child(view().flex_row().gap_2()
-                    .child(control("Previous page", move || model.update(|m| m.page_by(-1))))
-                    .child(control("Next page", move || model.update(|m| m.page_by(1))))
-                    .child(text(move || model.get().page_label())))
-                .child(scroll().flex_1().child(dynamic(move || {
-                    view().gap_1().on_layout(move |_: &Bounds<Points>| {
-                        #[cfg(not(target_arch = "wasm32"))]
-                        if model.get().phase == Phase::Ready && std::env::var_os("ACP_UI_PROBE").is_some() {
-                            eprintln!("ACP_NSH_LAYOUT_READY");
-                        }
-                    }).children(model.get().detail_lines().into_iter().map(text))
-                })))))
+    components::shell(model, task_ref, filter_ref)
 }
 
 #[cfg(test)]
@@ -258,6 +216,33 @@ mod tests {
             .unwrap();
         app.press_key("mod+f").unwrap();
         app.press_key("mod+d").unwrap();
+        app.press_key("mod+shift+h").unwrap();
+        app.press_key("Escape").unwrap();
+        for (key, label) in [
+            (
+                "mod+2",
+                "Only daemon-allowlisted projects; switching clears the task lookup.",
+            ),
+            (
+                "mod+3",
+                "Confirmed effective preferences · key / value / scope / source",
+            ),
+            (
+                "mod+4",
+                "Empty — no handoff for task missing in this project",
+            ),
+            (
+                "mod+5",
+                "Read-only operator IPC · API v1 · no daemon autostart",
+            ),
+        ] {
+            app.press_key(key).unwrap();
+            app.wait_for(label).unwrap();
+        }
+        app.press("Expand / collapse").unwrap();
+        app.set_viewport(Size::new(px(640.0), px(480.0))).unwrap();
+        app.wait_for("Project: beta").unwrap();
+        app.set_viewport(Size::new(px(1080.0), px(760.0))).unwrap();
     }
     #[component]
     fn Workload() -> impl IntoElement {
@@ -302,6 +287,7 @@ mod tests {
                 .iter()
                 .any(|t| t.contains("event-09999"))
         );
+        app.press("Projects").unwrap();
         app.press("beta").unwrap();
         app.wait_for("Project: beta").unwrap();
         println!(

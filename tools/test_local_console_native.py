@@ -16,6 +16,9 @@ def main():
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
+    if platform.system() == "Linux":
+        from test_wayland_console import verify
+        return verify(args.binary, args.out)
     reason = native_available()
     if reason:
         print("NOT_RUN: " + reason)
@@ -28,6 +31,16 @@ def main():
         print("NOT_RUN: psutil/mss test dependencies unavailable")
         return
     args.out.mkdir(parents=True, exist_ok=True, mode=0o700)
+    def content_rect(user, wid):
+        # Native window bounds can include transparent system borders. Restrict
+        # synthetic capture to the opaque client interior.
+        from ctypes import wintypes
+        user.GetClientRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+        user.ClientToScreen.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
+        bounds = wintypes.RECT(); origin = wintypes.POINT()
+        assert user.GetClientRect(wid, ctypes.byref(bounds))
+        assert user.ClientToScreen(wid, ctypes.byref(origin))
+        return dict(left=origin.x+16, top=origin.y+32, width=bounds.right-32, height=bounds.bottom-48)
     samples = []
     with Fixture() as f:
         for _ in range(3):
@@ -60,16 +73,7 @@ def main():
                     time.sleep(.3)
                     bounds = wintypes.RECT()
                     assert user.GetWindowRect(wid, ctypes.byref(bounds))
-                    rect = dict(left=bounds.left, top=bounds.top, width=bounds.right-bounds.left, height=bounds.bottom-bounds.top)
-                else:
-                    subprocess.run(["xdotool", "windowsize", wid, "1080", "760"], check=True, capture_output=True, timeout=5)
-                    subprocess.run(["xdotool", "windowfocus", "--sync", wid], check=True, capture_output=True, timeout=5)
-                    subprocess.run(["xdotool", "key", "--clearmodifiers", "Tab", "Tab", "Return", "ctrl+f"], check=True, capture_output=True, timeout=5)
-                    subprocess.run(["xdotool", "type", "--clearmodifiers", "no-such-preference"], check=True, capture_output=True, timeout=5)
-                    time.sleep(.3)
-                    geometry = subprocess.run(["xdotool", "getwindowgeometry", "--shell", wid], check=True, capture_output=True, text=True, timeout=5).stdout
-                    values = dict(line.split("=", 1) for line in geometry.splitlines() if "=" in line)
-                    rect = dict(left=int(values["X"]), top=int(values["Y"]), width=int(values["WIDTH"]), height=int(values["HEIGHT"]))
+                    rect = content_rect(user, wid)
                 # Capture this synthetic app's window only, never the whole desktop.
                 with mss.MSS() as capture:
                     frame = capture.grab(rect)
@@ -77,9 +81,7 @@ def main():
                     if len(samples) == 1:
                         mss.tools.to_png(frame.rgb, frame.size, output=str(args.out / "desktop-synthetic.png"))
                 if os.name == "nt":
-                    user.SetWindowPos(wid, None, 80, 80, 720, 600, 0x40)
-                else:
-                    subprocess.run(["xdotool", "windowsize", wid, "720", "600"], check=True, capture_output=True, timeout=5)
+                    user.SetWindowPos(wid, None, 80, 80, 640, 480, 0x40)
                 native_close(wid)
                 proc.wait(timeout=8)
             finally:
@@ -110,7 +112,7 @@ def main():
             time.sleep(.25)
             bounds = wintypes.RECT(); assert user.GetWindowRect(wid, ctypes.byref(bounds))
             with mss.MSS() as capture:
-                frame = capture.grab(dict(left=bounds.left, top=bounds.top, width=bounds.right-bounds.left, height=bounds.bottom-bounds.top))
+                frame = capture.grab(content_rect(user, wid))
                 assert len(set(frame.rgb[::3])) > 8
                 mss.tools.to_png(frame.rgb, frame.size, output=str(args.out / 'desktop-10k-synthetic.png'))
             workload = dict(status="PASS", rows=10000, filtered_rows=1, filter_to_rendered_state_seconds=round(elapsed, 4),
@@ -119,14 +121,14 @@ def main():
             native_close(wid); proc.wait(timeout=8)
         finally:
             stop(proc, hard=True)
-    result = dict(status="PASS", os=platform.system(), display="local Windows desktop" if os.name == "nt" else "local X11/XWayland", profile="release", sample_count=len(samples), samples=samples,
+    result = dict(status="PASS", os=platform.system(), display="local Windows desktop" if os.name == "nt" else "unsupported", profile="release", sample_count=len(samples), samples=samples,
                   binary_bytes=args.binary.stat().st_size, synthetic_only=True, daemon_outlives_window=True,
                   rendered_10k=workload,
-                  keyboard="Windows Ctrl+P selected beta; Ctrl+F + text + Enter committed filter; rendered selection/count assertions" if os.name == "nt" else "Tab/Return/filter shortcuts delivered; semantic input assertions in component/PTY",
+                  keyboard="Windows Ctrl+P selected beta; Ctrl+F + text + Enter committed filter; rendered selection/count assertions" if os.name == "nt" else "unsupported",
                   accessibility="NOT_RUN: screen reader and IME require operator session")
     (args.out / "desktop-result.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result))
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

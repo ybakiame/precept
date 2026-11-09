@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
 
+pub mod presentation;
+
 pub const PAGE_SIZE: usize = 12;
 pub const MAX_ROWS: usize = 10_000;
 pub fn valid_task(task: &str) -> bool {
@@ -67,6 +69,7 @@ impl Snapshot {
     pub fn validate(&self) -> Result<(), &'static str> {
         let mut seen = std::collections::HashSet::new();
         if self.health.api_version != 1
+            || !self.health.ready
             || self.projects.len() > 64
             || serde_json::to_vec(self).map_or(true, |v| v.len() > 4 * 1024 * 1024)
         {
@@ -102,7 +105,47 @@ pub enum Phase {
     Unavailable,
 }
 #[derive(Clone, Debug, PartialEq)]
+pub struct ReadRequest {
+    pub epoch: u64,
+    pub project: Option<String>,
+    pub task: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Section {
+    Dashboard,
+    Projects,
+    Preferences,
+    Handoff,
+    Diagnostics,
+}
+impl Section {
+    pub const ALL: [Self; 5] = [
+        Self::Dashboard,
+        Self::Projects,
+        Self::Preferences,
+        Self::Handoff,
+        Self::Diagnostics,
+    ];
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Dashboard => "Dashboard",
+            Self::Projects => "Projects",
+            Self::Preferences => "Preferences",
+            Self::Handoff => "Handoff",
+            Self::Diagnostics => "Diagnostics",
+        }
+    }
+}
+#[derive(Clone, Debug, PartialEq)]
 pub struct Model {
+    pub epoch: u64,
+    pub project_names: Vec<String>,
+    pub last_read_ms: Option<u64>,
+    pub section: Section,
+    pub expanded: bool,
+    pub evidence_page: usize,
+    pub high_contrast: bool,
     pub data: Option<Arc<Snapshot>>,
     pub phase: Phase,
     pub selected: usize,
@@ -119,6 +162,13 @@ pub struct Model {
 impl Model {
     pub fn loading() -> Self {
         Self {
+            epoch: 0,
+            project_names: Vec::new(),
+            last_read_ms: None,
+            section: Section::Dashboard,
+            expanded: false,
+            evidence_page: 0,
+            high_contrast: false,
             data: None,
             phase: Phase::Loading,
             selected: 0,
@@ -143,10 +193,71 @@ impl Model {
             .unwrap_or_default();
         m
     }
+    /// Invalidating a request also invalidates every older in-flight completion.
+    pub fn begin_read(&mut self) -> Result<ReadRequest, &'static str> {
+        self.epoch = self.epoch.checked_add(1).expect("request epoch exhausted");
+        self.data = None;
+        self.permission_denied = false;
+        if !self.task_id.is_empty() && !valid_task(&self.task_id) {
+            self.phase = Phase::Error;
+            return Err("Invalid task ID");
+        }
+        self.phase = Phase::Loading;
+        self.queried_task = self.task_id.clone();
+        Ok(ReadRequest {
+            epoch: self.epoch,
+            project: self.selected_project.clone(),
+            task: self.queried_task.clone(),
+        })
+    }
+    pub fn complete_read(
+        &mut self,
+        request: &ReadRequest,
+        result: Result<Snapshot, &'static str>,
+        now_ms: u64,
+    ) -> bool {
+        if request.epoch != self.epoch
+            || request.project != self.selected_project
+            || request.task != self.queried_task
+        {
+            return false;
+        }
+        let result = result.and_then(|snapshot| {
+            snapshot.validate()?;
+            if let Some(name) = &request.project {
+                let project = snapshot
+                    .projects
+                    .iter()
+                    .find(|p| &p.name == name)
+                    .ok_or("Permission denied")?;
+                if project
+                    .handoff
+                    .as_ref()
+                    .is_some_and(|h| h.task_id != request.task)
+                {
+                    return Err("Unexpected task response");
+                }
+            }
+            Ok(snapshot)
+        });
+        self.receive(result);
+        if self.phase == Phase::Ready {
+            if let Some(name) = &request.project {
+                if let Some(index) = self.project_names.iter().position(|p| p == name) {
+                    self.select(index);
+                }
+            }
+            if self.live {
+                self.last_read_ms = Some(now_ms);
+            }
+        }
+        true
+    }
     pub fn receive(&mut self, result: Result<Snapshot, &'static str>) {
         self.permission_denied = result.as_ref().is_err_and(|e| *e == "Permission denied");
         match result {
             Ok(s) if s.validate().is_ok() => {
+                self.project_names = s.projects.iter().map(|p| p.name.clone()).collect();
                 self.selected = self.selected.min(s.projects.len().saturating_sub(1));
                 self.phase = if s.projects.is_empty() {
                     Phase::Empty
@@ -158,6 +269,7 @@ impl Model {
             }
             _ => {
                 self.data = None;
+                self.project_names.clear();
                 self.phase = Phase::Unavailable;
             }
         }
@@ -169,24 +281,21 @@ impl Model {
         self.data.as_ref()?.projects.get(self.selected)
     }
     pub fn select(&mut self, index: usize) {
-        if self.data.as_ref().is_some_and(|s| index < s.projects.len()) {
+        if let Some(name) = self.project_names.get(index).cloned() {
             self.selected = index;
-            self.selected_project = self
-                .data
-                .as_ref()
-                .and_then(|s| s.projects.get(index))
-                .map(|p| p.name.clone());
+            self.selected_project = Some(name);
             self.page = 0;
+            self.evidence_page = 0;
+            self.expanded = false;
         }
     }
     pub fn next(&mut self) {
-        if let Some(s) = &self.data
-            && !s.projects.is_empty()
-        {
-            self.select((self.selected + 1) % s.projects.len());
+        if !self.project_names.is_empty() {
+            self.select((self.selected + 1) % self.project_names.len());
         }
     }
     pub fn rows(&self) -> Vec<&Preference> {
+        let needle = self.filter.to_lowercase();
         self.project()
             .map(|p| {
                 p.context
@@ -196,7 +305,7 @@ impl Model {
                         self.filter.is_empty()
                             || [&r.key, &r.value, &r.scope, &r.source]
                                 .iter()
-                                .any(|v| v.to_lowercase().contains(&self.filter.to_lowercase()))
+                                .any(|v| v.to_lowercase().contains(&needle))
                     })
                     .collect()
             })
@@ -208,7 +317,21 @@ impl Model {
         } else {
             "OFFLINE_SYNTHETIC"
         };
-        format!("{source} · {}", self.connection_status())
+        let history = self
+            .last_read_ms
+            .map(|t| {
+                format!(
+                    " · Last successful read {:02}:{:02}:{:02} UTC",
+                    (t / 3_600_000) % 24,
+                    (t / 60_000) % 60,
+                    (t / 1000) % 60
+                )
+            })
+            .unwrap_or_default();
+        presentation::sanitize(
+            &format!("{source} · {}{history}", self.connection_status()),
+            512,
+        )
     }
     fn connection_status(&self) -> String {
         match self.phase {
@@ -261,95 +384,117 @@ impl Model {
             count.div_ceil(PAGE_SIZE).max(1)
         )
     }
+    /// Compatibility entry point for the pinned optional desktop benchmark.
     pub fn detail_lines(&self) -> Vec<String> {
-        if self.phase != Phase::Ready {
-            return vec![self.status()];
-        }
-        let Some(p) = self.project() else {
-            return vec!["No project selected".into()];
-        };
-        let r = &p.context.repository;
-        let mut out = vec![
-            format!("Project: {}", p.name),
-            format!(
-                "Branch: {} · HEAD: {} · dirty: {}",
-                r.branch.as_deref().unwrap_or("Unknown"),
-                r.head.as_deref().unwrap_or("Unknown"),
-                r.dirty.map(|v| v.to_string()).unwrap_or("Unknown".into())
-            ),
-            "Confirmed effective preferences · key / value / scope / source".into(),
-        ];
-        if self.rows().is_empty() {
-            out.push("Empty — no confirmed preferences match".into());
-        }
-        out.push(self.page_label());
-        out.extend(
-            self.rows()
-                .iter()
-                .skip(self.page * PAGE_SIZE)
-                .take(PAGE_SIZE)
-                .map(|r| format!("{} = {} [{} / {}]", r.key, r.value, r.scope, r.source)),
-        );
-        out.push("Project contracts (read-only references)".into());
-        out.extend(
-            p.context
-                .documents
-                .iter()
-                .map(|d| serde_json::to_string(d).unwrap()),
-        );
-        if let Some(h) = p
-            .handoff
-            .as_ref()
-            .filter(|h| h.task_id == self.queried_task)
-        {
-            out.push(format!("Handoff {}: {}", h.task_id, h.objective));
-            out.push(format!("Next: {}", h.next_action));
-            out.push(format!(
-                "Fingerprint: {}",
-                h.current_repository
-                    .get("worktree_fingerprint")
-                    .and_then(Value::as_str)
-                    .unwrap_or("Unavailable — inspect differences manually")
-            ));
-            out.extend(h.resume_warnings.iter().cloned());
-            out.push("Recorded validation evidence (not current session verification)".into());
-            out.extend(
-                h.validation
-                    .iter()
-                    .map(|v| serde_json::to_string(v).unwrap()),
-            );
-        } else {
-            out.push(if self.queried_task.is_empty() {
-                "Handoff — enter a task ID and choose Lookup".into()
-            } else {
-                format!(
-                    "Empty — no handoff for task {} in this project",
-                    self.queried_task
-                )
-            });
-        }
-        out.extend(p.context.warnings.iter().cloned());
-        // Display data as text, with bounded lines and no terminal control bytes.
-        if out.len() > 96 {
-            out.truncate(95);
-            out.push("Additional evidence lines omitted; inspect the original locally".into());
-        }
-        out.into_iter()
-            .map(|line| {
-                let mut chars = line.chars().filter(|c| !c.is_control());
-                let mut text: String = chars.by_ref().take(4096).collect();
-                if chars.next().is_some() {
-                    text.push_str("… [display truncated; inspect original locally]");
-                }
-                text
-            })
-            .collect()
+        self.visible_lines()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn delayed_responses_cannot_restore_scope_or_revoked_authority() {
+        let mut fixture = Snapshot::fixture();
+        for p in &mut fixture.projects {
+            p.handoff = None;
+        }
+        let mut m = Model::fixture();
+        m.live = true;
+        m.select(0);
+        let alpha = m.begin_read().unwrap();
+        m.select(1);
+        let beta = m.begin_read().unwrap();
+        assert!(m.project().is_none());
+        assert!(!m.complete_read(&alpha, Ok(fixture.clone()), 10));
+        assert!(m.complete_read(&beta, Ok(fixture.clone()), 20));
+        assert_eq!(m.project().unwrap().name, "beta");
+        assert_eq!(m.last_read_ms, Some(20));
+        let old = m.begin_read().unwrap();
+        let newest = m.begin_read().unwrap();
+        assert!(m.complete_read(&newest, Err("Permission denied"), 30));
+        assert!(!m.complete_read(&old, Ok(fixture.clone()), 40));
+        assert!(m.permission_denied && m.project().is_none());
+        assert_eq!(m.last_read_ms, Some(20));
+        let restarting = m.begin_read().unwrap();
+        m.task_id = "invalid\n".into();
+        assert!(m.begin_read().is_err());
+        assert!(!m.complete_read(&restarting, Ok(fixture.clone()), 50));
+        assert_eq!(m.phase, Phase::Error);
+        m.task_id.clear();
+        let restarted = m.begin_read().unwrap();
+        assert!(m.complete_read(&restarted, Ok(fixture.clone()), 60));
+        assert_eq!(m.project().unwrap().name, "beta");
+    }
+    #[test]
+    fn rapid_exact_task_lookups_ignore_older_success_and_error() {
+        let mut m = Model::fixture();
+        m.select(0);
+        m.live = true;
+        m.task_id = "older".into();
+        let older = m.begin_read().unwrap();
+        m.task_id = "newest".into();
+        let newest = m.begin_read().unwrap();
+        let mut snapshot = Snapshot::fixture();
+        snapshot.projects[0].handoff.as_mut().unwrap().task_id = "newest".into();
+        assert!(m.complete_read(&newest, Ok(snapshot), 1));
+        assert!(!m.complete_read(&older, Err("Permission denied"), 2));
+        assert!(!m.complete_read(&older, Ok(Snapshot::fixture()), 3));
+        assert_eq!(m.queried_task, "newest");
+        assert_eq!(
+            m.project().unwrap().handoff.as_ref().unwrap().task_id,
+            "newest"
+        );
+        assert!(!m.permission_denied);
+    }
+    #[test]
+    fn unexpected_scope_task_and_not_ready_fail_closed() {
+        let mut m = Model::fixture();
+        m.live = true;
+        m.select(0);
+        m.task_id = "missing".into();
+        let request = m.begin_read().unwrap();
+        assert!(m.complete_read(&request, Ok(Snapshot::fixture()), 1));
+        assert!(m.project().is_none());
+        let request = m.begin_read().unwrap();
+        let mut snapshot = Snapshot::fixture();
+        snapshot.projects.remove(0);
+        m.complete_read(&request, Ok(snapshot), 2);
+        assert!(m.permission_denied && m.data.is_none());
+        let mut snapshot = Snapshot::fixture();
+        snapshot.health.ready = false;
+        assert!(snapshot.validate().is_err());
+    }
+    #[test]
+    fn pages_bound_historical_evidence_and_sanitize_display_and_copy() {
+        let mut m = Model::fixture();
+        let mut snapshot = Snapshot::fixture();
+        let h = snapshot.projects[0].handoff.as_mut().unwrap();
+        h.validation = (0..100)
+            .map(|i| serde_json::json!({"index":i,"text":"x".repeat(1000)}))
+            .collect();
+        h.objective = "unsafe\u{1b}[2J".into();
+        m.receive(Ok(snapshot));
+        m.set_section(Section::Handoff);
+        assert!(!m.visible_lines().join("\n").contains("\u{1b}"));
+        assert!(!m.visible_lines().join("\n").contains("\"index\""));
+        m.expanded = true;
+        m.evidence_by(isize::MAX);
+        assert_eq!(m.evidence_page, 16);
+        assert!(m.visible_lines().len() <= 16);
+        assert!(
+            m.visible_lines()
+                .iter()
+                .all(|line| line.chars().count() < 550)
+        );
+        m.set_section(Section::Diagnostics);
+        assert!(!m.expanded);
+        assert_eq!(m.evidence_page, 0);
+        for section in Section::ALL {
+            m.set_section(section);
+            assert!(m.visible_lines()[0].contains("alpha"));
+        }
+    }
     #[test]
     fn states_selection_filter_and_unknown_evidence() {
         let mut m = Model::fixture();

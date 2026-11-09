@@ -1,6 +1,6 @@
 param(
     [switch]$Core, [switch]$Service, [switch]$UI, [switch]$All,
-    [switch]$LocalProject, [string]$ReportDir, [string]$Python = 'python'
+    [switch]$LocalProject, [switch]$WSLg, [switch]$UIFull, [string]$ReportDir, [string]$Python = 'python'
 )
 $ErrorActionPreference = 'Stop'
 $project = Split-Path -Parent $PSScriptRoot
@@ -19,7 +19,7 @@ if (Test-Path $vswhere) {
     }
 }
 $arguments = @('tools/local_verify.py')
-foreach ($entry in @(@($Core,'--core'),@($Service,'--service'),@($UI,'--ui'),@($All,'--all'),@($LocalProject,'--local-project'))) {
+foreach ($entry in @(@($Core,'--core'),@($Service,'--service'),@($UI,'--ui'),@($All,'--all'),@($LocalProject,'--local-project'),@($WSLg,'--wslg'),@($UIFull,'--ui-full'))) {
     if ($entry[0]) { $arguments += $entry[1] }
 }
 if ($ReportDir) { $arguments += @('--report-dir', $ReportDir) }

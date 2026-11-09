@@ -1,6 +1,12 @@
-# P1-E2: local read-only NSH console
+# Local read-only NSH console (P1-E2 / E3)
 
-Issue #16, based on main `d1cf45ca6d5a56fae92b8f79d011db87ef35dadc`.
+E3 adds [native Wayland acceptance](wslg-wayland-troubleshooting.md),
+[shared page/request architecture](ui-console-architecture.md) and
+[local E3 evidence](../evaluation/p1-e3-local-validation.md). For E3, use
+`--ui-full --wslg` (PowerShell `-UIFull` / `-WSLg`); run Linux Wayland tests
+inside the explicit WSL session. No X11/Xvfb fallback counts.
+
+Historical E2 scope: Issue #16, based on main `d1cf45ca6d5a56fae92b8f79d011db87ef35dadc`.
 Windows native desktop/ConPTY is the primary local acceptance platform. Windows
 owners can explicitly connect to their WSL daemon without a shell or TCP bridge.
 [ADR-0003](../adr/0003-ui-framework-selection.md) remains **Proposed**. Mobile is
@@ -38,17 +44,17 @@ cargo fetch --manifest-path spikes/p1-e/nsh/Cargo.toml --locked
 PYTHONPATH=src python tools/local_verify.py --all
 ```
 
-`--core`, `--service`, `--ui`, `--all`, `--local-project` and `--report-dir DIR`
+`--core`, `--service`, `--ui`, `--all`, `--wslg`, `--ui-full`, `--local-project` and `--report-dir DIR`
 select local gates. `--all` does **not** opt into a real project. Cargo builds/tests
 use `--offline --locked`; the runner never installs packages. A genuine compiler,
 assertion or test regression exits nonzero. Missing cache/SDK/display/dependencies
-are `NOT_RUN`, never a fabricated PASS. Dependent gates are explicitly skipped.
+are `NOT_RUN` or an explicit required Wayland `BLOCKED`, never a fabricated PASS. Dependent gates are explicitly skipped.
 `report.json` records argv, exit code, duration, observed test/comparison counts,
 versions, host OS/architecture, tested Git SHA and dirty state. Use a clean task
 commit when collecting final evidence; a report from a dirty worktree says so.
 
 Raw logs, generated unsigned packages and **synthetic-only** screenshots belong in
-ignored `artifacts/local-p1-e2/` or another operator-controlled private directory
+ignored `artifacts/local-p1-e2/`, `artifacts/local-p1-e3/` or another operator-controlled private directory
 outside every selected project. Do not upload that directory. Review and sanitize
 a summary by hand; reports/logs are not automatically safe to publish. The runner
 has no GitHub operations. Push all task commits with **`[skip ci]`**, including PR
@@ -151,7 +157,7 @@ profile discovery, implicit daemon start or authenticated browser gateway exists
 
 ## Operator workflow and keyboard
 
-Select an allowlisted project in the left pane or with Ctrl/Cmd+P. Switching clears
+Select an allowlisted project in the Projects page or with Ctrl/Cmd+P. Switching clears
 the task selection. Enter an exact task ID (1–120 characters, no control bytes) and
 press Enter/Lookup. A missing task is Empty; IDs are never filesystem paths and
 never shell input. There is no task-list enumeration or new agent-facing tool.
@@ -159,7 +165,7 @@ Only the selected project context/handoff is fetched. Empty confirmed preference
 state is preserved, with scope/source on every returned row, stale/fingerprint
 warnings and recorded evidence explicitly distinguished from current verification.
 
-Ctrl/Cmd+R reconnects; +F focuses the filter; +K focuses task input; +D changes theme;
+Ctrl/Cmd+R reconnects; +F focuses the filter; +K focuses task input; +D changes theme; +Shift+H toggles high contrast; +1–5 selects pages; Escape blurs inputs;
 Ctrl/Cmd+Shift+C copies the visible detail page deliberately. Alt+Left/Right or the
 page buttons navigate 12-row pages. Windows NSH Tab traverses text inputs; shortcuts
 provide project and action navigation. TUI Tab also traverses pressable controls;

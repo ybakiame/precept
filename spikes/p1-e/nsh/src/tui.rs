@@ -1,5 +1,8 @@
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    event::{
+        self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyCode, KeyEventKind,
+        KeyModifiers,
+    },
     execute,
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -11,16 +14,19 @@ struct Restore;
 impl Drop for Restore {
     fn drop(&mut self) {
         let _ = terminal::disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen);
+        let _ = execute!(io::stdout(), DisableBracketedPaste, LeaveAlternateScreen);
     }
 }
 fn main() -> io::Result<()> {
+    acp_nsh_spike::PROBE_STARTED
+        .set(std::time::Instant::now())
+        .ok();
     acp_nsh_spike::INPUTS
         .set(acp_ui_spike_model::native::Inputs::parse())
         .ok();
     terminal::enable_raw_mode()?;
     let _restore = Restore;
-    execute!(io::stdout(), EnterAlternateScreen)?;
+    execute!(io::stdout(), EnterAlternateScreen, EnableBracketedPaste)?;
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
     let mut options = AppOptions::default();
     options.storage = Some(acp_nsh_spike::ephemeral_storage());
