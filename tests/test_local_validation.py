@@ -26,6 +26,30 @@ class LocalValidationTests(unittest.TestCase):
                 self.assertIn("--offline", command)
                 self.assertIn("--locked", command)
 
+    def test_external_filter_preflight_keeps_status_unknown_without_running_git_status(self):
+        import sys
+        from unittest.mock import patch
+        sys.path.insert(0, str(ROOT / "tools"))
+        try:
+            import test_local_project as selected
+        finally:
+            sys.path.pop(0)
+        with tempfile.TemporaryDirectory(prefix="acp-preflight-") as raw:
+            root = Path(raw).resolve()
+            selected.git(root, "init", "-q")
+            (root / "source.txt").write_text("synthetic\n", encoding="utf-8")
+            selected.git(root, "add", "source.txt")
+            selected.git(root, "-c", "user.name=Synthetic", "-c", "user.email=synthetic@example.invalid", "commit", "-qm", "synthetic")
+            selected.git(root, "config", "filter.synthetic.clean", "UNTRUSTED_EXECUTABLE_MUST_NOT_RUN")
+            (root / ".gitattributes").write_text("source.txt filter=synthetic\n", encoding="utf-8")
+            (root / "source.txt").write_text("changed synthetic\n", encoding="utf-8")
+            with patch.object(selected, "git", wraps=selected.git) as observed:
+                before = selected.inspect(root)
+                after = selected.inspect(root)
+            self.assertIsNone(before["status"])
+            self.assertEqual(before, after)
+            self.assertFalse(any(call.args[1] == "status" for call in observed.call_args_list))
+
     def test_gate_status_preserves_failure_and_explicit_unavailable(self):
         import sys
         with tempfile.TemporaryDirectory(prefix="acp-gate-") as raw:

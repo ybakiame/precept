@@ -48,10 +48,10 @@ unconditional-null fingerprint, unconfirmed preference exposure, and agent proje
 listing. Compiler failure never counts as a rejected mutant. The command never
 edits the live source, external checkout, user database or system configuration.
 
-The remaining **15 Python tests** are: CLI/operator lifecycle + real Python stdio
+The remaining **16 Python tests** are: CLI/operator lifecycle + real Python stdio
 (1), Python MCP protocol compatibility (3), reference fixtures (2), Store write/review,
-document confinement and legacy migration/HEAD compatibility (6), local runner
-classification regressions (3). No Python runtime source is deleted. Baseline
+document confinement and legacy migration/HEAD compatibility (6), local runner/config-refusal
+classification regressions (4). No Python runtime source is deleted. Baseline
 **120 JSON + 78 SQLite** comparisons, recovery checks and **11** service process tests
 remain. Exact clean-source counts and host results are recorded in the
 [E4 evaluation](../evaluation/p1-e4-local-ux.md).

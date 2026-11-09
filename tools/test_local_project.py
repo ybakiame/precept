@@ -43,13 +43,15 @@ def inspect(root):
             .lower()
             .splitlines()
         )
-        assert not (root / ".gitmodules").exists() and not any(
+        scan_permitted = not (root / ".gitmodules").exists() and not any(
             k.startswith("submodule.")
             or k.startswith("filter.")
             and (k.endswith(".clean") or k.endswith(".process"))
             for k in keys
-        ), "configured external filters are not permitted in a read-only trial"
-        status = git(root, "status", "--porcelain=v1", "-z", "--untracked-files=normal")
+        )
+        # Refuse external programs while still testing scoped metadata/UI reads.
+        # None is Unknown, never an empty/clean status observation.
+        status = git(root, "status", "--porcelain=v1", "-z", "--untracked-files=normal") if scan_permitted else None
         git_dir = Path(os.fsdecode(git(root, "rev-parse", "--absolute-git-dir")).strip())
     else:
         head = branch = status = b""
@@ -64,7 +66,7 @@ def inspect(root):
             metadata.append((str(p), s.st_mode, s.st_size, s.st_mtime_ns, s.st_ino))
         except FileNotFoundError:
             metadata.append((str(p), None))
-    return dict(head=head.hex(), branch=branch.hex(), status=status.hex(), metadata=metadata)
+    return dict(head=head.hex(), branch=branch.hex(), status=status.hex() if status is not None else None, metadata=metadata)
 
 
 def digest(value):
@@ -210,7 +212,7 @@ def main():
         unchanged = after == before
         results["external_checkout"] = dict(status="PASS" if unchanged else "FAIL", pre_digest=digest(before), post_digest=digest(after),
             metadata="root/checkout-marker, Git HEAD/index/config/packed-refs and five allowlisted document lstat records; no atime/content scan",
-            git="HEAD, branch and complete bounded porcelain status compared locally; no values published")
+            git="HEAD/branch + bounded status compared locally; no values published" if before["status"] is not None else "HEAD/branch compared locally; status NOT_RUN/Unknown because external filters/submodules are refused")
         (out / "local-project-result.json").write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
         assert unchanged, "external checkout changed during read-only acceptance; preserve changes and investigate"
     print("PASS: operator/IPC/MCP/UI/Codex scoped local acceptance; protected checkout pre/post identical")
