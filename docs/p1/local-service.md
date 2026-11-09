@@ -217,14 +217,26 @@ Windows. Ordinary unit tests, Python regression, C2A and C2B1 process-kill matri
 continue to run separately. Actual final SHA, run links, outcome counts and any
 Windows signal-delivery NOT_RUN reason are recorded in the Draft PR.
 
-| Capability | Local Cloud | Required remote evidence |
-| --- | --- | --- |
-| Unix socket + UID + capability isolation | Linux E2E PASS | Linux/macOS E2E |
-| Named pipe + current-user DACL/SID | Cross-compile only | Windows real process E2E |
-| Graceful Unix signals | Linux PASS | macOS CI |
-| Windows console CTRL_BREAK | NOT_RUN locally | Executes when host can deliver; explicit NOT_RUN otherwise |
-| Other OS user/privileged attacks | NOT_RUN | Separate accounts/security review |
-| Rust/Python fingerprint hash equality | NOT_VERIFIED | Algorithm not implemented; null + warning is intentional |
+| Capability | Linux CI | macOS CI | Windows CI |
+| --- | --- | --- | --- |
+| Actual foreground service/CLI/two scoped MCP processes | PASS | PASS | PASS |
+| Secure native transport | Unix socket + UID PASS | Unix socket + UID PASS | Named pipe + user-only DACL/SID PASS |
+| Protocol/data parity | 132 responses, 8 E2E tests PASS | 132 responses, 8 E2E tests PASS | 132 responses, 8 E2E tests PASS |
+| Graceful signals / private credential cleanup | SIGTERM PASS | SIGTERM PASS | Console CTRL_BREAK PASS on this runner |
+| Other OS-user/privileged attacks | NOT_RUN | NOT_RUN | NOT_RUN |
+| Rust/Python fingerprint hash equality | NOT_VERIFIED | NOT_VERIFIED | NOT_VERIFIED |
+
+These observed results are from [PR #13 service matrix run 42550769099](https://github.com/ybakiame/agent-control-plane/actions/runs/42550769099)
+at code SHA `9a4e37dd1279722f1076ffd853f11b1b1d2c3d0e`. All nine core,
+process-recovery and local-service matrix jobs passed. Service log summaries were
+read for all three OS targets: Linux 8 tests/6.832s, macOS 8/9.451s, Windows
+8/13.872s; all passed, with no console-delivery NOT_RUN fallback in that run.
+[Python CI run 42550769086](https://github.com/ybakiame/agent-control-plane/actions/runs/42550769086)
+passed Python 3.11 and 3.13. Local ordinary Rust count is 31, recovery target 11,
+Python regression 21; the 120+78 preexisting parity comparisons and C2A flows
+remain green. These counts/experiments describe the tested runners and code,
+not every OS release or a cross-account penetration test. The Draft PR records
+any later documentation-only HEAD and CI results separately.
 
 Troubleshooting: reject broad runtime permissions/ACLs rather than relaxing them;
 use a short private Unix socket path; stop an existing daemon before rebinding;
