@@ -190,13 +190,14 @@ class Bridge:
 
 
 class Fixture:
-    def __init__(self, legacy=False, v1=False, start=True, allow=("alpha", "beta")):
+    def __init__(self, legacy=False, v1=False, start=True, allow=("alpha", "beta"), git_projects=True):
         # Short Unix socket address, also on macOS where TMPDIR can be long.
         self.tmp = tempfile.TemporaryDirectory(prefix="acpd-", dir="/tmp" if os.name != "nt" else None)
         self.root = Path(self.tmp.name)
         self.db = create_fixture(self.root / "fixture", legacy=legacy)
-        for name in ["alpha", "beta"]:
-            subprocess.run(["git", "init", "-q", str(self.root / "fixture" / name)], check=True, capture_output=True)
+        if git_projects:
+            for name in ["alpha", "beta"]:
+                subprocess.run(["git", "init", "-q", str(self.root / "fixture" / name)], check=True, capture_output=True)
         self.runtime = self.root / "run"
         self.endpoint = "control-" + self.root.name if os.name == "nt" else str(self.runtime / "control.sock")
         self.location = ["--runtime-dir", str(self.runtime), "--endpoint", self.endpoint]
@@ -495,6 +496,29 @@ class LocalServiceTests(unittest.TestCase):
             f.start()
             assert f.cli("health")["ready"]
 
+    def test_git_output_larger_than_small_pipes_is_drained_and_overflow_is_bounded(self):
+        with Fixture(allow=("alpha",)) as f:
+            root = f.root / "fixture/alpha"
+            def add_files(start, end):
+                for n in range(start, end):
+                    (root / (f"untracked-{n:04}-" + "x" * 60)).touch()
+            def status_size():
+                return len(subprocess.run(["git", "-C", str(root), "status", "--porcelain=v1", "--untracked-files=normal"],
+                                          check=True, capture_output=True, timeout=10).stdout)
+            add_files(0, 600)
+            size = status_size()
+            assert 32768 < size < 65536
+            repository = f.cli("context", "alpha")["repository"]
+            assert repository["dirty"] is True and repository["change_count"] == 601, "Git stdout stalled below the output cap"
+            add_files(600, 4000)
+            assert status_size() > 65536
+            started = time.monotonic()
+            repository = f.cli("context", "alpha")["repository"]
+            assert time.monotonic() - started < 5, "Git output overflow did not terminate promptly"
+            assert repository["dirty"] is None and repository["change_count"] is None
+            assert f.cli("health")["ready"]
+            print(f"PASS: drained {size} Git stdout bytes below 64KiB; >64KiB overflow refused and daemon remained responsive")
+
     def test_database_and_control_runtime_must_be_disjoint(self):
         with Fixture(start=False) as f:
             f.runtime.mkdir(mode=0o700)
@@ -505,6 +529,55 @@ class LocalServiceTests(unittest.TestCase):
             assert inside.read_bytes() == before
             assert not (f.runtime / "daemon.lock").exists()
             assert not (f.runtime / "operator.cap").exists()
+
+    def test_agents_only_projects_and_runtime_must_be_disjoint_before_any_control_writes(self):
+        for case in ["new-child", "existing-child", "same", "ancestor", "runtime-alias", "project-alias"]:
+            with self.subTest(case=case), Fixture(start=False, allow=("alpha",), git_projects=False) as f:
+                project = f.root / "fixture/alpha"
+                assert (project / "AGENTS.md").is_file() and not (project / ".git").exists()
+                # Keep storage outside even the ancestor runtime case, ensuring
+                # the independent project check (not the DB check) rejects it.
+                relocated = f.root / "external.sqlite3"
+                f.db.rename(relocated)
+                f.db = relocated
+                # A DELETE-journal fixture makes a full tree equality check
+                # independent of SQLite's permitted read-only WAL sidecars.
+                with closing(sqlite3.connect(f.db)) as db:
+                    assert db.execute("PRAGMA journal_mode=DELETE").fetchone()[0] == "delete"
+                runtime = project / "run"
+                if case == "existing-child":
+                    runtime.mkdir(mode=0o700)
+                elif case == "same":
+                    runtime = project
+                elif case == "ancestor":
+                    runtime = project.parent
+                elif case in ["runtime-alias", "project-alias"]:
+                    alias = f.root / "project-link"
+                    if os.name == "nt":
+                        # Directory junctions exercise canonical aliases without
+                        # requiring Windows symlink/Developer Mode privileges.
+                        subprocess.run(["cmd", "/c", "mklink", "/J", str(alias), str(project)],
+                                       check=True, capture_output=True, timeout=10)
+                    else:
+                        alias.symlink_to(project, target_is_directory=True)
+                    assert alias.resolve() == project.resolve()
+                    if case == "runtime-alias":
+                        runtime = alias / "run"
+                    else:
+                        with closing(sqlite3.connect(f.db)) as db, db:
+                            db.execute("UPDATE projects SET root=? WHERE name='alpha'", (str(alias),))
+                if runtime.exists() and os.name != "nt":
+                    runtime.chmod(0o700)
+                f.runtime = runtime
+                f.endpoint = f.endpoint if os.name == "nt" else str(runtime / "control.sock")
+                f.location = ["--runtime-dir", str(runtime), "--endpoint", f.endpoint]
+                before = f.db.read_bytes()
+                paths = sorted(str(p.relative_to(f.root)) for p in f.root.rglob("*"))
+                denied = subprocess.run(f.args(), capture_output=True, timeout=10)
+                assert denied.returncode == 2 and b"UnsafeRuntime" in denied.stderr
+                assert not denied.stdout
+                assert f.db.read_bytes() == before
+                assert sorted(str(p.relative_to(f.root)) for p in f.root.rglob("*")) == paths, "startup created control artifacts"
 
 
 if __name__ == "__main__":

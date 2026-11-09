@@ -225,10 +225,6 @@ async fn run(args: Args) -> acp_ipc::Result<()> {
         return Err(Error::InvalidRequest);
     }
     let store = SqliteStore::open(&args.database).map_err(|_| Error::Unavailable)?;
-    for project in &args.projects {
-        store.read_project(project).map_err(|_| Error::NotFound)?;
-    }
-    drop(store);
     // Control-file names must never alias storage, even under an explicit but
     // mistaken operator configuration (for example a database named daemon.lock).
     let runtime = if args.location.runtime_dir.exists() {
@@ -258,6 +254,19 @@ async fn run(args: Args) -> acp_ipc::Result<()> {
     {
         return Err(Error::UnsafeRuntime);
     }
+    // Registered projects need not have Git metadata. Resolve both sides before
+    // any control files are created, including existing symlink components.
+    for project in &args.projects {
+        let project = store.read_project(project).map_err(|_| Error::NotFound)?;
+        let root = project
+            .root
+            .canonicalize()
+            .map_err(|_| Error::UnsafeRuntime)?;
+        if runtime.starts_with(&root) || root.starts_with(&runtime) {
+            return Err(Error::UnsafeRuntime);
+        }
+    }
+    drop(store);
     let mut lease = RuntimeLease::acquire(&args.location)?;
     let mut listener = acp_ipc::transport::Listener::bind(&args.location).await?;
     let credentials = Arc::new(lease.credentials(&args.projects)?);

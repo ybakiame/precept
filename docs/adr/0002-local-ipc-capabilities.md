@@ -11,7 +11,10 @@ inspection rather than Unix permission bits treated as portable ACLs.
 
 OS user identity alone does not determine operator vs agent authority. Each daemon
 launch creates an operator capability and separate project-bound agent capabilities
-in its explicit private runtime directory, outside project checkouts. No token is
+in its explicit private runtime directory, outside project checkouts. Startup checks
+canonical registered roots against the runtime before creating any control files,
+including AGENTS.md-only projects and symlink/junction aliases; equality and nesting
+in either direction fail closed. No token is
 passed in argv, environment, source files or logs. The bridge receives only the
 path of one agent file and refuses an operator file or mismatched project before
 serving MCP. The daemon derives connection authority from its own capability table;

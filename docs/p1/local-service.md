@@ -163,7 +163,12 @@ privilege broker. Client security QoS uses identification level, not impersonati
 
 Credentials are private per-launch/per-project capabilities, not per-invocation
 secrets. Paths, not tokens, select them. Runtime directories must be outside project
-checkouts. Managed OS temp-mount Git metadata is not treated as a project checkout;
+checkouts. Before creating the runtime, lease, capabilities or endpoint, the daemon
+canonicalizes every allowlisted registered project root and the proposed runtime
+(or its existing parent). It rejects equality and nesting in either direction,
+including AGENTS.md-only projects with no .git and symlink/junction aliases.
+Unresolvable registered roots fail closed. This check supplements, rather than
+replaces, the database/runtime separation check. Managed OS temp-mount Git metadata is not treated as a project checkout;
 actual nested checkouts and the build checkout remain rejected. Partial credential
 publication is refused, not silently overwritten. Normal shutdown removes only
 this launch's credentials; hard-kill restart rotates recognized private files.
@@ -179,7 +184,11 @@ use no actual profile DB or AGENT_CP_HOME, and no capability content is committe
 Git uses bounded shell-free subprocesses, strips inherited GIT_* selectors, disables
 fsmonitor and optional index writes, validates the repository root and reports
 HEAD/branch/dirty/count best-effort. Missing Git/unregistered Git roots/unavailable
-commands return unknown fields, never a fabricated clean tree. Only the existing
+commands return unknown fields, never a fabricated clean tree. Each Git command's
+stdout is drained asynchronously while the child runs, under a 700 ms deadline
+covering both output and exit. The reader stops at 64 KiB plus one byte; overflow,
+read failure or timeout closes the pipe and kills/reaps the child. There is no
+reader thread left waiting for an inherited pipe. Only the existing
 five allowlisted documents are read, at most 16 KiB each, with explicit content opt-in.
 
 Rust does **not** implement Python's acp-worktree-v1 fingerprint. Current handoff
@@ -207,7 +216,7 @@ remain NOT_RUN. [ADR-0002](../adr/0002-local-ipc-capabilities.md) records the tr
 ## Validation and support evidence
 
 Local environment: Linux x86_64, Python 3.12.14, Rust/Cargo 1.99.1. Baseline before
-changes passed 28 Rust / 21 Python tests. Local E2E currently passes 9 tests, including
+changes passed 28 Rust / 21 Python tests. Local E2E currently passes 11 tests, including
 real foreground daemon + CLI + two MCPs, exact protocol parity, direct IPC attacks,
 allowlist denial, frame limits/duplicates/timeouts, bounded concurrency/backpressure,
 client cancellation, stale endpoint/restart/credential rotation, unchanged DB bytes,
@@ -259,3 +268,16 @@ The final startup validation also rejects alpha/ALPHA-style allowlist collisions
 before storage opens, so case-insensitive credential filenames cannot overwrite
 another project's capability. A targeted Rust regression adds one ordinary test
 (final local Rust count 32; the initial code-run count above was 31).
+
+PR #13 review hardening adds two service regression tests. The AGENTS.md-only
+project test launches the actual daemon with six runtime configurations: new and
+existing child, same directory, ancestor, runtime alias and registered-root alias.
+Unix symlinks and Windows directory junctions exercise canonical aliases. Every
+launch must fail with UnsafeRuntime before any control artifacts appear; the
+synthetic DELETE-journal database bytes and full temporary tree remain unchanged.
+The independent database/runtime regression is retained. The Git test drains
+47,413 status bytes (601 changes), then exercises >64 KiB overflow with 4,000
+untracked files, requiring unknown status and a responsive daemon. Local Linux
+passes all 11 service tests/132 MCP comparisons, 32 ordinary Rust tests and 21
+Python regressions. Final review-fix SHA and native three-platform run links are
+recorded in the Draft PR alongside the historical runs above.
