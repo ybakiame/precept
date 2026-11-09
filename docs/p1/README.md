@@ -22,7 +22,8 @@ Retain the Python P0 as the executable reference until a Rust implementation pas
 P1-A supplies the design and reference fixture. P1-B now has a read-only `acp-core`
 library and cross-language checks; see [implementation and validation evidence](p1-b-validation.md).
 P1-C1 adds a [read-only SQLite adapter](sqlite-readonly.md); P1-C2A adds an
-[owned temporary migration rehearsal](synthetic-migration.md). Production P1-C2B
+[owned temporary migration rehearsal](synthetic-migration.md). P1-C2B1 adds
+[test-only persistent process recovery](process-recovery.md). Production P1-C2B2
 write/migration rollout and P1-D onward remain unimplemented. Remote CI/platform results must be reported
 separately from local validation.
 

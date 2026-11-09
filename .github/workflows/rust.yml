@@ -45,3 +45,20 @@ jobs:
         run: python tools/check_sqlite_parity.py --reader target/debug/examples/sqlite_reader.exe
       - name: Synthetic-only migration and Python v1 compatibility
         run: cargo run --locked -p acp-rehearsal --example synthetic_rehearsal -- --synthetic-only
+  process-recovery:
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: rustup show
+      - run: cargo fmt --all -- --check
+      - run: python tools/run_process_recovery_ci.py lint
+      - name: Real child termination and fresh-process recovery
+        run: python tools/run_process_recovery_ci.py test

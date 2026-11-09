@@ -433,3 +433,8 @@ fn records(db: &Connection) -> Result<Records> {
         .collect()
 }
 mod schema;
+
+/// Test-only restart protocol, absent from default builds. Not a profile migration API.
+#[cfg(feature = "recovery-tests")]
+#[doc(hidden)]
+pub mod recovery;

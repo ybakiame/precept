@@ -154,3 +154,10 @@ all handles and account for WAL/SHM, verify backup integrity and version before
 replacing any destination, and preserve a recoverable prior copy. Stage rollout
 on copies with both readers before any write-owner switch. V1 itself confers no
 consent, and this rehearsal does not authorize real-profile migration or restore.
+
+## Later P1-C2B1 evidence
+
+The no-process-restart limitations above describe C2A. A separate feature-gated
+[restartable test session](process-recovery.md) now adds authenticated manifests
+and actual child kill/fresh-process recovery. The C2A API still remains ephemeral;
+no personal profile adoption or production recovery is added.
