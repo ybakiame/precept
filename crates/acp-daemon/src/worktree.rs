@@ -4,8 +4,8 @@ use std::{path::Path, process::Stdio, time::Duration};
 use tokio::{io::AsyncReadExt, process::Command};
 pub struct GitInspector;
 fn git(root: &Path, args: &[&str]) -> Option<String> {
-    // This synchronous inspector runs on the daemon's bounded blocking pool.
-    // Async pipe reads avoid an extra, potentially stranded reader thread.
+    // This synchronous inspector runs on the daemon's bounded blocking pool;
+    // Tokio drains child output while waiting for the process to finish.
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()

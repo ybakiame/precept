@@ -187,8 +187,8 @@ HEAD/branch/dirty/count best-effort. Missing Git/unregistered Git roots/unavaila
 commands return unknown fields, never a fabricated clean tree. Each Git command's
 stdout is drained asynchronously while the child runs, under a 700 ms deadline
 covering both output and exit. The reader stops at 64 KiB plus one byte; overflow,
-read failure or timeout closes the pipe and kills/reaps the child. There is no
-reader thread left waiting for an inherited pipe. Only the existing
+read failure or timeout closes the pipe and kills/reaps the child. This replaces
+polling for exit before reading stdout. Only the existing
 five allowlisted documents are read, at most 16 KiB each, with explicit content opt-in.
 
 Rust does **not** implement Python's acp-worktree-v1 fingerprint. Current handoff
