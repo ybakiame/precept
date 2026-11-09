@@ -1,0 +1,383 @@
+//! Bounded, capability-scoped local IPC. No TCP or data mutation API.
+use clap::Args;
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use std::{
+    fs::{self, File},
+    io::{Read, Write},
+    path::{Path, PathBuf},
+    time::Duration,
+};
+use subtle::ConstantTimeEq;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+pub mod transport;
+pub const API_VERSION: u32 = 1;
+pub const MAX_FRAME: usize = 1024 * 1024;
+pub const MAX_PEERS: usize = 16;
+pub const MAX_REQUESTS: usize = 32;
+pub const FRAME_TIMEOUT: Duration = Duration::from_secs(2);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Error {
+    InvalidRequest,
+    Version,
+    Unauthorized,
+    Unsupported,
+    NotFound,
+    Unavailable,
+    TooLarge,
+    Timeout,
+    Busy,
+    UnsafeRuntime,
+    EndpointCollision,
+}
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+impl std::error::Error for Error {}
+pub type Result<T> = std::result::Result<T, Error>;
+#[derive(Clone, Args)]
+pub struct Location {
+    #[arg(long)]
+    pub runtime_dir: PathBuf,
+    #[arg(long)]
+    pub endpoint: String,
+}
+impl Location {
+    pub fn root(&self) -> Result<PathBuf> {
+        if !self.runtime_dir.is_absolute() {
+            return Err(Error::UnsafeRuntime);
+        }
+        transport::private_dir(&self.runtime_dir, false)?;
+        let root = self
+            .runtime_dir
+            .canonicalize()
+            .map_err(|_| Error::UnsafeRuntime)?;
+        // Credentials never belong in a project checkout. Managed temp mount
+        // roots can themselves carry platform Git metadata; descendants that
+        // are actual checkouts remain forbidden.
+        let temp = std::env::temp_dir()
+            .canonicalize()
+            .map_err(|_| Error::UnsafeRuntime)?;
+        let build_checkout = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .ok();
+        if build_checkout.as_ref().is_some_and(|p| root.starts_with(p))
+            || root
+                .ancestors()
+                .any(|p| p != temp && p.join(".git").exists())
+        {
+            return Err(Error::UnsafeRuntime);
+        }
+        Ok(root)
+    }
+    pub fn credential_path(&self, project: Option<&str>) -> Result<PathBuf> {
+        let root = self.root()?;
+        match project {
+            None => Ok(root.join("operator.cap")),
+            Some(p) if valid_project(p) => Ok(root.join(format!("agent-{p}.cap"))),
+            _ => Err(Error::InvalidRequest),
+        }
+    }
+}
+pub fn valid_project(p: &str) -> bool {
+    !p.is_empty()
+        && p.len() <= 64
+        && p != "."
+        && p != ".."
+        && p.bytes()
+            .all(|c| c.is_ascii_alphanumeric() || b"-_.".contains(&c))
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "role", rename_all = "lowercase", deny_unknown_fields)]
+pub enum Access {
+    Operator,
+    Agent { project: String },
+}
+// Deliberately no Debug: never log a token-bearing DTO.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Credential {
+    format: u32,
+    pub access: Access,
+    token: [u8; 32],
+}
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Hello {
+    api_version: u32,
+    credential: [u8; 32],
+}
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Request {
+    pub api_version: u32,
+    pub id: String,
+    pub method: String,
+    pub params: Value,
+}
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Response {
+    pub api_version: u32,
+    pub id: Option<String>,
+    pub result: Option<Value>,
+    pub error: Option<Error>,
+}
+impl Response {
+    pub fn ok(id: String, result: Value) -> Self {
+        Self {
+            api_version: 1,
+            id: Some(id),
+            result: Some(result),
+            error: None,
+        }
+    }
+    pub fn error(id: Option<String>, error: Error) -> Self {
+        Self {
+            api_version: 1,
+            id,
+            result: None,
+            error: Some(error),
+        }
+    }
+}
+pub trait LocalStream: AsyncRead + AsyncWrite + Unpin + Send {}
+impl<T: AsyncRead + AsyncWrite + Unpin + Send> LocalStream for T {}
+pub type Stream = Box<dyn LocalStream>;
+pub async fn read_frame<S: AsyncRead + Unpin>(stream: &mut S) -> Result<Value> {
+    read_with_deadline(stream, FRAME_TIMEOUT).await
+}
+async fn read_with_deadline<S: AsyncRead + Unpin>(
+    stream: &mut S,
+    deadline: Duration,
+) -> Result<Value> {
+    tokio::time::timeout(deadline, async {
+        let n = stream.read_u32().await.map_err(|_| Error::InvalidRequest)? as usize;
+        if n == 0 || n > MAX_FRAME {
+            return Err(Error::TooLarge);
+        }
+        let mut raw = vec![0; n];
+        stream
+            .read_exact(&mut raw)
+            .await
+            .map_err(|_| Error::InvalidRequest)?;
+        serde_json::from_slice(&raw).map_err(|_| Error::InvalidRequest)
+    })
+    .await
+    .map_err(|_| Error::Timeout)?
+}
+pub async fn write_frame<S: AsyncWrite + Unpin, T: Serialize>(
+    stream: &mut S,
+    value: &T,
+) -> Result<()> {
+    let raw = serde_json::to_vec(value).map_err(|_| Error::InvalidRequest)?;
+    if raw.len() > MAX_FRAME {
+        return Err(Error::TooLarge);
+    }
+    tokio::time::timeout(FRAME_TIMEOUT, async {
+        stream
+            .write_u32(raw.len() as u32)
+            .await
+            .map_err(|_| Error::Unavailable)?;
+        stream
+            .write_all(&raw)
+            .await
+            .map_err(|_| Error::Unavailable)?;
+        stream.flush().await.map_err(|_| Error::Unavailable)
+    })
+    .await
+    .map_err(|_| Error::Timeout)?
+}
+pub async fn accept_handshake(stream: &mut Stream, credentials: &[Credential]) -> Result<Access> {
+    let hello: Hello =
+        serde_json::from_value(read_frame(stream).await?).map_err(|_| Error::Unauthorized)?;
+    if hello.api_version != 1 {
+        return Err(Error::Version);
+    }
+    let access = credentials
+        .iter()
+        .find(|c| bool::from(c.token.ct_eq(&hello.credential)))
+        .map(|c| c.access.clone())
+        .ok_or(Error::Unauthorized)?;
+    write_frame(
+        stream,
+        &json!({"api_version":1,"ready":true,"access":access}),
+    )
+    .await?;
+    Ok(access)
+}
+pub fn load_credential(location: &Location, path: &Path) -> Result<Credential> {
+    let root = location.root()?;
+    if path.parent().and_then(|p| p.canonicalize().ok()).as_ref() != Some(&root) {
+        return Err(Error::UnsafeRuntime);
+    }
+    transport::private_file(path)?;
+    let mut file = transport::open_private(path, false)?;
+    if file.metadata().map_err(|_| Error::UnsafeRuntime)?.len() > 4096 {
+        return Err(Error::Unauthorized);
+    }
+    let mut raw = Vec::new();
+    std::io::Read::by_ref(&mut file)
+        .take(4097)
+        .read_to_end(&mut raw)
+        .map_err(|_| Error::Unauthorized)?;
+    let c: Credential = serde_json::from_slice(&raw).map_err(|_| Error::Unauthorized)?;
+    if c.format != 1 || matches!(&c.access,Access::Agent{project} if !valid_project(project)) {
+        return Err(Error::Unauthorized);
+    }
+    Ok(c)
+}
+/// Per-launch private credential rotation, protected by a process-death-safe OS lease.
+pub struct RuntimeLease {
+    file: File,
+    location: Location,
+    credentials: Vec<(PathBuf, Credential)>,
+}
+impl RuntimeLease {
+    pub fn acquire(location: &Location) -> Result<Self> {
+        if !location.runtime_dir.is_absolute() {
+            return Err(Error::UnsafeRuntime);
+        }
+        transport::private_dir(&location.runtime_dir, true)?;
+        let root = location.root()?;
+        let path = root.join("daemon.lock");
+        let file = if path.exists() {
+            transport::open_private(&path, true)?
+        } else {
+            transport::new_private(&path)?
+        };
+        file.try_lock().map_err(|_| Error::EndpointCollision)?;
+        Ok(Self {
+            file,
+            location: location.clone(),
+            credentials: Vec::new(),
+        })
+    }
+    pub fn credentials(&mut self, projects: &[String]) -> Result<Vec<Credential>> {
+        let accesses = std::iter::once(Access::Operator).chain(
+            projects
+                .iter()
+                .map(|p| Access::Agent { project: p.clone() }),
+        );
+        for access in accesses {
+            let path = self.location.credential_path(match &access {
+                Access::Operator => None,
+                Access::Agent { project } => Some(project),
+            })?;
+            if path.exists() {
+                let _ = load_credential(&self.location, &path)?;
+            }
+            let mut token = [0; 32];
+            getrandom::fill(&mut token).map_err(|_| Error::Unavailable)?;
+            let c = Credential {
+                format: 1,
+                access,
+                token,
+            };
+            let pending = path.with_extension("pending");
+            let mut file = transport::new_private(&pending)?;
+            file.write_all(&serde_json::to_vec(&c).map_err(|_| Error::Unavailable)?)
+                .map_err(|_| Error::Unavailable)?;
+            file.sync_all().map_err(|_| Error::Unavailable)?;
+            drop(file);
+            fs::rename(pending, &path).map_err(|_| Error::Unavailable)?;
+            self.credentials.push((path, c));
+        }
+        Ok(self.credentials.iter().map(|(_, c)| c.clone()).collect())
+    }
+}
+impl Drop for RuntimeLease {
+    fn drop(&mut self) {
+        for (path, c) in &self.credentials {
+            if load_credential(&self.location, path)
+                .is_ok_and(|disk| bool::from(disk.token.ct_eq(&c.token)))
+            {
+                let _ = fs::remove_file(path);
+            }
+        }
+        let _ = &self.file; // Lease remains held until credential cleanup has finished.
+    }
+}
+pub struct Client {
+    stream: Stream,
+    next: u64,
+    pub access: Access,
+}
+impl Client {
+    pub async fn connect(location: &Location, c: &Credential) -> Result<Self> {
+        let mut stream = tokio::time::timeout(FRAME_TIMEOUT, transport::connect(location))
+            .await
+            .map_err(|_| Error::Timeout)??;
+        write_frame(
+            &mut stream,
+            &Hello {
+                api_version: 1,
+                credential: c.token,
+            },
+        )
+        .await?;
+        let ack = read_frame(&mut stream).await?;
+        if ack.get("api_version") != Some(&json!(1)) || ack.get("ready") != Some(&json!(true)) {
+            return Err(Error::Unauthorized);
+        }
+        let access: Access =
+            serde_json::from_value(ack.get("access").cloned().ok_or(Error::Unauthorized)?)
+                .map_err(|_| Error::Unauthorized)?;
+        if access != c.access {
+            return Err(Error::Unauthorized);
+        }
+        Ok(Self {
+            stream,
+            next: 0,
+            access,
+        })
+    }
+    pub async fn request(&mut self, method: &str, params: Value) -> Result<Value> {
+        self.next += 1;
+        let id = self.next.to_string();
+        write_frame(
+            &mut self.stream,
+            &Request {
+                api_version: 1,
+                id: id.clone(),
+                method: method.into(),
+                params,
+            },
+        )
+        .await?;
+        // The server limits computation too; the response frame has its own absolute deadline.
+        let value = read_with_deadline(&mut self.stream, Duration::from_secs(7)).await?;
+        let response: Response =
+            serde_json::from_value(value).map_err(|_| Error::InvalidRequest)?;
+        if response.api_version != 1 || response.id != Some(id) {
+            return Err(Error::InvalidRequest);
+        }
+        if let Some(e) = response.error {
+            return Err(e);
+        }
+        response.result.ok_or(Error::InvalidRequest)
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn framing_rejects_oversize_and_malformed() {
+        let (mut a, mut b) = tokio::io::duplex(64);
+        a.write_u32(MAX_FRAME as u32 + 1).await.unwrap();
+        assert_eq!(read_frame(&mut b).await.unwrap_err(), Error::TooLarge);
+        a.write_u32(1).await.unwrap();
+        a.write_all(b"[").await.unwrap();
+        assert_eq!(read_frame(&mut b).await.unwrap_err(), Error::InvalidRequest);
+    }
+    #[test]
+    fn labels_are_paths_never() {
+        for p in ["", "../beta", "a/b", "a\\b", ".."] {
+            assert!(!valid_project(p));
+        }
+        assert!(valid_project("alpha-1"));
+    }
+}
