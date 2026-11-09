@@ -1,0 +1,73 @@
+use crossterm::{
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    execute,
+    terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
+};
+use nsh_platform_tui::{App, AppOptions, AppView, Input, Modifiers, Root};
+use ratatui_core::terminal::Terminal;
+use ratatui_crossterm::CrosstermBackend;
+use std::{io, time::Duration};
+struct Restore;
+impl Drop for Restore {
+    fn drop(&mut self) {
+        let _ = terminal::disable_raw_mode();
+        let _ = execute!(io::stdout(), LeaveAlternateScreen);
+    }
+}
+fn main() -> io::Result<()> {
+    acp_nsh_spike::INPUTS
+        .set(acp_ui_spike_model::native::Inputs::parse())
+        .ok();
+    terminal::enable_raw_mode()?;
+    let _restore = Restore;
+    execute!(io::stdout(), EnterAlternateScreen)?;
+    let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
+    let mut view = AppView::new(AppOptions::default());
+    view.load(App::Rust(Root::of::<acp_nsh_spike::App>()))?;
+    loop {
+        view.draw_terminal(&mut terminal)?;
+        if event::poll(Duration::from_millis(16))? {
+            match event::read()? {
+                Event::Key(k) if k.kind != KeyEventKind::Release => {
+                    if k.code == KeyCode::Char('q')
+                        || (k.code == KeyCode::Char('c')
+                            && k.modifiers.contains(KeyModifiers::CONTROL))
+                    {
+                        break;
+                    }
+                    let key = match k.code {
+                        KeyCode::Tab | KeyCode::BackTab => "Tab".into(),
+                        KeyCode::Enter => "Enter".into(),
+                        KeyCode::Esc => "Escape".into(),
+                        KeyCode::Up => "ArrowUp".into(),
+                        KeyCode::Down => "ArrowDown".into(),
+                        KeyCode::Left => "ArrowLeft".into(),
+                        KeyCode::Right => "ArrowRight".into(),
+                        KeyCode::Char(c) => c.to_string(),
+                        _ => continue,
+                    };
+                    view.handle(Input::Key {
+                        key,
+                        modifiers: Modifiers {
+                            ctrl: k.modifiers.contains(KeyModifiers::CONTROL),
+                            alt: k.modifiers.contains(KeyModifiers::ALT),
+                            shift: k.modifiers.contains(KeyModifiers::SHIFT)
+                                || k.code == KeyCode::BackTab,
+                            cmd: k.modifiers.contains(KeyModifiers::SUPER),
+                        },
+                        release: false,
+                    });
+                }
+                Event::Paste(s) => {
+                    view.handle(Input::Paste(s));
+                }
+                _ => {}
+            }
+        }
+        if view.exit_requested() {
+            break;
+        }
+    }
+    view.stop();
+    Ok(())
+}

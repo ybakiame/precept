@@ -1,0 +1,308 @@
+{
+  "health": {
+    "api_version": 1,
+    "ready": true,
+    "schema": "Fingerprinted",
+    "service": "acp-daemon",
+    "version": "0.1.0",
+    "worktree_fingerprint": "unavailable"
+  },
+  "projects": [
+    {
+      "name": "alpha",
+      "context": {
+        "authority": "Current repository files and accepted ADRs outrank preferences and task handoffs; verify conflicts.",
+        "documents": [
+          {
+            "bytes": 22,
+            "path": "AGENTS.md",
+            "sha256": "9e91179de16bd89a13a313d3aee14cfa42873275c4f3ce21d983aea02cbcd997",
+            "status": "available"
+          }
+        ],
+        "preferences": [
+          {
+            "id": 8,
+            "key": "commit.style",
+            "scope": "project",
+            "source": "fixture-new",
+            "status": "confirmed",
+            "value": "newest"
+          },
+          {
+            "id": 1,
+            "key": "interaction.language",
+            "scope": "global",
+            "source": "fixture",
+            "status": "confirmed",
+            "value": "zh-CN"
+          }
+        ],
+        "project": "alpha",
+        "repository": {
+          "branch": "master",
+          "change_count": 1,
+          "dirty": true,
+          "head": null
+        },
+        "warnings": [
+          "Only confirmed preferences are included.",
+          "Documents are live references, not a complete project audit.",
+          "This context does not authorize filesystem edits or external actions."
+        ]
+      },
+      "handoff": {
+        "base_sha": "base",
+        "branch": "main",
+        "completed": "",
+        "current_repository": {
+          "branch": "master",
+          "change_count": 1,
+          "dirty": true,
+          "head": null,
+          "worktree_fingerprint": null
+        },
+        "next_action": "inspect",
+        "objective": "synthetic-alpha",
+        "project": "alpha",
+        "resume_warnings": [
+          "HEAD changed or cannot be verified; re-evaluate all prior checks",
+          "Branch differs from handoff; inspect worktree before proceeding",
+          "Current worktree has changes or cannot be inspected; preserve user edits",
+          "Worktree fingerprint unavailable; inspect differences manually",
+          "Earlier validation is scoped to its recorded revision and environment"
+        ],
+        "task_id": "shared",
+        "updated_at": "2026-11-09T03:34:34+00:00",
+        "validation": [
+          {
+            "check": "PASS",
+            "environment": "synthetic",
+            "evidence": {
+              "id": "record-id",
+              "nested": [
+                null,
+                true,
+                2,
+                {
+                  "log": "ref"
+                }
+              ],
+              "updated_at": "recorded"
+            },
+            "revision": "base",
+            "status": "PASS"
+          },
+          {
+            "check": "FAIL",
+            "environment": "synthetic",
+            "evidence": {
+              "id": "record-id",
+              "nested": [
+                null,
+                true,
+                2,
+                {
+                  "log": "ref"
+                }
+              ],
+              "updated_at": "recorded"
+            },
+            "revision": "base",
+            "status": "FAIL"
+          },
+          {
+            "check": "SKIPPED",
+            "environment": "synthetic",
+            "evidence": {
+              "id": "record-id",
+              "nested": [
+                null,
+                true,
+                2,
+                {
+                  "log": "ref"
+                }
+              ],
+              "updated_at": "recorded"
+            },
+            "revision": "base",
+            "status": "SKIPPED"
+          },
+          {
+            "check": "NOT_RUN",
+            "environment": "synthetic",
+            "evidence": {
+              "id": "record-id",
+              "nested": [
+                null,
+                true,
+                2,
+                {
+                  "log": "ref"
+                }
+              ],
+              "updated_at": "recorded"
+            },
+            "revision": "base",
+            "status": "NOT_RUN"
+          }
+        ],
+        "worktree_fingerprint": "saved",
+        "worktree_state": "clean"
+      }
+    },
+    {
+      "name": "beta",
+      "context": {
+        "authority": "Current repository files and accepted ADRs outrank preferences and task handoffs; verify conflicts.",
+        "documents": [
+          {
+            "bytes": 21,
+            "path": "AGENTS.md",
+            "sha256": "03c28f926efa9b1882699ca21fd202e1d3c18e80e460ea4e9ccec625f30b5155",
+            "status": "available"
+          }
+        ],
+        "preferences": [
+          {
+            "id": 2,
+            "key": "commit.style",
+            "scope": "global",
+            "source": "fixture",
+            "status": "confirmed",
+            "value": "conventional"
+          },
+          {
+            "id": 1,
+            "key": "interaction.language",
+            "scope": "global",
+            "source": "fixture",
+            "status": "confirmed",
+            "value": "zh-CN"
+          },
+          {
+            "id": 4,
+            "key": "project.private.marker",
+            "scope": "project",
+            "source": "fixture",
+            "status": "confirmed",
+            "value": "BETA_PRIVATE_PREFERENCE"
+          }
+        ],
+        "project": "beta",
+        "repository": {
+          "branch": "master",
+          "change_count": 1,
+          "dirty": true,
+          "head": null
+        },
+        "warnings": [
+          "Only confirmed preferences are included.",
+          "Documents are live references, not a complete project audit.",
+          "This context does not authorize filesystem edits or external actions."
+        ]
+      },
+      "handoff": {
+        "base_sha": "base",
+        "branch": "main",
+        "completed": "",
+        "current_repository": {
+          "branch": "master",
+          "change_count": 1,
+          "dirty": true,
+          "head": null,
+          "worktree_fingerprint": null
+        },
+        "next_action": "inspect",
+        "objective": "synthetic-beta",
+        "project": "beta",
+        "resume_warnings": [
+          "HEAD changed or cannot be verified; re-evaluate all prior checks",
+          "Branch differs from handoff; inspect worktree before proceeding",
+          "Current worktree has changes or cannot be inspected; preserve user edits",
+          "Worktree fingerprint unavailable; inspect differences manually",
+          "Earlier validation is scoped to its recorded revision and environment"
+        ],
+        "task_id": "shared",
+        "updated_at": "2026-11-09T03:34:34+00:00",
+        "validation": [
+          {
+            "check": "PASS",
+            "environment": "synthetic",
+            "evidence": {
+              "id": "record-id",
+              "nested": [
+                null,
+                true,
+                2,
+                {
+                  "log": "ref"
+                }
+              ],
+              "updated_at": "recorded"
+            },
+            "revision": "base",
+            "status": "PASS"
+          },
+          {
+            "check": "FAIL",
+            "environment": "synthetic",
+            "evidence": {
+              "id": "record-id",
+              "nested": [
+                null,
+                true,
+                2,
+                {
+                  "log": "ref"
+                }
+              ],
+              "updated_at": "recorded"
+            },
+            "revision": "base",
+            "status": "FAIL"
+          },
+          {
+            "check": "SKIPPED",
+            "environment": "synthetic",
+            "evidence": {
+              "id": "record-id",
+              "nested": [
+                null,
+                true,
+                2,
+                {
+                  "log": "ref"
+                }
+              ],
+              "updated_at": "recorded"
+            },
+            "revision": "base",
+            "status": "SKIPPED"
+          },
+          {
+            "check": "NOT_RUN",
+            "environment": "synthetic",
+            "evidence": {
+              "id": "record-id",
+              "nested": [
+                null,
+                true,
+                2,
+                {
+                  "log": "ref"
+                }
+              ],
+              "updated_at": "recorded"
+            },
+            "revision": "base",
+            "status": "NOT_RUN"
+          }
+        ],
+        "worktree_fingerprint": "saved",
+        "worktree_state": "clean"
+      }
+    }
+  ]
+}

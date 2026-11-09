@@ -1,0 +1,103 @@
+name: Optional UI spike
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'spikes/p1-e/**'
+      - 'tools/*ui_spike*'
+      - '.github/workflows/ui-spike.yml'
+jobs:
+  native:
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        candidate: [gpui-kit, nsh, hybrid]
+    runs-on: ${{ matrix.os }}
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_TARGET_DIR: ${{ github.workspace }}/spikes/p1-e/target-native
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ui-registry-${{ runner.os }}-${{ hashFiles('spikes/p1-e/**/Cargo.lock') }}
+      - name: Linux native prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libclang-dev cmake ninja-build libfontconfig-dev libfreetype-dev libxkbcommon-x11-dev libx11-xcb-dev libwayland-dev libasound2-dev libssl-dev libgtk-4-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev xvfb xauth xdotool mesa-vulkan-drivers
+      - run: rustup show
+      - name: Isolated build and component state gates
+        run: python tools/build_ui_spike.py ${{ matrix.candidate }}
+      - name: Build unchanged synthetic service fixture binaries
+        env:
+          CARGO_TARGET_DIR: target
+        run: cargo build --workspace --bins --locked
+      - run: python -m pip install mss psutil
+      - name: Linux actual native windows in Xvfb (not a physical desktop)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          candidate='${{ matrix.candidate }}'
+          binary=spikes/p1-e/target-native/debug/acp-gpui-spike
+          if [ "$candidate" = nsh ]; then binary=spikes/p1-e/target-native/debug/acp-nsh-native; fi
+          xvfb-run -s '-screen 0 1280x900x24 -nolisten tcp' python tools/test_ui_spike_native.py --candidate "$candidate" --binary "$binary" --out spikes/p1-e/artifacts
+      - name: Probe hosted desktop availability explicitly
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          candidate='${{ matrix.candidate }}'
+          binary=spikes/p1-e/target-native/debug/acp-gpui-spike
+          if [ "$candidate" = nsh ]; then binary=spikes/p1-e/target-native/debug/acp-nsh-native; fi
+          if [ '${{ runner.os }}' = Windows ]; then binary="$binary.exe"; fi
+          python tools/test_ui_spike_native.py --candidate "$candidate" --binary "$binary" --out spikes/p1-e/artifacts --allow-no-desktop
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-${{ matrix.os }}-${{ matrix.candidate }}
+          path: spikes/p1-e/artifacts
+  shared-terminal-web:
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    env:
+      CARGO_BUILD_JOBS: '2'
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: sudo apt-get update && sudo apt-get install -y clang llvm
+      - run: rustup target add wasm32-unknown-unknown
+      - run: cargo test --manifest-path spikes/p1-e/shared/Cargo.toml --features native --locked
+      - run: cargo build --manifest-path spikes/p1-e/shared/Cargo.toml --features native --locked --bin acp-ui-snapshot
+      - run: cargo build --workspace --bins --locked
+      - run: python tools/test_ui_spike_contract.py
+      - run: cargo test --manifest-path spikes/p1-e/nsh/Cargo.toml --lib --locked
+      - run: cargo build --manifest-path spikes/p1-e/nsh/Cargo.toml --features tui --bin acp-nsh-tui --locked
+      - run: python -m pip install pyte
+      - run: python tools/test_ui_spike_tui.py --binary spikes/p1-e/nsh/target/debug/acp-nsh-tui --out spikes/p1-e/artifacts
+      - run: cargo build --manifest-path spikes/p1-e/nsh/Cargo.toml --target wasm32-unknown-unknown --lib --locked
+      - run: git clone https://github.com/longbridge/nsh spikes/p1-e/vendor/nsh && git -C spikes/p1-e/vendor/nsh checkout 87c7e8da85d2f15a56107baa6f0fabb419b508b3
+      - run: python tools/package_ui_spike_web.py --source spikes/p1-e/vendor/nsh --wasm spikes/p1-e/nsh/target/wasm32-unknown-unknown/debug/acp_nsh_spike.wasm --out spikes/p1-e/nsh/dist
+      - run: npm ci --prefix spikes/p1-e/tests
+      - run: npx --prefix spikes/p1-e/tests playwright install chromium --with-deps
+      - name: Offline browser interaction and no external requests
+        run: node spikes/p1-e/tests/web-smoke.mjs spikes/p1-e/nsh/dist spikes/p1-e/artifacts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-shared-terminal-web
+          path: spikes/p1-e/artifacts

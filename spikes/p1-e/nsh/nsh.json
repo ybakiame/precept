@@ -1,0 +1,8 @@
+{
+  "name": "ACP NSH Rust Spike",
+  "id": "org.example.acp.spike",
+  "version": "0.1.0",
+  "build": 1,
+  "rust": ".",
+  "root": "App"
+}

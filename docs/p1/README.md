@@ -25,7 +25,9 @@ P1-C1 adds a [read-only SQLite adapter](sqlite-readonly.md); P1-C2A adds an
 [owned temporary migration rehearsal](synthetic-migration.md). P1-C2B1 adds
 [test-only persistent process recovery](process-recovery.md). Production P1-C2B2
 write/migration rollout remains unimplemented. P1-D now provides a
-[runnable local read-only service](local-service.md); P1-E/F remain unimplemented. Remote CI/platform results must be reported
+[runnable local read-only service](local-service.md); P1-E now has an
+[isolated comparative UI experiment](ui-spike-evaluation.md), with no accepted
+framework or production UI rollout. P1-F remains unimplemented. Remote CI/platform results must be reported
 separately from local validation.
 
 ## Crate layout (core/store/rehearsal and local service crates exist)

@@ -1,0 +1,21 @@
+#[cfg(target_os = "linux")]
+use nsh_platform_linux as platform;
+#[cfg(target_os = "macos")]
+use nsh_platform_macos as platform;
+#[cfg(target_os = "windows")]
+use nsh_platform_windows as platform;
+fn main() -> impl std::process::Termination {
+    acp_nsh_spike::INPUTS
+        .set(acp_ui_spike_model::native::Inputs::parse())
+        .ok();
+    platform::run_app(
+        platform::AppSource::Rust(platform::Root::of::<acp_nsh_spike::App>()),
+        platform::AppOptions {
+            title: "ACP NSH Rust — synthetic read-only spike".into(),
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
+            app_id: "org.example.acp.spike".into(),
+            size: (1080, 760),
+            ..Default::default()
+        },
+    )
+}
