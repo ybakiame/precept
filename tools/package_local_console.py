@@ -13,12 +13,19 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--out", type=Path, default=ROOT / "artifacts/local-p1-e2/package")
+    p.add_argument("--wayland-report", type=Path)
     args = p.parse_args()
     suffix = ".exe" if platform.system() == "Windows" else ""
     files = [ROOT / "spikes/p1-e/nsh/target/release" / (name + suffix) for name in ["acp-nsh-native", "acp-nsh-tui"]]
     if not all(f.is_file() for f in files):
         print("NOT_RUN: both host release executables required")
         return
+    if platform.system() == "Linux":
+        if not args.wayland_report or not args.wayland_report.is_file():
+            print("BLOCKED: Linux desktop packaging requires an explicit passing Wayland report"); return 2
+        observed = json.loads(args.wayland_report.read_text())
+        if observed.get("acceptance") not in ("RUN_PASS_WAYLAND_WSLG", "RUN_PASS_WAYLAND_NIRI") or observed.get("status") != "PASS" or observed.get("binary_sha256") != hashlib.sha256(files[0].read_bytes()).hexdigest():
+            print("BLOCKED: Wayland report does not certify this Linux desktop binary"); return 2
     args.out.mkdir(parents=True, exist_ok=True)
     notes = args.out / "README.txt"
     notes.write_text('''Agent Control Plane — unsigned development binaries
@@ -32,7 +39,7 @@ Windows owner -> WSL: supply all five --wsl-distribution, --wsl-user,
 The existing WSL query helper runs via wsl.exe --exec; no shell/TCP/token copy.
 Do not pass both native and WSL location flags. WSL daemon is never started.
 Windows: Windows 10/11 x64 with MSVC/UCRT runtime and ConPTY for TUI.
-Linux: GTK4 >=4.14, GStreamer 1.x, Fontconfig and an X11/Wayland desktop;
+Linux: GTK4 >=4.14, GStreamer 1.x, Fontconfig and a verified native Wayland desktop;
 a VT/truecolor terminal for TUI. macOS requires its own local build/verification.
 Keep credentials and runtime outside checkouts; use only an operator-authorized DB.
 See docs/p1/local-codex-e2.md for lifecycle, permissions and local validation.
@@ -56,4 +63,4 @@ See docs/p1/local-codex-e2.md for lifecycle, permissions and local validation.
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

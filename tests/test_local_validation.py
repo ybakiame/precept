@@ -35,6 +35,8 @@ class LocalValidationTests(unittest.TestCase):
             self.assertEqual(result["exit_code"], 3)
             result = VERIFY.run_gate("skipped", [sys.executable, "-c", "print('NOT_RUN: missing desktop')"], output, None)
             self.assertEqual(result["status"], "NOT_RUN")
+            result = VERIFY.run_gate("blocked", [sys.executable, "-c", "print('BLOCKED: native Wayland unavailable'); raise SystemExit(2)"], output, None)
+            self.assertEqual(result["status"], "BLOCKED")
             result = VERIFY.run_gate("passed", [sys.executable, "-c", "print('Ran 21 tests')"], output, None)
             self.assertEqual(result["status"], "PASS")
             self.assertEqual(result["observed_count"], 21)

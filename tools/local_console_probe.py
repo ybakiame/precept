@@ -29,6 +29,7 @@ class TerminalProbe:
         import termios
         import pyte
         self.master, slave = pty.openpty()
+        self.original_termios = termios.tcgetattr(slave)
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 50, 160, 0, 0))
         self.screen = pyte.Screen(160, 50)
         self.stream = pyte.Stream(self.screen)
@@ -78,12 +79,23 @@ class TerminalProbe:
             time.sleep(.005)
         raise AssertionError("terminal input did not receive focus")
 
+    def resize(self, columns, rows):
+        if os.name == "nt":
+            self.pty.set_size(columns, rows)
+        else:
+            import fcntl, termios
+            fcntl.ioctl(self.master, termios.TIOCSWINSZ, struct.pack("HHHH", rows, columns, 0, 0))
+        self.screen.resize(lines=rows, columns=columns)
+
     def close(self):
         if self.proc.poll() is None:
             self.send(b"\x11")  # Ctrl+Q; plain q remains editable input.
             self.proc.wait(timeout=8)
         assert self.proc.returncode == 0, "terminal did not close cleanly"
         if os.name != "nt":
+            import termios
+            restored = termios.tcgetattr(self.master)
+            assert restored == self.original_termios, "terminal attributes were not restored"
             os.close(self.master)
 
     def _windows_init(self, command):
@@ -149,8 +161,13 @@ def tui_available():
 def native_available():
     if platform.system() not in ["Linux", "Windows"]:
         return "local window probe unavailable on this OS"
-    if platform.system() == "Linux" and (not os.environ.get("DISPLAY") or not shutil.which("xdotool")):
-        return "X11/XWayland display or xdotool unavailable"
+    if platform.system() == "Linux":
+        from wslg_doctor import environment
+        if not environment()["wayland_socket"].get("reachable"):
+            return "native Wayland socket unavailable; no X11 fallback"
+        from wayland_probe import windows_python
+        if not windows_python():
+            return "native Wayland OS interaction probe needs explicit ACP_WINDOWS_PYTHON"
     if not exe("acp-nsh-native").is_file():
         return "release desktop executable unavailable"
     return None
@@ -159,33 +176,9 @@ def native_available():
 def native_start(command):
     if os.name == "nt":
         return windows_native_start(command)
-    env = {**os.environ, "ACP_UI_PROBE": "1", "GDK_BACKEND": "x11"}
-    started = time.monotonic()
-    proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
-    lines = collect(proc.stderr)
-    # stdout is never used for context, but still drain it.
-    collect(proc.stdout)
-    wid, ready, visible_seconds = None, False, None
-    deadline = started + 45
-    try:
-        while time.monotonic() < deadline:
-            assert proc.poll() is None, "desktop process exited before window/model became ready"
-            r = subprocess.run(["xdotool", "search", "--onlyvisible", "--pid", str(proc.pid)], capture_output=True, timeout=3)
-            if r.returncode == 0 and r.stdout.strip():
-                wid = r.stdout.splitlines()[0].decode()
-                if visible_seconds is None:
-                    visible_seconds = time.monotonic() - started
-            while not lines.empty():
-                line = lines.get_nowait()
-                ready |= bool(line and b"ACP_NSH_LAYOUT_READY" in line)
-            if wid and ready:
-                proc._acp_probe_lines = lines
-                return proc, wid, dict(visible_seconds=round(visible_seconds, 4), model_layout_seconds=round(time.monotonic() - started, 4))
-            time.sleep(.03)
-        raise AssertionError("desktop readiness deadline")
-    except BaseException:
-        stop(proc, hard=True)
-        raise
+    from wayland_probe import WaylandWindow
+    window = WaylandWindow(command)
+    return window.proc, window, window.sample
 
 
 def windows_api():
@@ -256,7 +249,7 @@ def native_close(wid):
     if os.name == "nt":
         assert windows_api().PostMessageW(wid, 0x0010, 0, 0), "WM_CLOSE failed"
     else:
-        subprocess.run(["xdotool", "windowclose", str(wid)], check=True, capture_output=True, timeout=5)
+        wid.close()
 
 
 def live_views(fixture, label, out):

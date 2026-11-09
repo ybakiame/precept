@@ -54,7 +54,7 @@ def gates(core, service, ui):
                 command += ["--", "--nocapture"]
             items.append((name, command))
         items += [("ui-contract", [PY, "tools/test_ui_spike_contract.py"]),
-                  ("local-package", [PY, "tools/package_local_console.py"])]
+                  ]
     return items
 
 
@@ -85,6 +85,8 @@ def run_gate(name, command, directory, environment):
         # Tests that explicitly report unavailable desktop/SDK cannot become PASS.
         if process.returncode == 0 and re.search(r"^NOT_RUN:", output, re.MULTILINE):
             status = "NOT_RUN"
+        if process.returncode == 2 and re.search(r"^BLOCKED:", output, re.MULTILINE):
+            status = "BLOCKED"
         reason = "dependency/toolchain/cache unavailable" if status == "NOT_RUN" else None
         if process.returncode == 0 and status == "NOT_RUN":
             reason = "one or more subchecks explicitly NOT_RUN; inspect the private local log"
@@ -104,12 +106,12 @@ def run_gate(name, command, directory, environment):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for switch in ("core", "service", "ui", "all", "local-project"):
+    for switch in ("core", "service", "ui", "all", "local-project", "wslg", "ui-full"):
         parser.add_argument("--" + switch, action="store_true")
     parser.add_argument("--report-dir", type=Path, default=ROOT / "artifacts/local-p1-e2")
     args = parser.parse_args()
-    if not any((args.core, args.service, args.ui, args.all, args.local_project)):
-        parser.error("select --core, --service, --ui, --all or --local-project")
+    if not any((args.core, args.service, args.ui, args.all, args.local_project, args.wslg, args.ui_full)):
+        parser.error("select --core, --service, --ui, --all, --wslg, --ui-full or --local-project")
     directory = args.report_dir.resolve()
     # Do not write diagnostics into any operator-selected checkout.
     external = os.environ.get("ACP_LOCAL_PROJECT_ROOT")
@@ -129,13 +131,15 @@ def main():
         except (OSError, subprocess.TimeoutExpired):
             versions[name] = "NOT_RUN"
     prerequisites = {"json-parity": "parity-build", "sqlite-parity": "parity-build", "service-e2e": "service-build", "ui-contract": "snapshot-build", "local-package": "nsh-host-release"}
-    for name, command in gates(args.core or args.all, args.service or args.all, args.ui or args.all):
+    ui = args.ui or args.all or args.ui_full or args.wslg
+    wslg = args.wslg or args.ui_full
+    for name, command in gates(args.core or args.all or args.ui_full, args.service or args.all or args.ui_full, ui):
         dependency = prerequisites.get(name)
         if dependency and any(r["name"] == dependency and r["status"] != "PASS" for r in results):
             results.append(dict(name=name, command=command, status="NOT_RUN", reason=f"prerequisite {dependency} unavailable or failed"))
             continue
         results.append(run_gate(name, command, directory, env))
-    if args.ui or args.all:
+    if ui:
         suffix = ".exe" if os.name == "nt" else ""
         for name, script, binary in [
             ("tui-pty", "tools/test_local_console_tui.py", "acp-nsh-tui"),
@@ -144,14 +148,28 @@ def main():
             command = [PY, script, "--binary", f"spikes/p1-e/nsh/target/release/{binary}{suffix}", "--out", str(directory)]
             if any(r["name"] == "nsh-host-release" and r["status"] != "PASS" for r in results):
                 results.append(dict(name=name, command=command, status="NOT_RUN", reason="fresh host release build did not pass"))
-            elif name == "desktop-smoke" and platform.system() == "Linux" and not os.environ.get("DISPLAY"):
-                results.append(dict(name=name, command=command, status="NOT_RUN", reason="no desktop DISPLAY"))
+            elif name == "desktop-smoke" and platform.system() == "Linux" and not os.environ.get("WAYLAND_DISPLAY"):
+                results.append(dict(name=name, command=command, status="NOT_RUN", reason="no native Wayland session; X11 fallback forbidden"))
             elif not Path(command[3]).exists():
                 results.append(dict(name=name, command=command, status="NOT_RUN", reason="release executable unavailable"))
             else:
+                if name == "desktop-smoke" and platform.system() == "Linux": name = "wayland-native"
                 results.append(run_gate(name, command, directory, env))
+        package = [PY, "tools/package_local_console.py", "--out", str(directory / "package")]
+        if platform.system() == "Linux": package += ["--wayland-report", str(directory / "wayland-result.json")]
+        package_ready = any(r["name"] == "nsh-host-release" and r["status"] == "PASS" for r in results)
+        if platform.system() == "Linux": package_ready &= any(r["name"] == "wayland-native" and r["status"] == "PASS" for r in results)
+        if package_ready: results.append(run_gate("local-package", package, directory, env))
+        else: results.append(dict(name="local-package", status="NOT_RUN", reason="fresh release and required host render acceptance did not pass"))
         results += [dict(name="web-smoke", status="NOT_RUN", reason="optional offline synthetic web smoke not selected"),
                     dict(name="desktop-ime-screen-reader", status="NOT_RUN", reason="requires operator assistive technology session")]
+    if wslg:
+        if platform.system() == "Linux":
+            results.append(run_gate("wayland-doctor", [PY,"tools/wslg_doctor.py","--probe","--out",str(directory / "doctor")], directory, env))
+        else:
+            results.append(dict(name="wayland-doctor",status="NOT_RUN",reason="run --wslg inside the explicit WSL owner session"))
+    if args.ui_full:
+        results.append(run_gate("codex-synthetic", [PY,"tools/test_console_integrations.py","--out",str(directory)], directory, env))
     if args.local_project:
         if not external:
             results.append(dict(name="local-project", status="NOT_RUN", reason="ACP_LOCAL_PROJECT_ROOT not explicitly set"))
@@ -161,10 +179,17 @@ def main():
     dirty = bool(subprocess.run(["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, check=True).stdout)
     report = dict(tested_git_sha=sha, worktree_dirty=dirty, os=platform.system(), os_release=platform.release(), os_version=platform.version(), architecture=platform.machine(),
                   versions=versions, gates=results, cloud_ci="NOT_RUN: local-only; push commits with [skip ci]",
-                  totals={status: sum(r["status"] == status for r in results) for status in ["PASS", "FAIL", "NOT_RUN"]})
+                  totals={status: sum(r["status"] == status for r in results) for status in ["PASS", "FAIL", "BLOCKED", "NOT_RUN"]})
+    wayland_pass = any(r["name"] == "wayland-native" and r["status"] == "PASS" for r in results)
+    required_failure = any(r["status"] in ("FAIL", "BLOCKED") for r in results)
+    required = {"root-tests", "python", "json-parity", "sqlite-parity", "process-recovery", "service-e2e", "model-tests", "nsh-components", "ui-contract", "tui-pty", "wayland-native", "codex-synthetic"}
+    passed = {r["name"] for r in results if r["status"] == "PASS"}
+    report["e3_acceptance"] = "PASS_LOCAL_WSL" if wayland_pass and required <= passed and not required_failure else "INCOMPLETE"
+    report["acceptance_scope"] = "this host and explicitly configured clients; Windows host report is separate"
+    report["niri"] = "NOT_RUN: no active niri session selected"
     (directory / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(report["totals"]))
-    return 1 if any(r["status"] == "FAIL" for r in results) else 0
+    return 1 if any(r["status"] == "FAIL" for r in results) else (2 if any(r["status"] == "BLOCKED" for r in results) or (wslg and not wayland_pass) else 0)
 
 
 if __name__ == "__main__":

@@ -49,6 +49,13 @@ def main():
         t.wait("event-09999")
         latency = time.monotonic() - started
         assert latency < 2, "filter-to-painted-screen latency exceeded local acceptance bound"
+        t.resize(80, 30)
+        t.wait("event-09999")
+        t.send(b"\x1b[200~" + "中文宽度".encode() + b"\x1b[201~")
+        t.wait("中文宽度")
+        t.wait("Empty — no confirmed preferences match")
+        t.send(b"\x1b")  # Escape must release input focus without quitting.
+        t.resize(160, 50)
         # Only synthetic terminal text may be retained.
         args.out.mkdir(parents=True, exist_ok=True, mode=0o700)
         (args.out / "tui-10k-synthetic.txt").write_text("\n".join(t.screen.display) + "\n", encoding="utf-8")
