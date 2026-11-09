@@ -1,0 +1,15 @@
+{
+  "status": "TEST_PASS",
+  "backend": "real nsh-platform-tui/ratatui process in PTY",
+  "keyboard": "Tab Tab Enter selected beta",
+  "resize": [
+    160,
+    50,
+    100,
+    32
+  ],
+  "startup_to_expected_screen_seconds": 0.0313,
+  "rss_kib_at_probe": 52024,
+  "binary_bytes": 128687800,
+  "quit_exit": 0
+}

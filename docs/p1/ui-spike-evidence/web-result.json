@@ -1,0 +1,21 @@
+{
+  "status": "TEST_PASS",
+  "backend": "actual NSH Rust WASM + browser DOM",
+  "browser": "156.0.8078.79",
+  "offlineInteraction": true,
+  "keyboardTabAndEnter": true,
+  "resize": [
+    1080,
+    760,
+    640,
+    480
+  ],
+  "requests": [
+    "/",
+    "/start.js",
+    "/nsh.js",
+    "/acp_nsh_spike.wasm"
+  ],
+  "externalRequests": 0,
+  "daemonConnection": "NOT_RUN: offline fixture only; no native IPC or gateway"
+}

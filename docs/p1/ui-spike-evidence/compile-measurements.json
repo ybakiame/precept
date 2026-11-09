@@ -1,0 +1,48 @@
+[
+  {
+    "candidate": "gpui-kit",
+    "profile": "dev debug=0",
+    "jobs": 2,
+    "registry": "warm cached downloads; OS file cache not flushed",
+    "command": [
+      "cargo",
+      "build",
+      "--manifest-path",
+      "spikes/p1-e/gpui-kit/Cargo.toml",
+      "--locked"
+    ],
+    "clean_target": {
+      "seconds": 187.386,
+      "exit": 0
+    },
+    "warm_noop": {
+      "seconds": 0.36,
+      "exit": 0
+    }
+  },
+  {
+    "candidate": "nsh",
+    "profile": "dev debug=0",
+    "jobs": 2,
+    "registry": "warm cached downloads; OS file cache not flushed",
+    "command": [
+      "cargo",
+      "build",
+      "--manifest-path",
+      "spikes/p1-e/nsh/Cargo.toml",
+      "--locked",
+      "--features",
+      "native",
+      "--bin",
+      "acp-nsh-native"
+    ],
+    "clean_target": {
+      "seconds": 116.56,
+      "exit": 0
+    },
+    "warm_noop": {
+      "seconds": 0.223,
+      "exit": 0
+    }
+  }
+]
