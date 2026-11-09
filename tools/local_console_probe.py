@@ -231,6 +231,19 @@ def windows_native_start(command):
         raise
 
 
+def native_wait_marker(proc, marker, timeout=15):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            line = proc._acp_probe_lines.get(timeout=0.1)
+        except queue.Empty:
+            assert proc.poll() is None, "owned native app exited"
+            continue
+        if marker.encode() in (line or b""):
+            return
+    raise AssertionError("owned native marker timed out: " + marker)
+
+
 def native_wait_state(proc, *, selected=None, rows=None, timeout=15):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -262,10 +275,13 @@ def live_views(fixture, label, out):
         try:
             terminal.wait("LIVE_READ_ONLY")
             terminal.wait("Project: " + label)
-            terminal.wait("Empty — no confirmed preferences match")
             terminal.wait("Empty — no handoff for task missing")
-            # Tab focus: initial Reconnect, then Next project (single allowlisted root).
-            terminal.send(b"\t\t\r")
+            # The preference empty state belongs to its own page in E4.
+            terminal.focus(b"\x06", "Filter confirmed preferences")
+            terminal.wait("Empty — no confirmed preferences match")
+            terminal.send(b"\x1b1")  # Alt+1 returns to the Dashboard before project/reconnect checks.
+            terminal.wait("Project: " + label)
+            terminal.send(b"\x10")  # Ctrl+P selects the single allowlisted root.
             terminal.wait("Project: " + label)
             # Actual live disconnect/reconnect while the terminal remains mounted.
             stop(fixture.proc)

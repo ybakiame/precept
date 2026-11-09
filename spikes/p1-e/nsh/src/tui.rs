@@ -18,6 +18,7 @@ impl Drop for Restore {
     }
 }
 fn main() -> io::Result<()> {
+    acp_nsh_spike::TERMINAL_SURFACE.store(true, std::sync::atomic::Ordering::Relaxed);
     acp_nsh_spike::PROBE_STARTED
         .set(std::time::Instant::now())
         .ok();

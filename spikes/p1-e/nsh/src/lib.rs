@@ -1,8 +1,31 @@
 //! One read-only presentation and interaction surface for NSH desktop and TUI.
 use acp_ui_spike_model::{Model, Phase};
-use nsh_base::{button, theme};
+use nsh_base::button;
 use nsh_core::prelude::*;
 mod components;
+mod tokens;
+pub static DESKTOP_RUNTIME: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();
+fn runtime_lines() -> Vec<String> {
+    if TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed) {
+        return vec!["Backend: NSH / ratatui / crossterm terminal".into()];
+    }
+    if let Some((backend, renderer)) = DESKTOP_RUNTIME.get() {
+        return vec![
+            format!("Actual GTK backend: {backend} · renderer: {renderer}"),
+            "Renderer class does not attest GPU acceleration or compositor identity.".into(),
+        ];
+    }
+    vec![
+        if cfg!(target_os = "windows") {
+            "Backend: NSH native Windows"
+        } else {
+            "Runtime backend not observed yet; inspect local diagnostics."
+        }
+        .into(),
+    ]
+}
+pub static TERMINAL_SURFACE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 pub static PROBE_STARTED: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
 pub fn probe_elapsed() -> f64 {
     PROBE_STARTED
@@ -115,18 +138,8 @@ fn toggle_theme(model: Signal<Model>) {
 fn copy_page(model: Signal<Model>) {
     if model.get().phase == Phase::Ready {
         set_clipboard(model.get().visible_lines().join("\n"));
+        model.update(|m| m.copied = true);
     }
-}
-fn control(label: &'static str, callback: impl Fn() + 'static) -> impl IntoElement {
-    button()
-        .accessibility_label(label)
-        .px_2()
-        .py_1()
-        .rounded(px(5.0))
-        .bg(move || theme().muted)
-        .focus(|s| s.border_2().border_color(theme().primary))
-        .on_press(callback)
-        .child(text(label))
 }
 
 #[component]
@@ -152,35 +165,58 @@ fn console(model: Signal<Model>) -> impl IntoElement {
     let task_ref = element_ref();
     on_key("mod+r", move |_| reconnect(model));
     on_key("mod+p", move |_| next_project(model));
-    on_key("mod+f", move |_| filter_ref.focus());
-    on_key("mod+k", move |_| task_ref.focus());
+    on_key("mod+f", move |_| {
+        model.update(|m| m.set_section(acp_ui_spike_model::Section::Preferences));
+        filter_ref.focus();
+    });
+    on_key("mod+k", move |_| {
+        model.update(|m| m.set_section(acp_ui_spike_model::Section::Handoff));
+        task_ref.focus();
+    });
     on_key("mod+shift+h", move |_| toggle_contrast(model));
-    on_key("Escape", move |_| {
+    let global = KeyOptions {
+        when: nsh_core::keymap::When::Always,
+        ..Default::default()
+    };
+    on_key_with("Escape", global, move |_| {
         filter_ref.blur();
         task_ref.blur();
+        model.update(|m| m.cancel_read());
     });
-    for (key, section) in ["mod+1", "mod+2", "mod+3", "mod+4", "mod+5"]
+    for (key, section) in ["alt+1", "alt+2", "alt+3", "alt+4", "alt+5"]
         .into_iter()
         .zip(acp_ui_spike_model::Section::ALL)
     {
-        on_key(key, move |_| model.update(|m| m.set_section(section)));
+        on_key_with(key, global, move |_| {
+            filter_ref.blur();
+            task_ref.blur();
+            model.update(|m| m.set_section(section));
+        });
     }
     on_key("mod+d", move |_| toggle_theme(model));
     on_key("mod+shift+c", move |_| copy_page(model));
-    on_key("alt+ArrowRight", move |_| model.update(|m| m.page_by(1)));
-    on_key("alt+ArrowLeft", move |_| model.update(|m| m.page_by(-1)));
+    on_key_with("alt+ArrowRight", global, move |_| {
+        model.update(|m| m.page_by(1))
+    });
+    on_key_with("alt+ArrowLeft", global, move |_| {
+        model.update(|m| m.page_by(-1))
+    });
     #[cfg(not(target_arch = "wasm32"))]
     effect(move || {
         if std::env::var_os("ACP_UI_PROBE").is_some() {
             let current = model.get();
             eprintln!(
-                "ACP_NSH_STATE phase={:?} selected={} rows={} queried_chars={} filter_chars={} section={:?} elapsed={:.6}",
+                "ACP_NSH_STATE phase={:?} selected={} rows={} queried_chars={} filter_chars={} section={:?} page={} detail={} dark={} contrast={} elapsed={:.6}",
                 current.phase,
                 current.selected,
                 current.rows().len(),
                 current.queried_task.chars().count(),
                 current.filter.chars().count(),
                 current.section,
+                current.page,
+                current.selected_preference.is_some(),
+                current.dark,
+                current.high_contrast,
                 probe_elapsed()
             );
         }
@@ -197,6 +233,7 @@ mod tests {
         let mut app = nsh_testing::Headless::start(EngineConfig::new(Root::of::<App>())).unwrap();
         app.wait_for("Project: alpha").unwrap();
         assert!(app.screen().clipboard().is_none());
+        app.press_key("mod+k").unwrap();
         app.type_text("Task ID", "shared").unwrap();
         app.press("Lookup").unwrap();
         app.wait_for("Recorded validation evidence (not current session verification)")
@@ -211,8 +248,12 @@ mod tests {
         app.press("Lookup").unwrap();
         app.wait_for("Empty — no handoff for task missing in this project")
             .unwrap();
+        app.press_key("mod+f").unwrap();
         app.type_text("Filter preferences", "no-match").unwrap();
         app.wait_for("Empty — no confirmed preferences match")
+            .unwrap();
+        app.press_key("alt+2").unwrap();
+        app.wait_for("Only daemon-allowlisted projects; switching clears the task lookup.")
             .unwrap();
         app.press_key("mod+f").unwrap();
         app.press_key("mod+d").unwrap();
@@ -220,19 +261,19 @@ mod tests {
         app.press_key("Escape").unwrap();
         for (key, label) in [
             (
-                "mod+2",
+                "alt+2",
                 "Only daemon-allowlisted projects; switching clears the task lookup.",
             ),
             (
-                "mod+3",
+                "alt+3",
                 "Confirmed effective preferences · key / value / scope / source",
             ),
             (
-                "mod+4",
+                "alt+4",
                 "Empty — no handoff for task missing in this project",
             ),
             (
-                "mod+5",
+                "alt+5",
                 "Read-only operator IPC · API v1 · no daemon autostart",
             ),
         ] {
@@ -255,6 +296,7 @@ mod tests {
             })
             .collect();
         let mut model = Model::loading();
+        model.section = acp_ui_spike_model::Section::Preferences;
         model.receive(Ok(data));
         console(signal(model))
     }

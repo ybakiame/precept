@@ -21,9 +21,10 @@ owned synthetic-window OS captures and keyboard assertions supply separate check
 
 WSLg RDP/RAIL windows append a distro suffix to their OS title and include GTK
 transparent CSD shadows. Detection now uses a unique validated nonce and accepts
-that suffix without logging it. Captures exclude titlebar/shadows/corners and
-include only the opaque synthetic content interior, while requiring the owned
-window to be foreground. No desktop-wide or live-project capture is allowed.
+that suffix without logging it. E4 uses `PrintWindow` on that exact owned HWND,
+with no desktop crop or fallback; an unrelated topmost overlay cannot enter a
+desktop screenshot because no desktop screenshot is taken. Input requires the
+owned foreground window and pointer ownership. No live-project capture is allowed.
 
 `SetWindowPos` on the RAIL proxy only clipped the existing buffer in this session;
 it did not cause GTK resize. The probe now performs a real pointer border drag,

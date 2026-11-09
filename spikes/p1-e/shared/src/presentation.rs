@@ -12,6 +12,42 @@ pub fn sanitize(value: &str, limit: usize) -> String {
     out
 }
 impl Model {
+    pub fn read_label(&self) -> &'static str {
+        match self.phase {
+            Phase::Loading => "Reading…",
+            Phase::Ready if !self.live => "Synthetic snapshot ready",
+            Phase::Ready => "Last read succeeded",
+            Phase::Empty => "No allowlisted projects",
+            Phase::Error => "Invalid task ID",
+            Phase::Unavailable if self.permission_denied => "Access refused",
+            Phase::Unavailable => "Disconnected",
+        }
+    }
+    pub fn source_label(&self) -> &'static str {
+        if self.live {
+            "LIVE_READ_ONLY"
+        } else {
+            "OFFLINE_SYNTHETIC"
+        }
+    }
+    pub fn read_time(&self) -> String {
+        self.last_read_ms
+            .map(|t| {
+                format!(
+                    "Last successful read {:02}:{:02}:{:02} UTC",
+                    (t / 3_600_000) % 24,
+                    (t / 60_000) % 60,
+                    (t / 1000) % 60
+                )
+            })
+            .unwrap_or_else(|| {
+                if self.live {
+                    "No successful live read yet".into()
+                } else {
+                    "Offline synthetic snapshot".into()
+                }
+            })
+    }
     pub fn visible_lines(&self) -> Vec<String> {
         if self.phase != Phase::Ready {
             return vec![self.status()];
@@ -29,7 +65,10 @@ impl Model {
                     r.head.as_deref().unwrap_or("Unknown"),
                     r.dirty.map(|v| v.to_string()).unwrap_or("Unknown".into())
                 ));
-                lines.extend(self.preference_lines());
+                lines.push(format!(
+                    "{} confirmed preferences · Open Preferences to inspect",
+                    p.context.preferences.len()
+                ));
                 lines.extend(self.handoff_lines(false));
                 lines.extend(p.context.warnings.iter().take(8).cloned());
             }
@@ -43,7 +82,18 @@ impl Model {
                 );
                 lines.extend(p.context.warnings.iter().take(8).cloned());
             }
-            Section::Preferences => lines.extend(self.preference_lines()),
+            Section::Preferences => {
+                lines.extend(self.preference_lines());
+                if let Some(row) = self.preference_detail() {
+                    lines.push(format!("Selected preference: {}", sanitize(&row.key, 120)));
+                    lines.push(format!(
+                        "Value detail {}/{}: {}",
+                        self.detail_page + 1,
+                        self.detail_pages(),
+                        self.detail_chunk()
+                    ));
+                }
+            }
             Section::Handoff => lines.extend(self.handoff_lines(self.expanded)),
             Section::Diagnostics => {
                 lines.extend([
@@ -51,7 +101,7 @@ impl Model {
                     "NSH Rust Desktop / TUI · pinned framework · ADR-0003 Proposed".into(),
                     "Ctrl R reconnect · P project · F filter · K task · D theme · Shift H contrast"
                         .into(),
-                    "Ctrl 1–5 pages · Escape blur · Alt arrows preference pages · Ctrl Q close"
+                    "Alt 1–5 pages · Escape blur · Alt arrows preference pages · Ctrl Q close"
                         .into(),
                     "Copy visible page is explicit; values are sanitized and bounded.".into(),
                     "Health is the last query result; no continuous connection is claimed.".into(),
@@ -93,7 +143,15 @@ impl Model {
             rows.into_iter()
                 .skip(self.page * PAGE_SIZE)
                 .take(PAGE_SIZE)
-                .map(|r| format!("{} = {} [{} / {}]", r.key, r.value, r.scope, r.source)),
+                .map(|r| {
+                    format!(
+                        "{} = {} [{} / {}]",
+                        sanitize(&r.key, 64),
+                        sanitize(&r.value, 160),
+                        sanitize(&r.scope, 64),
+                        sanitize(&r.source, 80)
+                    )
+                }),
         );
         lines
     }

@@ -289,3 +289,34 @@ fn handoff_preserves_validation_provenance_without_relaxing_status() {
     source["validation"][0]["status"] = json!("SUCCESS");
     assert!(serde_json::from_value::<Handoff>(source).is_err());
 }
+
+#[test]
+fn fingerprint_is_requested_only_after_valid_handoff_scope_check() {
+    use std::cell::RefCell;
+    struct Spy(RefCell<Vec<bool>>);
+    impl WorktreeInspector for Spy {
+        fn inspect(&self, _: &Project, fingerprint: bool) -> Result<Worktree> {
+            self.0.borrow_mut().push(fingerprint);
+            Ok(Worktree::default())
+        }
+    }
+    let (_temp, mut memory, _) = fixture();
+    memory.handoff = Some(handoff());
+    let spy = Spy(RefCell::new(Vec::new()));
+    let resolver = ContextResolver::new(
+        "alpha",
+        &memory,
+        &memory,
+        &memory,
+        &spy,
+        &documents::FileDocuments,
+    )
+    .unwrap();
+    resolver.context(false).unwrap();
+    resolver.context(true).unwrap();
+    assert_eq!(*spy.0.borrow(), [false, false]);
+    assert!(resolver.handoff("foreign").is_err());
+    assert_eq!(spy.0.borrow().len(), 2);
+    resolver.handoff("task").unwrap();
+    assert_eq!(*spy.0.borrow(), [false, false, true]);
+}

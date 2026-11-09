@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 use std::{collections::BTreeMap, path::PathBuf};
 
 pub mod documents;
+pub mod fingerprint;
 
 pub type Result<T> = std::result::Result<T, Error>;
 

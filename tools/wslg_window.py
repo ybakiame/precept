@@ -1,6 +1,6 @@
 """Windows-side, nonce-bound WSLg window control. Run only against owned fixtures.
 
-No whole-desktop capture. Input requires that exact unique window be foreground.
+Only PrintWindow of the nonce-bound HWND is permitted. Input requires that exact unique window be foreground.
 Stdout contains fixed metadata, never arbitrary window titles or user content.
 """
 
@@ -54,7 +54,7 @@ def main():
     assert len(found) == 1, "owned WSLg window not uniquely visible"
     hwnd = found[0]
     action = request["action"]
-    if action in ("key", "capture", "resize"):
+    if action in ("key", "click", "resize"):
         u.SetForegroundWindow(hwnd)
         time.sleep(0.08)
         assert (
@@ -69,26 +69,45 @@ def main():
         ]
 
         def key(vk, up=False):
-            u.keybd_event(vk, 0, 2 if up else 0, 0)
+            if not up:
+                assert (
+                    u.GetForegroundWindow() == hwnd
+                ), "owned foreground lost; input stopped"
+            u.keybd_event(
+                vk,
+                u.MapVirtualKeyW(vk, 0),
+                (2 if up else 0) | (1 if 0x25 <= vk <= 0x28 else 0),
+                0,
+            )
 
         sequence = request["sequence"]
         # Closed test vocabulary, no arbitrary injection into other applications.
         special = {
             "ctrl+p": ord("P"),
+            "ctrl+d": ord("D"),
+            "ctrl+shift+h": ord("H"),
+            "alt+Right": 0x27,
+            "alt+Left": 0x25,
             "ctrl+f": ord("F"),
             "ctrl+k": ord("K"),
             "ctrl+r": ord("R"),
-            "ctrl+1": ord("1"),
-            "ctrl+2": ord("2"),
-            "ctrl+3": ord("3"),
-            "ctrl+4": ord("4"),
-            "ctrl+5": ord("5"),
+            "alt+1": ord("1"),
+            "alt+2": ord("2"),
+            "alt+3": ord("3"),
+            "alt+4": ord("4"),
+            "alt+5": ord("5"),
         }
         if sequence in special:
-            key(0x11)
-            key(special[sequence])
-            key(special[sequence], True)
-            key(0x11, True)
+            modifier = 0x12 if sequence.startswith("alt+") else 0x11
+            key(modifier)
+            if "shift+" in sequence:
+                key(0x10)
+            try:
+                key(special[sequence])
+            finally:
+                key(special[sequence], True)
+                key(0x10, True) if "shift+" in sequence else None
+                key(modifier, True)
         elif sequence in ("Tab", "Enter", "Escape"):
             vk = {"Tab": 9, "Enter": 13, "Escape": 27}[sequence]
             key(vk)
@@ -106,6 +125,25 @@ def main():
                 key(vk)
                 key(vk, True)
                 time.sleep(0.025)
+    elif action == "click":
+        x, y = request["position"]
+        bounds = W.RECT()
+        assert u.GetWindowRect(hwnd, ctypes.byref(bounds))
+        assert (
+            0 <= x < bounds.right - bounds.left - 64
+            and 0 <= y < bounds.bottom - bounds.top - 100
+        )
+        point = W.POINT(bounds.left + 32 + x, bounds.top + 66 + y)
+        u.WindowFromPoint.argtypes = [W.POINT]
+        u.WindowFromPoint.restype = W.HWND
+        u.GetAncestor.argtypes = [W.HWND, W.UINT]
+        u.GetAncestor.restype = W.HWND
+        assert (
+            u.GetAncestor(u.WindowFromPoint(point), 2) == hwnd
+        ), "owned target occluded; no pointer input"
+        u.SetCursorPos(point.x, point.y)
+        u.mouse_event(0x0002, 0, 0, 0, 0)
+        u.mouse_event(0x0004, 0, 0, 0, 0)
     elif action == "resize":
         width, height = request["size"]
         assert (width, height) in [(1080, 760), (640, 480), (720, 600)]
@@ -135,30 +173,8 @@ def main():
     elif action == "close":
         assert u.PostMessageW(hwnd, 0x0010, 0, 0)
     elif action == "capture":
-        import mss, mss.tools
-
-        bounds = W.RECT()
-        assert u.GetWindowRect(hwnd, ctypes.byref(bounds))
-        with mss.MSS() as capture:
-            # WSLg RAIL bounds include transparent GTK CSD shadows. Capture
-            # only the opaque content interior, excluding titlebar/corners/shadows.
-            frame = capture.grab(
-                dict(
-                    left=bounds.left + 32,
-                    top=bounds.top + 66,
-                    width=bounds.right - bounds.left - 64,
-                    height=bounds.bottom - bounds.top - 100,
-                )
-            )
-            assert len(set(frame.rgb[::3])) > 8, "blank WSLg frame"
-            mss.tools.to_png(frame.rgb, frame.size, output=request["output"])
-        print(
-            json.dumps(
-                dict(
-                    status="PASS", width=frame.width, height=frame.height, nonblank=True
-                )
-            )
-        )
+        result = capture_owned_window(hwnd, request["output"], inset=(32, 66, 32, 34))
+        print(json.dumps(result))
         return
     else:
         assert action == "visible"

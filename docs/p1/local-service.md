@@ -183,28 +183,26 @@ use no actual profile DB or AGENT_CP_HOME, and no capability content is committe
 
 Git uses bounded shell-free subprocesses, strips inherited GIT_* selectors, disables
 fsmonitor and optional index writes, validates the repository root and reports
-HEAD/branch/dirty/count best-effort. Missing Git/unregistered Git roots/unavailable
-commands return unknown fields, never a fabricated clean tree. Each Git command's
-stdout is drained asynchronously while the child runs, under a 700 ms deadline
-covering both output and exit. The reader stops at 64 KiB plus one byte; overflow,
-read failure or timeout closes the pipe and kills/reaps the child. This replaces
-polling for exit before reading stdout. Only the existing
-five allowlisted documents are read, at most 16 KiB each, with explicit content opt-in.
+HEAD/branch/dirty/count best-effort. Missing Git/unregistered roots/unavailable
+commands return unknown fields, never a fabricated clean tree. Git stdout is
+bounded and drained concurrently with discarded stderr; deadlines kill/reap the
+child. Metadata uses a 4s deadline/64KiB cap; requested fingerprints use 6s Git
+children and the exact 16MiB/500-file v1 budget. The existing five allowlisted
+documents remain limited to 16KiB each with explicit content opt-in.
 
-Rust does **not** implement Python's acp-worktree-v1 fingerprint. Current handoff
-fingerprint is null and existing core stale/incomplete-evidence warnings apply.
-A real committed Git fixture separately verifies the fingerprint delta; it is not
-called hash parity. Context/handoff values, source/status/IDs and opaque evidence
-otherwise come from the same read-only adapter. Existing v0 legacy/fingerprinted
-and v1 schema support is retained, with no creation/migration.
+E4 adds on-demand Python-compatible `acp-worktree-v1` to validated Handoff reads.
+Context/health never request the extra diff/untracked-content scan. Legacy nullable
+fingerprints remain readable and unavailable values keep the existing explicit
+warnings. See the [exact byte contract and adapter limitations](worktree-fingerprint-v1.md).
+No schema creation/migration or runtime write authority is introduced.
 
 The bridge preserves the P0 two-tool schemas, legacy initialize/notification state,
 stateless 2026 _meta, ping, tools/list and tools/call behavior. A real subprocess
 suite compares 132 normalized JSON-RPC responses against Python across all three
 schemas and six bridge processes. Text-wrapped JSON is parsed for equality; IDs,
 timestamps and evidence are not dropped. Unknown Git HEAD fixtures make exact
-fingerprint-unavailable equality meaningful. A separate live-Git test records the
-known fingerprint difference. Legacy missing fingerprint is mapped to logical NULL
+fingerprint-unavailable equality meaningful. A separate live-Git test now compares exact Python/Rust fingerprints, full Handoff
+warnings and preserved evidence through operator IPC and bound MCP. Legacy missing fingerprint is mapped to logical NULL
 by the existing read-only Python oracle, without running its schema-writing constructor.
 
 Resource bounds, strict RFC JSON (no NaN), 64-bit numeric JSON-RPC IDs and sanitized
@@ -213,7 +211,11 @@ is a tested subset, not full MCP conformance/certification. External harness ver
 GUI/device accessibility, ACP/PTY sessions and production operational hardening
 remain NOT_RUN. [ADR-0002](../adr/0002-local-ipc-capabilities.md) records the tradeoffs.
 
-## Validation and support evidence
+## Historical P1-D validation and support evidence
+
+The matrix below records PR #13 only. E4 local Windows/WSL fingerprint and migrated
+security evidence supersedes its fingerprint gap; see [E4 results](../evaluation/p1-e4-local-ux.md).
+E4 does not dispatch or consume a new GitHub Actions run.
 
 Local environment: Linux x86_64, Python 3.12.14, Rust/Cargo 1.99.1. Baseline before
 changes passed 28 Rust / 21 Python tests. Local E2E currently passes 11 tests, including
