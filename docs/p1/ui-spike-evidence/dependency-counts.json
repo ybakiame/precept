@@ -1,0 +1,17 @@
+{
+  "nsh-native": {
+    "unique_normal_dependency_lines": 318,
+    "SQLite_and_QuickJS": "absent",
+    "native_IPC": "existing acp-ipc"
+  },
+  "gpui-native": {
+    "unique_normal_dependency_lines": 527,
+    "SQLite_and_QuickJS": "absent",
+    "native_IPC": "existing acp-ipc"
+  },
+  "web": {
+    "unique_normal_dependency_lines": 194,
+    "SQLite_and_QuickJS": "absent",
+    "native_IPC": "absent"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "status": "RUN_PASS",
+  "candidate": "nsh",
+  "os": "Linux-6.18.57-x86_64-with-glibc2.41",
+  "window_probe": "Linux native visible-window enumeration",
+  "startup_to_visible_window_seconds": 9.1685,
+  "rss_bytes_at_probe": 192864256,
+  "binary_bytes": 105360544,
+  "data": "authenticated synthetic daemon; no UI SQLite access",
+  "startup_to_model_ready_seconds": 9.2686,
+  "resize": [
+    1080,
+    760,
+    640,
+    480
+  ],
+  "daemon_outlives_ui": true,
+  "synthetic_db_unchanged": true
+}

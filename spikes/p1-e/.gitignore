@@ -1,0 +1,7 @@
+**/target/
+target-*/
+**/.nsh/
+**/dist/
+artifacts/
+vendor/
+tests/node_modules/

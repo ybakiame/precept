@@ -1,0 +1,25 @@
+{
+  "code_sha": "8572a24cee9d9bbcadf5d957e0e18a8f59582185",
+  "source": "actual synthetic-only Linux native/PTY/browser probes; no screenshot generation",
+  "files": {
+    "gpui-kit-native.png": "0eb0c6228f6fd4681a9b7a1fbaf7625be792e7d7309e4f8f0933f8f27c8d491c",
+    "gpui-kit-native-small.png": "4aa71b39b4a9782c3b171dfe11dee1c06f7e1fdd8a1e687558ef40a3e1710bd6",
+    "nsh-native.png": "47f96665c76f6f8e325d00e93cafddcf43394f3eaeb2de2eec124cac7fbf2cc8",
+    "nsh-native-small.png": "b172cc79f301a6edcfca2328ad57c21fd37b7d8884da4a32a1f2594bc69aed3c",
+    "hybrid-native.png": "0a19621a5596d8ad5601cac8f6f6926a1ee5e897ee0de0bcd87d348dbef863a7",
+    "hybrid-native-small.png": "f465186ac826d0b26d7e0319234286974873139bf2eded6d8a5795b88c9af08d",
+    "nsh-web-light.png": "0d0d0f87f2c2bd5fafc219da46b3e92a9b3e88e5817bfd41a17a657e6aab1908",
+    "nsh-web-dark.png": "688ff39b4fc6db803ccd6a7f66423156952e2d86a95cb6c7e694993743081619",
+    "nsh-tui-large.txt": "8382260d2d7a3508c173f6222b1d06a0e349eced132fd8cf8949a1988a57e7f4",
+    "nsh-tui-small.txt": "f3c0d618a419571a604085c326ba4fc4261d2f735773b0869a2b642dd76a3a77",
+    "compile-measurements.json": "8d87b54e47cebaf3a89058ec6d9b0d39559cf22cec83a6590366aaaef2c3dd7d",
+    "dependency-counts.json": "1bd263733ee5d3fa690b0aa4bc7b724dac610b15e36d2321875b54bfd954f4b1",
+    "gpui-kit-native-result.json": "d020950b53ab944a21db202faa205166cfee3b48707a86add4100943c84c5236",
+    "nsh-native-result.json": "9ec3d9b9033a0704421c333a0943b6b9b63a9c97f1c100319df434f978255e3c",
+    "hybrid-native-result.json": "e0a417ffbb52070557e0b7b303306511524a2014950ba9d0a15acdf4038bbec8",
+    "tui-result.json": "1b788fce79d75055f018945e99c0cda914c859014ff19c1658925497928c6444",
+    "web-result.json": "78ad6ae96e98e9e6855aaae006923a23f302a9fe1b54f83f8ee4557bd11dda18",
+    "final-ci-native-results.json": "cda0253e403143ef4051e31937de14f651458babccdd823cd7bb208da68c401a"
+  },
+  "terminal_probe_note": "Terminal evidence regenerated after making native window readiness markers opt-in; text rows right-trimmed, internal cell spacing retained."
+}
