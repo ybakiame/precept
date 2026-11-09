@@ -128,7 +128,9 @@ Rejected framing/auth may close the connection; excess peers are closed without
 queueing. Error logs do not contain raw SQL, docs, preference values, tokens or paths.
 Operator output is machine-readable JSON, exit 0 on success / 3 on query failure;
 invalid invocation/daemon startup errors exit 2. Health exposes schema/version and
-readiness only, without project docs/values/absolute paths. No bridge has a DB path.
+readiness only, without project docs/values/absolute paths. No bridge has a DB path. Database and control-runtime paths must be disjoint;
+startup refuses storage inside the runtime directory before opening a control lease
+for writing. This prevents a DB/control-file name collision under mistaken arguments.
 
 Limits: 16 admitted peers, one sequential request per connection, 32 requests and
 remembered IDs per connection, 2 seconds for the **whole** input/output frame and
@@ -204,7 +206,7 @@ remain NOT_RUN. [ADR-0002](../adr/0002-local-ipc-capabilities.md) records the tr
 ## Validation and support evidence
 
 Local environment: Linux x86_64, Python 3.12.14, Rust/Cargo 1.99.1. Baseline before
-changes passed 28 Rust / 21 Python tests. Local E2E currently passes 8 tests, including
+changes passed 28 Rust / 21 Python tests. Local E2E currently passes 9 tests, including
 real foreground daemon + CLI + two MCPs, exact protocol parity, direct IPC attacks,
 allowlist denial, frame limits/duplicates/timeouts, bounded concurrency/backpressure,
 client cancellation, stale endpoint/restart/credential rotation, unchanged DB bytes,
@@ -246,3 +248,8 @@ future/incompatible DB schema, use the unchanged Python fallback and investigate
 never run a migration merely to make this service start. No automatic fallback
 opens a network socket. Subsequent production rollout should add reviewed install/
 recovery procedures, cross-account OS tests and fingerprint conformance separately.
+
+Final path-separation hardening adds a ninth service test: a caller-supplied SQLite
+file inside the proposed control runtime is refused before lease/capability files
+are created, leaving its bytes unchanged. The eight-test results above remain the
+historical first code-run evidence; the Draft PR records the final nine-test CI head.

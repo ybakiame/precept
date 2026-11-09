@@ -495,6 +495,17 @@ class LocalServiceTests(unittest.TestCase):
             f.start()
             assert f.cli("health")["ready"]
 
+    def test_database_and_control_runtime_must_be_disjoint(self):
+        with Fixture(start=False) as f:
+            f.runtime.mkdir(mode=0o700)
+            inside = create_fixture(f.runtime / "data")
+            before = inside.read_bytes()
+            denied = subprocess.run(f.args(inside), capture_output=True, timeout=10)
+            assert denied.returncode != 0
+            assert inside.read_bytes() == before
+            assert not (f.runtime / "daemon.lock").exists()
+            assert not (f.runtime / "operator.cap").exists()
+
 
 if __name__ == "__main__":
     unittest.main()

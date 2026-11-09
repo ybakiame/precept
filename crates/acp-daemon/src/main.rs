@@ -223,6 +223,35 @@ async fn run(args: Args) -> acp_ipc::Result<()> {
         store.read_project(project).map_err(|_| Error::NotFound)?;
     }
     drop(store);
+    // Control-file names must never alias storage, even under an explicit but
+    // mistaken operator configuration (for example a database named daemon.lock).
+    let runtime = if args.location.runtime_dir.exists() {
+        args.location
+            .runtime_dir
+            .canonicalize()
+            .map_err(|_| Error::UnsafeRuntime)?
+    } else {
+        args.location
+            .runtime_dir
+            .parent()
+            .ok_or(Error::UnsafeRuntime)?
+            .canonicalize()
+            .map_err(|_| Error::UnsafeRuntime)?
+            .join(
+                args.location
+                    .runtime_dir
+                    .file_name()
+                    .ok_or(Error::UnsafeRuntime)?,
+            )
+    };
+    if args
+        .database
+        .canonicalize()
+        .map_err(|_| Error::Unavailable)?
+        .starts_with(&runtime)
+    {
+        return Err(Error::UnsafeRuntime);
+    }
     let mut lease = RuntimeLease::acquire(&args.location)?;
     let mut listener = acp_ipc::transport::Listener::bind(&args.location).await?;
     let credentials = Arc::new(lease.credentials(&args.projects)?);
