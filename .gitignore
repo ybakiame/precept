@@ -14,3 +14,4 @@ dist/
 *.log
 
 /target/
+/artifacts/local-p1-e2/

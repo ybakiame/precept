@@ -2,7 +2,7 @@
 
 Local-first, developer-centric context control plane for coding agents. **P0 prototype**: a working SQLite context hub, explicit preference review, task handoffs, and a project-scoped read-only MCP stdio server. No GUI or external memory backend is required.
 
-> Current status: `0.1.0a0` engineering prototype. The P0 code is Python 3.11+ **stdlib only**, chosen so the schema, permission boundary, and MCP contract can be tested immediately. A Rust core/daemon and GPUI/NSH interface are **proposed**, not implemented. This is not an agent process orchestrator or production security boundary.
+> Current status: `0.1.0a0` engineering prototype. Python 3.11+ remains the **stdlib-only** operator write path. A Rust read-only core, local daemon/IPC/MCP, and isolated NSH desktop/TUI console are implemented. Framework selection remains **Proposed**; this is not an agent process orchestrator or production security boundary.
 
 ## Why
 
@@ -92,6 +92,8 @@ docs/            # architecture, interfaces, risks, roadmap, UI ADR
 - [P0/P1/P2 roadmap and acceptance](docs/roadmap.md)
 - [Codex/Kimi context and Handoff E2E evidence (2026-11-08)](docs/evaluation/2026-11-08-codex-kimi-handoff.md)
 - [P0 MCP negative-boundary test plan](docs/evaluation/p0-mcp-negative-boundaries.md)
+- [Local NSH console, Windows/WSL ownership and verification quickstart](docs/p1/local-codex-e2.md)
+- [P1-E2 sanitized local validation](docs/evaluation/p1-e2-local-validation.md)
 - [ADR-0001: Core before GPUI / NSH interface](docs/adr/0001-core-before-ui.md)
 
 The standalone [agent-development-protocol](https://github.com/ybakiame/agent-development-protocol) remains authoritative for agent-neutral engineering procedures. This repository **consumes** the protocol; it does not rewrite a project's `AGENTS.md`, dependencies, or CI gates.

@@ -13,7 +13,7 @@ native = ["dep:acp-ipc", "dep:tokio", "dep:clap"]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 acp-ipc = { path = "../../../crates/acp-ipc", optional = true }
-tokio = { version = "1", features = ["rt", "net", "time"], optional = true }
+tokio = { version = "1", features = ["rt", "net", "time", "process", "io-util"], optional = true }
 clap = { version = "4", features = ["derive"], optional = true }
 
 [[bin]]

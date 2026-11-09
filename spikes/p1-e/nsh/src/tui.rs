@@ -32,7 +32,7 @@ fn main() -> io::Result<()> {
         if event::poll(Duration::from_millis(16))? {
             match event::read()? {
                 Event::Key(k) if k.kind != KeyEventKind::Release => {
-                    if k.code == KeyCode::Char('q')
+                    if k.code == KeyCode::Char('q') && k.modifiers.contains(KeyModifiers::CONTROL)
                         || (k.code == KeyCode::Char('c')
                             && k.modifiers.contains(KeyModifiers::CONTROL))
                     {
@@ -46,6 +46,10 @@ fn main() -> io::Result<()> {
                         KeyCode::Down => "ArrowDown".into(),
                         KeyCode::Left => "ArrowLeft".into(),
                         KeyCode::Right => "ArrowRight".into(),
+                        KeyCode::Backspace => "Backspace".into(),
+                        KeyCode::Delete => "Delete".into(),
+                        KeyCode::Home => "Home".into(),
+                        KeyCode::End => "End".into(),
                         KeyCode::Char(c) => c.to_string(),
                         _ => continue,
                     };
