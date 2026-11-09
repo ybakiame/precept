@@ -80,15 +80,15 @@ Pointer tests cover navigation, disclosure and paging as well as real resize.
 
 ## Acceptance checklist
 
-- [ ] Before/after actual Windows and native WSLg synthetic views at 1080×760 and
+- [x] Before/after actual Windows and native WSLg synthetic views at 1080×760 and
   640×480; private PTY/ConPTY frames at 160×50 and 80×30.
-- [ ] Compact content remains usable with less chrome and no horizontal clipping.
-- [ ] Five pages, project/task/filter/paging/detail/copy, focus, CJK and all themes.
-- [ ] Delayed/out-of-order requests, cancel, denial and reconnect cannot restore stale scope.
-- [ ] Actual GdkWaylandDisplay, map/paint, OS input/resize, reconnect and 10k workload;
+- [x] Compact content remains usable with less chrome and no horizontal clipping.
+- [x] Five pages, project/task/filter/paging/detail/copy, focus, CJK and all themes.
+- [x] Delayed/out-of-order requests, cancel, denial and reconnect cannot restore stale scope.
+- [x] Actual GdkWaylandDisplay, map/paint, OS input/resize, reconnect and 10k workload;
   >=3 startup/RSS samples per surface, separately defined timing observations.
-- [ ] Root/parity/recovery, Rust fingerprint oracle and real Rust MCP security gates.
-- [ ] Owner reviews actual local synthetic windows before Draft PR finalization.
+- [x] Root/parity/recovery, Rust fingerprint oracle and real Rust MCP security gates.
+- [x] Owner reviews actual local synthetic windows before Draft PR finalization.
 
 niri, macOS/mobile, full IME and screen readers remain NOT_RUN unless actually
 executed. No Actions, system configuration edits, user DB migration or real data upload.

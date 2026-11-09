@@ -165,7 +165,7 @@ Only the selected project context/handoff is fetched. Empty confirmed preference
 state is preserved, with scope/source on every returned row, stale/fingerprint
 warnings and recorded evidence explicitly distinguished from current verification.
 
-Ctrl/Cmd+R reconnects; +F focuses the filter; +K focuses task input; +D changes theme; +Shift+H toggles high contrast; +1–5 selects pages; Escape blurs inputs;
+Ctrl/Cmd+R reconnects; +F focuses the filter; +K focuses task input; +D changes theme; +Shift+H toggles high contrast; Alt+1–5 selects pages; Escape blurs inputs;
 Ctrl/Cmd+Shift+C copies the visible detail page deliberately. Alt+Left/Right or the
 page buttons navigate 12-row pages. Windows NSH Tab traverses text inputs; shortcuts
 provide project and action navigation. TUI Tab also traverses pressable controls;
@@ -198,11 +198,13 @@ artifacts. `test_windows_wsl.py --help` separately documents synthetic Windows�
 snapshot isolation and lifecycle checks. No Windows development project is inferred
 from a parent directory; the selected external path remains exactly the opt-in.
 
-The real-root test compares bounded Git HEAD/branch/complete porcelain status and
+The real-root test compares bounded Git HEAD/branch/porcelain status and
 lstat metadata for the root/checkout marker, Git HEAD/index/config/packed-refs and
 the five allowlisted documents. It does not claim a full-tree content attestation:
 ignored files, unsampled metadata and external concurrent activity are outside this
-comparison. Only digests/boolean observations may enter sanitized evidence.
+comparison. If external filters/submodules are configured, status is not run and
+remains Unknown; safe HEAD/branch and metadata comparisons still run. No filter
+or repository program is executed. Only digests/boolean observations may enter sanitized evidence.
 `include_documents` is false; no raw document/handoff/preference values are uploaded.
 No preexisting ACP user DB is opened, migrated, backed up or mutated.
 

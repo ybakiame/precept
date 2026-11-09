@@ -1,7 +1,8 @@
 # E4 historical remote branch audit
 
 Freshly fetched against main `80fdbc57e4ec47557e9130808b401a22ad6b913f`.
-No branch/worktree has been deleted at this audit stage. Original remote listings,
+This table records original remote refs; all remain retained after the owner
+changed cleanup to local-only. No worktree was deleted. Original remote listings,
 PR metadata, unique commit subjects and diffs remain in private E4 artifacts.
 
 | Remote branch | Exact original tip | main-only / branch-only commits | Associated PR |
@@ -38,6 +39,28 @@ There is no active worktree attached to these refs. Existing stale/prunable
 worktrees, source files or Git history/PR records. The active E4 branch and main are
 excluded. No cherry-pick, `branch -D` or force-push is used.
 
-Deletion requires a final fresh ref/PR/dependency check, successful clean Windows
-and WSL migration/UI evidence, and the owner's confirmation of that evidence per
-Issue #20 phase 5D. Final deletion outcomes are **pending**.
+## Final owner-directed local cleanup
+
+After successful clean Windows/WSL verification at
+`22dd5f91e67f71b432f751e047442c9d62708cd4`, the owner directed local cleanup only,
+retaining main/current work and leaving remote deletion until GitHub merge.
+This supersedes the earlier optional remote-delete plan; no remote delete is pending
+agent approval or executed automatically.
+
+| Deleted local branch | Exact retained remote tip |
+| --- | --- |
+| `feat/handoff-worktree-fingerprint` | `7c51b1a` (full original tip above) |
+| `feat/p1-e2-local-console` | `b4b7486` (full original tip above) |
+| `feat/p1-e3-ui-wslg-wayland` | `8257108` (full original tip above) |
+
+Before each deletion, local tip equaled its retained remote upstream and no active
+worktree used it. Normal `git branch -d` was sufficient, including the historical
+fingerprint ref whose exact upstream is retained. No forced branch deletion was
+used. Main fast-forwarded safely from `d1cf45c` to `80fdbc5` using a local fetch;
+only `main` and `feat/p1-e4-ux-rust-migrations` remain in the working repository.
+The detached/prunable worktree metadata remains intact. Before/after local and
+remote listings stay private in `artifacts/local-p1-e4/branch-audit/`.
+
+All eleven old remote refs remain unchanged. Repository-wide automatic deletion
+settings were not modified. The owner handles GitHub merge and post-merge remote
+branch cleanup; this task creates a Draft PR and does not merge it.
