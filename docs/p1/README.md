@@ -24,10 +24,11 @@ library and cross-language checks; see [implementation and validation evidence](
 P1-C1 adds a [read-only SQLite adapter](sqlite-readonly.md); P1-C2A adds an
 [owned temporary migration rehearsal](synthetic-migration.md). P1-C2B1 adds
 [test-only persistent process recovery](process-recovery.md). Production P1-C2B2
-write/migration rollout and P1-D onward remain unimplemented. Remote CI/platform results must be reported
+write/migration rollout remains unimplemented. P1-D now provides a
+[runnable local read-only service](local-service.md); P1-E/F remain unimplemented. Remote CI/platform results must be reported
 separately from local validation.
 
-## Crate layout (acp-core and read-only acp-store exist)
+## Crate layout (core/store/rehearsal and local service crates exist)
 
 ```text
 crates/

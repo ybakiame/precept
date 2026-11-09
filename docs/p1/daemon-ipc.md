@@ -1,5 +1,9 @@
 # Local Daemon and IPC — Design Contract
 
+Implemented prototype: [protocol, operator quickstart and validation](local-service.md).
+The design below remains the architectural boundary; not every future scenario
+is a production guarantee.
+
 ## Boundary
 
 `acp-daemon` is a **user-local** service, independent of GUI lifetime. P1 should first serve read-only project context and Handoff retrieval. It must not become a privilege broker, remote server or autonomous tool runner. The Python CLI remains the reference write interface until the Rust migration is validated.
@@ -50,4 +54,6 @@ Preference confirmation, workspace deletion, device operations, agent process te
 
 Two local clients request the same project while a third attempts a different project without authorization; denied requests cannot leak preference values or documents. Close GUI: daemon remains available. Restart daemon: registered projects and confirmed preferences persist. Simulate malformed/oversize requests, stale/unknown schema, crash during write migration, and concurrent read/write contention. The MCP adapter still passes its existing legacy and stateless fixtures.
 
-This is a P1 **implementation contract**, not a claim that these controls already exist.
+P1-D implements the bounded read-only vertical slice. See the linked support table
+for actual tested behavior and explicit limitations; no production isolation or
+write/migration capability is implied.
