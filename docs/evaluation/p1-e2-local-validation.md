@@ -16,7 +16,7 @@ All project names, paths, Git values, document metadata and pre/post digests rem
 local. No real preference values, handoff evidence, transcripts, credentials,
 user/device identifiers or screenshots enter this document or the PR.
 
-Toolchains observed: Windows Rust/Cargo **1.99.1**, MSVC Build Tools, Python
+Toolchains observed: Windows 11 **10.0.26300**, Rust/Cargo **1.99.1**, MSVC Build Tools, Python
 **3.14.5**, portable Git **2.56.0.windows.4**; WSL Rust/Cargo **1.99.1**, Python
 **3.14.9**, local Codex CLI **0.167.0**. NSH and GPUI source revisions and all
 separate Cargo.lock files remain pinned. Test-only packages: pyte 0.8.2,
@@ -27,16 +27,15 @@ Reproduce with [the quickstart](../p1/local-codex-e2.md) and
 [`tools/local_verify.py`](../../tools/local_verify.py). Private `report.json` files
 retain the exact argv, exit code, duration, versions, counts, Git SHA and dirty
 state. Raw diagnostic directories and local unsigned packages are ignored and
-were not uploaded. The final source revision and gate totals are recorded below
-once the committed-source rerun completes; earlier work-in-progress reports
-honestly retain their base SHA and `worktree_dirty=true`.
+were not uploaded. The committed-source revision and gate totals are recorded below. Earlier
+work-in-progress reports honestly retain their base SHA and `worktree_dirty=true`.
 
 ## Actual observations
 
 | Check | Observed local result |
 | --- | --- |
 | Root fmt/Clippy/workspace tests | PASS on Windows and WSL; 31 Windows / 32 Unix Rust tests |
-| Python reference/security regressions | 21 original tests PASS on Windows; 24 including three local-runner regressions PASS on WSL |
+| Python reference/security regressions | 24 tests PASS on each host: the 21 original tests plus three local-runner regressions |
 | JSON contract parity | 120 comparisons PASS on each host |
 | Exact SQLite parity | 78 comparisons PASS on each host |
 | Synthetic backup/rehearsal and process death/restart | PASS on each host; 11 process-recovery tests |
@@ -45,7 +44,7 @@ honestly retain their base SHA and `worktree_dirty=true`.
 | NSH component renderer | Two tests PASS on Windows; 10,000 rows mounted across all 834 pages, every row checked, fewer than 100 text nodes at each page, filtering/selection/input/explicit copy tested |
 | Windows native desktop | Actual visible windows, loaded-model layout, resize/close, three release samples, rendered project-switch/filter assertions PASS |
 | Windows ConPTY | Actual NSH/ratatui process; Tab project switch, task including `q`, input focus/filter, Ctrl+Q close, no readiness-marker leakage PASS |
-| 10k physical desktop and terminal workloads | Windows native window filtered 10,000→1 through Ctrl+F/WM_CHAR; actual ConPTY filtered 10,000→1; both PASS |
+| 10k actual native-window and ConPTY workloads | Windows native window filtered 10,000→1 through Ctrl+F/WM_CHAR; actual ConPTY filtered 10,000→1; both PASS |
 | Windows owner → WSL helper → Unix IPC | Context equality, project/hostile-input denial, removed capability, daemon stop/refusal/restart and independent lifetimes PASS |
 | Explicit real project | Operator/UI/MCP/Codex same-scope context; confirmed preferences and handoff Empty; project override/foreign task refused; PASS |
 | Real-project Windows views | Actual native window and ConPTY loaded the WSL-backed selected-project model; terminal observed disconnect/reconnect; UI closure left daemon healthy; PASS |
@@ -73,20 +72,24 @@ ranking or a clean-install support claim.
 
 | Sample | Desktop visible / model layout (s) | Desktop RSS bytes | ConPTY expected screen (s) | ConPTY RSS bytes |
 | --- | --- | --- | --- | --- |
-| 1 | 0.1123 / 0.4917 | 55,455,744 | 0.4193 | 15,745,024 |
-| 2 | 0.0885 / 0.4686 | 55,414,784 | 0.4793 | 15,736,832 |
-| 3 | 0.0901 / 0.4705 | 55,431,168 | 0.4311 | 15,818,752 |
+| 1 | 0.1184 / 0.5419 | 55,431,168 | 0.4265 | 15,757,312 |
+| 2 | 0.0930 / 0.4936 | 55,488,512 | 0.4160 | 15,728,640 |
+| 3 | 0.0933 / 0.4973 | 55,578,624 | 0.4325 | 15,773,696 |
 
 Desktop executable: **41,169,408 bytes**; TUI: **37,905,920 bytes** (shared system
-libraries excluded). The native 10k dataset measured **0.1629 s** from Ctrl+F and
-a deterministic Win32 WM_CHAR stream to its rendered state reporting one matching
-row, followed by a painted synthetic-window capture. RSS was 57,819,136 bytes
-before and 60,551,168 after that filter. WM_CHAR intentionally avoids dependence on
+libraries excluded). The native 10k dataset measured **0.1626 s** from Ctrl+F and
+a deterministic Win32 WM_CHAR stream to the NSH model-state acknowledgement of
+one matching row. A synthetic-window capture 0.25 s later was visually inspected
+and showed that exact row; this marker is not a frame-presentation timestamp. RSS was 57,675,776 bytes
+before and 60,149,760 after that filter. WM_CHAR intentionally avoids dependence on
 the operator's active IME; it is not a complete IME test. ConPTY measured
-**0.6708 s** through real terminal input to the expected painted screen. The
-component traversal took about **90.42 s** for all 834 pages; the headless test
+**0.7065 s** through real terminal input to the expected painted screen. The
+component traversal took about **90.40 s** for all 834 pages; the headless test
 harness settles between actions, so that duration is not per-input latency.
 The screen tree remains bounded instead of mounting 10k labels simultaneously.
+The separate native project-switch capture was also visually inspected: beta was
+selected, the task had cleared, and the committed filter showed an honest Empty.
+No exact native frame-presentation latency is claimed.
 
 Only synthetic windows/terminal screens were captured, in ignored local files.
 Real-project view tests take no screenshots and do not copy data to the clipboard.
@@ -120,5 +123,30 @@ verification of this session.
 
 ## Committed-source rerun
 
-Pending the final local rerun on the task commit. This section will contain only
-observed commit identifiers and results before the Draft PR is created.
+Tested implementation commit: **`e4b5e962028d6d32ae09e57d1a600650ebd24d01`**.
+Both source copies were clean and every tracked Windows file matched that commit.
+A later documentation-only commit records these observations without changing
+runtime code. Actual local commands (personal absolute paths omitted):
+
+```text
+Windows: tools/windows_local_verify.ps1 -All -Python <native-python> -ReportDir <private-report>
+WSL: PYTHONPATH=src python tools/local_verify.py --core --service --report-dir <private-report>
+WSL: ACP_LOCAL_PROJECT_ROOT=<explicit-opt-in> [explicit Windows/WSL settings] python tools/local_verify.py --local-project --report-dir <private-report>
+WSL: python tools/test_windows_wsl.py --windows-snapshot <explicit-native-exe> --distribution <explicit-distro> --user <explicit-owner> --helper <explicit-linux-helper> --out <private-report>
+```
+
+- Windows: **22 PASS, 0 FAIL, 2 NOT_RUN** (optional web and comprehensive IME/screen reader).
+- WSL core/service: **11 PASS, 0 FAIL, 0 NOT_RUN**.
+- Selected-project acceptance: **1 PASS, 0 FAIL, 0 NOT_RUN**; actual Windows
+  desktop/ConPTY, operator/MCP/Codex, stop/restart and unchanged protected metadata.
+- Windows-owner synthetic WSL regression command: **PASS**.
+- Both Windows executables report Authenticode **NotSigned**. ZIP entries are
+  exactly the two executables, README and manifest; SHA-256 values match the
+  local release files. No data/runtime/capability/log/screenshot is bundled.
+- `dumpbin /DEPENDENTS` observed `VCRUNTIME140.dll`, `VCRUNTIME140_1.dll`, Windows
+  UCRT API sets and system Direct2D/Direct3D/WinRT/Media Foundation/XAudio/UIA
+  libraries. They are runtime prerequisites, excluded from the archive; no
+  clean-machine or other-Windows-version install claim.
+- Final diff/relative links/private-path/artifact checks passed. Existing workflow
+  files, external development repositories and existing ACP user state are not
+  part of the change. Draft PR only; no merge or framework acceptance.

@@ -223,3 +223,10 @@ the fresh directory whose creation you observed. Preserve any preexisting paths.
 No cloud release, installation, autostart/login item, push/merge, mobile SDK or
 external repository change is implied by this workflow. The task opens a Draft PR
 for review and never merges it automatically.
+
+The observed Windows development artifacts are unsigned x64 ZIPs. Their measured
+non-OS dependencies include `VCRUNTIME140.dll` and `VCRUNTIME140_1.dll`; Windows
+UCRT, Direct2D/Direct3D, WinRT, Media Foundation and XAudio system DLLs are also
+required. The archive contains no redistributable runtime, installer or autostart
+entry. Only the documented Windows 11 development host was run; a clean-machine
+installation and other Windows releases remain NOT_RUN.

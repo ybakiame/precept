@@ -100,4 +100,4 @@ The standalone [agent-development-protocol](https://github.com/ybakiame/agent-de
 
 ## Test status
 
-`python -m unittest discover -s tests -v` runs the P0 checks. Two real-harness, read-only Codex/Kimi trials were reported by the operator; they do not establish independently measured end-to-end interoperability with every version of Codex/Pi/OpenCode, production-grade MCP conformance, multi-process reliability, or native desktop support. Seven isolated MCP negative-boundary tests are included, but real-harness negative trials and platform security boundaries remain unverified. Those are explicit next milestones.
+`python -m unittest discover -s tests -v` runs 24 reference/security/local-runner checks. P1-E2 also measures the Windows NSH desktop and ConPTY, local daemon/IPC/MCP, and the installed local Codex MCP client with disposable state and explicit project opt-in; see [sanitized local results](docs/evaluation/p1-e2-local-validation.md). These checks establish the documented scope, not every harness/version, complete MCP conformance, production security or universal native-platform support.
