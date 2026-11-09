@@ -103,6 +103,8 @@ OS window, waits for fixed model-ready markers, rejects a blank screenshot,
 resizes on Linux, terminates only the UI and verifies daemon health and identical
 DB bytes. Markers contain no returned data or credentials. GPUI/NSH component
 tests are separate headless state/input tests, not native-window claims.
+Fixed readiness markers are opt-in (`ACP_UI_PROBE=1`, set only by the native
+window test). Ordinary native/TUI runs do not print them into the terminal.
 On Linux run Xvfb and the probe in the same IPC namespace (`xvfb-run` does this).
 Separate managed exec calls isolate SysV SHM and can produce a blank GTK window;
 that failed experiment is not RUN_PASS. Hosted macOS/Windows without an

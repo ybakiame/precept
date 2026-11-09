@@ -39,13 +39,14 @@ try:
     startup=time.monotonic()-started
     os.write(master,b"\t\t\r")
     visible=wait_for("Project: beta")
-    (args.out/"nsh-tui-large.txt").write_text(visible)
+    assert "ACP_NSH" not in visible, "probe diagnostics polluted terminal UI"
+    (args.out/"nsh-tui-large.txt").write_text("\n".join(line.rstrip() for line in visible.splitlines()).rstrip()+"\n")
     fcntl.ioctl(master,termios.TIOCSWINSZ,struct.pack("HHHH",32,100,0,0));screen.resize(32,100)
     os.kill(proc.pid,signal.SIGWINCH)
     time.sleep(.2)
     os.write(master,b"\t\r")
     visible=wait_for("Project: beta")
-    (args.out/"nsh-tui-small.txt").write_text(visible)
+    (args.out/"nsh-tui-small.txt").write_text("\n".join(line.rstrip() for line in visible.splitlines()).rstrip()+"\n")
     rss=next((int(s.split()[1]) for s in Path(f"/proc/{proc.pid}/status").read_text().splitlines() if s.startswith("VmRSS:")),None)
     os.write(master,b"q");proc.wait(timeout=8);assert proc.returncode==0
     result={"status":"TEST_PASS","backend":"real nsh-platform-tui/ratatui process in PTY","keyboard":"Tab Tab Enter selected beta","resize":[160,50,100,32],"startup_to_expected_screen_seconds":round(startup,4),"rss_kib_at_probe":rss,"binary_bytes":args.binary.stat().st_size,"quit_exit":proc.returncode}

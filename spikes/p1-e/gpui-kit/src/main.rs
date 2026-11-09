@@ -116,7 +116,9 @@ impl Console {
 impl Render for Console {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self.model.phase == Phase::Ready && !self.ready_reported {
-            eprintln!("ACP_UI_READY");
+            if std::env::var_os("ACP_UI_PROBE").is_some() {
+                eprintln!("ACP_UI_READY");
+            }
             self.ready_reported = true;
         }
         let projects = self

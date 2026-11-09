@@ -90,6 +90,12 @@ The optional UI workflow has separate native candidate/OS jobs, component tests,
 shared authenticated synthetic IPC, PTY and offline-browser gates. Production CI
 is unchanged.
 
+A final terminal-output check found that native-window readiness diagnostics were
+being printed into the TUI's terminal. They are now opt-in to the native probe
+only; the real PTY test asserts their absence, and clean terminal records were
+regenerated. This changes probe logging, not data/authority semantics. The final
+diagnostic-only code rerun is recorded in the PR separately from the 8572a24 matrix.
+
 ### Final code-run evidence
 
 At code SHA **8572a24cee9d9bbcadf5d957e0e18a8f59582185**:

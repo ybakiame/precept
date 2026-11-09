@@ -56,7 +56,7 @@ def window(pid):
 
 with Fixture() as f:
     before=f.db.read_bytes();started=time.monotonic()
-    proc=subprocess.Popen([str(args.binary.resolve()),*f.location],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    proc=subprocess.Popen([str(args.binary.resolve()),*f.location],stdout=subprocess.PIPE,stderr=subprocess.PIPE,env={**os.environ,"ACP_UI_PROBE":"1"})
     diagnostics=collections.deque(maxlen=100)
     def drain(pipe):
         for line in iter(pipe.readline,b""):diagnostics.append(line.decode("utf-8","replace")[:1000])

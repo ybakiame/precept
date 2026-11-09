@@ -10,15 +10,16 @@
     "hybrid-native-small.png": "f465186ac826d0b26d7e0319234286974873139bf2eded6d8a5795b88c9af08d",
     "nsh-web-light.png": "0d0d0f87f2c2bd5fafc219da46b3e92a9b3e88e5817bfd41a17a657e6aab1908",
     "nsh-web-dark.png": "688ff39b4fc6db803ccd6a7f66423156952e2d86a95cb6c7e694993743081619",
-    "nsh-tui-large.txt": "3df842f30eccebc4a4e788c7e5f5275edfb2c48e821c7ef4ad15fe455dcc33fc",
-    "nsh-tui-small.txt": "72bcdd17b2f526065acc20a84c80b50992cd5ccf738b5a256bcbd80d7c89789c",
+    "nsh-tui-large.txt": "8382260d2d7a3508c173f6222b1d06a0e349eced132fd8cf8949a1988a57e7f4",
+    "nsh-tui-small.txt": "f3c0d618a419571a604085c326ba4fc4261d2f735773b0869a2b642dd76a3a77",
     "compile-measurements.json": "8d87b54e47cebaf3a89058ec6d9b0d39559cf22cec83a6590366aaaef2c3dd7d",
     "dependency-counts.json": "1bd263733ee5d3fa690b0aa4bc7b724dac610b15e36d2321875b54bfd954f4b1",
     "gpui-kit-native-result.json": "d020950b53ab944a21db202faa205166cfee3b48707a86add4100943c84c5236",
     "nsh-native-result.json": "9ec3d9b9033a0704421c333a0943b6b9b63a9c97f1c100319df434f978255e3c",
     "hybrid-native-result.json": "e0a417ffbb52070557e0b7b303306511524a2014950ba9d0a15acdf4038bbec8",
-    "tui-result.json": "7ac62c9b9b410ed04df821ff7f635b7725ed2e97a51b033291c94d247653d94c",
+    "tui-result.json": "1b788fce79d75055f018945e99c0cda914c859014ff19c1658925497928c6444",
     "web-result.json": "78ad6ae96e98e9e6855aaae006923a23f302a9fe1b54f83f8ee4557bd11dda18",
     "final-ci-native-results.json": "cda0253e403143ef4051e31937de14f651458babccdd823cd7bb208da68c401a"
-  }
+  },
+  "terminal_probe_note": "Terminal evidence regenerated after making native window readiness markers opt-in; text rows right-trimmed, internal cell spacing retained."
 }

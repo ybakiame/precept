@@ -74,7 +74,7 @@ pub fn App() -> impl IntoElement {
     load(model);
     #[cfg(not(target_arch = "wasm32"))]
     effect(move || {
-        if model.get().phase == Phase::Ready {
+        if model.get().phase == Phase::Ready && std::env::var_os("ACP_UI_PROBE").is_some() {
             eprintln!("ACP_NSH_READY");
         }
     });
@@ -162,7 +162,9 @@ pub fn App() -> impl IntoElement {
                         .gap_2()
                         .on_layout(move |_: &Bounds<Points>| {
                             #[cfg(not(target_arch = "wasm32"))]
-                            if model.get().phase == Phase::Ready {
+                            if model.get().phase == Phase::Ready
+                                && std::env::var_os("ACP_UI_PROBE").is_some()
+                            {
                                 eprintln!("ACP_NSH_LAYOUT_READY");
                             }
                         })
