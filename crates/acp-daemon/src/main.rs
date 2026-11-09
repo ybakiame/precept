@@ -214,7 +214,13 @@ async fn run(args: Args) -> acp_ipc::Result<()> {
     if args.projects.is_empty()
         || args.projects.len() > 64
         || args.projects.iter().any(|p| !acp_ipc::valid_project(p))
-        || args.projects.iter().collect::<HashSet<_>>().len() != args.projects.len()
+        || args
+            .projects
+            .iter()
+            .map(|p| p.to_ascii_lowercase())
+            .collect::<HashSet<_>>()
+            .len()
+            != args.projects.len()
     {
         return Err(Error::InvalidRequest);
     }
@@ -296,5 +302,22 @@ fn main() {
     if let Err(error) = result {
         eprintln!("acp-daemon: {error}");
         std::process::exit(2);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn case_insensitive_capability_filename_collisions_fail_before_storage_open() {
+        let args = Args {
+            location: Location {
+                runtime_dir: PathBuf::new(),
+                endpoint: String::new(),
+            },
+            database: PathBuf::new(),
+            projects: vec!["alpha".into(), "ALPHA".into()],
+        };
+        assert_eq!(run(args).await, Err(Error::InvalidRequest));
     }
 }

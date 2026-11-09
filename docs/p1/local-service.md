@@ -120,7 +120,8 @@ Even an operator cannot select an existing but non-allowlisted project. An agent
 cannot add project/project_id, request listing, claim operator authority or invoke
 writes. The bridge never forwards a project from an MCP message. Launch labels
 are restricted to 1–64 ASCII alphanumeric/underscore/dash/dot characters (not . or
-..); this is a Rust runtime-label limitation, not a Python CLI behavior change.
+..), with no ASCII case-folded duplicates in a launch allowlist (to prevent
+credential filename collisions on Windows/macOS); this is a Rust runtime-label limitation, not a Python CLI behavior change.
 
 Errors are enum categories: InvalidRequest, Version, Unauthorized, Unsupported,
 NotFound, Unavailable, TooLarge, Timeout, Busy, UnsafeRuntime, EndpointCollision.
@@ -253,3 +254,8 @@ Final path-separation hardening adds a ninth service test: a caller-supplied SQL
 file inside the proposed control runtime is refused before lease/capability files
 are created, leaving its bytes unchanged. The eight-test results above remain the
 historical first code-run evidence; the Draft PR records the final nine-test CI head.
+
+The final startup validation also rejects alpha/ALPHA-style allowlist collisions
+before storage opens, so case-insensitive credential filenames cannot overwrite
+another project's capability. A targeted Rust regression adds one ordinary test
+(final local Rust count 32; the initial code-run count above was 31).
