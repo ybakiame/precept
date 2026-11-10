@@ -40,6 +40,14 @@ def observed(f, terminal, timeout):
     raise AssertionError("real ACP observation deadline; raw output deliberately excluded")
 
 
+def token_received(events):
+    # A genuine streamed token can cross several ACP chunks; do not persist text.
+    prefix = "agent_message_chunk: "
+    return "ACP_SMOKE_OK" in "".join(
+        event[len(prefix):] for event in events if event.startswith(prefix)
+    )
+
+
 def cancel_turn(f, session_id):
     try:
         f.query("session.cancel", session_id=session_id)
@@ -124,7 +132,7 @@ def main():
                 cancellation_sent = cancel_turn(f, v["session_id"])
             while time.monotonic() < deadline:
                 v = f.query("session.get")
-                token_seen |= any("ACP_SMOKE_OK" in event for event in v["events"])
+                token_seen |= token_received(v["events"])
                 if v["permissions"] or v["activity"]["tool_events"]:
                     result["status"] = "FAIL"
                     result["reason"] = "unexpected tool activity; no permission granted; turn cancelled"
