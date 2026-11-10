@@ -37,6 +37,7 @@ fn main() -> impl std::process::Termination {
     platform::run_app(
         platform::AppSource::Rust(if preview {
             platform::Root::of::<acp_nsh_spike::brand_preview::BrandPreview>()
+                .main_window(acp_nsh_spike::brand_preview::window_options())
         } else {
             platform::Root::of::<acp_nsh_spike::App>()
         }),

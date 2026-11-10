@@ -39,9 +39,10 @@ def main():
                         time.sleep(0.3)
                         capture_owned_window(window, path)
                     else:
-                        window.resize(width, height)
+                        window.wait("decorated=false")
+                        window.resize(width, height, frameless=True)
                         time.sleep(0.15)
-                        window.capture(path)
+                        window.capture(path, frameless=True)
                 results.append(
                     dict(
                         direction=direction, page=page, desktop="PASS", observed=sample

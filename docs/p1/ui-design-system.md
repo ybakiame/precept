@@ -33,6 +33,15 @@ buttons, visible borders/focus, Alt+A/B/C for candidates and Alt+1/4 for pages.
 These exploration keys do not replace the normal console's Alt+1–5, Ctrl/Cmd+F/K/R,
 Tab/Shift+Tab, Esc, paging, explicit copy or TUI Ctrl+Q semantics.
 
+The owner's title-bar revision is common to all candidates: desktop uses
+`WindowFrameStyle::None`, a 36px opaque app-drawn title bar with a separate drag
+region and explicitly labeled minimize/maximize-restore/close buttons. The bottom
+right grip initiates native resize. Window requests use NSH's existing desktop
+API; no backend fork, system setting or compositor change. Terminal views omit
+the bar and grip. This prototype is staged in preview mode; integrate it with the
+selected five-page design only after B0 selection. Windows snap-layout flyouts and
+all eight resize edges are not claimed by the prototype.
+
 ## After owner selection — not implemented yet
 
 - Consolidate shared cards/rows, badges, inputs, buttons, pagination, disclosure,

@@ -1,5 +1,7 @@
 //! B0 exploration only. No IPC inputs, filesystem reads, persistence or final brand.
 use nsh_base::button;
+use nsh_core::desktop::{MainWindowOptions, ResizeEdge, WindowFrameStyle, WindowMode};
+use nsh_core::element::desktop::current_window;
 use nsh_core::prelude::*;
 use std::sync::OnceLock;
 
@@ -143,6 +145,61 @@ fn compact() -> bool {
 }
 fn terminal() -> bool {
     super::TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub fn window_options() -> MainWindowOptions {
+    let mut options = MainWindowOptions::default();
+    options.attributes.frame = Some(WindowFrameStyle::None);
+    options
+}
+
+fn titlebar(direction: Signal<Direction>) -> impl IntoElement {
+    let minimize = current_window();
+    let maximize = current_window();
+    let close = current_window();
+    let caption = move |label: &'static str, glyph: &'static str| {
+        button()
+            .accessibility_label(label)
+            .w(px(40.0))
+            .h(px(32.0))
+            .border_2()
+            .bg(move || color(direction.get().palette().panel))
+            .text_color(move || color(direction.get().palette().text))
+            .border_color(move || color(direction.get().palette().panel))
+            .hover(|s| s.bg(color(direction.get().palette().inset)))
+            .focus(|s| s.border_color(color(direction.get().palette().accent)))
+            .child(text(glyph))
+    };
+    view()
+        .flex_row()
+        .h(px(36.0))
+        .items_center()
+        .bg(move || color(direction.get().palette().panel))
+        .text_color(move || color(direction.get().palette().text))
+        .child(
+            view()
+                .flex_1()
+                .h_full()
+                .px_3()
+                .justify_center()
+                .window_drag(true)
+                .child(text("Agent Control Plane / brand preview").text_size(px(12.0))),
+        )
+        .child(caption("Minimize window", "−").on_press(move || minimize.minimize()))
+        .child(
+            caption("Maximize or restore window", "□").on_press(move || {
+                let mode = if maximize
+                    .state()
+                    .is_some_and(|s| s.mode == WindowMode::Maximized)
+                {
+                    WindowMode::Normal
+                } else {
+                    WindowMode::Maximized
+                };
+                maximize.set_mode(mode);
+            }),
+        )
+        .child(caption("Close window", "×").on_press(move || close.close()))
 }
 
 fn choice(
@@ -396,7 +453,7 @@ fn preview(config: Config) -> impl IntoElement {
     }
     on_key_with("alt+1", always, move |_| handoff.set(false));
     on_key_with("alt+4", always, move |_| handoff.set(true));
-    view()
+    let content = view()
         .flex_1()
         .p_4()
         .gap_3()
@@ -508,7 +565,35 @@ fn preview(config: Config) -> impl IntoElement {
                     super::probe_elapsed()
                 );
             }
-        })
+        });
+    view()
+        .flex_1()
+        .bg(move || color(direction.get().palette().background))
+        .child(
+            view()
+                .style_when(terminal, |s| s.hidden())
+                .child(titlebar(direction)),
+        )
+        .child(content)
+        .child(
+            view()
+                .flex_row()
+                .justify_end()
+                .style_when(terminal, |s| s.hidden())
+                .child(
+                    view()
+                        .w(px(18.0))
+                        .h(px(12.0))
+                        .window_resize(ResizeEdge::BottomRight)
+                        .accessible(true)
+                        .label("Resize window from bottom right")
+                        .child(
+                            text("⋱")
+                                .text_size(px(12.0))
+                                .text_color(move || color(direction.get().palette().muted)),
+                        ),
+                ),
+        )
 }
 
 #[cfg(test)]

@@ -71,6 +71,9 @@ to new code; no stock assets, third-party font binaries or new artwork licenses.
 
 ## B0 review record
 
+- Owner revision: use a custom title bar, not the system title bar. All three
+  desktop candidates now draw their own opaque bar and window buttons, with a
+  drag region and resize grip. TUI does not render desktop window controls.
 - Selected direction: **PENDING**.
 - Owner revision notes: **PENDING**; no feedback is inferred from E4 acceptance.
 - E4 base UI was accepted as a starting point only, not a brand choice.
