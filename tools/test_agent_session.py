@@ -1,5 +1,6 @@
 """Real Rust daemon/child ACP v1 fixture, operator isolation. Synthetic state only."""
 
+from contextlib import closing
 import json
 import os
 from pathlib import Path
@@ -417,7 +418,7 @@ class AgentSessionTests(unittest.TestCase):
             v = f.launch("permission")
             f.query("session.prompt", session_id=v["session_id"], prompt="pending")
             pending = f.wait("waiting_permission")["permissions"][0]
-            with sqlite3.connect(f.db) as db:
+            with closing(sqlite3.connect(f.db)) as db, db:
                 db.execute(
                     "UPDATE projects SET root=? WHERE name=?",
                     (str(f.root / "fixture/beta"), "alpha"),

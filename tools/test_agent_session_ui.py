@@ -151,6 +151,7 @@ def main():
                     "\n".join(terminal.screen.display) + "\n", encoding="utf-8"
                 )
             terminal.resize(160, 50)
+            terminal.settle()
             # Cancellation through an actual GUI, with both clients observing the turn.
             f.end(v)
             v = f.launch("cancel")
@@ -221,6 +222,13 @@ def main():
                 json.dumps(result, indent=2) + "\n"
             )
             print(json.dumps(result))
+        except BaseException:
+            # This fixture contains synthetic data only; retain bounded failure evidence privately.
+            if terminal:
+                (out / "failure-terminal.txt").write_text(
+                    "\n".join(terminal.screen.display), encoding="utf-8"
+                )
+            raise
         finally:
             if terminal:
                 terminal.close()

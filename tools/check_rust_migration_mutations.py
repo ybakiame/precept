@@ -46,8 +46,8 @@ def main():
         (
             "agent-can-list-projects",
             "crates/acp-daemon/src/main.rs",
-            "if access != Access::Operator {",
-            "if false && access != Access::Operator {",
+            'if request.method == "project.list" {\n            let _: Empty = decode(params)?;\n            if access != Access::Operator {',
+            'if request.method == "project.list" {\n            let _: Empty = decode(params)?;\n            if false && access != Access::Operator {',
             [
                 "-p",
                 "acp-mcp",
