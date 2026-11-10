@@ -57,7 +57,9 @@ Full IME/screen-reader verification and RTL are not claimed.
 `shared/src/connection.rs` holds separate applied and draft configurations. Local
 IPC needs an absolute private runtime directory and endpoint. Windows WSL access
 needs an explicit distribution, owner, existing absolute Linux helper, Linux
-runtime and endpoint. Apply validates and starts a read; typing never connects.
+runtime and endpoint. Apply or Enter in an editor field validates and starts a
+read; typing never connects.
+The persistent banner always names the applied target; the panel labels its draft.
 Invalid drafts leave the active target unchanged. No discovery, TCP bridge,
 automatic Daemon/Agent launch, token transfer or database write is introduced.
 Linux hosts use local Unix IPC; WSL target application is disabled outside Windows.
@@ -68,6 +70,9 @@ task, filter, detail/evidence pages and last-read metadata. Late completions can
 restore a previous target. First successful scope selection is bound for later
 reads so allowlist reordering cannot silently move a task lookup. Cancellation,
 permission refusal and exact project/task response checks remain fail-closed.
+Missing runtime/capability or a stopped Daemon is unavailable; an existing unsafe
+or corrupt capability is explicitly refused. UI classification does not bypass
+the guarded IPC connection.
 
 ## Native chrome and keyboard
 

@@ -1,43 +1,166 @@
 # P1-F local brand/UI evidence
 
+## Final tested implementation
+
+Both clean host checkouts tested **`4a6abab938b56b1ba217c6c5648c97681264e30d`**,
+from latest main merge #21 (`0ba227c077c2d4fd0176adc4fbb43730a998c17b`).
+The following evidence commit changes documentation only; no full suite rerun is
+needed. All checks ran locally with cached/offline locked Rust dependencies.
+GitHub Actions was not run. Every pushed commit carries `[skip ci]`.
+
 The owner accepted the revised base: “可以以此版本为基础吧”, then requested detailed
 logic/UI refinement, modest icons, Daemon state and Windows GUI access to Windows
-and WSL Daemons. This authorizes five-page integration; final after-implementation
-UI review is tracked separately. No product rename or official logo was selected.
+and WSL Daemons. Instrument / Ledger / Harbor are one theme collection. No product
+rename or official logo was selected. **Final after-implementation owner UI review
+is PENDING**; base approval is not recorded as final five-page approval. The Windows synthetic product window and private before/after gallery are available
+for that review. The Draft PR remains a draft, with no automatic merge. ADR-0003 remains Proposed.
 
-## Integrated implementation (local validation in progress)
+### Actual implementation and qualitative review
 
-The default actual NSH Desktop/TUI now uses the shared theme collection, bilingual
-catalog, custom chrome and refined five pages. Separate connection drafts support
-Windows named-pipe IPC, Linux Unix IPC and explicit Windows-owner WSL helper
-access. Switching targets atomically invalidates pending reads and old scope,
-tasks/evidence/time. Invalid drafts cannot silently fall back to synthetic data.
-Status is the last query observation, never an always-online assertion.
+The default NSH Desktop/TUI now consumes shared semantic tokens, English/Simplified
+Chinese catalogs, five small original navigation icons and reusable page controls.
+It has a custom title bar with centered vector controls and independent drag/resize
+regions. Wide sidebar navigation becomes wrapping compact navigation; content
+scrolls at 640×480 / 80×30. Project/task/filter fields keep stable state and focus.
+Confirmed preference provenance and raw historical validation remain visible and
+are never translated or silently treated as current verification.
 
-Raw synthetic images/logs are private under `artifacts/local-p1-f/product/`.
-Initial visual inspection found compact summary-card shrink and incomplete VT
-capture issues; content sizing and complete redraw consumption were corrected.
-Pointer regression needed the new frameless geometry rather than old CSD offsets;
-failed exploratory logs are retained privately. These failures were not treated
-as acceptance passes. Final tested SHA and full result matrix follow after the
-clean host companion run.
+Dashboard separates Daemon query observations, unobserved Agent presence, effective
+context and historical resume warnings. Handoff separates recorded objective/next
+action from current uncertainty and bounded recorded evidence. Diagnostics reports
+observed IPC/API/schema/runtime and recovery guidance without secrets/private paths.
+Synthetic mode explicitly states that no Daemon is connected.
+
+The connection editor supports native Windows named pipes, Linux Unix IPC and
+Windows-owner WSL access through explicit `wsl.exe --exec` arguments. The persistent
+banner names the **applied** target while the panel labels its separate draft.
+Apply or Enter in an editor field validates and reads; typing alone never connects.
+Switching clears old scope/task/filter/evidence/time and invalidates pending reads.
+Invalid drafts preserve the current target. Missing runtime/capability and stopped
+Daemon are unavailable; corrupt/unsafe capability is access refused. Failure details
+are sanitized. No discovery, shell, TCP bridge, automatic launch or credential copy.
+
+Before/after inspection found compact card shrink/overlap, retained VT redraw
+fragments, stale frameless test coordinates and possible confusion between active
+and draft targets. Stacked intrinsic-size cards, settled terminal-screen capture,
+frameless pointer geometry and the persistent applied-target banner address these.
+Chinese copy was corrected to retain original Git/handoff warnings and disclosed
+values. Failed exploratory reports remain private and are not relabeled passes.
 
 Production backend/authorization/protocol/SQLite/fingerprint behavior is unchanged.
 The only backend-file diff is inside a test: Tokio may complete a fast Git child
-before polling an expired zero timeout, so that assertion permits the authentic
-completed output. Unix additionally exercises a real bounded timeout with Git's
-built-in infinite `/dev/zero` read, followed by a normal query. No shell, external
-fixture executable, repository write or production timeout change is introduced.
+before polling an expired zero timeout, so that assertion permits authentic completed
+output. Unix additionally exercises a real bounded timeout with Git's built-in
+infinite `/dev/zero` read, followed by a normal query. No production timeout change,
+shell, external fixture executable or repository write is introduced.
 
-GitHub Actions, niri/mobile/macOS, full IME/screen-reader and real OS clipboard
-checks are not claimed. ADR-0003 remains Proposed. Historical B0 evidence below
-retains its original scope and review status; it is not final implementation evidence.
+### Same-source local result matrix
+
+| Check | WSL | Windows |
+| --- | --- | --- |
+| Report gates | 30 PASS, 0 FAIL, 0 BLOCKED, 2 NOT_RUN | 28 PASS, 0 FAIL, 0 BLOCKED, 4 NOT_RUN |
+| `p1f_host_checks` | PASS | PASS |
+| Root Rust / Python | 47 / 16 PASS | 46 / 16 PASS (Unix-only test excluded) |
+| JSON / SQLite independent parity | 120 / 78 PASS | 120 / 78 PASS |
+| Backup / process recovery / service E2E | PASS / 11 / 11 PASS | PASS / 11 / 11 PASS |
+| Compiled fingerprint/core/IPC mutations | 3 rejected, PASS | 3 rejected, PASS |
+| Shared native-feature / NSH components | 19 / 5 PASS | 19 / 5 PASS |
+| Format / Clippy / release / local package | PASS | PASS |
+| Actual settings, chrome and seven-view captures | PASS, native Wayland + PTY | PASS, native Windows + ConPTY |
+| 10k workload | Actual window and PTY filter; paging/detail; all 834 pages in component test | Actual window and ConPTY filter; all 834 pages in component test |
+| Local Codex app-server direct MCP | PASS: 2 read-only tools, 7 denial cases, no model turn | Native executable unavailable: NOT_RUN |
+| Windows GUI / ConPTY to WSL | PASS in explicit WSL-side driver, using Windows binaries from same tested source | Driver is WSL-side; standalone Windows gate NOT_RUN |
+
+The existing E4 cross-host aggregate remains `INCOMPLETE` in each raw standalone
+report because no companion-report argument was supplied. This is not a hidden
+failure: both reports independently have `p1f_host_checks: PASS` at the identical
+clean SHA. The Windows Codex/WSL-driver NOT_RUN entries are not relabeled Windows
+native passes; WSL's integration report supplies the actual separately scoped proof.
+
+The actual Windows GUI switched **WSL/alpha → Windows/beta → WSL/alpha**, using
+pointer Apply and Enter in an editor field; previous task selection cleared.
+Windows GUI and ConPTY exercised corrupt-capability denial, explicit restoration,
+Daemon stop/restart and manual reconnect. UI/Daemon lifetimes are independent;
+synthetic DB bytes were unchanged. Credentials remained within Linux.
+Codex 0.167.0 used temporary configuration, no remote inference/model turn, exact
+operator-query equality for both tools and unchanged user configuration.
+
+WSLg observed **GdkWaylandDisplay**, WSLg Weston, actual mapped/after-paint window
+and GskGLRenderer. Actual keyboard/pointer, task/filter, page/detail, themes,
+640×480 / 1080×760 resize, reconnect, denial and independent lifetimes passed.
+Missing Wayland and automatic X11 fallback were rejected. A per-child Cairo
+Wayland diagnostic also passed; GskGLRenderer is not proof of hardware acceleration.
+No XWayland/Xvfb acceptance, compositor restart or system configuration change.
+
+### Release measurements
+
+Three launches per host/backend, from the same release binaries. RSS is process
+working set/RSS sampled by the local probe; startup observations are separate
+markers, not frame-time benchmarks. Native HWND visibility can precede model
+layout; Wayland map/paint markers and the completed owned-window capture are
+reported separately. Desktop and terminal timings are not directly comparable.
+
+| Measurement | WSLg desktop | Windows desktop | WSL PTY | Windows ConPTY |
+| --- | ---: | ---: | ---: | ---: |
+| Startup observation, seconds | visible/captured 0.7052–0.7546 | HWND visible 0.1277–0.1305 | painted screen 0.0386–0.0409 | painted screen 0.8793–0.9038 |
+| Model layout, seconds | 0.1525–0.1727 | 0.6776–0.7266 | — | — |
+| RSS, MiB | 284.56–287.05 | 55.85–56.12 | 25.25–25.83 | 17.85–17.85 |
+| 10k filter observation, seconds | model ACK 1.9939; capture complete 2.7182 | rendered state 0.1292 | painted screen 0.0672 | painted screen 0.6047 |
+
+NSH component tests mount every one of 834 pages with fewer than 100 visible text
+nodes per page. Real host workloads start with 10,000 rows and show one filtered
+result. Caption vectors in all seven-view capture scenarios pass measured centering.
+All six palettes and high contrast pass >=4.5:1 text and >=3:1 essential boundary
+checks; individual ratios are in [identity](../brand/identity.md).
+
+### Private evidence and reproduction
+
+Raw synthetic PNGs, terminal frames, report JSON, logs and unsigned development
+archives remain gitignored under `artifacts/local-p1-f/`; no uploads or real data.
+Paths below are relative to the corresponding checkout:
+
+- Primary WSL: `final-product-wsl/` (report, integrations, Wayland/TUI results,
+  `previews/`, `settings/`, `chrome/`, `package/`).
+- Marked disposable Windows checkout: `final-product-windows/` (report,
+  desktop/ConPTY results and corresponding captures/settings/chrome/package).
+- `before-wslg/` and `before-windows/`: unchanged E4 synthetic baseline captures.
+- `product-preview-gallery.html`: self-contained actual before/after image and
+  terminal viewer, copied to the Windows checkout for local owner review.
+- `product/`: raw final-run logs and failed exploratory reports; `revision-2/`
+  retains the intermediate theme-collection preview evidence.
+
+Full acceptance commands already completed; rerun only affected checks after new
+code changes, not full acceptance for documentation or report inspection:
+
+```sh
+# WSL, with explicit existing Windows owner driver variables and private test deps:
+PYTHONPATH=src:tools:<private-test-deps> python tools/local_verify.py --ui-full --owner-reviewed --report-dir artifacts/local-p1-f/final-product-wsl
+# Native Windows, existing process-local compiler/Python/Git setup:
+python tools/local_verify.py --ui-full --owner-reviewed --report-dir artifacts/local-p1-f/final-product-windows
+# Actual synthetic app for local owner inspection (Windows adds .exe):
+acp-nsh-native --locale zh-CN --appearance light --task-id shared
+```
+
+`--owner-reviewed` records **ACCEPTED_BASE_UI** only. P1-F extra product captures
+require a report directory under ignored `artifacts/local-p1-f/`; legacy verifier
+paths remain usable and explicitly mark those new capture gates NOT_RUN.
+Each `previews/previews.json` contains exact binary SHA-256 hashes; all four were
+matched against their corresponding locally built binaries during evidence review.
+
+NOT_RUN: full IME/screen reader, real OS clipboard, native Windows Codex, optional
+web smoke, hardware acceleration proof. Niri/mobile/macOS are outside this run.
+Real external repositories and existing ACP user databases were not exercised or
+changed. No production listener/Agent harness/profile mutation was added.
+
+Historical records below retain their original scope/status. Later owner base
+approval, completed integration and the corrected test timing assertion above
+supersede their earlier pending/in-progress notes.
 
 ---
 
 # Historical B0 local brand/UI evidence
 
-Status: **revised B0 theme-collection preview; owner layout review PENDING**. The
+Historical status at capture: **revised B0 theme-collection preview; owner layout review was PENDING**. The
 owner requested one layout with selectable themes, corrected caption centering,
 the supplied concept hierarchy and i18n. No final brand acceptance or complete
 five-page redesign is claimed. Start: latest main merge #21,

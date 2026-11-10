@@ -33,7 +33,7 @@ of every subsequent five-page or connection-editor revision.
 All themes use system sans typography, a 14px body, 12px metadata, 22px headings,
 8px panel corners, 6px control corners and the same 4/8/12/16px spacing scale.
 Neither typeface, density, content ordering nor navigation changes with palette.
-The name treatment is consistently `ACP` plus Agent Control Plane in the title bar.
+The actual console consistently uses Agent Control Plane in its header/title bar.
 No provisional theme-specific wordmark is used as an official identity.
 
 | Theme | Intent | Light background / accent | Dark background / accent |
