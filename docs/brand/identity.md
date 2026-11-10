@@ -5,7 +5,8 @@ owner said “可以以此版本为基础吧” and requested logic/UI refinemen
 icon set, Daemon status and Windows GUI access to both Windows and WSL Daemons.
 Instrument / Ledger / Harbor form one theme collection. Agent Control Plane (ACP)
 remains the working name; no official logo or repository/CLI/API rename is made.
-ADR-0003 remains Proposed. Final implementation review is recorded separately.
+ADR-0003 remains Proposed. After implementation the owner confirmed “没有阻塞问题，
+可作为本阶段基础”; the local evidence records that review separately.
 
 ## Position and voice
 
@@ -25,8 +26,9 @@ Not run and Last successful read instead of invented assurance or activity.
 - Draw a custom title bar. Correct minimize/maximize/close centering.
 - Add i18n. The revised preview supports English and Simplified Chinese.
 
-The revised base is accepted for implementation. This does not imply owner review
-of every subsequent five-page or connection-editor revision.
+The revised base authorized implementation. The later actual-window review accepted
+the implemented five pages and connection editor as this stage's base, with no
+blocking issue. Future changes and PR merge still require their own review.
 
 ## One visual language
 

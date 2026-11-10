@@ -11,9 +11,12 @@ GitHub Actions was not run. Every pushed commit carries `[skip ci]`.
 The owner accepted the revised base: “可以以此版本为基础吧”, then requested detailed
 logic/UI refinement, modest icons, Daemon state and Windows GUI access to Windows
 and WSL Daemons. Instrument / Ledger / Harbor are one theme collection. No product
-rename or official logo was selected. **Final after-implementation owner UI review
-is PENDING**; base approval is not recorded as final five-page approval. The Windows synthetic product window and private before/after gallery are available
-for that review. The Draft PR remains a draft, with no automatic merge. ADR-0003 remains Proposed.
+rename or official logo was selected. **Final after-implementation owner UI review: ACCEPTED AS THIS STAGE'S BASE**.
+After opening the actual synthetic Windows product window and providing the private
+before/after gallery, the owner replied: “没有阻塞问题，可作为本阶段基础”. This
+feedback covers the implemented five pages, appearance and connection editor; it
+is separate from the earlier B0 approval and does not approve PR merge or a rename.
+The PR remains a draft, with no automatic merge. ADR-0003 remains Proposed.
 
 ### Actual implementation and qualitative review
 
