@@ -84,6 +84,16 @@ def views(fixture, label, helper):
 
     try:
         expected("WINDOWS_VIEWS_READY")
+        cap = fixture.runtime / "operator.cap"
+        raw = cap.read_bytes()
+        try:
+            cap.write_bytes(b"0" * len(raw))
+            command_word("denied")
+            expected("WINDOWS_AUTH_REFUSED")
+        finally:
+            cap.write_bytes(raw)
+        command_word("restored")
+        expected("WINDOWS_AUTH_RESTORED")
         stop(fixture.proc)
         command_word("disconnected")
         expected("WINDOWS_DISCONNECTED")
@@ -99,6 +109,7 @@ def views(fixture, label, helper):
             desktop="actual Windows native window with scoped WSL model reached layout",
             tui="actual Windows ConPTY rendered scoped context/Empty; live disconnect/reconnect",
             connection_editor="PASS: actual WSL/alpha -> Windows/beta -> WSL/alpha; explicit pointer/keyboard apply; task cleared",
+            explicit_auth_denial="PASS: actual GUI/ConPTY access refused and manual restore",
             independent_lifetime=True,
             real_data_capture="NOT_RUN: no screenshots/clipboard/raw output",
             transport="shell-free WSL owner helper; no TCP",

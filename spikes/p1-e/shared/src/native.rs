@@ -262,13 +262,9 @@ impl Inputs {
                     if raw.len() > 4 * 1024 * 1024 {
                         return Err("WSL response too large");
                     }
-                    if !child
-                        .wait()
-                        .await
-                        .map_err(|_| "WSL query unavailable")?
-                        .success()
-                    {
-                        return Err("WSL daemon unavailable or access refused");
+                    let status = child.wait().await.map_err(|_| "WSL query unavailable")?;
+                    if !status.success() {
+                        return Err(helper_failure(status.code()));
                     }
                     let data: Snapshot =
                         serde_json::from_slice(&raw).map_err(|_| "Invalid WSL snapshot")?;
@@ -285,6 +281,16 @@ impl Inputs {
                 }
                 result
             })
+    }
+}
+
+/// Stable helper exit classification; never forwards stderr or private paths.
+pub const HELPER_ACCESS_REFUSED: i32 = 3;
+pub fn helper_failure(code: Option<i32>) -> &'static str {
+    if code == Some(HELPER_ACCESS_REFUSED) {
+        "Permission denied"
+    } else {
+        "WSL daemon unavailable or access refused"
     }
 }
 
@@ -367,6 +373,19 @@ async fn fetch(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn helper_exit_codes_preserve_denial_without_forwarding_stderr() {
+        assert_eq!(
+            helper_failure(Some(HELPER_ACCESS_REFUSED)),
+            "Permission denied"
+        );
+        for code in [None, Some(1), Some(2), Some(127)] {
+            assert_eq!(
+                helper_failure(code),
+                "WSL daemon unavailable or access refused"
+            );
+        }
+    }
     #[test]
     fn wsl_is_explicit_shell_free_and_never_a_fixture_fallback() {
         use clap::Parser;

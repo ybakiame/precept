@@ -296,14 +296,15 @@ fn console(model: Signal<Model>) -> impl IntoElement {
         if std::env::var_os("ACP_UI_PROBE").is_some() {
             let current = model.get();
             eprintln!(
-                "ACP_UI_SESSION target={:?} draft={:?} invalid={} settings={} locale={:?} theme={:?} mode={:?}",
+                "ACP_UI_SESSION target={:?} draft={:?} invalid={} settings={} locale={:?} theme={:?} mode={:?} denied={}",
                 current.connection.target,
                 current.connection_draft.target,
                 current.connection_invalid,
                 current.settings,
                 current.locale,
                 current.theme,
-                current.color_mode
+                current.color_mode,
+                current.permission_denied
             );
             eprintln!(
                 "ACP_NSH_STATE phase={:?} selected={} rows={} queried_chars={} filter_chars={} section={:?} page={} detail={} dark={} contrast={} elapsed={:.6}",

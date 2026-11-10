@@ -78,6 +78,18 @@ def main():
                 editor.chord(0x11, ord("R"))
                 native_wait_state(desktop, rows=2)
                 print("WINDOWS_RECONNECTED", flush=True)
+            elif line.strip() == "denied":
+                terminal.send(b"\x12")
+                terminal.wait("Access refused")
+                editor.chord(0x11, ord("R"))
+                native_wait_marker(desktop, "denied=true")
+                print("WINDOWS_AUTH_REFUSED", flush=True)
+            elif line.strip() == "restored":
+                terminal.send(b"\x12")
+                terminal.wait("Project: " + args.project)
+                editor.chord(0x11, ord("R"))
+                native_wait_state(desktop, rows=2)
+                print("WINDOWS_AUTH_RESTORED", flush=True)
             elif line.strip() == "close":
                 break
         native_close(window)
