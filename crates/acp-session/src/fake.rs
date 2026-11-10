@@ -29,7 +29,15 @@ fn main() {
                 v["id"].clone(),
                 json!({"protocolVersion":if mode=="version"{2}else{1},"agentCapabilities":{"loadSession":false},"agentInfo":{"name":"deterministic-fake-not-coding-agent","version":"1"}}),
             ),
-            Some("session/new") => reply(v["id"].clone(), json!({"sessionId":"fake-session"})),
+            Some("session/new") => {
+                if mode == "auth" {
+                    emit(
+                        json!({"jsonrpc":"2.0","id":v["id"],"error":{"code":-32000,"message":"Authentication required"}}),
+                    );
+                } else {
+                    reply(v["id"].clone(), json!({"sessionId":"fake-session"}));
+                }
+            }
             Some("session/prompt") => {
                 prompt = v["id"].clone();
                 match mode.as_str() {
@@ -53,7 +61,7 @@ fn main() {
                             emit(request)
                         }
                     }
-                    "cancel" => emit(
+                    "cancel" | "cancel-timeout" => emit(
                         json!({"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fake-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Waiting for explicit cancellation"}}}}),
                     ),
                     _ => {
@@ -68,7 +76,7 @@ fn main() {
                 }
             }
             Some("session/cancel") => {
-                if !prompt.is_null() {
+                if !prompt.is_null() && mode != "cancel-timeout" {
                     reply(prompt.clone(), json!({"stopReason":"cancelled"}));
                     prompt = Value::Null;
                 }

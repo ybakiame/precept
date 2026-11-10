@@ -2,7 +2,7 @@
 
 Local-first, developer-centric context control plane for coding agents. **P0 prototype**: a working SQLite context hub, explicit preference review, task handoffs, and a project-scoped read-only MCP stdio server. No GUI or external memory backend is required.
 
-> Current status: `0.1.0a0` engineering prototype. Python 3.11+ remains the **stdlib-only** operator write path. A Rust read-only core, local daemon/IPC/MCP, and isolated NSH desktop/TUI console are implemented. Framework selection remains **Proposed**; this is not an agent process orchestrator or production security boundary.
+> Current status: `0.1.0a0` engineering prototype. Python 3.11+ remains the **stdlib-only** profile write path. A Rust read-only core, local daemon/IPC/MCP, and isolated NSH desktop/TUI console are implemented. Framework selection remains **Proposed**; an optional single-agent native session slice is documented below, without a production security boundary.
 
 ## Why
 
@@ -61,7 +61,7 @@ The actual configuration file and syntax are harness-specific. The server reads 
 
 **Implemented tools**: `get_effective_context(include_documents?: boolean)`, `get_handoff(task_id: string)`. There are no MCP mutation tools, background scanning, web APIs, or automatic habit-learning hooks.
 
-The proof-of-concept supports MCP 2025-11-25 legacy initialization and basic 2026-07-28 stateless metadata on stdio. It does **not** claim complete MCP conformance, HTTP transport, authentication, sampling, resources, prompts, task augmentation, or ACP agent control. See [protocol limitations](docs/interfaces.md).
+The proof-of-concept supports MCP 2025-11-25 legacy initialization and basic 2026-07-28 stateless metadata on stdio. It does **not** claim complete MCP conformance, HTTP transport, authentication, sampling, resources, prompts, task augmentation, or ACP agent control through MCP. See [protocol limitations](docs/interfaces.md).
 
 ## Data / trust rules
 
@@ -101,3 +101,16 @@ The standalone [agent-development-protocol](https://github.com/ybakiame/agent-de
 ## Test status
 
 `python -m unittest discover -s tests -v` runs 16 Python runtime/write/reference/local-runner compatibility checks. E4 moves the seven P0 negative cases and duplicate fingerprint assertions to verified Rust core and real IPC/MCP process tests; see the [migration matrix](docs/p1/rust-test-migration.md) and [E4 local results](docs/evaluation/p1-e4-local-ux.md). P1-E2 also measures the Windows NSH desktop and ConPTY, local daemon/IPC/MCP, and the installed local Codex MCP client with disposable state and explicit project opt-in; see [sanitized local results](docs/evaluation/p1-e2-local-validation.md). These checks establish the documented scope, not every harness/version, complete MCP conformance, production security or universal native-platform support.
+
+
+## Optional native agent session prototype
+
+The Rust daemon can explicitly opt into one configured ACP v1 executable, controlled
+through the NSH Desktop/TUI Sessions panel. Start requires operator confirmation;
+prompts, single-request permission decisions, cancel and stop are separate actions.
+Closing a UI does not stop the daemon-owned child. Default execution is disabled;
+no shell, automatic startup, persistent resume or Windows→WSL execution bridge.
+The agent runs with your user privileges, without an OS sandbox. Python profile
+writes and the two-tool read-only MCP stay unchanged. See
+[configuration and boundaries](docs/p1/agent-session-runtime.md) and
+[local evidence / interoperability limits](docs/evaluation/p1-g-local-agent-session.md).

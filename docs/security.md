@@ -25,3 +25,15 @@ A trusted user invokes `acpctl` and configures a trusted local coding-agent proc
 - Storage encryption, per-client permissions, approval UI, data export/retention workflows, and robust migrations are not yet implemented.
 
 Future profile-learning must be opt-in, explainable and separately approved; do not automatically classify behavior as an instruction. Do not store secrets or raw transcripts, even in private Git repositories.
+
+
+## Optional P1-G operator session boundary
+
+The native Rust daemon can explicitly opt into one ACP v1 agent through a private
+trusted `--agent-config`; default remains disabled. This adds operator-only local
+session controls, separate from project-bound MCP credentials. MCP still exposes
+only its two read-only tools; Python profile writes and SQLite schema are unchanged.
+The child has local user privileges, **not an OS sandbox**. Permission mediation
+cannot contain an agent's independent filesystem/network access or descendants.
+No Windows→WSL execution bridge, credential inheritance, shell or auto-launch.
+See [the capability/lifetime/failure contract](p1/agent-session-runtime.md).

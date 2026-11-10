@@ -47,7 +47,13 @@ pub(super) fn word_action(
         .focus(|s| s.border_color(palette(model).text))
         .disabled(move || !enabled())
         .disabled_style(|s| s.opacity(0.45))
-        .on_press(callback)
+        .on_press(move || {
+            #[cfg(not(target_arch = "wasm32"))]
+            if std::env::var_os("ACP_UI_PROBE").is_some() {
+                eprintln!("ACP_UI_ACTION key={key:?}");
+            }
+            callback();
+        })
         .child(text(move || model.get().word(key)))
 }
 fn control(model: Signal<Model>, key: Msg, callback: impl Fn() + 'static) -> impl IntoElement {
@@ -126,6 +132,8 @@ fn navigation(model: Signal<Model>) -> impl IntoElement {
                         .on_press(move || {
                             model.update(|m| {
                                 m.settings = false;
+                                m.sessions = false;
+                                m.session.confirm_start = false;
                                 m.connection_editor = false;
                                 m.set_section(section)
                             })
@@ -139,6 +147,7 @@ fn navigation(model: Signal<Model>) -> impl IntoElement {
                         }))
                 }),
         )
+        .child(control(model, Msg::Sessions, move || sessions::open(model)))
 }
 fn toolbar(model: Signal<Model>) -> impl IntoElement {
     view()
@@ -148,7 +157,9 @@ fn toolbar(model: Signal<Model>) -> impl IntoElement {
         .child(
             text(move || {
                 let m = model.get();
-                m.word(if m.settings {
+                m.word(if m.sessions {
+                    Msg::Sessions
+                } else if m.settings {
                     Msg::Settings
                 } else if m.connection_editor {
                     Msg::Connection
@@ -162,12 +173,16 @@ fn toolbar(model: Signal<Model>) -> impl IntoElement {
         .child(control(model, Msg::Reconnect, move || reconnect(model)))
         .child(control(model, Msg::Settings, move || {
             model.update(|m| {
+                m.sessions = false;
+                m.session.confirm_start = false;
                 m.settings = !m.settings;
                 m.connection_editor = false;
             })
         }))
         .child(control(model, Msg::Connection, move || {
             model.update(|m| {
+                m.sessions = false;
+                m.session.confirm_start = false;
                 m.connection_editor = !m.connection_editor;
                 m.settings = false;
             })
@@ -179,6 +194,7 @@ fn toolbar(model: Signal<Model>) -> impl IntoElement {
                 model.get().phase == Phase::Ready
                     && !model.get().settings
                     && !model.get().connection_editor
+                    && !model.get().sessions
             },
             move || copy_page(model),
         ))
@@ -189,6 +205,7 @@ fn task_input(model: Signal<Model>, task_ref: ElementRef) -> impl IntoElement {
         .style_when(
             move || {
                 model.get().settings
+                    || model.get().sessions
                     || model.get().connection_editor
                     || model.get().section != Section::Handoff
             },
@@ -226,6 +243,7 @@ fn preference_input(model: Signal<Model>, filter_ref: ElementRef) -> impl IntoEl
         .style_when(
             move || {
                 model.get().settings
+                    || model.get().sessions
                     || model.get().connection_editor
                     || model.get().section != Section::Preferences
             },
@@ -348,8 +366,14 @@ pub(super) fn shell(
                                                 .text_color(move || palette(model).muted),
                                         )
                                         .child(
-                                            text(move || model.get().word(Msg::ReadOnlyHelp))
-                                                .text_color(move || palette(model).muted),
+                                            text(move || {
+                                                model.get().word(if model.get().sessions {
+                                                    Msg::SessionAuthority
+                                                } else {
+                                                    Msg::ReadOnlyHelp
+                                                })
+                                            })
+                                            .text_color(move || palette(model).muted),
                                         )
                                         .child(
                                             text(move || model.get().word(Msg::ConsoleHelp))
@@ -416,8 +440,17 @@ pub(super) fn shell(
                                             .child(
                                                 view()
                                                     .style_when(
+                                                        move || !model.get().sessions,
+                                                        |s| s.hidden(),
+                                                    )
+                                                    .child(sessions::panel(model)),
+                                            )
+                                            .child(
+                                                view()
+                                                    .style_when(
                                                         move || {
                                                             model.get().settings
+                                                                || model.get().sessions
                                                                 || model.get().connection_editor
                                                         },
                                                         |s| s.hidden(),

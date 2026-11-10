@@ -124,6 +124,9 @@ impl Supervisor {
                 .executable
                 .canonicalize()
                 .map_err(|_| Error::Unavailable)?;
+            if roots.iter().any(|r| p.executable.starts_with(r)) {
+                return Err(Error::UnsafeRuntime);
+            }
             if !p.executable.is_file() {
                 return Err(Error::InvalidRequest);
             }
@@ -354,7 +357,9 @@ impl Supervisor {
         if let Err(e) = result {
             self.change(|v| {
                 v.state = State::Failed;
-                v.failure = Some(e.to_string());
+                if v.failure.is_none() {
+                    v.failure = Some(e.to_string());
+                }
             });
         }
         let _ = child.start_kill();
@@ -398,6 +403,7 @@ impl Supervisor {
                 },
                 exit=child.wait()=>{let success=exit.is_ok_and(|s|s.success());let state=self.inner.lock().unwrap().view.state.clone();if success&&state==State::Completed{return Ok(())}return Err(Error::Unavailable)},
                 Some(c)=commands.recv()=>{
+                if c.ack.is_closed(){continue}
                     let view=self.inner.lock().unwrap().view.clone();
                     let turn=waiting.as_ref().is_some_and(|(_,method,_)|*method=="session/prompt");
                     let mut stop=false;
@@ -453,7 +459,7 @@ impl Supervisor {
                     }else{
                         let(id,method,_)=waiting.take().ok_or(Error::InvalidRequest)?;
                         if m.get("id")!=Some(&json!(id)) || m.get("result").is_some()==m.get("error").is_some(){return Err(Error::InvalidRequest)}
-                        if m.get("error").is_some(){return Err(Error::Unavailable)}
+                        if let Some(error)=m.get("error"){if error.get("code").and_then(Value::as_i64)==Some(-32000){self.change(|v|v.failure=Some("Authentication required".into()));return Err(Error::Unauthorized)}return Err(Error::Unavailable)}
                         let result=m.get("result").filter(|v|v.is_object()).ok_or(Error::InvalidRequest)?;
                         match method {
                             "initialize"=>{if result["protocolVersion"]!=1 || !result["agentCapabilities"].is_object(){return Err(Error::Version)}self.change(|v|{v.agent=format!("{} {}",clean(result["agentInfo"]["name"].as_str().unwrap_or("Unspecified agent"),80),clean(result["agentInfo"]["version"].as_str().unwrap_or("Unknown"),40));v.load_session_advertised=result["agentCapabilities"]["loadSession"].as_bool()==Some(true);});rpc+=1;send(input,json!({"jsonrpc":"2.0","id":rpc,"method":"session/new","params":{"cwd":root,"mcpServers":[]}})).await?;waiting=Some((rpc,"session/new",tokio::time::Instant::now()+Duration::from_secs(5)));},

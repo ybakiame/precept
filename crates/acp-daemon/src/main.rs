@@ -60,7 +60,43 @@ fn decode<T: serde::de::DeserializeOwned>(v: Value) -> acp_ipc::Result<T> {
     serde_json::from_value(v).map_err(|_| Error::InvalidRequest)
 }
 impl Service {
-    async fn session(&self, access: Access, request: Request) -> acp_ipc::Result<Value> {
+    async fn bound_root(
+        &self,
+        project: &str,
+        permit: Arc<OwnedSemaphorePermit>,
+    ) -> acp_ipc::Result<PathBuf> {
+        let database = self.database.clone();
+        let project = project.to_owned();
+        let expected = self
+            .roots
+            .get(&project)
+            .cloned()
+            .ok_or(Error::Unauthorized)?;
+        let job = tokio::task::spawn_blocking(move || {
+            let _held = permit;
+            let store = SqliteStore::open(&database).map_err(|_| Error::Unavailable)?;
+            let root = store
+                .read_project(&project)
+                .map_err(|_| Error::NotFound)?
+                .root
+                .canonicalize()
+                .map_err(|_| Error::UnsafeRuntime)?;
+            if root != expected {
+                return Err(Error::UnsafeRuntime);
+            }
+            Ok(root)
+        });
+        tokio::time::timeout(Duration::from_secs(5), job)
+            .await
+            .map_err(|_| Error::Timeout)?
+            .map_err(|_| Error::Unavailable)?
+    }
+    async fn session(
+        &self,
+        access: Access,
+        request: Request,
+        permit: Arc<OwnedSemaphorePermit>,
+    ) -> acp_ipc::Result<Value> {
         // Deny before parsing params, opening storage or disclosing session/config.
         if access != Access::Operator {
             return Err(Error::Unauthorized);
@@ -91,35 +127,19 @@ impl Service {
                             .into_iter()
                             .collect::<Vec<_>>()
                     )),
-                    _ => Ok(json!(self.sessions.get(&p.project))),
+                    _ => Ok(json!({"session": self.sessions.get(&p.project)})),
                 }
             }
             "session.start" => {
-                let database = self.database.clone();
-                let project = p.project.clone();
-                let expected = self
-                    .roots
-                    .get(&project)
-                    .cloned()
-                    .ok_or(Error::Unauthorized)?;
-                let root = tokio::task::spawn_blocking(move || {
-                    let store = SqliteStore::open(&database).map_err(|_| Error::Unavailable)?;
-                    let root = store
-                        .read_project(&project)
-                        .map_err(|_| Error::NotFound)?
-                        .root
-                        .canonicalize()
-                        .map_err(|_| Error::UnsafeRuntime)?;
-                    if root != expected {
-                        return Err(Error::UnsafeRuntime);
-                    }
-                    Ok(root)
-                })
-                .await
-                .map_err(|_| Error::Unavailable)??;
+                let root = self.bound_root(&p.project, permit.clone()).await?;
                 Ok(json!(self.sessions.start(p, root)?))
             }
             "session.prompt" | "session.cancel" | "session.stop" | "session.permission" => {
+                if request.method == "session.prompt"
+                    || (request.method == "session.permission" && p.option_id.is_some())
+                {
+                    self.bound_root(&p.project, permit.clone()).await?;
+                }
                 Ok(json!(self.sessions.control(&request.method, p).await?))
             }
             _ => Err(Error::Unsupported),
@@ -234,7 +254,9 @@ async fn peer(
             return;
         }
         let result = if request.method.starts_with("session.") {
-            service.session(access.clone(), request).await
+            service
+                .session(access.clone(), request, permit.clone())
+                .await
         } else {
             let service = service.clone();
             let access = access.clone();

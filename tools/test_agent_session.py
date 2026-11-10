@@ -35,7 +35,7 @@ class SessionFixture(Fixture):
             reply=r.request(method,dict(session_api_version=1,project=project,**params))
         if success:
             assert reply.get('error') is None, 'sanitized operator query failed: '+str(reply.get('error'))
-            return reply['result']
+            return reply['result']['session'] if method=='session.get' else reply['result']
         return reply['error']
 
     def wait(self, state, project='alpha', timeout=8):
@@ -49,7 +49,7 @@ class SessionFixture(Fixture):
 
     def launch(self, mode='normal'):
         v=self.query('session.start',executable=mode,confirmed=True)
-        return self.wait('ready') if mode not in ['timeout','version'] else v
+        return self.wait('ready') if mode not in ['timeout','version','auth'] else v
 
     def end(self, v):
         self.query('session.stop',session_id=v['session_id'])
@@ -130,9 +130,9 @@ class AgentSessionTests(unittest.TestCase):
 
     def test_initialization_timeout_and_version(self):
         with SessionFixture() as f:
-            f.set_programs(['timeout','version']);f.start()
-            for mode in ['timeout','version']:
-                v=f.launch(mode);v=f.wait('failed');self.assertEqual(v['failure'],'Timeout' if mode=='timeout' else 'Version')
+            f.set_programs(['timeout','version','auth']);f.start()
+            for mode in ['timeout','version','auth']:
+                v=f.launch(mode);v=f.wait('failed');self.assertEqual(v['failure'],{'timeout':'Timeout','version':'Version','auth':'Authentication required'}[mode])
                 while f.query('session.get')['process_alive']:time.sleep(.03)
 
     def test_mcp_two_tools_and_agent_credentials_cannot_control_or_enumerate(self):
@@ -151,6 +151,27 @@ class AgentSessionTests(unittest.TestCase):
                 with Raw(f) as r:self.assertEqual(r.request('session.get',params)['error'],error)
             self.assertEqual(f.query('session.start',executable='normal',confirmed=False,success=False),'InvalidRequest')
             f.end(v)
+
+    def test_registered_root_drift_revokes_prompt_and_allow_but_stop_remains(self):
+        import sqlite3
+        with SessionFixture() as f:
+            f.start();v=f.launch('permission')
+            f.query('session.prompt',session_id=v['session_id'],prompt='pending')
+            pending=f.wait('waiting_permission')['permissions'][0]
+            with sqlite3.connect(f.db) as db:db.execute('UPDATE projects SET root=? WHERE name=?',(str(f.root/'fixture/beta'),'alpha'))
+            self.assertEqual(f.query('session.permission',session_id=v['session_id'],request_id=pending['request_id'],option_id='once',success=False),'UnsafeRuntime')
+            self.assertEqual(f.query('session.prompt',session_id=v['session_id'],prompt='no',success=False),'UnsafeRuntime')
+            f.end(v)
+
+    def test_cancel_deadline_kills_uncooperative_child(self):
+        with SessionFixture() as f:
+            f.set_programs(['cancel-timeout']);f.start();v=f.launch('cancel-timeout')
+            f.query('session.prompt',session_id=v['session_id'],prompt='cancel deadline')
+            f.wait('running');f.query('session.cancel',session_id=v['session_id'])
+            v=f.wait('failed');self.assertEqual(v['failure'],'Timeout')
+            deadline=time.monotonic()+3
+            while f.query('session.get')['process_alive'] and time.monotonic()<deadline:time.sleep(.03)
+            self.assertFalse(f.query('session.get')['process_alive'])
 
     def test_no_configuration_and_unsafe_config_fail_closed(self):
         with Fixture() as f:

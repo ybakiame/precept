@@ -15,6 +15,7 @@ native = ["ipc", "dep:nsh-platform-linux", "dep:nsh-platform-macos", "dep:nsh-pl
 tui = ["ipc", "dep:nsh-platform-tui", "dep:ratatui-core", "dep:ratatui-crossterm", "dep:crossterm"]
 
 [dependencies]
+serde_json = "1"
 acp-ui-spike-model = { path = "../shared" }
 nsh-core = { git = "https://github.com/longbridge/nsh", rev = "87c7e8da85d2f15a56107baa6f0fabb419b508b3" }
 nsh-base = { git = "https://github.com/longbridge/nsh", rev = "87c7e8da85d2f15a56107baa6f0fabb419b508b3", default-features = false }

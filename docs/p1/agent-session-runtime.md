@@ -53,7 +53,8 @@ Project cwd is resolved from the existing registered/daemon-allowlisted root.
 Config and control-runtime files must stay outside project roots. Environment is
 cleared before supplying explicit allowed keys. No capability token is inherited.
 
-An existing per-client operator capability, OS peer check and IPC API v1 are required
+The existing operator capability is checked for each client/connection; OS peer
+checks and IPC API v1 are required
 before **every** `session.*` request. Project-bound agent capabilities are denied
 before parameter parsing or config/state disclosure. New methods require explicit
 `session_api_version: 1` and project scope; legacy health/context/handoff requests
@@ -98,3 +99,63 @@ implementation harness, not an assumed ACP server. Installed CLI presence is not
 ACP compatibility. A real-agent smoke requires a documented compatible installed
 executable and separate owner opt-in on disposable state; otherwise NOT_RUN.
 ADR-0003 remains Proposed. No niri/mobile or hosted Actions; Draft PR only.
+
+## Configuration and operator workflow
+
+An example **shape**, not an installed agent or an executable to download:
+
+```json
+{"version":1,"programs":[{"id":"trusted-agent","executable":"/absolute/trusted/acp-agent","args":["--acp"],"env":{"HOME":"/explicit/operator-selected/home"}}]}
+```
+
+The actual executable's documented ACP invocation must be supplied by its operator;
+`--acp` above is illustrative, not a Codex/Claude compatibility claim. Windows uses
+an absolute `.exe` path with its documented fixed arguments. Native Windows child
+startup may need explicitly configured `SystemRoot`, `TEMP` and `TMP`. Config must
+be a regular owner-only file (0600 Unix, protected owner-only Windows DACL), outside
+all registered project roots; configured executables also stay outside those roots.
+Allowed environment keys are PATH, HOME, USERPROFILE, APPDATA, LOCALAPPDATA,
+SystemRoot, WINDIR, TEMP, TMP, TMPDIR, LANG, LC_ALL, TERM and NO_COLOR. No arbitrary
+credential variable or inherited environment is passed. Secret/auth setup needing
+other environment variables is unsupported in this first slice. The trusted agent
+may independently consult its explicitly selected home; ACP does not sandbox it.
+
+Start the foreground daemon as before, adding `--agent-config <private-config>`.
+No configured file means no allowed executable and no execution. In a native local
+Desktop/TUI target select **Sessions / Alt+6**, choose a configured label, review
+Start's project/Git state and non-sandbox warning, then explicitly confirm. Type a
+single-line bounded prompt and Send. Pending permission shows the complete bounded
+agent-authored operation and offers Deny / Allow once; always choices are never sent.
+Unsupported/oversized permission descriptions are automatically denied. Close the
+UI and reopen Sessions to reattach while this daemon is alive. Cancel ends a turn;
+Stop kills/reaps the direct agent. Reopening after daemon restart shows no session.
+
+Keyboard: Alt+6 Sessions, Alt+J prompt focus, Alt+7 start review, Alt+8 confirm review,
+Alt+9 send, Alt+Q cancel, Alt+X stop. Existing Alt+1–5 and Windows Ctrl+1 remain intact.
+There is no automatic retry of mutations. If acknowledgement is lost, refresh the
+actual state before choosing another explicit action; a timeout does not prove that
+an already accepted action never ran. Queued actions with abandoned acknowledgements
+are discarded before processing. All UI operations run on the blocking worker.
+
+Internal IPC `session.get` returns `{ "session": null }` for no observation, or a
+session object inside that field. This avoids conflating successful idle state with
+an absent IPC result. Start/control return an observed view; list is a scoped array.
+Every request includes session_api_version/project; controls additionally require the
+random per-start session_id. IDs do not repeat across daemon restarts. A poll never
+retries a prompt or launch. UI checks epoch/project/connection and monotonic revision;
+changing observed session clears old prompt drafts, confirmation and event paging.
+Computed UI projections keep permission controls mounted across unchanged polls.
+Copy excludes the session panel, prompts and events. No agent transcript is persisted.
+
+
+Observed compatibility inventory: installed Kimi Code CLI 2.5.2 provides `kimi acp`
+([vendor reference](https://www.kimi.com/code/docs/en/kimi-code-cli/reference/kimi-acp)).
+With explicit owner opt-in and temporary HOME, initialize negotiated v1, while
+session/new required authentication. No login or existing login config was used;
+no real prompt/model turn passed. Codex/Claude CLI presence alone was not treated
+as ACP support. Native Windows installed candidate commands were not found.
+
+Project-root drift revokes new start/prompt/allow decisions: the daemon rechecks the
+registered canonical root against its launch snapshot in a bounded blocking job.
+Cancel/Stop/Deny stay available to the authenticated owner for revocation. Timed-out
+root jobs retain their admission permit until they finish and cannot launch a child.
