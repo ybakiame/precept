@@ -22,14 +22,28 @@ def main():
     p.add_argument("--desktop", type=Path, required=True)
     p.add_argument("--tui", type=Path, required=True)
     p.add_argument("--out", type=Path, required=True)
+    p.add_argument(
+        "--auth",
+        action="store_true",
+        help="exercise external synthetic auth readiness and explicit retry",
+    )
     a = p.parse_args()
     out = a.out.resolve()
-    assert out.is_relative_to(ROOT / "artifacts/local-p1-g")
+    assert any(
+        out.is_relative_to(ROOT / folder)
+        for folder in ["artifacts/local-p1-g", "artifacts/local-p1-h"]
+    )
     out.mkdir(parents=True, exist_ok=True, mode=0o700)
     with SessionFixture() as f:
-        f.set_programs(["normal", "permission", "cancel"])
+        f.set_programs(
+            ["normal", "permission", "cancel"] + (["auth-recover"] if a.auth else [])
+        )
         cfg = json.loads(f.config.read_text())
         cfg["programs"][0]["id"] = "agent"
+        auth_home = f.root / "synthetic-auth-home"
+        if a.auth:
+            auth_home.mkdir()
+            cfg["programs"][-1]["env"]["HOME"] = str(auth_home)
         f.config.write_text(json.dumps(cfg))
         f.start()
         flags = [
@@ -85,7 +99,7 @@ def main():
 
         try:
             proc, window, sample = launch()
-            wait("configured=3")
+            wait("configured=" + str(4 if a.auth else 3))
             key("alt+7")
             wait("confirm=true")
             time.sleep(0.9)
@@ -206,6 +220,48 @@ def main():
             terminal.wait("stopped")
             wait("state=Some(Stopped)")
             assert f.cli("health")["ready"] and f.db.read_bytes() == f.before
+            if a.auth:
+                f.query("session.start", executable="auth-recover", confirmed=True)
+                v = f.wait("auth_required")
+                old_id = v["session_id"]
+                terminal.close()
+                terminal = None
+                native_close(window)
+                stop(proc)
+                proc = window = None
+                proc, window, _ = launch()
+                wait("state=Some(AuthRequired)")
+                terminal = TerminalProbe([str(a.tui.resolve()), *flags])
+                terminal.wait("authentication required")
+                capture("auth-required-1080.png")
+                capture("auth-required-640.png", 640, 480)
+                key("ctrl+l")
+                wait("locale=ZhCn")
+                capture("auth-required-zh-640.png", 640, 480)
+                key("ctrl+l")
+                wait("locale=En")
+                key("alt+7")
+                wait("confirm=true")
+                time.sleep(0.9)
+                assert f.query("session.get")["session_id"] == old_id
+                # External operator fixture readiness, never authentication performed by the GUI/agent.
+                (auth_home / ".p1h-ready").write_text("synthetic readiness only")
+                key("alt+8")
+                v = f.wait("ready")
+                assert v["session_id"] != old_id
+                wait("state=Some(Ready)")
+                key("alt+j")
+                time.sleep(0.15)
+                key("session-prompt")
+                key("alt+9")
+                v = f.wait("completed")
+                assert v["activity"]["response_chunks"] > 0
+                wait("state=Some(Completed)")
+                capture("auth-recovered-1080.png")
+                terminal.wait("turn completed")
+                terminal.send(b"\x1bx")
+                f.wait("stopped")
+                wait("state=Some(Stopped)")
             stop(f.proc)
             terminal.wait("Session unavailable or access refused")
             wait("state=None")
@@ -219,6 +275,7 @@ def main():
                 permission="both clients observed pending; actual GUI Deny and Allow once controls",
                 daemon_loss_clears_state=True,
                 database_unchanged=True,
+                external_synthetic_auth_and_explicit_retry=a.auth,
                 clipboard="NOT_RUN",
                 real_agent="NOT_RUN by deterministic UI test; explicit opt-in smoke is separate",
             )

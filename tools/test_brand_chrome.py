@@ -18,7 +18,11 @@ def main():
     out = args.out.resolve()
     assert any(
         out.is_relative_to(ROOT / folder)
-        for folder in ["artifacts/local-p1-f", "artifacts/local-p1-g"]
+        for folder in [
+            "artifacts/local-p1-f",
+            "artifacts/local-p1-g",
+            "artifacts/local-p1-h",
+        ]
     )
     out.mkdir(parents=True, exist_ok=True, mode=0o700)
     proc, window, _ = native_start(

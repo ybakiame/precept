@@ -1,5 +1,11 @@
 # P1-G: operator-controlled local Agent Client Protocol session
 
+Current follow-up: [P1-H authentication/capabilities](agent-authentication.md) adds
+session extension API v2 and an auth-required action-needed state. External ACP v1,
+existing IPC API v1 and read-only MCP remain unchanged. The original P1-G G0
+snapshot below records its initial version; the P1-H contract supersedes session
+version/auth/metadata-ordering details only.
+
 ## G0 architecture and authority contract (before implementation)
 
 Baseline: clean main `52c01b7b6c5b48a2884e77bcd8a8893a5a010e62` (merge #23),

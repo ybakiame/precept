@@ -55,6 +55,7 @@ def control(nonce, action, **values):
                 "artifacts/local-p1-e4",
                 "artifacts/local-p1-f",
                 "artifacts/local-p1-g",
+                "artifacts/local-p1-h",
             )
         ), "synthetic captures must stay in private local UI artifacts"
         output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)

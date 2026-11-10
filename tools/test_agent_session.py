@@ -326,7 +326,10 @@ class AgentSessionTests(unittest.TestCase):
             for mode in ["timeout", "version", "auth"]:
                 v = f.launch(mode)
                 v = f.wait("auth_required" if mode == "auth" else "failed")
-                self.assertEqual(v["failure"], {"timeout": "Timeout", "version": "Version", "auth": None}[mode])
+                self.assertEqual(
+                    v["failure"],
+                    {"timeout": "Timeout", "version": "Version", "auth": None}[mode],
+                )
                 if mode == "auth":
                     self.assertEqual(v["authentication"]["status"], "required")
                 while f.query("session.get")["process_alive"]:
@@ -536,19 +539,45 @@ class AgentSessionTests(unittest.TestCase):
                 v = f.query("session.get")
             self.assertFalse(v["process_alive"])
             self.assertIsNone(v["failure"])
-            self.assertEqual(v["authentication"], {"status": "required", "methods": ["terminal"]})
+            self.assertEqual(
+                v["authentication"], {"status": "required", "methods": ["terminal"]}
+            )
             self.assertEqual(v["permissions"], [])
             self.assertNotIn("SENSITIVE_AUTH_TEST", json.dumps(v))
             time.sleep(0.2)
             self.assertEqual(f.query("session.get")["session_id"], first["session_id"])
-            self.assertEqual(f.query("session.prompt", session_id=v["session_id"], prompt="no", success=False), "Unavailable")
-            self.assertEqual(f.query("session.start", executable="auth-recover", confirmed=False, success=False), "InvalidRequest")
+            self.assertEqual(
+                f.query(
+                    "session.prompt",
+                    session_id=v["session_id"],
+                    prompt="no",
+                    success=False,
+                ),
+                "Unavailable",
+            )
+            self.assertEqual(
+                f.query(
+                    "session.start",
+                    executable="auth-recover",
+                    confirmed=False,
+                    success=False,
+                ),
+                "InvalidRequest",
+            )
             # The operator prepares auth outside the agent; this fixture is NOT real login.
             (home / ".p1h-ready").write_text("synthetic readiness only")
             v = f.launch("auth-recover")
             self.assertNotEqual(v["session_id"], first["session_id"])
             self.assertEqual(v["authentication"]["status"], "session_accepted")
-            self.assertEqual(f.query("session.prompt", session_id=first["session_id"], prompt="stale", success=False), "NotFound")
+            self.assertEqual(
+                f.query(
+                    "session.prompt",
+                    session_id=first["session_id"],
+                    prompt="stale",
+                    success=False,
+                ),
+                "NotFound",
+            )
             f.query("session.prompt", session_id=v["session_id"], prompt="synthetic")
             v = f.wait("completed")
             self.assertEqual(v["stop_reason"], "end_turn")
@@ -556,7 +585,15 @@ class AgentSessionTests(unittest.TestCase):
             self.assertEqual(f.db.read_bytes(), f.before)
 
     def test_auth_metadata_rejection_and_sanitization(self):
-        modes = ["auth-malformed", "auth-duplicate", "auth-bad-id", "auth-bad-type", "auth-huge-list", "auth-bad-capability", "auth-rejected"]
+        modes = [
+            "auth-malformed",
+            "auth-duplicate",
+            "auth-bad-id",
+            "auth-bad-type",
+            "auth-huge-list",
+            "auth-bad-capability",
+            "auth-rejected",
+        ]
         with SessionFixture() as f:
             f.set_programs(modes)
             f.start()
@@ -581,7 +618,9 @@ class AgentSessionTests(unittest.TestCase):
             self.assertEqual(v["authentication"]["methods"], ["unsupported"])
             f.end(v)
             v = f.launch("auth-unsupported")
-            self.assertEqual(f.query("session.authenticate", success=False), "Unsupported")
+            self.assertEqual(
+                f.query("session.authenticate", success=False), "Unsupported"
+            )
             f.query("session.prompt", session_id=v["session_id"], prompt="synthetic")
             v = f.wait("completed")
             self.assertTrue(v["process_alive"])
@@ -608,10 +647,17 @@ class AgentSessionTests(unittest.TestCase):
             f.query("session.prompt", session_id=v["session_id"], prompt="synthetic")
             v = f.wait("completed")
             deadline = time.monotonic() + 3
-            while not any("usage_update" in e for e in v["events"]) and time.monotonic() < deadline:
+            while (
+                not any("usage_update" in e for e in v["events"])
+                and time.monotonic() < deadline
+            ):
                 time.sleep(0.03)
                 v = f.query("session.get")
-            for name in ["available_commands_update", "current_mode_update", "usage_update"]:
+            for name in [
+                "available_commands_update",
+                "current_mode_update",
+                "usage_update",
+            ]:
                 self.assertTrue(any(name in e for e in v["events"]))
             self.assertEqual(v["state"], "completed")
             self.assertEqual(v["stop_reason"], "end_turn")

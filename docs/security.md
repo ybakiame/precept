@@ -37,3 +37,11 @@ The child has local user privileges, **not an OS sandbox**. Permission mediation
 cannot contain an agent's independent filesystem/network access or descendants.
 No Windows→WSL execution bridge, credential inheritance, shell or auto-launch.
 See [the capability/lifetime/failure contract](p1/agent-session-runtime.md).
+
+
+P1-H never retains agent-auth method IDs, descriptions, login argv/env or raw auth
+errors. It records only bounded method types/known capability bits and content-free
+activity counters. Private agent HOME is an explicit operator choice, not inherited
+or copied credentials. The agent may access it with user privileges; authentication
+and a successful session do not confer permission approval. No client login or
+context-MCP attachment is enabled. See [auth boundaries](p1/agent-authentication.md).

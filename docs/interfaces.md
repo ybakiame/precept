@@ -39,3 +39,11 @@ the Windows→WSL read-only helper. Protocol, lifecycle, methods and bounds are 
 [agent session runtime](p1/agent-session-runtime.md). It does not change the Python
 P0 API, the existing IPC API v1 read DTOs or any SQLite schema. External ACP v1
 stdio support is a deliberately limited subset, not a certified agent integration.
+
+
+P1-H updates only the optional session extension to **session API v2** for auth state,
+known capability bits and content-free response/tool counters. Session v1 requests
+receive Version; other IPC API v1 requests and MCP remain compatible. AUTH_REQUIRED
+is an observed action-needed state, never automatic login or prompt retry. Authentication
+RPC/terminal login and MCP attachment overrides remain unsupported; see the
+[auth/capability contract](p1/agent-authentication.md).

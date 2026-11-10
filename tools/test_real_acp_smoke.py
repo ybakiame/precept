@@ -20,9 +20,15 @@ PROMPT = (
 def private_home(path):
     """Validate ownership/shape only. Never read the operator's credential/config content."""
     assert path.is_absolute() and path.resolve() == path and not path.is_symlink()
-    assert path != Path.home().resolve(), "normal user HOME is not a disposable smoke home"
-    assert (path / ".acp-owned-smoke-home").is_file(), "explicit disposable smoke home required"
-    assert not path.is_relative_to(ROOT), "credential state must stay outside repository"
+    assert (
+        path != Path.home().resolve()
+    ), "normal user HOME is not a disposable smoke home"
+    assert (
+        path / ".acp-owned-smoke-home"
+    ).is_file(), "explicit disposable smoke home required"
+    assert not path.is_relative_to(
+        ROOT
+    ), "credential state must stay outside repository"
     for item in [path, path / ".kimi-code", path / ".kimi-code/config.toml"]:
         metadata = item.lstat()
         assert not stat.S_ISLNK(metadata.st_mode), "auth state symlinks refused"
@@ -37,14 +43,16 @@ def observed(f, terminal, timeout):
         if v["state"] in terminal:
             return v
         time.sleep(0.03)
-    raise AssertionError("real ACP observation deadline; raw output deliberately excluded")
+    raise AssertionError(
+        "real ACP observation deadline; raw output deliberately excluded"
+    )
 
 
 def token_received(events):
     # A genuine streamed token can cross several ACP chunks; do not persist text.
     prefix = "agent_message_chunk: "
     return "ACP_SMOKE_OK" in "".join(
-        event[len(prefix):] for event in events if event.startswith(prefix)
+        event[len(prefix) :] for event in events if event.startswith(prefix)
     )
 
 
@@ -68,7 +76,9 @@ def main():
     parser.add_argument("--cancel-after-send", action="store_true")
     args = parser.parse_args()
     assert args.opt_in, "installed real agent requires operator opt-in"
-    assert os.name != "nt", "this explicit smoke selects the installed Linux Kimi executable"
+    assert (
+        os.name != "nt"
+    ), "this explicit smoke selects the installed Linux Kimi executable"
     assert args.executable.is_absolute() and args.executable.is_file()
     assert not args.cancel_after_send or args.allow_model_call
     home = None
@@ -78,19 +88,30 @@ def main():
     else:
         assert not args.allow_credential_use, "explicit private home required"
     out = args.out.resolve()
-    assert any(out.is_relative_to(ROOT / folder) for folder in ["artifacts/local-p1-g", "artifacts/local-p1-h"])
+    assert any(
+        out.is_relative_to(ROOT / folder)
+        for folder in ["artifacts/local-p1-g", "artifacts/local-p1-h"]
+    )
     out.mkdir(parents=True, exist_ok=True, mode=0o700)
     out.chmod(0o700)
-    assert not (out / "real-acp-result.json").exists(), "retain each original run separately"
+    assert not (
+        out / "real-acp-result.json"
+    ).exists(), "retain each original run separately"
     result = dict(
         agent="Kimi Code CLI",
         installed_version=args.version,
-        tested_git_sha=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
-        worktree_dirty=bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT)),
+        tested_git_sha=subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+        ).strip(),
+        worktree_dirty=bool(
+            subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT)
+        ),
         host="Linux/WSL native daemon",
         invocation="absolute installed executable + argv [acp]; cleared environment; explicit disposable HOME",
         executable_sha256=hashlib.sha256(args.executable.read_bytes()).hexdigest(),
-        daemon_sha256=hashlib.sha256((ROOT / "target/debug/acp-daemon").read_bytes()).hexdigest(),
+        daemon_sha256=hashlib.sha256(
+            (ROOT / "target/debug/acp-daemon").read_bytes()
+        ).hexdigest(),
         owner_opt_in=True,
         credential_use="explicit private HOME" if home else "NOT_RUN: empty HOME",
         model_call_opt_in=args.allow_model_call,
@@ -107,10 +128,25 @@ def main():
         if home is None:
             home = f.root / "isolated-home"
             home.mkdir(mode=0o700)
-        f.config.write_text(json.dumps(dict(version=1, programs=[dict(
-            id="real-kimi", executable=str(args.executable.resolve()), args=["acp"],
-            env={"HOME": str(home), "PATH": "/usr/bin:/bin", "TMPDIR": str(f.root)},
-        )])))
+        f.config.write_text(
+            json.dumps(
+                dict(
+                    version=1,
+                    programs=[
+                        dict(
+                            id="real-kimi",
+                            executable=str(args.executable.resolve()),
+                            args=["acp"],
+                            env={
+                                "HOME": str(home),
+                                "PATH": "/usr/bin:/bin",
+                                "TMPDIR": str(f.root),
+                            },
+                        )
+                    ],
+                )
+            )
+        )
         f.start()
         f.query("session.start", executable="real-kimi", confirmed=True)
         v = observed(f, ["ready", "auth_required", "failed"], 16)
@@ -120,8 +156,12 @@ def main():
         result["protocol_version"] = 1 if v["agent"] else None
         result["session_api_version"] = v["session_api_version"]
         result["auth_method_types"] = v["authentication"]["methods"]
-        result["capabilities"] = dict(v["agent_features"], load_session=v["load_session_advertised"])
-        result["session_new"] = "AUTH_REQUIRED" if v["state"] == "auth_required" else v["state"]
+        result["capabilities"] = dict(
+            v["agent_features"], load_session=v["load_session_advertised"]
+        )
+        result["session_new"] = (
+            "AUTH_REQUIRED" if v["state"] == "auth_required" else v["state"]
+        )
         token_seen = False
         if v["state"] == "ready" and args.allow_model_call and identity:
             result["remote_model_turn"] = "ATTEMPTED"
@@ -135,7 +175,9 @@ def main():
                 token_seen |= token_received(v["events"])
                 if v["permissions"] or v["activity"]["tool_events"]:
                     result["status"] = "FAIL"
-                    result["reason"] = "unexpected tool activity; no permission granted; turn cancelled"
+                    result["reason"] = (
+                        "unexpected tool activity; no permission granted; turn cancelled"
+                    )
                     cancel_turn(f, v["session_id"])
                     break
                 if v["state"] in ["completed", "failed", "auth_required"]:
@@ -146,16 +188,32 @@ def main():
             result["activity"] = v["activity"]
             result["synthetic_token_seen"] = token_seen
             if args.cancel_after_send:
-                result["cancel"] = "PASS" if cancellation_sent and v["stop_reason"] == "cancelled" else "NOT_RUN: agent completed before cancellation or did not confirm cancel"
+                result["cancel"] = (
+                    "PASS"
+                    if cancellation_sent and v["stop_reason"] == "cancelled"
+                    else "NOT_RUN: agent completed before cancellation or did not confirm cancel"
+                )
                 if result["status"] != "FAIL":
-                    result["status"] = "PASS" if result["cancel"] == "PASS" else "PARTIAL"
+                    result["status"] = (
+                        "PASS" if result["cancel"] == "PASS" else "PARTIAL"
+                    )
             elif result["status"] != "FAIL":
-                result["status"] = "PASS" if v["state"] == "completed" and v["stop_reason"] == "end_turn" and v["activity"]["response_chunks"] > 0 and token_seen else "FAIL"
+                result["status"] = (
+                    "PASS"
+                    if v["state"] == "completed"
+                    and v["stop_reason"] == "end_turn"
+                    and v["activity"]["response_chunks"] > 0
+                    and token_seen
+                    else "FAIL"
+                )
         else:
             result["status"] = "PARTIAL" if identity else "FAIL"
         # Deliberate stop; no automatic prompts, authentication or retry.
         latest = f.query("session.get")
-        if latest["process_alive"] and latest["state"] not in ["failed", "auth_required"]:
+        if latest["process_alive"] and latest["state"] not in [
+            "failed",
+            "auth_required",
+        ]:
             latest = f.end(latest)
         deadline = time.monotonic() + 3
         while latest["process_alive"] and time.monotonic() < deadline:

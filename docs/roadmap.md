@@ -49,3 +49,14 @@ remain read-only. This is an ephemeral prototype, not a fleet scheduler, sandbox
 persistent vendor resume or Windows→WSL execution bridge. Deterministic fixture
 results and any real-agent gaps are recorded in
 [local session evidence](evaluation/p1-g-local-agent-session.md). ADR-0003 stays Proposed.
+
+
+## P1-H private authentication and real ACP turn
+
+The existing native single-agent slice observes authentication/capabilities without
+executing advertised login commands. Operator-prepared private authentication and
+explicit Start review remain separate from permission approval. Session extension
+API v2 rejects older session requests explicitly; core IPC/MCP/SQLite stay unchanged.
+The optional context bridge is deferred until safe per-session credential revocation
+exists; no operator or long-lived project credential is forwarded. See
+[contract](p1/agent-authentication.md) and [local evidence](evaluation/p1-h-real-agent-e2e.md).

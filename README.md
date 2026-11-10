@@ -114,3 +114,15 @@ The agent runs with your user privileges, without an OS sandbox. Python profile
 writes and the two-tool read-only MCP stay unchanged. See
 [configuration and boundaries](docs/p1/agent-session-runtime.md) and
 [local evidence / interoperability limits](docs/evaluation/p1-g-local-agent-session.md).
+
+
+## Native agent authentication follow-up
+
+P1-H adds bounded auth/capability observations and an explicit auth-required recovery
+path. Prepare private agent authentication outside the app, then review Start again;
+there is no login/credential widget or automatic retry. The optional local session
+extension uses API v2; existing IPC v1 and read-only two-tool MCP are unchanged.
+Context MCP forwarding remains disabled. See the
+[authentication contract](docs/p1/agent-authentication.md) and
+[real-agent evidence](docs/evaluation/p1-h-real-agent-e2e.md) for verified results,
+source provenance and remaining limits.
