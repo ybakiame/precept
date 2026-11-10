@@ -18,11 +18,16 @@ struct Args {
     database: PathBuf,
     #[arg(long = "allow-project", required = true)]
     projects: Vec<String>,
+    /// Explicit private operator configuration; absent disables execution.
+    #[arg(long)]
+    agent_config: Option<PathBuf>,
 }
 #[derive(Clone)]
 struct Service {
     database: PathBuf,
     projects: Vec<String>,
+    roots: std::collections::BTreeMap<String, PathBuf>,
+    sessions: acp_session::runtime::Supervisor,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -55,6 +60,71 @@ fn decode<T: serde::de::DeserializeOwned>(v: Value) -> acp_ipc::Result<T> {
     serde_json::from_value(v).map_err(|_| Error::InvalidRequest)
 }
 impl Service {
+    async fn session(&self, access: Access, request: Request) -> acp_ipc::Result<Value> {
+        // Deny before parsing params, opening storage or disclosing session/config.
+        if access != Access::Operator {
+            return Err(Error::Unauthorized);
+        }
+        let p: acp_session::runtime::Params = decode(request.params)?;
+        if p.session_api_version != acp_session::SESSION_API {
+            return Err(Error::Version);
+        }
+        if !self.projects.contains(&p.project) {
+            return Err(Error::Unauthorized);
+        }
+        match request.method.as_str() {
+            "session.capabilities" | "session.list" | "session.get" => {
+                if p.session_id.is_some()
+                    || p.executable.is_some()
+                    || p.confirmed.is_some()
+                    || p.prompt.is_some()
+                    || p.request_id.is_some()
+                    || p.option_id.is_some()
+                {
+                    return Err(Error::InvalidRequest);
+                }
+                match request.method.as_str() {
+                    "session.capabilities" => Ok(json!(self.sessions.capabilities())),
+                    "session.list" => Ok(json!(
+                        self.sessions
+                            .get(&p.project)
+                            .into_iter()
+                            .collect::<Vec<_>>()
+                    )),
+                    _ => Ok(json!(self.sessions.get(&p.project))),
+                }
+            }
+            "session.start" => {
+                let database = self.database.clone();
+                let project = p.project.clone();
+                let expected = self
+                    .roots
+                    .get(&project)
+                    .cloned()
+                    .ok_or(Error::Unauthorized)?;
+                let root = tokio::task::spawn_blocking(move || {
+                    let store = SqliteStore::open(&database).map_err(|_| Error::Unavailable)?;
+                    let root = store
+                        .read_project(&project)
+                        .map_err(|_| Error::NotFound)?
+                        .root
+                        .canonicalize()
+                        .map_err(|_| Error::UnsafeRuntime)?;
+                    if root != expected {
+                        return Err(Error::UnsafeRuntime);
+                    }
+                    Ok(root)
+                })
+                .await
+                .map_err(|_| Error::Unavailable)??;
+                Ok(json!(self.sessions.start(p, root)?))
+            }
+            "session.prompt" | "session.cancel" | "session.stop" | "session.permission" => {
+                Ok(json!(self.sessions.control(&request.method, p).await?))
+            }
+            _ => Err(Error::Unsupported),
+        }
+    }
     fn query(&self, access: Access, request: Request) -> acp_ipc::Result<Value> {
         let params = request.params;
         let store = SqliteStore::open(&self.database).map_err(|_| Error::Unavailable)?;
@@ -163,18 +233,22 @@ async fn peer(
             let _ = write_frame(&mut stream, &Response::error(Some(id), e)).await;
             return;
         }
-        let service = service.clone();
-        let access = access.clone();
-        let held = permit.clone();
-        // The lease stays with a timed-out blocking job, preventing unbounded queued work.
-        let job = tokio::task::spawn_blocking(move || {
-            let _held = held;
-            service.query(access, request)
-        });
-        let result = match tokio::time::timeout(Duration::from_secs(5), job).await {
-            Ok(Ok(r)) => r,
-            Ok(Err(_)) => Err(Error::Unavailable),
-            Err(_) => Err(Error::Timeout),
+        let result = if request.method.starts_with("session.") {
+            service.session(access.clone(), request).await
+        } else {
+            let service = service.clone();
+            let access = access.clone();
+            let held = permit.clone();
+            // A timed-out blocking job retains its admission slot.
+            let job = tokio::task::spawn_blocking(move || {
+                let _held = held;
+                service.query(access, request)
+            });
+            match tokio::time::timeout(Duration::from_secs(5), job).await {
+                Ok(Ok(r)) => r,
+                Ok(Err(_)) => Err(Error::Unavailable),
+                Err(_) => Err(Error::Timeout),
+            }
         };
         let close = result == Err(Error::Timeout);
         let response = match result {
@@ -256,16 +330,22 @@ async fn run(args: Args) -> acp_ipc::Result<()> {
     }
     // Registered projects need not have Git metadata. Resolve both sides before
     // any control files are created, including existing symlink components.
+    let mut roots = std::collections::BTreeMap::new();
     for project in &args.projects {
         let project = store.read_project(project).map_err(|_| Error::NotFound)?;
         let root = project
             .root
             .canonicalize()
             .map_err(|_| Error::UnsafeRuntime)?;
+        roots.insert(project.name.clone(), root.clone());
         if runtime.starts_with(&root) || root.starts_with(&runtime) {
             return Err(Error::UnsafeRuntime);
         }
     }
+    let sessions = acp_session::runtime::Supervisor::configured(
+        args.agent_config.as_deref(),
+        &roots.values().cloned().collect::<Vec<_>>(),
+    )?;
     drop(store);
     let mut lease = RuntimeLease::acquire(&args.location)?;
     let mut listener = acp_ipc::transport::Listener::bind(&args.location).await?;
@@ -273,6 +353,8 @@ async fn run(args: Args) -> acp_ipc::Result<()> {
     let service = Service {
         database: args.database,
         projects: args.projects,
+        roots,
+        sessions,
     };
     let slots = Arc::new(Semaphore::new(MAX_PEERS));
     let mut tasks = tokio::task::JoinSet::new();
@@ -294,6 +376,7 @@ async fn run(args: Args) -> acp_ipc::Result<()> {
     }
     tasks.abort_all();
     while tasks.join_next().await.is_some() {}
+    service.sessions.shutdown().await;
     drop(listener);
     drop(lease);
     Ok(())
@@ -326,6 +409,7 @@ mod tests {
             },
             database: PathBuf::new(),
             projects: vec!["alpha".into(), "ALPHA".into()],
+            agent_config: None,
         };
         assert_eq!(run(args).await, Err(Error::InvalidRequest));
     }
