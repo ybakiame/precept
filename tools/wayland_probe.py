@@ -48,8 +48,12 @@ def control(nonce, action, **values):
         output = Path(values["output"]).resolve()
         assert any(
             output.is_relative_to(ROOT / folder)
-            for folder in ("artifacts/local-p1-e3", "artifacts/local-p1-e4")
-        ), "synthetic captures must stay in private E3 artifacts"
+            for folder in (
+                "artifacts/local-p1-e3",
+                "artifacts/local-p1-e4",
+                "artifacts/local-p1-f",
+            )
+        ), "synthetic captures must stay in private local UI artifacts"
         output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         values["output"] = subprocess.run(
             ["wslpath", "-w", str(output)], check=True, capture_output=True, text=True

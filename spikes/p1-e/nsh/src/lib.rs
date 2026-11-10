@@ -2,6 +2,7 @@
 use acp_ui_spike_model::{Model, Phase};
 use nsh_base::button;
 use nsh_core::prelude::*;
+pub mod brand_preview;
 mod components;
 mod tokens;
 pub static DESKTOP_RUNTIME: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();

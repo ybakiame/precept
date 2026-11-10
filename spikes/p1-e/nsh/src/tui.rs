@@ -22,9 +22,12 @@ fn main() -> io::Result<()> {
     acp_nsh_spike::PROBE_STARTED
         .set(std::time::Instant::now())
         .ok();
-    acp_nsh_spike::INPUTS
-        .set(acp_ui_spike_model::native::Inputs::parse())
-        .ok();
+    let preview = acp_nsh_spike::brand_preview::configure().map_err(io::Error::other)?;
+    if !preview {
+        acp_nsh_spike::INPUTS
+            .set(acp_ui_spike_model::native::Inputs::parse())
+            .ok();
+    }
     terminal::enable_raw_mode()?;
     let _restore = Restore;
     execute!(io::stdout(), EnterAlternateScreen, EnableBracketedPaste)?;
@@ -33,7 +36,11 @@ fn main() -> io::Result<()> {
     options.storage = Some(acp_nsh_spike::ephemeral_storage());
     options.cache = nsh_platform_tui::CacheOptions::off();
     let mut view = AppView::new(options);
-    view.load(App::Rust(Root::of::<acp_nsh_spike::App>()))?;
+    view.load(App::Rust(if preview {
+        Root::of::<acp_nsh_spike::brand_preview::BrandPreview>()
+    } else {
+        Root::of::<acp_nsh_spike::App>()
+    }))?;
     loop {
         view.draw_terminal(&mut terminal)?;
         if event::poll(Duration::from_millis(16))? {

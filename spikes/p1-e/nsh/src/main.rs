@@ -12,9 +12,18 @@ fn main() -> impl std::process::Termination {
     acp_nsh_spike::PROBE_STARTED
         .set(std::time::Instant::now())
         .ok();
-    acp_nsh_spike::INPUTS
-        .set(acp_ui_spike_model::native::Inputs::parse())
-        .ok();
+    let preview = match acp_nsh_spike::brand_preview::configure() {
+        Ok(value) => value,
+        Err(message) => {
+            eprintln!("{message}");
+            std::process::exit(2);
+        }
+    };
+    if !preview {
+        acp_nsh_spike::INPUTS
+            .set(acp_ui_spike_model::native::Inputs::parse())
+            .ok();
+    }
     #[cfg(target_os = "linux")]
     linux_probe::install();
     let mut title = String::from("Agent Control Plane — read-only console");
@@ -26,7 +35,11 @@ fn main() -> impl std::process::Termination {
         title.push_str(&format!(" [{id}]"));
     }
     platform::run_app(
-        platform::AppSource::Rust(platform::Root::of::<acp_nsh_spike::App>()),
+        platform::AppSource::Rust(if preview {
+            platform::Root::of::<acp_nsh_spike::brand_preview::BrandPreview>()
+        } else {
+            platform::Root::of::<acp_nsh_spike::App>()
+        }),
         platform::AppOptions {
             title,
             #[cfg(any(target_os = "linux", target_os = "windows"))]
