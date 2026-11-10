@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
 
+pub mod appearance;
+pub mod connection;
+pub mod i18n;
 pub mod presentation;
 
 pub const PAGE_SIZE: usize = 12;
@@ -140,6 +143,15 @@ impl Section {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Model {
     pub epoch: u64,
+    pub connection: connection::Connection,
+    pub connection_draft: connection::Connection,
+    pub connection_invalid: bool,
+    pub settings: bool,
+    pub connection_editor: bool,
+    pub theme: appearance::ThemeId,
+    pub color_mode: appearance::ColorMode,
+    pub locale: i18n::Locale,
+    pub last_duration_ms: Option<u64>,
     pub project_names: Vec<String>,
     pub last_read_ms: Option<u64>,
     pub section: Section,
@@ -166,6 +178,15 @@ impl Model {
     pub fn loading() -> Self {
         Self {
             epoch: 0,
+            connection: Default::default(),
+            connection_draft: Default::default(),
+            connection_invalid: false,
+            settings: false,
+            connection_editor: false,
+            theme: Default::default(),
+            color_mode: appearance::ColorMode::Dark,
+            locale: Default::default(),
+            last_duration_ms: None,
             project_names: Vec::new(),
             last_read_ms: None,
             section: Section::Dashboard,
@@ -198,6 +219,45 @@ impl Model {
             .map(|h| h.task_id.clone())
             .unwrap_or_default();
         m
+    }
+    pub fn target_label(&self) -> &'static str {
+        self.word(match self.connection.target {
+            connection::Target::Synthetic => i18n::Msg::SyntheticTarget,
+            connection::Target::Local => i18n::Msg::LocalTarget,
+            connection::Target::Wsl => i18n::Msg::WslTarget,
+        })
+    }
+    pub fn word(&self, key: i18n::Msg) -> &'static str {
+        i18n::tr(self.locale, key)
+    }
+    /// A target transition invalidates pending reads, scope, evidence and timestamps together.
+    pub fn apply_connection(&mut self) -> bool {
+        if !self.connection_draft.validate() {
+            self.connection_invalid = true;
+            return false;
+        }
+        self.epoch = self.epoch.checked_add(1).expect("request epoch exhausted");
+        self.connection = self.connection_draft.clone();
+        self.connection_invalid = false;
+        self.live = self.connection.target != connection::Target::Synthetic;
+        self.data = None;
+        self.project_names.clear();
+        self.selected_project = None;
+        self.selected = 0;
+        self.task_id.clear();
+        self.queried_task.clear();
+        self.filter.clear();
+        self.page = 0;
+        self.evidence_page = 0;
+        self.detail_page = 0;
+        self.selected_preference = None;
+        self.expanded = false;
+        self.copied = false;
+        self.last_read_ms = None;
+        self.last_duration_ms = None;
+        self.permission_denied = false;
+        self.phase = Phase::Loading;
+        true
     }
     /// Invalidating a request also invalidates every older in-flight completion.
     pub fn begin_read(&mut self) -> Result<ReadRequest, &'static str> {
@@ -232,28 +292,36 @@ impl Model {
         }
         let result = result.and_then(|snapshot| {
             snapshot.validate()?;
-            if let Some(name) = &request.project {
-                let project = snapshot
-                    .projects
-                    .iter()
-                    .find(|p| &p.name == name)
-                    .ok_or("Permission denied")?;
-                if project
-                    .handoff
-                    .as_ref()
-                    .is_some_and(|h| h.task_id != request.task)
-                {
-                    return Err("Unexpected task response");
-                }
+            let project = if let Some(name) = &request.project {
+                Some(
+                    snapshot
+                        .projects
+                        .iter()
+                        .find(|p| &p.name == name)
+                        .ok_or("Permission denied")?,
+                )
+            } else {
+                snapshot.projects.first()
+            };
+            if project
+                .and_then(|p| p.handoff.as_ref())
+                .is_some_and(|h| h.task_id != request.task)
+            {
+                return Err("Unexpected task response");
             }
             Ok(snapshot)
         });
         self.receive(result);
-        if self.phase == Phase::Ready {
-            if let Some(name) = &request.project {
-                if let Some(index) = self.project_names.iter().position(|p| p == name) {
-                    self.select(index);
-                }
+        if matches!(self.phase, Phase::Ready | Phase::Empty) {
+            if let Some(name) = &request.project
+                && let Some(index) = self.project_names.iter().position(|p| p == name)
+            {
+                self.select(index);
+            }
+            // Bind the initially chosen allowlisted project for later reads;
+            // a daemon list reordering must not silently move an exact task lookup.
+            if self.phase == Phase::Ready && request.project.is_none() {
+                self.select(self.selected);
             }
             if self.live {
                 self.last_read_ms = Some(now_ms);
@@ -322,6 +390,14 @@ impl Model {
             .unwrap_or_default()
     }
     pub fn status(&self) -> String {
+        if self.locale == i18n::Locale::ZhCn {
+            return format!(
+                "{} · {} · {}",
+                self.source_label(),
+                self.read_label(),
+                self.read_time()
+            );
+        }
         let source = if self.live {
             "LIVE_READ_ONLY"
         } else {
@@ -391,6 +467,14 @@ impl Model {
     }
     pub fn page_label(&self) -> String {
         let count = self.rows().len();
+        if self.locale == i18n::Locale::ZhCn {
+            return format!(
+                "{} 条已确认记录 · 第 {}/{} 页",
+                count,
+                self.page + 1,
+                count.div_ceil(PAGE_SIZE).max(1)
+            );
+        }
         format!(
             "{} confirmed rows · page {}/{}",
             count,
@@ -650,5 +734,103 @@ mod tests {
         let row = s.projects[0].context.preferences[0].clone();
         s.projects[0].context.preferences = vec![row; MAX_ROWS + 1];
         assert!(s.validate().is_err());
+    }
+}
+
+#[cfg(test)]
+mod target_tests {
+    use super::*;
+    #[test]
+    fn target_switch_invalidates_delayed_scope_data_and_timestamps() {
+        let mut m = Model::fixture();
+        m.live = true;
+        m.last_read_ms = Some(123);
+        m.last_duration_ms = Some(8);
+        m.task_id = "shared".into();
+        m.selected_project = Some("alpha".into());
+        let old = m.begin_read().unwrap();
+        m.connection_draft = connection::Connection::default();
+        assert!(m.apply_connection());
+        assert!(m.data.is_none() && m.project_names.is_empty() && m.selected_project.is_none());
+        assert!(
+            m.task_id.is_empty()
+                && m.queried_task.is_empty()
+                && m.last_read_ms.is_none()
+                && m.last_duration_ms.is_none()
+        );
+        assert!(!m.complete_read(&old, Ok(Snapshot::fixture()), 999));
+        let next = m.begin_read().unwrap();
+        let mut snapshot = Snapshot::fixture();
+        for p in &mut snapshot.projects {
+            p.handoff = None;
+        }
+        assert!(m.complete_read(&next, Ok(snapshot), 1000));
+        assert!(!m.live && m.last_read_ms.is_none());
+        m.connection_draft.target = connection::Target::Local;
+        let epoch = m.epoch;
+        assert!(!m.apply_connection());
+        assert_eq!(m.epoch, epoch);
+        assert!(m.data.is_some());
+    }
+    #[test]
+    fn first_read_binds_project_and_empty_allowlist_still_records_success() {
+        let mut m = Model::loading();
+        m.live = true;
+        m.task_id = "shared".into();
+        let request = m.begin_read().unwrap();
+        assert!(m.complete_read(&request, Ok(Snapshot::fixture()), 1));
+        assert_eq!(m.selected_project.as_deref(), Some("alpha"));
+        let mut reversed = Snapshot::fixture();
+        reversed.projects.reverse();
+        let request = m.begin_read().unwrap();
+        assert!(m.complete_read(&request, Ok(reversed), 2));
+        assert_eq!(m.project().unwrap().name, "alpha");
+        m.selected_project = None;
+        let mut empty = Snapshot::fixture();
+        empty.projects.clear();
+        let request = m.begin_read().unwrap();
+        assert!(m.complete_read(&request, Ok(empty), 3));
+        assert_eq!(m.phase, Phase::Empty);
+        assert_eq!(m.last_read_ms, Some(3));
+    }
+    #[test]
+    fn initial_unqueried_handoff_is_refused() {
+        let mut m = Model::loading();
+        let request = m.begin_read().unwrap();
+        assert!(m.complete_read(&request, Ok(Snapshot::fixture()), 1));
+        assert_eq!(m.phase, Phase::Unavailable);
+        assert!(m.data.is_none());
+    }
+    #[test]
+    fn chinese_page_copy_retains_git_handoff_and_disclosed_value() {
+        let mut m = Model::fixture();
+        m.locale = i18n::Locale::ZhCn;
+        let lines = m.visible_lines().join("\n");
+        let p = m.project().unwrap();
+        assert!(lines.contains(p.context.repository.branch.as_deref().unwrap()));
+        assert!(lines.contains(&p.handoff.as_ref().unwrap().objective));
+        assert!(lines.contains(&p.context.warnings[0]));
+        m.section = Section::Preferences;
+        let mut snapshot = Snapshot::fixture();
+        snapshot.projects[0].context.preferences[0].value = "中文".repeat(600);
+        m.receive(Ok(snapshot));
+        m.select_preference(0);
+        m.detail_by(1);
+        assert!(m.visible_lines().join("\n").contains(&m.detail_chunk()));
+        assert!(m.visible_lines().iter().all(|s| s.chars().count() < 550));
+    }
+    #[test]
+    fn chinese_ui_preserves_original_values_and_evidence() {
+        let mut m = Model::fixture();
+        m.locale = i18n::Locale::ZhCn;
+        m.section = Section::Handoff;
+        m.expanded = true;
+        let lines = m.visible_lines().join("\n");
+        let h = m.project().unwrap().handoff.as_ref().unwrap();
+        assert!(lines.contains(&h.objective));
+        assert!(lines.contains(&h.validation[0].to_string()));
+        assert!(lines.contains("并非当前会话验证"));
+        m.section = Section::Preferences;
+        assert!(m.visible_lines().join("\n").contains(&m.rows()[0].value));
     }
 }

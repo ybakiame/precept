@@ -4,7 +4,11 @@ fn main() {
         Ok(snapshot) => println!("{}", serde_json::to_string(&snapshot).unwrap()),
         Err(message) => {
             eprintln!("{message}");
-            std::process::exit(2);
+            std::process::exit(if message == "Permission denied" {
+                acp_ui_spike_model::native::HELPER_ACCESS_REFUSED
+            } else {
+                2
+            });
         }
     }
 }

@@ -50,7 +50,7 @@ def main():
     t = TerminalProbe([binary, "--synthetic-rows", "10000"])
     try:
         t.wait("OFFLINE_SYNTHETIC")
-        t.wait("10000 confirmed preferences")
+        t.wait("Confirmed preferences: 10000")
         started = time.monotonic()
         t.focus(b"\x06", "Filter confirmed preferences")
         t.send(b"event-09999")

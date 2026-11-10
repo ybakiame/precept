@@ -14,32 +14,25 @@ pub struct Palette {
     pub error: AdaptiveColor,
 }
 pub fn palette(model: Signal<Model>) -> Palette {
-    let color = AdaptiveColor::rgb;
-    if model.get().high_contrast {
-        return Palette {
-            background: color(0, 0),
-            panel: color(0, 0),
-            inset: color(0, 0),
-            text: color(0xffffff, 0xffffff),
-            muted: color(0xffffff, 0xffffff),
-            border: color(0xffffff, 0xffffff),
-            primary: color(0x00ffff, 0x00ffff),
-            on_primary: color(0, 0),
-            warning: color(0xffff00, 0xffff00),
-            error: color(0xffa0a0, 0xffa0a0),
-        };
-    }
+    let m = model.get();
+    let is_dark = match m.color_mode {
+        acp_ui_spike_model::appearance::ColorMode::System => dark(),
+        acp_ui_spike_model::appearance::ColorMode::Dark => true,
+        acp_ui_spike_model::appearance::ColorMode::Light => false,
+    };
+    let p = m.theme.colors(is_dark, m.high_contrast);
+    let c = |v| AdaptiveColor::rgb(v, v);
     Palette {
-        background: color(0xf1f5f9, 0x020617),
-        panel: color(0xffffff, 0x0f172a),
-        inset: color(0xf8fafc, 0x172033),
-        text: color(0x0f172a, 0xe2e8f0),
-        muted: color(0x475569, 0xa8b6ca),
-        border: color(0x64748b, 0x64748b),
-        primary: color(0x1d4ed8, 0x60a5fa),
-        on_primary: color(0xffffff, 0x071426),
-        warning: color(0x92400e, 0xfbbf24),
-        error: color(0xb91c1c, 0xfca5a5),
+        background: c(p.background),
+        panel: c(p.panel),
+        inset: c(p.inset),
+        text: c(p.text),
+        muted: c(p.muted),
+        border: c(p.border),
+        primary: c(p.accent),
+        on_primary: c(p.on_accent),
+        warning: c(p.warning),
+        error: c(p.error),
     }
 }
 pub fn compact() -> bool {

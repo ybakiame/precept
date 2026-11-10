@@ -29,6 +29,8 @@ def control(nonce, action, **values):
     source = (
         (ROOT / "tools/window_capture.py").read_text()
         + "\n"
+        + (ROOT / "tools/window_chrome_probe.py").read_text()
+        + "\n"
         + (ROOT / "tools/wslg_window.py").read_text()
     )
     deps = os.environ.get("ACP_WINDOWS_TEST_ROOT")
@@ -48,8 +50,12 @@ def control(nonce, action, **values):
         output = Path(values["output"]).resolve()
         assert any(
             output.is_relative_to(ROOT / folder)
-            for folder in ("artifacts/local-p1-e3", "artifacts/local-p1-e4")
-        ), "synthetic captures must stay in private E3 artifacts"
+            for folder in (
+                "artifacts/local-p1-e3",
+                "artifacts/local-p1-e4",
+                "artifacts/local-p1-f",
+            )
+        ), "synthetic captures must stay in private local UI artifacts"
         output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         values["output"] = subprocess.run(
             ["wslpath", "-w", str(output)], check=True, capture_output=True, text=True
@@ -163,16 +169,16 @@ class WaylandWindow:
             suffix += f" rows={rows}"
         self.wait(suffix, after=after)
 
-    def capture(self, output):
-        return control(self.nonce, "capture", output=str(output))
+    def capture(self, output, *, frameless=False):
+        return control(self.nonce, "capture", output=str(output), frameless=frameless)
 
-    def resize(self, width, height):
+    def resize(self, width, height, *, frameless=False):
         self.drain()
         index = len(self.lines)
         before = next((s for s in reversed(self.lines) if "ACP_GTK backend=" in s), "")
         if f"width={width} height={height}" in before:
             return
-        control(self.nonce, "resize", size=[width, height])
+        control(self.nonce, "resize", size=[width, height], frameless=frameless)
         # WSLg native frame includes GTK decorations; assert a fresh actual
         # allocation instead of equating outer OS bounds to GTK content size.
         deadline = time.monotonic() + 8

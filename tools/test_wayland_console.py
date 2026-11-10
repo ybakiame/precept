@@ -65,8 +65,8 @@ def verify(binary, out):
                 w.state(selected=1, rows=0, after=start)
                 w.key("Tab")
                 w.key("Escape")
-                w.resize(640, 480)
-                w.resize(1080, 760)
+                w.resize(640, 480, frameless=True)
+                w.resize(1080, 760, frameless=True)
                 if i == 0:
                     stop(f.proc)
                     start = w.key("ctrl+r")
@@ -106,20 +106,20 @@ def verify(binary, out):
         start = w.key("alt+3")
         w.wait("section=Preferences", after=start)
         time.sleep(0.2)
-        control(w.nonce, "click", position=[340, 201])
+        control(w.nonce, "click", position=[365, 246], frameless=True)
         w.wait("page=1")
         start = w.key("alt+Right")
         w.wait("page=2", after=start)
-        control(w.nonce, "click", position=[1005, 275])
+        control(w.nonce, "click", position=[1015, 320], frameless=True)
         w.wait("detail=true")
         time.sleep(0.2)
-        w.capture(out / "wayland-detail.png")
+        w.capture(out / "wayland-detail.png", frameless=True)
         start = w.key("ctrl+d")
         w.wait("dark=false", after=start)
-        w.capture(out / "wayland-light.png")
+        w.capture(out / "wayland-light.png", frameless=True)
         start = w.key("ctrl+shift+h")
         w.wait("contrast=true", after=start)
-        w.capture(out / "wayland-contrast.png")
+        w.capture(out / "wayland-contrast.png", frameless=True)
         rss = psutil.Process(w.proc.pid).memory_info().rss
         started = time.monotonic()
         start = w.key("ctrl+f")
@@ -132,10 +132,10 @@ def verify(binary, out):
         # Model acknowledgement is NOT a frame timestamp. Actual opaque window
         # capture follows separately and is visually reviewed locally.
         time.sleep(0.25)
-        capture = w.capture(out / "wayland-10k-content.png")
+        capture = w.capture(out / "wayland-10k-content.png", frameless=True)
         captured_seconds = time.monotonic() - started
-        w.resize(640, 480)
-        w.capture(out / "wayland-640-content.png")
+        w.resize(640, 480, frameless=True)
+        w.capture(out / "wayland-640-content.png", frameless=True)
         workload = dict(
             rows=10000,
             filtered_rows=1,

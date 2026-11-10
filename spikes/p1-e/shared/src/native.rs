@@ -6,6 +6,19 @@ use std::path::PathBuf;
 
 #[derive(Clone, Parser, Default)]
 pub struct Inputs {
+    /// UI locale only; never translates stored values or protocol evidence.
+    #[arg(long, value_parser=["en","zh-CN"], default_value="en")]
+    pub locale: String,
+    #[arg(long, value_parser=["system","light","dark"], default_value="dark")]
+    pub appearance: String,
+    #[arg(long, value_parser=["instrument","ledger","harbor"], default_value="harbor")]
+    pub theme: String,
+    #[arg(long, value_parser=["dashboard","projects","preferences","handoff","diagnostics"], default_value="dashboard")]
+    pub section: String,
+    #[arg(long)]
+    pub settings: bool,
+    #[arg(long)]
+    pub connection_settings: bool,
     /// Explicit private runtime; omit both location flags for offline synthetic data.
     #[arg(long, requires = "endpoint")]
     pub runtime_dir: Option<PathBuf>,
@@ -34,6 +47,55 @@ pub struct Inputs {
     pub wsl_endpoint: Option<String>,
 }
 impl Inputs {
+    pub fn connection(&self) -> crate::connection::Connection {
+        use crate::connection::{Connection, Target};
+        Connection {
+            target: if self.wsl_distribution.is_some() {
+                Target::Wsl
+            } else if self.runtime_dir.is_some() {
+                Target::Local
+            } else {
+                Target::Synthetic
+            },
+            runtime: self
+                .runtime_dir
+                .as_ref()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            endpoint: self.endpoint.clone().unwrap_or_default(),
+            distribution: self.wsl_distribution.clone().unwrap_or_default(),
+            user: self.wsl_user.clone().unwrap_or_default(),
+            helper: self.wsl_snapshot.clone().unwrap_or_default(),
+            wsl_runtime: self.wsl_runtime_dir.clone().unwrap_or_default(),
+            wsl_endpoint: self.wsl_endpoint.clone().unwrap_or_default(),
+            synthetic_rows: self.synthetic_rows,
+        }
+    }
+    pub fn from_connection(c: &crate::connection::Connection) -> Result<Self, &'static str> {
+        use crate::connection::Target;
+        if !c.validate() {
+            return Err("Invalid connection inputs");
+        }
+        Ok(match c.target {
+            Target::Synthetic => Self {
+                synthetic_rows: c.synthetic_rows,
+                ..Default::default()
+            },
+            Target::Local => Self {
+                runtime_dir: Some(c.runtime.clone().into()),
+                endpoint: Some(c.endpoint.clone()),
+                ..Default::default()
+            },
+            Target::Wsl => Self {
+                wsl_distribution: Some(c.distribution.clone()),
+                wsl_user: Some(c.user.clone()),
+                wsl_snapshot: Some(c.helper.clone()),
+                wsl_runtime_dir: Some(c.wsl_runtime.clone()),
+                wsl_endpoint: Some(c.wsl_endpoint.clone()),
+                ..Default::default()
+            },
+        })
+    }
     pub fn is_live(&self) -> bool {
         self.runtime_dir.is_some() || self.wsl_distribution.is_some()
     }
@@ -200,13 +262,9 @@ impl Inputs {
                     if raw.len() > 4 * 1024 * 1024 {
                         return Err("WSL response too large");
                     }
-                    if !child
-                        .wait()
-                        .await
-                        .map_err(|_| "WSL query unavailable")?
-                        .success()
-                    {
-                        return Err("WSL daemon unavailable or access refused");
+                    let status = child.wait().await.map_err(|_| "WSL query unavailable")?;
+                    if !status.success() {
+                        return Err(helper_failure(status.code()));
                     }
                     let data: Snapshot =
                         serde_json::from_slice(&raw).map_err(|_| "Invalid WSL snapshot")?;
@@ -226,9 +284,159 @@ impl Inputs {
     }
 }
 
+/// Stable helper exit classification; never forwards stderr or private paths.
+pub const HELPER_ACCESS_REFUSED: i32 = 3;
+pub fn helper_failure(code: Option<i32>) -> &'static str {
+    if code == Some(HELPER_ACCESS_REFUSED) {
+        "Permission denied"
+    } else {
+        "WSL daemon unavailable or access refused"
+    }
+}
+
+#[cfg(unix)]
+fn missing_unix_endpoint(location: &Location) -> bool {
+    let path = std::path::Path::new(&location.endpoint);
+    let Ok(root) = location.root() else {
+        return false;
+    };
+    path.is_absolute()
+        && path.parent().and_then(|p| p.canonicalize().ok()).as_ref() == Some(&root)
+        && std::fs::symlink_metadata(path).is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+}
+
+async fn fetch(
+    location: &Location,
+    selected: Option<&str>,
+    task: &str,
+) -> acp_ipc::Result<Snapshot> {
+    use acp_ipc::Error;
+    use serde_json::json;
+    let path = location.credential_path(None).map_err(|error| {
+        if std::fs::symlink_metadata(&location.runtime_dir)
+            .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+        {
+            Error::Unavailable
+        } else {
+            error
+        }
+    })?;
+    let credential = load_credential(location, &path).map_err(|error| {
+        // Normal daemon shutdown removes its capability. Absence alone does
+        // not establish an authorization refusal; retain an unavailable state.
+        if std::fs::symlink_metadata(&path).is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+        {
+            Error::Unavailable
+        } else {
+            error
+        }
+    })?;
+    if credential.access != Access::Operator {
+        return Err(Error::Unauthorized);
+    }
+    let connected = Client::connect(location, &credential).await;
+    #[cfg(unix)]
+    let connected = connected.map_err(|error| {
+        // IPC deliberately treats absent and unsafe Unix sockets alike. Only
+        // refine the UI failure after the guarded connect has already refused;
+        // an observed missing socket in the validated runtime is unavailable.
+        if matches!(error, Error::UnsafeRuntime) && missing_unix_endpoint(location) {
+            return Error::Unavailable;
+        }
+        error
+    });
+    let mut client = connected?;
+    let health = serde_json::from_value(client.request("daemon.health", json!({})).await?)
+        .map_err(|_| Error::Unavailable)?;
+    #[derive(Deserialize)]
+    struct Name {
+        name: String,
+    }
+    let names: Vec<Name> = serde_json::from_value(client.request("project.list", json!({})).await?)
+        .map_err(|_| Error::Unavailable)?;
+    if names.len() > 64 || selected.is_some_and(|p| !names.iter().any(|n| n.name == p)) {
+        return Err(Error::Unauthorized);
+    }
+    let selected = selected
+        .or_else(|| names.first().map(|n| n.name.as_str()))
+        .map(str::to_owned);
+    // Only the selected project is queried. Other names are navigation entries.
+    let mut projects = Vec::new();
+    for Name { name } in names {
+        if selected.as_deref() != Some(name.as_str()) {
+            projects.push(Project {
+                context: Context {
+                    project: name.clone(),
+                    preferences: Vec::new(),
+                    repository: Repository::default(),
+                    documents: Vec::new(),
+                    warnings: Vec::new(),
+                },
+                name,
+                handoff: None,
+            });
+            continue;
+        }
+        let mut client = Client::connect(location, &credential)
+            .await
+            .map_err(|error| {
+                // IPC deliberately treats absent and unsafe Unix sockets alike. Only
+                // refine the UI failure after the guarded connect has already refused;
+                // an observed missing socket in the validated runtime is unavailable.
+                #[cfg(unix)]
+                if matches!(error, Error::UnsafeRuntime) && missing_unix_endpoint(location) {
+                    return Error::Unavailable;
+                }
+                error
+            })?;
+        let context = serde_json::from_value(
+            client
+                .request(
+                    "context.get",
+                    json!({"project":name,"include_documents":false}),
+                )
+                .await?,
+        )
+        .map_err(|_| Error::Unavailable)?;
+        let handoff = if task.is_empty() {
+            None
+        } else {
+            match client
+                .request("handoff.get", json!({"project":name,"task_id":task}))
+                .await
+            {
+                Ok(v) => Some(serde_json::from_value(v).map_err(|_| Error::Unavailable)?),
+                Err(Error::NotFound) => None,
+                Err(e) => return Err(e),
+            }
+        };
+        projects.push(Project {
+            name,
+            context,
+            handoff,
+        });
+    }
+    let data = Snapshot { health, projects };
+    data.validate().map_err(|_| Error::Unavailable)?;
+    Ok(data)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn helper_exit_codes_preserve_denial_without_forwarding_stderr() {
+        assert_eq!(
+            helper_failure(Some(HELPER_ACCESS_REFUSED)),
+            "Permission denied"
+        );
+        for code in [None, Some(1), Some(2), Some(127)] {
+            assert_eq!(
+                helper_failure(code),
+                "WSL daemon unavailable or access refused"
+            );
+        }
+    }
     #[test]
     fn wsl_is_explicit_shell_free_and_never_a_fixture_fallback() {
         use clap::Parser;
@@ -269,79 +477,4 @@ mod tests {
             .is_err()
         );
     }
-}
-async fn fetch(
-    location: &Location,
-    selected: Option<&str>,
-    task: &str,
-) -> acp_ipc::Result<Snapshot> {
-    use acp_ipc::Error;
-    use serde_json::json;
-    let credential = load_credential(location, &location.credential_path(None)?)?;
-    if credential.access != Access::Operator {
-        return Err(Error::Unauthorized);
-    }
-    let mut client = Client::connect(location, &credential).await?;
-    let health = serde_json::from_value(client.request("daemon.health", json!({})).await?)
-        .map_err(|_| Error::Unavailable)?;
-    #[derive(Deserialize)]
-    struct Name {
-        name: String,
-    }
-    let names: Vec<Name> = serde_json::from_value(client.request("project.list", json!({})).await?)
-        .map_err(|_| Error::Unavailable)?;
-    if names.len() > 64 || selected.is_some_and(|p| !names.iter().any(|n| n.name == p)) {
-        return Err(Error::Unauthorized);
-    }
-    let selected = selected
-        .or_else(|| names.first().map(|n| n.name.as_str()))
-        .map(str::to_owned);
-    // Only the selected project is queried. Other names are navigation entries.
-    let mut projects = Vec::new();
-    for Name { name } in names {
-        if selected.as_deref() != Some(name.as_str()) {
-            projects.push(Project {
-                context: Context {
-                    project: name.clone(),
-                    preferences: Vec::new(),
-                    repository: Repository::default(),
-                    documents: Vec::new(),
-                    warnings: Vec::new(),
-                },
-                name,
-                handoff: None,
-            });
-            continue;
-        }
-        let mut client = Client::connect(location, &credential).await?;
-        let context = serde_json::from_value(
-            client
-                .request(
-                    "context.get",
-                    json!({"project":name,"include_documents":false}),
-                )
-                .await?,
-        )
-        .map_err(|_| Error::Unavailable)?;
-        let handoff = if task.is_empty() {
-            None
-        } else {
-            match client
-                .request("handoff.get", json!({"project":name,"task_id":task}))
-                .await
-            {
-                Ok(v) => Some(serde_json::from_value(v).map_err(|_| Error::Unavailable)?),
-                Err(Error::NotFound) => None,
-                Err(e) => return Err(e),
-            }
-        };
-        projects.push(Project {
-            name,
-            context,
-            handoff,
-        });
-    }
-    let data = Snapshot { health, projects };
-    data.validate().map_err(|_| Error::Unavailable)?;
-    Ok(data)
 }

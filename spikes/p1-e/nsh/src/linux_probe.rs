@@ -12,7 +12,7 @@ pub fn install() {
                 continue;
             };
             let state = format!(
-                "ACP_GTK backend={} renderer={} mapped={} width={} height={}",
+                "ACP_GTK backend={} renderer={} mapped={} width={} height={} decorated={}",
                 gtk::prelude::WidgetExt::display(window).type_().name(),
                 window
                     .renderer()
@@ -20,7 +20,8 @@ pub fn install() {
                     .unwrap_or_default(),
                 window.is_mapped(),
                 window.width(),
-                window.height()
+                window.height(),
+                window.is_decorated()
             );
             if let Some(renderer) = window.renderer() {
                 let _ = acp_nsh_spike::DESKTOP_RUNTIME.set((

@@ -2,24 +2,29 @@
 use acp_ui_spike_model::{Model, Phase};
 use nsh_base::button;
 use nsh_core::prelude::*;
+pub mod brand_preview;
+mod chrome;
 mod components;
+mod icons;
+mod settings;
 mod tokens;
 pub static DESKTOP_RUNTIME: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();
-fn runtime_lines() -> Vec<String> {
+fn runtime_lines(locale: acp_ui_spike_model::i18n::Locale) -> Vec<String> {
+    use acp_ui_spike_model::i18n::{Msg, tr};
     if TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed) {
         return vec!["Backend: NSH / ratatui / crossterm terminal".into()];
     }
     if let Some((backend, renderer)) = DESKTOP_RUNTIME.get() {
         return vec![
             format!("Actual GTK backend: {backend} · renderer: {renderer}"),
-            "Renderer class does not attest GPU acceleration or compositor identity.".into(),
+            tr(locale, Msg::RendererHelp).into(),
         ];
     }
     vec![
         if cfg!(target_os = "windows") {
             "Backend: NSH native Windows"
         } else {
-            "Runtime backend not observed yet; inspect local diagnostics."
+            tr(locale, Msg::BackendUnobserved)
         }
         .into(),
     ]
@@ -62,7 +67,8 @@ pub static INPUTS: std::sync::OnceLock<acp_ui_spike_model::native::Inputs> =
 
 fn load(model: Signal<Model>) {
     #[cfg(feature = "ipc")]
-    let inputs = INPUTS.get().cloned().unwrap_or_default();
+    let inputs = acp_ui_spike_model::native::Inputs::from_connection(&model.get().connection);
+    let started = std::time::Instant::now();
     let mut request = None;
     model.update(|m| {
         request = m.begin_read().ok();
@@ -72,23 +78,28 @@ fn load(model: Signal<Model>) {
         #[cfg(feature = "ipc")]
         let selected = request.clone();
         #[cfg(feature = "ipc")]
-        let result =
-            blocking(move || inputs.fetch_for(selected.project.as_deref(), &selected.task))
-                .await
-                .unwrap_or(Err("Client unavailable"));
+        let result = blocking(move || {
+            inputs.and_then(|inputs| inputs.fetch_for(selected.project.as_deref(), &selected.task))
+        })
+        .await
+        .unwrap_or(Err("Client unavailable"));
         #[cfg(not(feature = "ipc"))]
         let result = {
             timer(std::time::Duration::from_millis(20)).await;
-            let mut s = acp_ui_spike_model::Snapshot::fixture();
-            for p in &mut s.projects {
-                if p.handoff
-                    .as_ref()
-                    .is_some_and(|h| h.task_id != request.task)
-                {
-                    p.handoff = None;
+            if model.get().live {
+                Err("Client unavailable")
+            } else {
+                let mut s = acp_ui_spike_model::Snapshot::fixture();
+                for p in &mut s.projects {
+                    if p.handoff
+                        .as_ref()
+                        .is_some_and(|h| h.task_id != request.task)
+                    {
+                        p.handoff = None;
+                    }
                 }
+                Ok(s)
             }
-            Ok(s)
         };
         #[cfg(target_arch = "wasm32")]
         let now = 0;
@@ -98,7 +109,9 @@ fn load(model: Signal<Model>) {
             .map(|t| t.as_millis() as u64)
             .unwrap_or_default();
         model.update(|m| {
-            m.complete_read(&request, result, now);
+            if m.complete_read(&request, result, now) {
+                m.last_duration_ms = Some(started.elapsed().as_millis() as u64);
+            }
         });
     });
 }
@@ -128,7 +141,19 @@ fn toggle_contrast(model: Signal<Model>) {
     model.update(|m| m.high_contrast = !m.high_contrast);
 }
 fn toggle_theme(model: Signal<Model>) {
-    model.update(|m| m.dark = !m.dark);
+    let actual_dark = match model.get().color_mode {
+        acp_ui_spike_model::appearance::ColorMode::System => dark(),
+        acp_ui_spike_model::appearance::ColorMode::Dark => true,
+        acp_ui_spike_model::appearance::ColorMode::Light => false,
+    };
+    model.update(|m| {
+        m.dark = !actual_dark;
+        m.color_mode = if m.dark {
+            acp_ui_spike_model::appearance::ColorMode::Dark
+        } else {
+            acp_ui_spike_model::appearance::ColorMode::Light
+        };
+    });
     set_color_scheme(if model.get().dark {
         Appearance::Dark
     } else {
@@ -136,7 +161,8 @@ fn toggle_theme(model: Signal<Model>) {
     });
 }
 fn copy_page(model: Signal<Model>) {
-    if model.get().phase == Phase::Ready {
+    if model.get().phase == Phase::Ready && !model.get().settings && !model.get().connection_editor
+    {
         set_clipboard(model.get().visible_lines().join("\n"));
         model.update(|m| m.copied = true);
     }
@@ -149,12 +175,39 @@ pub fn App() -> impl IntoElement {
     let mut initial = Model::loading();
     #[cfg(feature = "ipc")]
     {
+        initial.locale =
+            acp_ui_spike_model::i18n::Locale::parse(&inputs.locale).unwrap_or_default();
+        initial.theme = match inputs.theme.as_str() {
+            "instrument" => acp_ui_spike_model::appearance::ThemeId::Instrument,
+            "ledger" => acp_ui_spike_model::appearance::ThemeId::Ledger,
+            _ => Default::default(),
+        };
+        initial.color_mode = match inputs.appearance.as_str() {
+            "light" => acp_ui_spike_model::appearance::ColorMode::Light,
+            "system" => acp_ui_spike_model::appearance::ColorMode::System,
+            _ => acp_ui_spike_model::appearance::ColorMode::Dark,
+        };
+        initial.settings = inputs.settings;
+        initial.connection_editor = inputs.connection_settings;
+        initial.section = match inputs.section.as_str() {
+            "projects" => acp_ui_spike_model::Section::Projects,
+            "preferences" => acp_ui_spike_model::Section::Preferences,
+            "handoff" => acp_ui_spike_model::Section::Handoff,
+            "diagnostics" => acp_ui_spike_model::Section::Diagnostics,
+            _ => acp_ui_spike_model::Section::Dashboard,
+        };
+        initial.connection = inputs.connection();
+        initial.connection_draft = initial.connection.clone();
         initial.live = inputs.is_live();
         initial.task_id = inputs.task_id.unwrap_or_default();
         initial.selected_project = inputs.project;
     }
-    initial.dark = true;
-    set_color_scheme(Appearance::Dark);
+    initial.dark = initial.color_mode != acp_ui_spike_model::appearance::ColorMode::Light;
+    set_color_scheme(match initial.color_mode {
+        acp_ui_spike_model::appearance::ColorMode::System => Appearance::System,
+        acp_ui_spike_model::appearance::ColorMode::Light => Appearance::Light,
+        _ => Appearance::Dark,
+    });
     let model = signal(initial);
     load(model);
     console(model)
@@ -166,12 +219,41 @@ fn console(model: Signal<Model>) -> impl IntoElement {
     on_key("mod+r", move |_| reconnect(model));
     on_key("mod+p", move |_| next_project(model));
     on_key("mod+f", move |_| {
-        model.update(|m| m.set_section(acp_ui_spike_model::Section::Preferences));
+        model.update(|m| {
+            m.settings = false;
+            m.connection_editor = false;
+            m.set_section(acp_ui_spike_model::Section::Preferences)
+        });
         filter_ref.focus();
     });
     on_key("mod+k", move |_| {
-        model.update(|m| m.set_section(acp_ui_spike_model::Section::Handoff));
+        model.update(|m| {
+            m.settings = false;
+            m.connection_editor = false;
+            m.set_section(acp_ui_spike_model::Section::Handoff)
+        });
         task_ref.focus();
+    });
+    on_key("mod+l", move |_| {
+        model.update(|m| {
+            m.locale = match m.locale {
+                acp_ui_spike_model::i18n::Locale::En => acp_ui_spike_model::i18n::Locale::ZhCn,
+                _ => acp_ui_spike_model::i18n::Locale::En,
+            }
+        })
+    });
+    for (key, theme) in [
+        ("alt+a", acp_ui_spike_model::appearance::ThemeId::Instrument),
+        ("alt+b", acp_ui_spike_model::appearance::ThemeId::Ledger),
+        ("alt+c", acp_ui_spike_model::appearance::ThemeId::Harbor),
+    ] {
+        on_key(key, move |_| model.update(|m| m.theme = theme));
+    }
+    on_key("alt+0", move |_| {
+        model.update(|m| {
+            m.settings = !m.settings;
+            m.connection_editor = false;
+        })
     });
     on_key("mod+shift+h", move |_| toggle_contrast(model));
     let global = KeyOptions {
@@ -181,7 +263,11 @@ fn console(model: Signal<Model>) -> impl IntoElement {
     on_key_with("Escape", global, move |_| {
         filter_ref.blur();
         task_ref.blur();
-        model.update(|m| m.cancel_read());
+        model.update(|m| {
+            m.cancel_read();
+            m.settings = false;
+            m.connection_editor = false;
+        });
     });
     for (key, section) in ["alt+1", "alt+2", "alt+3", "alt+4", "alt+5"]
         .into_iter()
@@ -190,7 +276,11 @@ fn console(model: Signal<Model>) -> impl IntoElement {
         on_key_with(key, global, move |_| {
             filter_ref.blur();
             task_ref.blur();
-            model.update(|m| m.set_section(section));
+            model.update(|m| {
+                m.settings = false;
+                m.connection_editor = false;
+                m.set_section(section)
+            });
         });
     }
     on_key("mod+d", move |_| toggle_theme(model));
@@ -205,6 +295,17 @@ fn console(model: Signal<Model>) -> impl IntoElement {
     effect(move || {
         if std::env::var_os("ACP_UI_PROBE").is_some() {
             let current = model.get();
+            eprintln!(
+                "ACP_UI_SESSION target={:?} draft={:?} invalid={} settings={} locale={:?} theme={:?} mode={:?} denied={}",
+                current.connection.target,
+                current.connection_draft.target,
+                current.connection_invalid,
+                current.settings,
+                current.locale,
+                current.theme,
+                current.color_mode,
+                current.permission_denied
+            );
             eprintln!(
                 "ACP_NSH_STATE phase={:?} selected={} rows={} queried_chars={} filter_chars={} section={:?} page={} detail={} dark={} contrast={} elapsed={:.6}",
                 current.phase,
@@ -285,6 +386,45 @@ mod tests {
         app.wait_for("Project: beta").unwrap();
         app.set_viewport(Size::new(px(1080.0), px(760.0))).unwrap();
     }
+    #[test]
+    fn real_console_edits_connection_without_implicit_reads_and_localizes() {
+        let mut app = nsh_testing::Headless::start(EngineConfig::new(Root::of::<App>())).unwrap();
+        app.wait_for("Project: alpha").unwrap();
+        app.press("Connection target").unwrap();
+        app.press("Local daemon").unwrap();
+        app.press("Apply and read").unwrap();
+        app.wait_for("Invalid connection fields; the active target is unchanged.")
+            .unwrap();
+        // Invalid drafts cannot clear a usable snapshot or replace its source.
+        app.wait_for("OFFLINE_SYNTHETIC · Offline synthetic · Synthetic snapshot ready")
+            .unwrap();
+        app.type_text("Private runtime directory", "/synthetic/runtime")
+            .unwrap();
+        app.type_text("IPC endpoint", "synthetic").unwrap();
+        assert_eq!(
+            app.screen()
+                .input_text("Private runtime directory")
+                .unwrap(),
+            Some("/synthetic/runtime")
+        );
+        assert_eq!(
+            app.screen().input_text("IPC endpoint").unwrap(),
+            Some("synthetic")
+        );
+        app.press("Offline synthetic").unwrap();
+        app.press("Apply and read").unwrap();
+        app.press_key("Escape").unwrap();
+        app.wait_for("Project: alpha").unwrap();
+        app.press("Settings").unwrap();
+        app.press("Ledger").unwrap();
+        app.press("Light").unwrap();
+        app.press("Language").unwrap();
+        app.wait_for("主题集").unwrap();
+        app.press_key("alt+3").unwrap();
+        app.wait_for("已生效的确认偏好 · 键 / 值 / 范围 / 来源")
+            .unwrap();
+        assert!(app.screen().clipboard().is_none());
+    }
     #[component]
     fn Workload() -> impl IntoElement {
         let mut data = acp_ui_spike_model::Snapshot::fixture();
@@ -329,7 +469,7 @@ mod tests {
                 .iter()
                 .any(|t| t.contains("event-09999"))
         );
-        app.press("Projects").unwrap();
+        app.press("Workspaces").unwrap();
         app.press("beta").unwrap();
         app.wait_for("Project: beta").unwrap();
         println!(

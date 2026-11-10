@@ -112,7 +112,7 @@ def main():
                         if len(samples) == 1
                         else f"desktop-sample-{len(samples)}.png"
                     ),
-                    inset=(16, 48, 16, 16),
+                    inset=(0, 0, 0, 0),
                 )
                 if os.name == "nt":
                     user.SetWindowPos(wid, None, 80, 80, 640, 480, 0x40)
@@ -156,7 +156,7 @@ def main():
                 user.SendMessageW(wid, 0x0202, 0, point)
 
             time.sleep(0.2)
-            click(356, 217)
+            click(365, 246)
             native_wait_marker(proc, "page=1")
             key(0x12)
             key(0x27)
@@ -188,7 +188,7 @@ def main():
             bounds = wintypes.RECT()
             assert user.GetWindowRect(wid, ctypes.byref(bounds))
             capture_owned_window(
-                wid, args.out / "desktop-10k-synthetic.png", inset=(16, 48, 16, 16)
+                wid, args.out / "desktop-10k-synthetic.png", inset=(0, 0, 0, 0)
             )
             workload = dict(
                 status="PASS",

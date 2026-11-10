@@ -54,12 +54,15 @@ def main():
     assert len(found) == 1, "owned WSLg window not uniquely visible"
     hwnd = found[0]
     action = request["action"]
-    if action in ("key", "click", "resize"):
+    if action in ("key", "click", "resize", "chrome"):
         u.SetForegroundWindow(hwnd)
         time.sleep(0.08)
         assert (
             u.GetForegroundWindow() == hwnd
         ), "owned WSLg window not foreground; no input/capture performed"
+    if action == "chrome":
+        print(json.dumps(exercise_custom_chrome(hwnd)))
+        return
     if action == "key":
         u.keybd_event.argtypes = [
             ctypes.c_ubyte,
@@ -90,8 +93,13 @@ def main():
             "alt+Left": 0x25,
             "ctrl+f": ord("F"),
             "ctrl+k": ord("K"),
+            "ctrl+l": ord("L"),
             "ctrl+r": ord("R"),
             "alt+1": ord("1"),
+            "alt+0": ord("0"),
+            "alt+a": ord("A"),
+            "alt+b": ord("B"),
+            "alt+c": ord("C"),
             "alt+2": ord("2"),
             "alt+3": ord("3"),
             "alt+4": ord("4"),
@@ -129,11 +137,14 @@ def main():
         x, y = request["position"]
         bounds = W.RECT()
         assert u.GetWindowRect(hwnd, ctypes.byref(bounds))
-        assert (
-            0 <= x < bounds.right - bounds.left - 64
-            and 0 <= y < bounds.bottom - bounds.top - 100
+        left, top, right, bottom = (
+            (0, 0, 0, 0) if request.get("frameless") else (32, 66, 32, 34)
         )
-        point = W.POINT(bounds.left + 32 + x, bounds.top + 66 + y)
+        assert (
+            0 <= x < bounds.right - bounds.left - left - right
+            and 0 <= y < bounds.bottom - bounds.top - top - bottom
+        )
+        point = W.POINT(bounds.left + left + x, bounds.top + top + y)
         u.WindowFromPoint.argtypes = [W.POINT]
         u.WindowFromPoint.restype = W.HWND
         u.GetAncestor.argtypes = [W.HWND, W.UINT]
@@ -153,13 +164,19 @@ def main():
         # SetWindowPos alone merely clips the RAIL proxy's old buffer.
         u.SetCursorPos.argtypes = [ctypes.c_int, ctypes.c_int]
         u.mouse_event.argtypes = [W.DWORD, W.DWORD, W.DWORD, W.DWORD, ctypes.c_size_t]
-        u.SetCursorPos(bounds.right - 27, bounds.bottom - 27)
+        frameless = request.get("frameless", False)
+        edge_x, edge_y = (8, 5) if frameless else (27, 27)
+        decoration = 0 if frameless else 50
+        u.SetCursorPos(bounds.right - edge_x, bounds.bottom - edge_y)
         time.sleep(0.1)
         u.mouse_event(0x0002, 0, 0, 0, 0)
         time.sleep(0.1)
         try:
-            start_x, start_y = bounds.right - 27, bounds.bottom - 27
-            end_x, end_y = bounds.left + width + 50 - 27, bounds.top + height + 50 - 27
+            start_x, start_y = bounds.right - edge_x, bounds.bottom - edge_y
+            end_x, end_y = (
+                bounds.left + width + decoration - edge_x,
+                bounds.top + height + decoration - edge_y,
+            )
             for step in range(1, 11):
                 u.SetCursorPos(
                     start_x + (end_x - start_x) * step // 10,
@@ -173,7 +190,11 @@ def main():
     elif action == "close":
         assert u.PostMessageW(hwnd, 0x0010, 0, 0)
     elif action == "capture":
-        result = capture_owned_window(hwnd, request["output"], inset=(32, 66, 32, 34))
+        result = capture_owned_window(
+            hwnd,
+            request["output"],
+            inset=(0, 0, 0, 0) if request.get("frameless") else (32, 66, 32, 34),
+        )
         print(json.dumps(result))
         return
     else:
