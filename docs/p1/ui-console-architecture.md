@@ -78,3 +78,13 @@ terminal. No probe adds a listener, shell, daemon write or agent-facing tool.
 
 See [Wayland troubleshooting](wslg-wayland-troubleshooting.md),
 [local commands](local-codex-e2.md) and [E4 evidence](../evaluation/p1-e4-local-ux.md) and [UX specification](ui-ux-spec.md).
+
+
+## P1-G native Sessions auxiliary surface
+
+The reviewed five context pages remain intact. An auxiliary Sessions panel uses the
+same model/tokens/catalog and stable prompt input, with observed daemon state and
+explicit operator controls. It requires a native local target; the WSL helper stays
+read-only. Session reads/actions use independent scoped completions, ephemeral events
+and explicit start review. See [runtime contract](agent-session-runtime.md). Context
+copy excludes session prompts/events. Full IME/screen-reader behavior remains unverified.

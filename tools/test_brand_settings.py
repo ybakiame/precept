@@ -26,7 +26,10 @@ def main():
     p.add_argument("--product", action="store_true")
     args = p.parse_args()
     out = args.out.resolve()
-    assert out.is_relative_to(ROOT / "artifacts/local-p1-f")
+    assert any(
+        out.is_relative_to(ROOT / folder)
+        for folder in ["artifacts/local-p1-f", "artifacts/local-p1-g"]
+    )
     out.mkdir(parents=True, exist_ok=True, mode=0o700)
     flags = [] if args.product else ["--brand-preview", "c"]
     proc, window, _ = native_start([str(args.desktop.resolve()), *flags])

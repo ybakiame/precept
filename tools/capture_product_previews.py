@@ -20,7 +20,10 @@ def main():
     p.add_argument("--locale", choices=["en", "zh-CN"], default="en")
     args = p.parse_args()
     out = args.out.resolve()
-    assert out.is_relative_to(ROOT / "artifacts/local-p1-f")
+    assert any(
+        out.is_relative_to(ROOT / folder)
+        for folder in ["artifacts/local-p1-f", "artifacts/local-p1-g"]
+    )
     out.mkdir(parents=True, exist_ok=True, mode=0o700)
     results = []
     for page in [

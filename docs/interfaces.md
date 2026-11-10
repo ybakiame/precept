@@ -29,3 +29,13 @@ A handoff stores the HEAD at capture, branch, recorded worktree state, task obje
 ## Future external clients
 
 Future ACP/PTY adapters require a separate capability table for session start/resume, permission prompts, tool calls, diff data and terminal rendering. Never report a feature as supported merely because a CLI wrapper can send text to a process.
+
+
+## Optional native operator sessions (P1-G)
+
+The versioned local `session.*` extension is operator-only and requires explicit
+native daemon configuration and confirmation. It is unavailable through MCP and
+the Windows→WSL read-only helper. Protocol, lifecycle, methods and bounds are in
+[agent session runtime](p1/agent-session-runtime.md). It does not change the Python
+P0 API, the existing IPC API v1 read DTOs or any SQLite schema. External ACP v1
+stdio support is a deliberately limited subset, not a certified agent integration.

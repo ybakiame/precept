@@ -6,6 +6,7 @@ pub mod brand_preview;
 mod chrome;
 mod components;
 mod icons;
+mod sessions;
 mod settings;
 mod tokens;
 pub static DESKTOP_RUNTIME: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();
@@ -161,7 +162,10 @@ fn toggle_theme(model: Signal<Model>) {
     });
 }
 fn copy_page(model: Signal<Model>) {
-    if model.get().phase == Phase::Ready && !model.get().settings && !model.get().connection_editor
+    if model.get().phase == Phase::Ready
+        && !model.get().settings
+        && !model.get().connection_editor
+        && !model.get().sessions
     {
         set_clipboard(model.get().visible_lines().join("\n"));
         model.update(|m| m.copied = true);
@@ -187,6 +191,7 @@ pub fn App() -> impl IntoElement {
             "system" => acp_ui_spike_model::appearance::ColorMode::System,
             _ => acp_ui_spike_model::appearance::ColorMode::Dark,
         };
+        initial.sessions = inputs.sessions;
         initial.settings = inputs.settings;
         initial.connection_editor = inputs.connection_settings;
         initial.section = match inputs.section.as_str() {
@@ -210,6 +215,7 @@ pub fn App() -> impl IntoElement {
     });
     let model = signal(initial);
     load(model);
+    sessions::poll(model);
     console(model)
 }
 
@@ -221,6 +227,8 @@ fn console(model: Signal<Model>) -> impl IntoElement {
     on_key("mod+f", move |_| {
         model.update(|m| {
             m.settings = false;
+            m.sessions = false;
+            m.session.confirm_start = false;
             m.connection_editor = false;
             m.set_section(acp_ui_spike_model::Section::Preferences)
         });
@@ -229,6 +237,8 @@ fn console(model: Signal<Model>) -> impl IntoElement {
     on_key("mod+k", move |_| {
         model.update(|m| {
             m.settings = false;
+            m.sessions = false;
+            m.session.confirm_start = false;
             m.connection_editor = false;
             m.set_section(acp_ui_spike_model::Section::Handoff)
         });
@@ -251,6 +261,8 @@ fn console(model: Signal<Model>) -> impl IntoElement {
     }
     on_key("alt+0", move |_| {
         model.update(|m| {
+            m.sessions = false;
+            m.session.confirm_start = false;
             m.settings = !m.settings;
             m.connection_editor = false;
         })
@@ -266,6 +278,8 @@ fn console(model: Signal<Model>) -> impl IntoElement {
         model.update(|m| {
             m.cancel_read();
             m.settings = false;
+            m.sessions = false;
+            m.session.confirm_start = false;
             m.connection_editor = false;
         });
     });
@@ -278,11 +292,14 @@ fn console(model: Signal<Model>) -> impl IntoElement {
             task_ref.blur();
             model.update(|m| {
                 m.settings = false;
+                m.sessions = false;
+                m.session.confirm_start = false;
                 m.connection_editor = false;
                 m.set_section(section)
             });
         });
     }
+    on_key_with("alt+6", global, move |_| sessions::open(model));
     on_key("mod+d", move |_| toggle_theme(model));
     on_key("mod+shift+c", move |_| copy_page(model));
     on_key_with("alt+ArrowRight", global, move |_| {
@@ -306,6 +323,30 @@ fn console(model: Signal<Model>) -> impl IntoElement {
                 current.color_mode,
                 current.permission_denied
             );
+            if current.sessions {
+                eprintln!(
+                    "ACP_NSH_SESSION state={:?} alive={} pending={} revision={} busy={} configured={} confirm={}",
+                    current.session.view.as_ref().map(|v| &v.state),
+                    current
+                        .session
+                        .view
+                        .as_ref()
+                        .is_some_and(|v| v.process_alive),
+                    current
+                        .session
+                        .view
+                        .as_ref()
+                        .map_or(0, |v| v.permissions.len()),
+                    current.session.view.as_ref().map_or(0, |v| v.revision),
+                    current.session.busy,
+                    current
+                        .session
+                        .capabilities
+                        .as_ref()
+                        .map_or(0, |c| c.executables.len()),
+                    current.session.confirm_start
+                );
+            }
             eprintln!(
                 "ACP_NSH_STATE phase={:?} selected={} rows={} queried_chars={} filter_chars={} section={:?} page={} detail={} dark={} contrast={} elapsed={:.6}",
                 current.phase,
@@ -329,6 +370,21 @@ fn console(model: Signal<Model>) -> impl IntoElement {
 mod tests {
     use super::*;
     use nsh_engine::{EngineConfig, Root};
+    #[test]
+    fn session_surface_keeps_synthetic_and_wsl_execution_disabled() {
+        let mut app = nsh_testing::Headless::start(EngineConfig::new(Root::of::<App>())).unwrap();
+        app.wait_for("Project: alpha").unwrap();
+        app.press_key("alt+6").unwrap();
+        app.wait_for("Choose a native local Daemon target and an allowlisted project. Windows→WSL stays read-only.").unwrap();
+        app.press_key("mod+shift+s").unwrap();
+        assert!(!app.screen().shows("Confirm start on this checkout"));
+        app.press_key("mod+shift+c").unwrap();
+        assert!(app.screen().clipboard().is_none());
+        app.press_key("Escape").unwrap();
+        app.press_key("alt+3").unwrap();
+        app.wait_for("Confirmed effective preferences · key / value / scope / source")
+            .unwrap();
+    }
     #[test]
     fn component_inputs_selection_empty_scope_and_explicit_copy() {
         let mut app = nsh_testing::Headless::start(EngineConfig::new(Root::of::<App>())).unwrap();
@@ -375,7 +431,7 @@ mod tests {
             ),
             (
                 "alt+5",
-                "Read-only operator IPC · API v1 · no daemon autostart",
+                "Read-only context IPC · API v1 · no daemon autostart",
             ),
         ] {
             app.press_key(key).unwrap();

@@ -7,6 +7,7 @@ pub mod appearance;
 pub mod connection;
 pub mod i18n;
 pub mod presentation;
+pub mod session;
 
 pub const PAGE_SIZE: usize = 12;
 pub const MAX_ROWS: usize = 10_000;
@@ -143,6 +144,8 @@ impl Section {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Model {
     pub epoch: u64,
+    pub sessions: bool,
+    pub session: session::SessionModel,
     pub connection: connection::Connection,
     pub connection_draft: connection::Connection,
     pub connection_invalid: bool,
@@ -178,6 +181,8 @@ impl Model {
     pub fn loading() -> Self {
         Self {
             epoch: 0,
+            sessions: false,
+            session: Default::default(),
             connection: Default::default(),
             connection_draft: Default::default(),
             connection_invalid: false,
@@ -237,6 +242,7 @@ impl Model {
             return false;
         }
         self.epoch = self.epoch.checked_add(1).expect("request epoch exhausted");
+        self.session = Default::default();
         self.connection = self.connection_draft.clone();
         self.connection_invalid = false;
         self.live = self.connection.target != connection::Target::Synthetic;
@@ -262,6 +268,7 @@ impl Model {
     /// Invalidating a request also invalidates every older in-flight completion.
     pub fn begin_read(&mut self) -> Result<ReadRequest, &'static str> {
         self.epoch = self.epoch.checked_add(1).expect("request epoch exhausted");
+        self.session = Default::default();
         self.data = None;
         self.selected_preference = None;
         self.copied = false;
@@ -358,6 +365,7 @@ impl Model {
     }
     pub fn select(&mut self, index: usize) {
         if let Some(name) = self.project_names.get(index).cloned() {
+            self.session = Default::default();
             self.selected = index;
             self.selected_project = Some(name);
             self.page = 0;

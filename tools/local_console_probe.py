@@ -133,7 +133,21 @@ class TerminalProbe:
     def close(self):
         if self.proc.poll() is None:
             self.send(b"\x11")  # Ctrl+Q; plain q remains editable input.
-            self.proc.wait(timeout=8)
+            deadline = time.monotonic() + 8
+            while self.proc.poll() is None and time.monotonic() < deadline:
+                try:
+                    self.settle(timeout=0.08, quiet=0.02)
+                except (OSError, EOFError):
+                    pass
+                except AssertionError:
+                    if self.proc.poll() is None:
+                        raise
+            if self.proc.poll() is None:
+                self.proc.kill()
+                self.proc.wait(timeout=3)
+                raise AssertionError(
+                    "terminal failed clean close after draining output"
+                )
         assert self.proc.returncode == 0, "terminal did not close cleanly"
         if os.name != "nt":
             import termios
@@ -338,7 +352,7 @@ def native_wait_marker(proc, marker, timeout=15):
             assert proc.poll() is None, "owned native app exited"
             continue
         if marker.encode() in (line or b""):
-            return
+            return line.decode("utf-8", errors="replace")
     raise AssertionError("owned native marker timed out: " + marker)
 
 

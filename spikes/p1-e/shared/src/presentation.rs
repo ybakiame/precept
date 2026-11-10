@@ -25,7 +25,9 @@ impl Model {
         }
     }
     pub fn source_label(&self) -> &'static str {
-        if self.live {
+        if self.sessions {
+            "OPERATOR_SESSION_VIEW"
+        } else if self.live {
             "LIVE_READ_ONLY"
         } else {
             "OFFLINE_SYNTHETIC"
@@ -102,7 +104,7 @@ impl Model {
             Section::Handoff => lines.extend(self.handoff_lines(self.expanded)),
             Section::Diagnostics => {
                 lines.extend([
-                    "Read-only operator IPC · API v1 · no daemon autostart".into(),
+                    "Read-only context IPC · API v1 · no daemon autostart".into(),
                     "NSH Rust Desktop / TUI · pinned framework · ADR-0003 Proposed".into(),
                     "Ctrl R reconnect · P project · F filter · K task · D theme · Shift H contrast"
                         .into(),

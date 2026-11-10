@@ -82,6 +82,10 @@ fn main() -> io::Result<()> {
                 Event::Paste(s) => {
                     view.handle(Input::Paste(s));
                 }
+                // ConPTY can reflow previously emitted cells before this event arrives.
+                // Reset the terminal diff buffer after the resize notification so the
+                // next frame paints the whole current viewport, including unchanged text.
+                Event::Resize(_, _) => terminal.clear()?,
                 _ => {}
             }
         }

@@ -1,0 +1,16 @@
+[package]
+name = "acp-session"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+[features]
+runtime = ["dep:acp-ipc", "dep:tokio", "dep:getrandom"]
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+getrandom = { version = "0.4", optional = true }
+acp-ipc = { path = "../acp-ipc", optional = true }
+tokio = { version = "1", features = ["rt", "sync", "time", "process", "io-util", "macros"], optional = true }
+[[bin]]
+name = "acp-fake-agent"
+path = "src/fake.rs"

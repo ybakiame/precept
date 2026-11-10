@@ -39,3 +39,13 @@
 6. Legacy and stateless MCP clients can list/call supported tools in in-process tests; the actual stdio subprocess is exercised.
 
 No passed test here proves production security or compatibility with a specific external harness. Real A/B evaluation belongs in the existing agent-development-protocol's cross-agent evaluation workflow.
+
+
+## P1-G local single-agent slice
+
+The optional Rust daemon supervisor and shared NSH Sessions panel implement explicit
+operator start/prompt/cancel/permission/stop on one native local host. Context/MCP
+remain read-only. This is an ephemeral prototype, not a fleet scheduler, sandbox,
+persistent vendor resume or Windows→WSL execution bridge. Deterministic fixture
+results and any real-agent gaps are recorded in
+[local session evidence](evaluation/p1-g-local-agent-session.md). ADR-0003 stays Proposed.
