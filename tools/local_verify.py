@@ -450,7 +450,11 @@ def main():
         ]:
             if not any(
                 directory.is_relative_to(ROOT / folder)
-                for folder in ["artifacts/local-p1-f", "artifacts/local-p1-g"]
+                for folder in [
+                    "artifacts/local-p1-f",
+                    "artifacts/local-p1-g",
+                    "artifacts/local-p1-h",
+                ]
             ):
                 results.append(
                     dict(
@@ -472,7 +476,10 @@ def main():
                         reason="fresh host release unavailable",
                     )
                 )
-        if directory.is_relative_to(ROOT / "artifacts/local-p1-g"):
+        if any(
+            directory.is_relative_to(ROOT / folder)
+            for folder in ["artifacts/local-p1-g", "artifacts/local-p1-h"]
+        ):
             results.append(
                 run_gate(
                     "agent-session-process",
@@ -493,6 +500,30 @@ def main():
                         f"spikes/p1-e/nsh/target/release/acp-nsh-tui{suffix}",
                         "--out",
                         str(directory / "sessions"),
+                        *(
+                            ["--auth"]
+                            if directory.is_relative_to(ROOT / "artifacts/local-p1-h")
+                            else []
+                        ),
+                    ],
+                    directory,
+                    env,
+                )
+            )
+        if directory.is_relative_to(ROOT / "artifacts/local-p1-h"):
+            results.append(
+                run_gate(
+                    "real-runner-guards",
+                    [
+                        PY,
+                        "-m",
+                        "unittest",
+                        "discover",
+                        "-s",
+                        "tools",
+                        "-p",
+                        "test_real_acp_runner.py",
+                        "-v",
                     ],
                     directory,
                     env,
@@ -715,7 +746,10 @@ def main():
         and {"terminal-cells", "p1f-settings", "p1f-chrome", "p1f-previews"} <= passed
         else "INCOMPLETE"
     )
-    if directory.is_relative_to(ROOT / "artifacts/local-p1-g"):
+    if any(
+        directory.is_relative_to(ROOT / folder)
+        for folder in ["artifacts/local-p1-g", "artifacts/local-p1-h"]
+    ):
         report["p1g_host_checks"] = (
             "PASS"
             if report["p1f_host_checks"] == "PASS"
@@ -725,6 +759,17 @@ def main():
         report["session_owner_ui_review"] = "PENDING"
         report["real_acp_agent"] = (
             "NOT_RUN by generic runner; see separate explicit opt-in smoke report"
+        )
+    if directory.is_relative_to(ROOT / "artifacts/local-p1-h"):
+        report["p1h_host_checks"] = (
+            "PASS"
+            if report.get("p1g_host_checks") == "PASS"
+            and "real-runner-guards" in passed
+            else "INCOMPLETE"
+        )
+        report["session_owner_ui_review"] = "DEFERRED_BY_OWNER_AT_PR25"
+        report["context_mcp_bridge"] = (
+            "NOT_RUN: explicitly not enabled; mcpServers empty"
         )
     report["owner_ui_review"] = "ACCEPTED_BASE_UI" if args.owner_reviewed else "PENDING"
     report["windows_companion"] = "NOT_RUN"

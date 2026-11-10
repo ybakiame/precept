@@ -109,6 +109,7 @@ def main():
             "alt+8": ord("8"),
             "alt+9": ord("9"),
             "alt+j": ord("J"),
+            "alt+u": ord("U"),
             "alt+i": ord("I"),
             "alt+n": ord("N"),
             "alt+y": ord("Y"),
