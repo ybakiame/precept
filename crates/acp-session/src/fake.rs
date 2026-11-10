@@ -9,6 +9,37 @@ fn emit(v: Value) {
 fn reply(id: Value, result: Value) {
     emit(json!({"jsonrpc":"2.0","id":id,"result":result}));
 }
+fn initialized(mode: &str) -> Value {
+    let mut result = json!({"protocolVersion":if mode=="version"{2}else{1},
+        "agentCapabilities":{"loadSession":false,"promptCapabilities":{"image":true,"audio":false,"embeddedContext":true},"mcpCapabilities":{"http":true,"sse":false},"auth":{"logout":{}}},
+        "agentInfo":{"name":"deterministic-fake-not-coding-agent","version":"1"},
+        "authMethods":[{"id":"login","type":"terminal","name":"SENSITIVE_AUTH_TEST","description":"SENSITIVE_AUTH_TEST","args":["--SENSITIVE_AUTH_TEST"],"env":{"KEY":"SENSITIVE_AUTH_TEST"},"_meta":{"terminal-auth":{"args":["--SENSITIVE_AUTH_TEST"]}}}]});
+    match mode {
+        "auth-malformed" => result["authMethods"] = json!("SENSITIVE_AUTH_TEST"),
+        "auth-duplicate" => result["authMethods"] = json!([{"id":"login"},{"id":"login"}]),
+        "auth-unknown-type" => result["authMethods"][0]["type"] = json!("future-login"),
+        "auth-bad-id" => result["authMethods"][0]["id"] = json!("SENSITIVE_AUTH_TEST\n"),
+        "auth-bad-type" => result["authMethods"][0]["type"] = json!(42),
+        "auth-huge-list" => {
+            result["authMethods"] = json!(
+                (0..9)
+                    .map(|n| json!({"id":format!("login-{n}")}))
+                    .collect::<Vec<_>>()
+            )
+        }
+        "auth-bad-capability" => {
+            result["agentCapabilities"]["promptCapabilities"]["image"] =
+                json!("SENSITIVE_AUTH_TEST")
+        }
+        _ => {}
+    }
+    result
+}
+fn metadata(session: &str, kind: &str) {
+    emit(
+        json!({"jsonrpc":"2.0","method":"session/update","params":{"sessionId":session,"update":{"sessionUpdate":kind,"SENSITIVE_AUTH_TEST":"SENSITIVE_AUTH_TEST"}}}),
+    );
+}
 fn main() {
     if std::env::var_os("ACP_TEST_PARENT_SENTINEL").is_some() {
         std::process::exit(99);
@@ -25,22 +56,50 @@ fn main() {
             return;
         };
         match v["method"].as_str() {
-            Some("initialize") => reply(
-                v["id"].clone(),
-                json!({"protocolVersion":if mode=="version"{2}else{1},"agentCapabilities":{"loadSession":false},"agentInfo":{"name":"deterministic-fake-not-coding-agent","version":"1"}}),
-            ),
+            Some("initialize") => reply(v["id"].clone(), initialized(&mode)),
             Some("session/new") => {
-                if mode == "auth" {
+                if v["params"]["mcpServers"] != json!([]) {
+                    std::process::exit(9);
+                }
+                let ready = std::env::var_os("HOME")
+                    .is_some_and(|p| std::path::Path::new(&p).join(".p1h-ready").is_file());
+                if mode == "auth" || (mode == "auth-recover" && !ready) {
                     emit(
                         json!({"jsonrpc":"2.0","id":v["id"],"error":{"code":-32000,"message":"Authentication required"}}),
                     );
+                } else if mode == "auth-rejected" {
+                    emit(
+                        json!({"jsonrpc":"2.0","id":v["id"],"error":{"code":-32602,"message":"SENSITIVE_AUTH_TEST","data":{"token":"SENSITIVE_AUTH_TEST"}}}),
+                    );
                 } else {
+                    if mode.starts_with("metadata-") {
+                        let count = if mode == "metadata-overflow" { 9 } else { 1 };
+                        for _ in 0..count {
+                            metadata(
+                                if mode == "metadata-wrong-scope" {
+                                    "other-session"
+                                } else {
+                                    "fake-session"
+                                },
+                                "available_commands_update",
+                            );
+                        }
+                    }
                     reply(v["id"].clone(), json!({"sessionId":"fake-session"}));
+                    if mode == "metadata-early" {
+                        metadata("fake-session", "current_mode_update");
+                    }
                 }
             }
             Some("session/prompt") => {
                 prompt = v["id"].clone();
                 match mode.as_str() {
+                    "auth-midturn" => emit(
+                        json!({"jsonrpc":"2.0","id":v["id"],"error":{"code":-32000,"message":"SENSITIVE_AUTH_TEST"}}),
+                    ),
+                    "auth-unsupported" => emit(
+                        json!({"jsonrpc":"2.0","id":"unsupported-auth","method":"authenticate","params":{"methodId":"login","token":"SENSITIVE_AUTH_TEST"}}),
+                    ),
                     "crash" => std::process::exit(7),
                     "malformed" => {
                         println!("not-json");
@@ -69,11 +128,21 @@ fn main() {
                             json!({"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fake-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Synthetic ACP update 中文"}}}}),
                         );
                         reply(prompt.clone(), json!({"stopReason":"end_turn"}));
+                        if mode == "metadata-early" {
+                            metadata("fake-session", "usage_update");
+                        }
                         if mode == "duplicate-response" {
                             reply(prompt.clone(), json!({"stopReason":"end_turn"}));
                         }
                     }
                 }
+            }
+            Some("authenticate" | "logout") => std::process::exit(9),
+            None if v["id"] == "unsupported-auth" => {
+                if v["error"]["code"] != -32601 {
+                    std::process::exit(9);
+                }
+                reply(prompt.clone(), json!({"stopReason":"end_turn"}));
             }
             Some("session/cancel") => {
                 if !prompt.is_null() && mode != "cancel-timeout" {

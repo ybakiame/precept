@@ -59,8 +59,8 @@ Prompt/permission decisions from the old generation remain invalid. Failed clean
 still reports failed/alive and blocks another launch. Missing or invalid auth leaves
 the model-turn acceptance NOT_RUN; rejection errors are sanitized.
 
-Initialize records only bounded known capability bits and bounded unique method IDs
-and types. Method names, descriptions, args, env and extension metadata are not
+Initialize records only bounded known capability bits and method types; it validates
+bounded unique method IDs without retaining them. Method names, descriptions, args, env and extension metadata are not
 retained. Unknown auth types are explicitly unsupported. Malformed auth arrays/IDs,
 duplicate IDs or malformed known capability fields fail closed without echoing values.
 An accepted session means only session creation succeeded, not that repository writes
@@ -80,10 +80,13 @@ No update infers completion; only the matching prompt response with valid stopRe
 
 ## H1 real-turn authorization and evidence
 
-The owner explicitly authorized **one model call** using a separately prepared private
-Kimi HOME; the owner later selected Kimi Code API-key configuration. The key is never
+The owner first authorized one model call using a separately prepared private Kimi
+HOME, selected Kimi Code API-key configuration, and reported local setup ready. The
+owner then explicitly authorized necessary model calls during this debugging session
+using subscription quota. Runs remain deliberate, bounded and separately recorded;
+there is no automatic prompt retry. The key is never
 sent in chat or written to tracked files. A credential-free private template was
-created outside the repo, mode 0600; do not use it until the owner reports it ready.
+created outside the repo, mode 0600; the owner has reported it ready.
 The runner supplies only the selected HOME path, not credential contents, to the
 configured child and never prints or archives config/session/log content.
 

@@ -1,5 +1,5 @@
 //! Session view state is ephemeral and isolated from context snapshots/Handoff.
-pub use acp_session::{Capabilities, State, View};
+pub use acp_session::{AuthMethodKind, AuthStatus, Capabilities, SESSION_API, State, View};
 #[derive(Clone, Debug, Default)]
 pub struct PollGuard(std::sync::Arc<std::sync::atomic::AtomicBool>);
 impl PartialEq for PollGuard {
@@ -47,14 +47,17 @@ impl SessionModel {
     pub fn receive(&mut self, project: &str, result: Result<Observation, &str>) {
         match result {
             Ok(o)
-                if o.capabilities.session_api_version == 1
+                if o.capabilities.session_api_version == SESSION_API
                     && o.capabilities.protocol_version == 1
                     && o.capabilities.executables.len() <= 8
                     && o.view.as_ref().is_none_or(|v| {
                         v.project == project
-                            && v.session_api_version == 1
+                            && v.session_api_version == SESSION_API
                             && v.events.len() <= 64
                             && v.events.iter().all(|s| s.chars().count() <= 512)
+                            && v.authentication.methods.len() <= 8
+                            && v.activity.response_chunks <= 4096
+                            && v.activity.tool_events <= 4096
                             && v.permissions.len() <= 4
                             && v.permissions.iter().all(|p| p.operation.len() <= 2048)
                     }) =>
@@ -70,6 +73,14 @@ impl SessionModel {
                 }
                 if self.view.as_ref().map(|v| &v.session_id)
                     != o.view.as_ref().map(|v| &v.session_id)
+                    || (o
+                        .view
+                        .as_ref()
+                        .is_some_and(|v| v.authentication.status == AuthStatus::Required)
+                        && self
+                            .view
+                            .as_ref()
+                            .is_none_or(|v| v.authentication.status != AuthStatus::Required))
                 {
                     self.prompt.clear();
                     self.confirm_start = false;
@@ -106,10 +117,11 @@ impl SessionModel {
         }
     }
     pub fn can_prompt(&self) -> bool {
-        self.view
-            .as_ref()
-            .is_some_and(|v| v.process_alive && matches!(v.state, State::Ready | State::Completed))
-            && !self.busy
+        self.view.as_ref().is_some_and(|v| {
+            v.process_alive
+                && v.authentication.status == AuthStatus::SessionAccepted
+                && matches!(v.state, State::Ready | State::Completed)
+        }) && !self.busy
             && !self.prompt.trim().is_empty()
             && self.prompt.len() <= 4096
     }
@@ -152,16 +164,18 @@ impl crate::native::Inputs {
                 let cap = client
                     .request(
                         "session.capabilities",
-                        serde_json::json!({"session_api_version":1,"project":project}),
+                        serde_json::json!({"session_api_version":SESSION_API,"project":project}),
                     )
                     .await
                     .map_err(|_| "Session unavailable")?;
                 let capabilities: Capabilities =
                     serde_json::from_value(cap).map_err(|_| "Invalid session capabilities")?;
-                if capabilities.session_api_version != 1 || capabilities.protocol_version != 1 {
+                if capabilities.session_api_version != SESSION_API
+                    || capabilities.protocol_version != 1
+                {
                     return Err("Unsupported session version");
                 }
-                fields["session_api_version"] = 1.into();
+                fields["session_api_version"] = SESSION_API.into();
                 fields["project"] = project.into();
                 let result = client
                     .request(
@@ -209,13 +223,13 @@ mod tests {
     #[test]
     fn cross_scope_malformed_denial_and_old_revision_clear_or_ignore() {
         let cap = Capabilities {
-            session_api_version: 1,
+            session_api_version: SESSION_API,
             protocol_version: 1,
             executables: vec!["fixture".into()],
             resume_supported: false,
         };
         let view = View {
-            session_api_version: 1,
+            session_api_version: SESSION_API,
             project: "alpha".into(),
             session_id: "session-1".into(),
             state: State::WaitingPermission,
@@ -354,6 +368,64 @@ impl crate::Model {
 mod scope_tests {
     use super::*;
     #[test]
+    fn auth_requirement_clears_drafts_once_but_passive_poll_preserves_retry_review() {
+        let mut m = SessionModel::default();
+        let capabilities = Capabilities {
+            session_api_version: SESSION_API,
+            protocol_version: 1,
+            executables: vec!["fixture".into()],
+            resume_supported: false,
+        };
+        let mut view = View {
+            session_api_version: SESSION_API,
+            project: "alpha".into(),
+            session_id: "same-generation".into(),
+            state: State::Ready,
+            process_alive: true,
+            revision: 1,
+            ..Default::default()
+        };
+        view.authentication.status = AuthStatus::SessionAccepted;
+        let observation = |view: &View| {
+            Ok(Observation {
+                capabilities: capabilities.clone(),
+                view: Some(view.clone()),
+            })
+        };
+        m.receive("alpha", observation(&view));
+        m.prompt = "pending human draft".into();
+        m.confirm_start = true;
+        m.permission_review = Some("old-permission".into());
+        view.state = State::AuthRequired;
+        view.authentication.status = AuthStatus::Required;
+        view.process_alive = false;
+        view.revision += 1;
+        m.receive("alpha", observation(&view));
+        assert!(m.prompt.is_empty());
+        assert!(!m.confirm_start);
+        assert!(m.permission_review.is_none());
+        m.prompt = "must not send".into();
+        assert!(!m.can_prompt());
+        m.confirm_start = true;
+        m.receive("alpha", observation(&view));
+        assert!(
+            m.confirm_start,
+            "unchanged auth observation must not dismiss explicit retry review"
+        );
+        let mut old = capabilities;
+        old.session_api_version = 1;
+        m.receive(
+            "alpha",
+            Ok(Observation {
+                capabilities: old,
+                view: Some(view),
+            }),
+        );
+        assert!(m.view.is_none());
+        assert!(!m.confirm_start);
+        assert!(m.prompt.is_empty());
+    }
+    #[test]
     fn rendered_permission_never_rebinds_to_a_new_session_or_target() {
         let mut m = crate::Model::fixture();
         m.select(0);
@@ -417,7 +489,7 @@ mod scope_tests {
         let connection = m.connection.clone();
         let epoch = m.epoch;
         let cap = Capabilities {
-            session_api_version: 1,
+            session_api_version: SESSION_API,
             protocol_version: 1,
             executables: vec!["fixture".into()],
             resume_supported: false,
@@ -426,7 +498,7 @@ mod scope_tests {
             Ok(Observation {
                 capabilities: cap.clone(),
                 view: Some(View {
-                    session_api_version: 1,
+                    session_api_version: SESSION_API,
                     project: "alpha".into(),
                     session_id: "observed".into(),
                     ..Default::default()

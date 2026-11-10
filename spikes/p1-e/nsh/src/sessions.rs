@@ -157,6 +157,36 @@ fn apply_permission(
     }
 }
 
+fn auth_notice(model: Signal<Model>) -> impl IntoElement {
+    let notice = computed(move || {
+        let m = model.get();
+        (m.locale, m.session.view.map(|v| v.authentication.status))
+    });
+    dynamic(move || {
+        use acp_ui_spike_model::session::AuthStatus;
+        let (locale, status) = notice.get();
+        let _ = locale;
+        let mut body = view().gap_2().flex_shrink_0();
+        if status == Some(AuthStatus::Required) {
+            let m = model.get_untracked();
+            body = body
+                .child(card(
+                    model,
+                    m.word(Msg::SessionAuthRequired),
+                    vec![m.word(Msg::AgentAuthHelp).to_owned()],
+                ))
+                .child(word_action(
+                    model,
+                    Msg::AuthRetry,
+                    move || {
+                        enabled(model) && model.get().session.view.is_some_and(|v| !v.process_alive)
+                    },
+                    move || start_review(model),
+                ));
+        }
+        body
+    })
+}
 fn permissions(model: Signal<Model>) -> impl IntoElement {
     let pending = computed(move || {
         let m = model.get();
@@ -219,6 +249,7 @@ fn permissions(model: Signal<Model>) -> impl IntoElement {
 }
 fn state_word(state: &acp_ui_spike_model::session::State) -> Msg {
     match state {
+        acp_ui_spike_model::session::State::AuthRequired => Msg::SessionAuthRequired,
         acp_ui_spike_model::session::State::Idle => Msg::SessionIdle,
         acp_ui_spike_model::session::State::Starting => Msg::SessionStarting,
         acp_ui_spike_model::session::State::Ready => Msg::SessionReady,
@@ -326,6 +357,7 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
             move || enabled(model),
             move || request(model, "session.refresh", json!({})),
         ))
+        .child(auth_notice(model))
         .child(permissions(model))
         .child(dynamic(move || {
             let _ = summary.get();
@@ -439,6 +471,59 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                         format!("{}: {}", m.word(Msg::ActiveExecutable), v.executable),
                         format!("{}: {}", m.word(Msg::ProcessAlive), v.process_alive),
                         format!("{}: {} · ACP v1", m.word(Msg::AgentVersion), v.agent),
+                        format!(
+                            "{}: {}",
+                            m.word(Msg::AuthState),
+                            m.word(match v.authentication.status {
+                                acp_ui_spike_model::session::AuthStatus::Unobserved =>
+                                    Msg::AuthUnobserved,
+                                acp_ui_spike_model::session::AuthStatus::Required =>
+                                    Msg::SessionAuthRequired,
+                                acp_ui_spike_model::session::AuthStatus::SessionAccepted =>
+                                    Msg::AuthSessionAccepted,
+                            })
+                        ),
+                        format!(
+                            "{}: {} / {} / {}",
+                            m.word(Msg::AuthMethods),
+                            v.authentication
+                                .methods
+                                .iter()
+                                .filter(
+                                    |k| **k == acp_ui_spike_model::session::AuthMethodKind::Agent
+                                )
+                                .count(),
+                            v.authentication
+                                .methods
+                                .iter()
+                                .filter(|k| **k
+                                    == acp_ui_spike_model::session::AuthMethodKind::Terminal)
+                                .count(),
+                            v.authentication
+                                .methods
+                                .iter()
+                                .filter(|k| **k
+                                    == acp_ui_spike_model::session::AuthMethodKind::Unsupported)
+                                .count()
+                        ),
+                        format!(
+                            "{}: {} / {} / {} / {} / {} / {}",
+                            m.word(Msg::AuthCapabilities),
+                            v.agent_features.image,
+                            v.agent_features.audio,
+                            v.agent_features.embedded_context,
+                            v.agent_features.mcp_http,
+                            v.agent_features.mcp_sse,
+                            v.agent_features.logout
+                        ),
+                        m.word(Msg::AuthCapabilitiesHelp).to_owned(),
+                        format!(
+                            "{}: {} / {} / {}",
+                            m.word(Msg::SessionActivity),
+                            v.activity.response_chunks,
+                            v.activity.response_characters,
+                            v.activity.tool_events
+                        ),
                         format!(
                             "{}: {} UTC epoch ms",
                             m.word(Msg::LastSessionEvent),

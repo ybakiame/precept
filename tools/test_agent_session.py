@@ -103,7 +103,7 @@ class SessionFixture(Fixture):
     def query(self, method, project="alpha", cap="operator", success=True, **params):
         with Raw(self, cap) as r:
             reply = r.request(
-                method, dict(session_api_version=1, project=project, **params)
+                method, dict(session_api_version=2, project=project, **params)
             )
         if success:
             assert (
@@ -325,15 +325,10 @@ class AgentSessionTests(unittest.TestCase):
             f.start()
             for mode in ["timeout", "version", "auth"]:
                 v = f.launch(mode)
-                v = f.wait("failed")
-                self.assertEqual(
-                    v["failure"],
-                    {
-                        "timeout": "Timeout",
-                        "version": "Version",
-                        "auth": "Authentication required",
-                    }[mode],
-                )
+                v = f.wait("auth_required" if mode == "auth" else "failed")
+                self.assertEqual(v["failure"], {"timeout": "Timeout", "version": "Version", "auth": None}[mode])
+                if mode == "auth":
+                    self.assertEqual(v["authentication"]["status"], "required")
                 while f.query("session.get")["process_alive"]:
                     time.sleep(0.03)
 
@@ -392,11 +387,11 @@ class AgentSessionTests(unittest.TestCase):
                 self.assertIn("error", denied)
             self.assertEqual(f.query("session.get")["permissions"][0], p)
             for params, error in [
-                ({"session_api_version": 2, "project": "alpha"}, "Version"),
+                ({"session_api_version": 1, "project": "alpha"}, "Version"),
                 ({"project": "alpha"}, "InvalidRequest"),
-                ({"session_api_version": 1, "project": "other"}, "Unauthorized"),
+                ({"session_api_version": 2, "project": "other"}, "Unauthorized"),
                 (
-                    {"session_api_version": 1, "project": "alpha", "shell": "bad"},
+                    {"session_api_version": 2, "project": "alpha", "shell": "bad"},
                     "InvalidRequest",
                 ),
             ]:
@@ -469,7 +464,7 @@ class AgentSessionTests(unittest.TestCase):
         with Fixture() as f:
             with Raw(f) as r:
                 cap = r.request(
-                    "session.capabilities", dict(session_api_version=1, project="alpha")
+                    "session.capabilities", dict(session_api_version=2, project="alpha")
                 )["result"]
                 self.assertEqual(cap["executables"], [])
             with Raw(f) as r:
@@ -477,7 +472,7 @@ class AgentSessionTests(unittest.TestCase):
                     r.request(
                         "session.start",
                         dict(
-                            session_api_version=1,
+                            session_api_version=2,
                             project="alpha",
                             executable="unknown",
                             confirmed=True,
@@ -523,6 +518,120 @@ class AgentSessionTests(unittest.TestCase):
                 self.assertEqual(proc.returncode, 2)
                 self.assertNotIn(b"not-a-token", proc.stderr)
                 self.assertFalse(f.runtime.exists())
+
+    def test_auth_required_external_readiness_and_explicit_new_generation(self):
+        with SessionFixture() as f:
+            f.set_programs(["auth-recover"])
+            home = f.root / "private-synthetic-home"
+            home.mkdir()
+            config = json.loads(f.config.read_text())
+            config["programs"][0]["env"]["HOME"] = str(home)
+            f.config.write_text(json.dumps(config))
+            f.start()
+            first = f.query("session.start", executable="auth-recover", confirmed=True)
+            v = f.wait("auth_required")
+            deadline = time.monotonic() + 3
+            while v["process_alive"] and time.monotonic() < deadline:
+                time.sleep(0.03)
+                v = f.query("session.get")
+            self.assertFalse(v["process_alive"])
+            self.assertIsNone(v["failure"])
+            self.assertEqual(v["authentication"], {"status": "required", "methods": ["terminal"]})
+            self.assertEqual(v["permissions"], [])
+            self.assertNotIn("SENSITIVE_AUTH_TEST", json.dumps(v))
+            time.sleep(0.2)
+            self.assertEqual(f.query("session.get")["session_id"], first["session_id"])
+            self.assertEqual(f.query("session.prompt", session_id=v["session_id"], prompt="no", success=False), "Unavailable")
+            self.assertEqual(f.query("session.start", executable="auth-recover", confirmed=False, success=False), "InvalidRequest")
+            # The operator prepares auth outside the agent; this fixture is NOT real login.
+            (home / ".p1h-ready").write_text("synthetic readiness only")
+            v = f.launch("auth-recover")
+            self.assertNotEqual(v["session_id"], first["session_id"])
+            self.assertEqual(v["authentication"]["status"], "session_accepted")
+            self.assertEqual(f.query("session.prompt", session_id=first["session_id"], prompt="stale", success=False), "NotFound")
+            f.query("session.prompt", session_id=v["session_id"], prompt="synthetic")
+            v = f.wait("completed")
+            self.assertEqual(v["stop_reason"], "end_turn")
+            f.end(v)
+            self.assertEqual(f.db.read_bytes(), f.before)
+
+    def test_auth_metadata_rejection_and_sanitization(self):
+        modes = ["auth-malformed", "auth-duplicate", "auth-bad-id", "auth-bad-type", "auth-huge-list", "auth-bad-capability", "auth-rejected"]
+        with SessionFixture() as f:
+            f.set_programs(modes)
+            f.start()
+            for mode in modes:
+                with self.subTest(mode=mode):
+                    f.query("session.start", executable=mode, confirmed=True)
+                    v = f.wait("failed")
+                    deadline = time.monotonic() + 3
+                    while v["process_alive"] and time.monotonic() < deadline:
+                        time.sleep(0.03)
+                        v = f.query("session.get")
+                    self.assertFalse(v["process_alive"])
+                    self.assertNotIn("SENSITIVE_AUTH_TEST", json.dumps(v))
+                    self.assertIn(v["failure"], ["InvalidRequest", "Unavailable"])
+                    self.assertEqual(v["authentication"]["status"], "unobserved")
+
+    def test_unknown_auth_method_and_reverse_auth_are_never_executed(self):
+        with SessionFixture() as f:
+            f.set_programs(["auth-unknown-type", "auth-unsupported"])
+            f.start()
+            v = f.launch("auth-unknown-type")
+            self.assertEqual(v["authentication"]["methods"], ["unsupported"])
+            f.end(v)
+            v = f.launch("auth-unsupported")
+            self.assertEqual(f.query("session.authenticate", success=False), "Unsupported")
+            f.query("session.prompt", session_id=v["session_id"], prompt="synthetic")
+            v = f.wait("completed")
+            self.assertTrue(v["process_alive"])
+            self.assertNotIn("SENSITIVE_AUTH_TEST", json.dumps(v))
+            f.end(v)
+
+    def test_auth_required_during_turn_revokes_authority_without_raw_error(self):
+        with SessionFixture() as f:
+            f.set_programs(["auth-midturn"])
+            f.start()
+            v = f.launch("auth-midturn")
+            f.query("session.prompt", session_id=v["session_id"], prompt="synthetic")
+            v = f.wait("auth_required")
+            self.assertEqual(v["authentication"]["status"], "required")
+            self.assertEqual(v["permissions"], [])
+            self.assertIsNone(v["stop_reason"])
+            self.assertNotIn("SENSITIVE_AUTH_TEST", json.dumps(v))
+
+    def test_scoped_metadata_before_new_response_and_after_turn(self):
+        with SessionFixture() as f:
+            f.set_programs(["metadata-early"])
+            f.start()
+            v = f.launch("metadata-early")
+            f.query("session.prompt", session_id=v["session_id"], prompt="synthetic")
+            v = f.wait("completed")
+            deadline = time.monotonic() + 3
+            while not any("usage_update" in e for e in v["events"]) and time.monotonic() < deadline:
+                time.sleep(0.03)
+                v = f.query("session.get")
+            for name in ["available_commands_update", "current_mode_update", "usage_update"]:
+                self.assertTrue(any(name in e for e in v["events"]))
+            self.assertEqual(v["state"], "completed")
+            self.assertEqual(v["stop_reason"], "end_turn")
+            self.assertNotIn("SENSITIVE_AUTH_TEST", json.dumps(v))
+            f.end(v)
+
+    def test_unbound_metadata_scope_and_overflow_fail_closed(self):
+        with SessionFixture() as f:
+            f.set_programs(["metadata-wrong-scope", "metadata-overflow"])
+            f.start()
+            for mode in ["metadata-wrong-scope", "metadata-overflow"]:
+                f.query("session.start", executable=mode, confirmed=True)
+                v = f.wait("failed")
+                deadline = time.monotonic() + 3
+                while v["process_alive"] and time.monotonic() < deadline:
+                    time.sleep(0.03)
+                    v = f.query("session.get")
+                self.assertFalse(v["process_alive"])
+                self.assertFalse(any("commands" in e for e in v["events"]))
+                self.assertNotIn("SENSITIVE_AUTH_TEST", json.dumps(v))
 
     def test_daemon_restart_loses_sessions_and_rejects_old_ids(self):
         with SessionFixture() as f:

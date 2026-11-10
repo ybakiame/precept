@@ -1,5 +1,5 @@
 //! One daemon-owned, bounded direct child. No persistence or automatic launch.
-use crate::{Capabilities, Permission, SESSION_API, State, View};
+use crate::{AuthStatus, Capabilities, Permission, SESSION_API, State, View};
 use acp_ipc::{Error, Result};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -295,7 +295,7 @@ impl Supervisor {
         let v = self.inner.lock().unwrap().view.clone();
         if v.process_alive {
             let p = Params {
-                session_api_version: 1,
+                session_api_version: SESSION_API,
                 project: v.project,
                 session_id: Some(v.session_id),
                 executable: None,
@@ -369,6 +369,9 @@ impl Supervisor {
         let _ = reader.await;
         if let Err(e) = result {
             self.change(|v| {
+                if v.state == State::AuthRequired {
+                    return;
+                }
                 v.state = State::Failed;
                 if v.failure.is_none() {
                     v.failure = Some(e.to_string());
@@ -409,6 +412,7 @@ impl Supervisor {
         send(input,json!({"jsonrpc":"2.0","id":rpc,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{},"clientInfo":{"name":"agent-control-plane","version":"0.1.0"}}})).await?;
         let mut session = String::new();
         let mut seen = HashSet::new();
+        let mut early_metadata: Vec<(String, String)> = Vec::new();
         let mut pending: BTreeMap<String, (Value, String, u64)> = BTreeMap::new();
         let mut total = 0;
         let mut permission_serial = 0;
@@ -471,19 +475,31 @@ impl Supervisor {
                             pending.insert(local.clone(),(id.clone(),allow.clone(),expires));
                             self.change(|v|{v.permissions.push(Permission{request_id:local,operation,allow_once:(!allow.is_empty()).then_some(allow),expires_ms:expires});v.state=State::WaitingPermission;});
                         }else if method=="session/update"{
-                            if session.is_empty()||params.get("sessionId").and_then(Value::as_str)!=Some(session.as_str())||!waiting.as_ref().is_some_and(|(_,m,_)|*m=="session/prompt"){return Err(Error::InvalidRequest)}
+                            let observed=params.get("sessionId").and_then(Value::as_str).filter(|s|bounded(s,128)).ok_or(Error::InvalidRequest)?;
                             let update=params.get("update").ok_or(Error::InvalidRequest)?;let kind=update.get("sessionUpdate").and_then(Value::as_str).ok_or(Error::InvalidRequest)?;
+                            if session.is_empty() {
+                                if !waiting.as_ref().is_some_and(|(_,m,_)|*m=="session/new") || !crate::handshake::is_metadata(kind) { return Err(Error::InvalidRequest); }
+                                if early_metadata.len()>=8 { return Err(Error::TooLarge); }
+                                early_metadata.push((observed.to_owned(),kind.to_owned()));continue;
+                            }
+                            if observed!=session { return Err(Error::InvalidRequest); }
+                            if crate::handshake::is_metadata(kind) { self.event(format!("{kind}: observed"));continue; }
+                            if !waiting.as_ref().is_some_and(|(_,m,_)|*m=="session/prompt") { return Err(Error::InvalidRequest); }
                             let message=match kind {"agent_message_chunk"|"agent_thought_chunk"|"user_message_chunk"=>{if update["content"]["type"]!="text"{return Err(Error::Unsupported)}format!("{kind}: {}",update["content"]["text"].as_str().ok_or(Error::InvalidRequest)?)},"tool_call"|"tool_call_update"=>format!("{kind}: {}",update.get("status").and_then(Value::as_str).unwrap_or("observed")),"plan"|"available_commands_update"|"current_mode_update"|"config_option_update"|"usage_update"|"session_info_update"=>format!("{kind}: observed"),_=>return Err(Error::Unsupported)};
+                            self.change(|v| {
+                                if kind=="agent_message_chunk" { v.activity.response_chunks+=1;v.activity.response_characters+=update["content"]["text"].as_str().unwrap().chars().count() as u64; }
+                                if matches!(kind,"tool_call"|"tool_call_update") { v.activity.tool_events+=1; }
+                            });
                             self.event(message);
                         }else{return Err(Error::Unsupported)}
                     }else{
                         let(id,method,_)=waiting.take().ok_or(Error::InvalidRequest)?;
                         if m.get("id")!=Some(&json!(id)) || m.get("result").is_some()==m.get("error").is_some(){return Err(Error::InvalidRequest)}
-                        if let Some(error)=m.get("error"){if error.get("code").and_then(Value::as_i64)==Some(-32000){self.change(|v|v.failure=Some("Authentication required".into()));return Err(Error::Unauthorized)}return Err(Error::Unavailable)}
+                        if let Some(error)=m.get("error"){if error.get("code").and_then(Value::as_i64)==Some(-32000){self.change(|v|{v.state=State::AuthRequired;v.authentication.status=AuthStatus::Required;v.failure=None;v.permissions.clear();});return Err(Error::Unauthorized)}return Err(Error::Unavailable)}
                         let result=m.get("result").filter(|v|v.is_object()).ok_or(Error::InvalidRequest)?;
                         match method {
-                            "initialize"=>{if result["protocolVersion"]!=1 || !result["agentCapabilities"].is_object(){return Err(Error::Version)}self.change(|v|{v.agent=format!("{} {}",clean(result["agentInfo"]["name"].as_str().unwrap_or("Unspecified agent"),80),clean(result["agentInfo"]["version"].as_str().unwrap_or("Unknown"),40));v.load_session_advertised=result["agentCapabilities"]["loadSession"].as_bool()==Some(true);});rpc+=1;send(input,json!({"jsonrpc":"2.0","id":rpc,"method":"session/new","params":{"cwd":root,"mcpServers":[]}})).await?;waiting=Some((rpc,"session/new",tokio::time::Instant::now()+Duration::from_secs(5)));},
-                            "session/new"=>{session=result["sessionId"].as_str().filter(|s|bounded(s,128)).ok_or(Error::InvalidRequest)?.into();self.change(|v|v.state=State::Ready);self.event("ACP v1 session ready".into());},
+                            "initialize"=>{let observed=crate::handshake::initialize(result)?;self.change(|v|{v.agent=observed.agent;v.load_session_advertised=observed.load_session;v.agent_features=observed.features;v.authentication.methods=observed.methods;});rpc+=1;send(input,json!({"jsonrpc":"2.0","id":rpc,"method":"session/new","params":{"cwd":root,"mcpServers":[]}})).await?;waiting=Some((rpc,"session/new",tokio::time::Instant::now()+Duration::from_secs(5)));},
+                            "session/new"=>{session=result["sessionId"].as_str().filter(|s|bounded(s,128)).ok_or(Error::InvalidRequest)?.into();if early_metadata.iter().any(|(id,_)|*id!=session){return Err(Error::InvalidRequest)}self.change(|v|{v.state=State::Ready;v.authentication.status=AuthStatus::SessionAccepted;});self.event("ACP v1 session ready".into());for(_,kind)in std::mem::take(&mut early_metadata){self.event(format!("{kind}: observed"));}},
                             "session/prompt"=>{if !pending.is_empty(){return Err(Error::InvalidRequest)}let reason=result["stopReason"].as_str().filter(|s|["end_turn","cancelled","max_tokens","max_turn_requests","refusal"].contains(s)).ok_or(Error::InvalidRequest)?;self.change(|v|{v.state=State::Completed;v.stop_reason=Some(reason.into());});self.event(format!("Turn ended: {reason}"));},
                             _=>return Err(Error::Unsupported),
                         }
