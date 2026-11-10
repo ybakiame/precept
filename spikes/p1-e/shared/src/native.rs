@@ -226,50 +226,6 @@ impl Inputs {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn wsl_is_explicit_shell_free_and_never_a_fixture_fallback() {
-        use clap::Parser;
-        assert!(Inputs::try_parse_from(["ui", "--wsl-distribution", "synthetic"]).is_err());
-        let base = Inputs {
-            wsl_distribution: Some("synthetic".into()),
-            wsl_user: Some("operator".into()),
-            wsl_snapshot: Some("/opt/acp-ui-snapshot".into()),
-            wsl_runtime_dir: Some("/tmp/private".into()),
-            wsl_endpoint: Some("/tmp/private/control.sock".into()),
-            ..Default::default()
-        };
-        assert!(base.is_live());
-        let args = base
-            .wsl_arguments(Some("alpha"), "task 'quoted' ; $(never-run)")
-            .unwrap();
-        assert_eq!(args[4], "--exec");
-        assert_eq!(
-            args.last().unwrap(),
-            "--task-id=task 'quoted' ; $(never-run)"
-        );
-        assert!(
-            !args
-                .iter()
-                .any(|v| ["bash", "sh", "-c"].contains(&v.as_str()))
-        );
-        for invalid in ["../other", "bad\nname", "--system"] {
-            let mut bad = base.clone();
-            bad.wsl_distribution = Some(invalid.into());
-            assert!(bad.wsl_arguments(None, "").is_err());
-        }
-        assert!(
-            Inputs {
-                wsl_snapshot: Some("/opt/../secret".into()),
-                ..base.clone()
-            }
-            .wsl_arguments(None, "")
-            .is_err()
-        );
-    }
-}
 async fn fetch(
     location: &Location,
     selected: Option<&str>,
@@ -344,4 +300,49 @@ async fn fetch(
     let data = Snapshot { health, projects };
     data.validate().map_err(|_| Error::Unavailable)?;
     Ok(data)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn wsl_is_explicit_shell_free_and_never_a_fixture_fallback() {
+        use clap::Parser;
+        assert!(Inputs::try_parse_from(["ui", "--wsl-distribution", "synthetic"]).is_err());
+        let base = Inputs {
+            wsl_distribution: Some("synthetic".into()),
+            wsl_user: Some("operator".into()),
+            wsl_snapshot: Some("/opt/acp-ui-snapshot".into()),
+            wsl_runtime_dir: Some("/tmp/private".into()),
+            wsl_endpoint: Some("/tmp/private/control.sock".into()),
+            ..Default::default()
+        };
+        assert!(base.is_live());
+        let args = base
+            .wsl_arguments(Some("alpha"), "task 'quoted' ; $(never-run)")
+            .unwrap();
+        assert_eq!(args[4], "--exec");
+        assert_eq!(
+            args.last().unwrap(),
+            "--task-id=task 'quoted' ; $(never-run)"
+        );
+        assert!(
+            !args
+                .iter()
+                .any(|v| ["bash", "sh", "-c"].contains(&v.as_str()))
+        );
+        for invalid in ["../other", "bad\nname", "--system"] {
+            let mut bad = base.clone();
+            bad.wsl_distribution = Some(invalid.into());
+            assert!(bad.wsl_arguments(None, "").is_err());
+        }
+        assert!(
+            Inputs {
+                wsl_snapshot: Some("/opt/../secret".into()),
+                ..base.clone()
+            }
+            .wsl_arguments(None, "")
+            .is_err()
+        );
+    }
 }

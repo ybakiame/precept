@@ -252,10 +252,10 @@ impl Model {
         });
         self.receive(result);
         if self.phase == Phase::Ready {
-            if let Some(name) = &request.project {
-                if let Some(index) = self.project_names.iter().position(|p| p == name) {
-                    self.select(index);
-                }
+            if let Some(name) = &request.project
+                && let Some(index) = self.project_names.iter().position(|p| p == name)
+            {
+                self.select(index);
             }
             if self.live {
                 self.last_read_ms = Some(now_ms);
