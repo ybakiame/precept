@@ -53,9 +53,8 @@ Project cwd is resolved from the existing registered/daemon-allowlisted root.
 Config and control-runtime files must stay outside project roots. Environment is
 cleared before supplying explicit allowed keys. No capability token is inherited.
 
-The existing operator capability is checked for each client/connection; OS peer
-checks and IPC API v1 are required
-before **every** `session.*` request. Project-bound agent capabilities are denied
+Transport validates the local peer and capability when a client connects. The
+resulting operator role and IPC API v1 are checked for **every** `session.*` request. Project-bound agent capabilities are denied
 before parameter parsing or config/state disclosure. New methods require explicit
 `session_api_version: 1` and project scope; legacy health/context/handoff requests
 are unchanged. Unknown versions/methods/fields fail closed. Windows→WSL helper
@@ -113,7 +112,8 @@ The actual executable's documented ACP invocation must be supplied by its operat
 an absolute `.exe` path with its documented fixed arguments. Native Windows child
 startup may need explicitly configured `SystemRoot`, `TEMP` and `TMP`. Config must
 be a regular owner-only file (0600 Unix, protected owner-only Windows DACL), outside
-all registered project roots; configured executables also stay outside those roots.
+all daemon-allowlisted project roots; configured executables also stay outside
+those roots.
 Allowed environment keys are PATH, HOME, USERPROFILE, APPDATA, LOCALAPPDATA,
 SystemRoot, WINDIR, TEMP, TMP, TMPDIR, LANG, LC_ALL, TERM and NO_COLOR. No arbitrary
 credential variable or inherited environment is passed. Secret/auth setup needing
