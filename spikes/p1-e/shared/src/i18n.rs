@@ -59,7 +59,7 @@ catalog! {
     AuthMethods => ("Advertised login methods: agent / terminal / unsupported", "声明的登录方式：agent / 终端 / 不支持"),
     AuthCapabilities => ("Advertised: image / audio / embedded context / MCP HTTP / MCP SSE / logout", "声明能力：图像 / 音频 / 内嵌上下文 / MCP HTTP / MCP SSE / 退出登录"),
     AuthCapabilitiesHelp => ("Advertised capabilities do not imply use. Client login, file/terminal tools, context MCP forwarding and persistent resume remain disabled.", "声明能力不代表实际使用。客户端登录、文件/终端工具、上下文 MCP 转发和持久恢复均未启用。"),
-    AuthRetry => ("Review retry…", "重试前审阅…"),
+    AuthRetry => ("Review retry… (Alt+U)", "重试前审阅… (Alt+U)"),
     SessionFailed => ("failed", "失败"),
     SessionStopping => ("stopping", "停止中"),
     SessionStopped => ("stopped", "已停止"),

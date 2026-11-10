@@ -240,7 +240,7 @@ def main():
                 capture("auth-required-zh-640.png", 640, 480)
                 key("ctrl+l")
                 wait("locale=En")
-                key("alt+7")
+                key("alt+u")
                 wait("confirm=true")
                 time.sleep(0.9)
                 assert f.query("session.get")["session_id"] == old_id
@@ -249,6 +249,9 @@ def main():
                 key("alt+8")
                 v = f.wait("ready")
                 assert v["session_id"] != old_id
+                assert (
+                    v["executable"] == "auth-recover"
+                ), "retry must retain the observed agent"
                 wait("state=Some(Ready)")
                 key("alt+j")
                 time.sleep(0.15)
@@ -276,6 +279,7 @@ def main():
                 daemon_loss_clears_state=True,
                 database_unchanged=True,
                 external_synthetic_auth_and_explicit_retry=a.auth,
+                same_observed_executable_after_retry=a.auth,
                 clipboard="NOT_RUN",
                 real_agent="NOT_RUN by deterministic UI test; explicit opt-in smoke is separate",
             )

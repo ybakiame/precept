@@ -94,6 +94,13 @@ fn start_review(model: Signal<Model>) {
         model.update(|m| m.session.confirm_start = true);
     }
 }
+fn review_auth_retry(model: Signal<Model>) {
+    if model.get().sessions && enabled(model) {
+        model.update(|m| {
+            m.session.review_auth_retry();
+        });
+    }
+}
 fn confirm_start(model: Signal<Model>) {
     if enabled(model) && model.get().session.confirm_start {
         let exe = model.get().session.executable;
@@ -181,7 +188,7 @@ fn auth_notice(model: Signal<Model>) -> impl IntoElement {
                     move || {
                         enabled(model) && model.get().session.view.is_some_and(|v| !v.process_alive)
                     },
-                    move || start_review(model),
+                    move || review_auth_retry(model),
                 ));
         }
         body
@@ -292,6 +299,7 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
             start_review(model);
         }
     });
+    on_key_with("alt+u", global, move |_| review_auth_retry(model));
     on_key_with("alt+8", global, move |_| {
         if model.get().sessions {
             confirm_start(model);

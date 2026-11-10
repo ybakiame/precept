@@ -87,11 +87,14 @@ impl SessionModel {
                     self.event_page = 0;
                     self.permission_review = None;
                 }
-                if self.executable.is_empty() {
+                if !o.capabilities.executables.contains(&self.executable) {
+                    self.confirm_start = false;
                     self.executable = o
-                        .capabilities
-                        .executables
-                        .first()
+                        .view
+                        .as_ref()
+                        .map(|v| &v.executable)
+                        .filter(|id| o.capabilities.executables.contains(id))
+                        .or_else(|| o.capabilities.executables.first())
                         .cloned()
                         .unwrap_or_default();
                 }
@@ -115,6 +118,25 @@ impl SessionModel {
                 self.error = Some("Session unavailable or access refused".into());
             }
         }
+    }
+    /// Review a fresh generation of the observed agent; never launch or authenticate.
+    pub fn review_auth_retry(&mut self) -> bool {
+        let Some(v) = &self.view else {
+            return false;
+        };
+        if self.busy
+            || v.state != State::AuthRequired
+            || v.process_alive
+            || !self
+                .capabilities
+                .as_ref()
+                .is_some_and(|c| c.executables.contains(&v.executable))
+        {
+            return false;
+        }
+        self.executable = v.executable.clone();
+        self.confirm_start = true;
+        true
     }
     pub fn can_prompt(&self) -> bool {
         self.view.as_ref().is_some_and(|v| {
@@ -367,6 +389,58 @@ impl crate::Model {
 #[cfg(test)]
 mod scope_tests {
     use super::*;
+    #[test]
+    fn observed_agent_is_default_and_auth_retry_never_rebinds_to_another_agent() {
+        let mut m = SessionModel::default();
+        let mut capabilities = Capabilities {
+            session_api_version: SESSION_API,
+            protocol_version: 1,
+            executables: vec!["first".into(), "auth-agent".into()],
+            resume_supported: false,
+        };
+        let mut view = View {
+            session_api_version: SESSION_API,
+            project: "alpha".into(),
+            session_id: "auth-generation".into(),
+            executable: "auth-agent".into(),
+            state: State::AuthRequired,
+            ..Default::default()
+        };
+        let observe = |m: &mut SessionModel, c: &Capabilities, v: &View| {
+            m.receive(
+                "alpha",
+                Ok(Observation {
+                    capabilities: c.clone(),
+                    view: Some(v.clone()),
+                }),
+            )
+        };
+        observe(&mut m, &capabilities, &view);
+        assert_eq!(m.executable, "auth-agent");
+        m.executable = "first".into();
+        observe(&mut m, &capabilities, &view);
+        assert_eq!(
+            m.executable, "first",
+            "polling retains deliberate valid selection"
+        );
+        assert!(m.review_auth_retry());
+        assert_eq!(m.executable, "auth-agent");
+        assert!(m.confirm_start);
+        m.confirm_start = false;
+        view.process_alive = true;
+        observe(&mut m, &capabilities, &view);
+        assert!(!m.review_auth_retry());
+        view.process_alive = false;
+        m.confirm_start = true;
+        capabilities.executables.retain(|id| id == "first");
+        observe(&mut m, &capabilities, &view);
+        assert_eq!(
+            m.executable, "first",
+            "revoked selection must fall back safely"
+        );
+        assert!(!m.review_auth_retry(), "never retry a removed executable");
+        assert!(!m.confirm_start);
+    }
     #[test]
     fn auth_requirement_clears_drafts_once_but_passive_poll_preserves_retry_review() {
         let mut m = SessionModel::default();
