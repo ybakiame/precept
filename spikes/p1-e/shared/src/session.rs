@@ -30,6 +30,14 @@ pub struct SessionModel {
     pub event_page: usize,
     pub permission_review: Option<String>,
 }
+/// Authority captured when a session control is rendered, never rebound on click.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SessionScope {
+    epoch: u64,
+    project: String,
+    connection: crate::connection::Connection,
+    session_id: String,
+}
 #[derive(Clone, Debug)]
 pub struct Observation {
     pub capabilities: Capabilities,
@@ -276,6 +284,43 @@ mod tests {
 }
 
 impl crate::Model {
+    pub fn session_scope(&self) -> Option<SessionScope> {
+        let project = self.selected_project.as_ref()?;
+        let view = self.session.view.as_ref()?;
+        (view.project == *project).then(|| SessionScope {
+            epoch: self.epoch,
+            project: project.clone(),
+            connection: self.connection.clone(),
+            session_id: view.session_id.clone(),
+        })
+    }
+    pub fn permission_decision(
+        &self,
+        scope: &SessionScope,
+        request_id: &str,
+        allow: bool,
+    ) -> Option<serde_json::Value> {
+        if self.session_scope().as_ref() != Some(scope) {
+            return None;
+        }
+        let permission = self
+            .session
+            .view
+            .as_ref()?
+            .permissions
+            .iter()
+            .find(|p| p.request_id == request_id)?;
+        let option = if allow {
+            Some(permission.allow_once.clone()?)
+        } else {
+            None
+        };
+        Some(serde_json::json!({
+            "session_id": scope.session_id,
+            "request_id": request_id,
+            "option_id": option,
+        }))
+    }
     pub fn complete_session(
         &mut self,
         epoch: u64,
@@ -308,6 +353,62 @@ impl crate::Model {
 #[cfg(test)]
 mod scope_tests {
     use super::*;
+    #[test]
+    fn rendered_permission_never_rebinds_to_a_new_session_or_target() {
+        let mut m = crate::Model::fixture();
+        m.select(0);
+        m.session.view = Some(View {
+            project: "alpha".into(),
+            session_id: "original".into(),
+            permissions: vec![acp_session::Permission {
+                request_id: "permission-1".into(),
+                operation: "synthetic operation".into(),
+                allow_once: Some("once".into()),
+                expires_ms: 123,
+            }],
+            ..Default::default()
+        });
+        let scope = m.session_scope().unwrap();
+        assert_eq!(
+            m.permission_decision(&scope, "permission-1", true).unwrap()["session_id"],
+            "original"
+        );
+        assert!(m.permission_decision(&scope, "missing", false).is_none());
+        m.session.view.as_mut().unwrap().session_id = "replacement".into();
+        // The new agent reused the same local request/option IDs.
+        assert!(
+            m.permission_decision(&scope, "permission-1", true)
+                .is_none()
+        );
+        assert!(
+            m.permission_decision(&scope, "permission-1", false)
+                .is_none()
+        );
+        m.session.view.as_mut().unwrap().session_id = "original".into();
+        m.connection.endpoint = "different-target".into();
+        assert!(
+            m.permission_decision(&scope, "permission-1", true)
+                .is_none()
+        );
+        m.connection = scope.connection.clone();
+        m.epoch += 1;
+        assert!(
+            m.permission_decision(&scope, "permission-1", true)
+                .is_none()
+        );
+        m.epoch = scope.epoch;
+        m.selected_project = Some("beta".into());
+        assert!(
+            m.permission_decision(&scope, "permission-1", true)
+                .is_none()
+        );
+        m.selected_project = Some("alpha".into());
+        m.session.view.as_mut().unwrap().permissions.clear();
+        assert!(
+            m.permission_decision(&scope, "permission-1", true)
+                .is_none()
+        );
+    }
     #[test]
     fn project_and_target_changes_reject_in_flight_session_observations() {
         let mut m = crate::Model::fixture();

@@ -176,3 +176,8 @@ Alt+Y has no effect. Selection is revoked on request removal/expiry, session cha
 project/target change and denied reads. Pointer buttons remain individually bound
 to their displayed request. This avoids relying on a fixed number of Tab presses
 to activate an approval and keeps the complete bounded operation visible for review.
+
+Pointer callbacks capture project, applied connection, context epoch and session ID
+when the permission is rendered. A later click cannot rebind to a replacement
+session, even if its agent reuses the same permission/option IDs. Both keyboard and
+pointer decisions recheck the currently pending request before sending scoped IPC.

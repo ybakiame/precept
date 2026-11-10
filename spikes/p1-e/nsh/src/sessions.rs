@@ -116,17 +116,17 @@ fn review_permission(model: Signal<Model>) {
         return;
     }
     model.update(|m| {
-        if let Some(v) = &m.session.view {
-            if !v.permissions.is_empty() {
-                let next = m
-                    .session
-                    .permission_review
-                    .as_ref()
-                    .and_then(|id| v.permissions.iter().position(|p| &p.request_id == id))
-                    .map(|n| (n + 1) % v.permissions.len())
-                    .unwrap_or(0);
-                m.session.permission_review = Some(v.permissions[next].request_id.clone());
-            }
+        if let Some(v) = &m.session.view
+            && !v.permissions.is_empty()
+        {
+            let next = m
+                .session
+                .permission_review
+                .as_ref()
+                .and_then(|id| v.permissions.iter().position(|p| &p.request_id == id))
+                .map(|n| (n + 1) % v.permissions.len())
+                .unwrap_or(0);
+            m.session.permission_review = Some(v.permissions[next].request_id.clone());
         }
     });
 }
@@ -135,45 +135,49 @@ fn decide_permission(model: Signal<Model>, allow: bool) {
         return;
     }
     let m = model.get();
-    let Some(id) = m.session.permission_review else {
+    let Some(id) = &m.session.permission_review else {
         return;
     };
-    let Some(p) = m
-        .session
-        .view
-        .as_ref()
-        .and_then(|v| v.permissions.iter().find(|p| p.request_id == id))
-    else {
+    let Some(scope) = m.session_scope() else {
         return;
     };
-    if allow && p.allow_once.is_none() {
+    apply_permission(model, &scope, id, allow);
+}
+fn apply_permission(
+    model: Signal<Model>,
+    scope: &acp_ui_spike_model::session::SessionScope,
+    id: &str,
+    allow: bool,
+) {
+    if !model.get().sessions || !enabled(model) {
         return;
     }
-    let option = if allow { p.allow_once.clone() } else { None };
-    command(
-        model,
-        "session.permission",
-        json!({"request_id":id,"option_id":option}),
-    );
+    if let Some(fields) = model.get().permission_decision(scope, id, allow) {
+        request(model, "session.permission", fields);
+    }
 }
+
 fn permissions(model: Signal<Model>) -> impl IntoElement {
     let pending = computed(move || {
         let m = model.get();
         (
             m.locale,
-            m.session.view.map(|v| v.permissions),
-            m.session.permission_review,
+            m.session.view.as_ref().map(|v| v.permissions.clone()),
+            m.session.permission_review.clone(),
+            m.session_scope(),
         )
     });
     dynamic(move || {
         let _ = pending.get();
         let m = model.get_untracked();
         let mut body = view().gap_2().flex_shrink_0();
-        if let Some(v) = &m.session.view {
+        if let (Some(v), Some(scope)) = (&m.session.view, m.session_scope()) {
             for p in &v.permissions {
                 let deny_id = p.request_id.clone();
                 let allow_id = p.request_id.clone();
-                let option = p.allow_once.clone();
+                let available = p.allow_once.is_some();
+                let deny_scope = scope.clone();
+                let allow_scope = scope.clone();
                 let mut lines = vec![
                     m.word(Msg::PermissionHelp).to_owned(),
                     format!(
@@ -200,28 +204,13 @@ fn permissions(model: Signal<Model>) -> impl IntoElement {
                         model,
                         Msg::DenyRequest,
                         move || enabled(model),
-                        move || {
-                            command(
-                                model,
-                                "session.permission",
-                                json!({"request_id":deny_id,"option_id":null}),
-                            )
-                        },
+                        move || apply_permission(model, &deny_scope, &deny_id, false),
                     ))
                     .child(word_action(
                         model,
                         Msg::AllowOnce,
-                        {
-                            let available = option.is_some();
-                            move || enabled(model) && available
-                        },
-                        move || {
-                            command(
-                                model,
-                                "session.permission",
-                                json!({"request_id":allow_id,"option_id":option}),
-                            )
-                        },
+                        move || enabled(model) && available,
+                        move || apply_permission(model, &allow_scope, &allow_id, true),
                     ));
             }
         }
