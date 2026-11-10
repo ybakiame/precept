@@ -44,8 +44,13 @@ def main():
     notes = args.out / "README.txt"
     notes.write_text(
         """Agent Control Plane — unsigned development binaries
-Read-only NSH desktop and TUI. No installer, autostart or daemon startup.
+NSH context inspector and optional native operator Sessions. No installer or autostart.
 Run without flags for OFFLINE_SYNTHETIC; Ctrl+Q closes the TUI.
+Agent execution is disabled unless a separately started daemon has --agent-config.
+Alt+6 opens Sessions on native local IPC only. Review/confirm Start explicitly.
+Agents run with your user privileges, without an OS sandbox. No persistent resume.
+Alt+I reviews a specific pending permission; Alt+N denies; Alt+Y allows it once.
+Windows->WSL connections remain read-only; they cannot execute sessions.
 The Connection target panel edits session-only Local/WSL location drafts;
 Apply and read explicitly commits a target and clears old scope/evidence.
 Settings offers three themes, System/Light/Dark, contrast and English/Chinese.

@@ -28,6 +28,7 @@ pub struct SessionModel {
     pub command_epoch: u64,
     pub error: Option<String>,
     pub event_page: usize,
+    pub permission_review: Option<String>,
 }
 #[derive(Clone, Debug)]
 pub struct Observation {
@@ -65,6 +66,7 @@ impl SessionModel {
                     self.prompt.clear();
                     self.confirm_start = false;
                     self.event_page = 0;
+                    self.permission_review = None;
                 }
                 if self.executable.is_empty() {
                     self.executable = o
@@ -73,6 +75,13 @@ impl SessionModel {
                         .first()
                         .cloned()
                         .unwrap_or_default();
+                }
+                if self.permission_review.as_ref().is_some_and(|id| {
+                    o.view
+                        .as_ref()
+                        .is_none_or(|v| !v.permissions.iter().any(|p| &p.request_id == id))
+                }) {
+                    self.permission_review = None;
                 }
                 self.capabilities = Some(o.capabilities);
                 self.view = o.view;
@@ -83,6 +92,7 @@ impl SessionModel {
                 self.capabilities = None;
                 self.prompt.clear();
                 self.confirm_start = false;
+                self.permission_review = None;
                 self.error = Some("Session unavailable or access refused".into());
             }
         }
@@ -223,6 +233,32 @@ mod tests {
             }),
         );
         assert_eq!(m.view, Some(view.clone()));
+        let mut next = view.clone();
+        next.permissions = vec![acp_session::Permission {
+            request_id: "permission-1".into(),
+            operation: "synthetic operation".into(),
+            allow_once: Some("once".into()),
+            expires_ms: 123,
+        }];
+        m.receive(
+            "alpha",
+            Ok(Observation {
+                capabilities: cap.clone(),
+                view: Some(next.clone()),
+            }),
+        );
+        m.permission_review = Some("permission-1".into());
+        m.prompt = "old prompt draft".into();
+        next.session_id = "different-process-session".into();
+        m.receive(
+            "alpha",
+            Ok(Observation {
+                capabilities: cap.clone(),
+                view: Some(next),
+            }),
+        );
+        assert!(m.permission_review.is_none());
+        assert!(m.prompt.is_empty());
         m.prompt = "private pending input".into();
         m.receive(
             "beta",

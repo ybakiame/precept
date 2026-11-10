@@ -167,3 +167,12 @@ than asserting it died. Only the direct child is managed. Permission approvals a
 prompt sends also revalidate the registered root; Stop/Cancel/Deny remain available
 when registration drifts. Passive polling has a non-reactive in-flight guard and
 cannot disable keyboard controls or resurrect an older command's result.
+
+
+Pending permissions are shown before the ordinary session summary/prompt. Keyboard
+Alt+I explicitly selects/cycles a specific pending request for review; Alt+N denies
+it and Alt+Y allows only that selected request once. With no selected request,
+Alt+Y has no effect. Selection is revoked on request removal/expiry, session change,
+project/target change and denied reads. Pointer buttons remain individually bound
+to their displayed request. This avoids relying on a fixed number of Tab presses
+to activate an approval and keeps the complete bounded operation visible for review.

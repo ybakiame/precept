@@ -26,7 +26,7 @@ fn main() -> impl std::process::Termination {
     }
     #[cfg(target_os = "linux")]
     linux_probe::install();
-    let mut title = String::from("Agent Control Plane — read-only console");
+    let mut title = String::from("Agent Control Plane — local console");
     if std::env::var_os("ACP_UI_PROBE").is_some()
         && let Ok(id) = std::env::var("ACP_UI_PROBE_ID")
         && id.len() == 16

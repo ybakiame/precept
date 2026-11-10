@@ -40,6 +40,7 @@ catalog! {
     SendPrompt => ("Send prompt", "发送提示词"),
     CancelTurn => ("Cancel turn", "取消本轮"),
     StopSession => ("Stop agent", "停止 Agent"),
+    PermissionKeys => ("Alt I selects/cycles a pending request for review; Alt N denies it; Alt Y allows that selected request once.", "Alt I 选择或切换待决请求以审阅；Alt N 拒绝，Alt Y 仅允许所选请求一次。"),
     PermissionHelp => ("Agent-authored operation below. Default denied after 30s. Allow applies once to this request; Cancel/Stop revokes pending approval. No remembered permissions.", "以下操作由 Agent 描述；30 秒后默认拒绝。允许仅适用于本次请求，取消或停止会撤销待决授权；不记忆授权。"),
     AllowOnce => ("Allow this request once", "仅允许此请求一次"),
     DenyRequest => ("Deny request", "拒绝请求"),

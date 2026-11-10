@@ -111,6 +111,123 @@ fn command(model: Signal<Model>, method: &'static str, mut fields: Value) {
     fields["session_id"] = v.session_id.into();
     request(model, method, fields);
 }
+fn review_permission(model: Signal<Model>) {
+    if !model.get().sessions || !enabled(model) {
+        return;
+    }
+    model.update(|m| {
+        if let Some(v) = &m.session.view {
+            if !v.permissions.is_empty() {
+                let next = m
+                    .session
+                    .permission_review
+                    .as_ref()
+                    .and_then(|id| v.permissions.iter().position(|p| &p.request_id == id))
+                    .map(|n| (n + 1) % v.permissions.len())
+                    .unwrap_or(0);
+                m.session.permission_review = Some(v.permissions[next].request_id.clone());
+            }
+        }
+    });
+}
+fn decide_permission(model: Signal<Model>, allow: bool) {
+    if !model.get().sessions || !enabled(model) {
+        return;
+    }
+    let m = model.get();
+    let Some(id) = m.session.permission_review else {
+        return;
+    };
+    let Some(p) = m
+        .session
+        .view
+        .as_ref()
+        .and_then(|v| v.permissions.iter().find(|p| p.request_id == id))
+    else {
+        return;
+    };
+    if allow && p.allow_once.is_none() {
+        return;
+    }
+    let option = if allow { p.allow_once.clone() } else { None };
+    command(
+        model,
+        "session.permission",
+        json!({"request_id":id,"option_id":option}),
+    );
+}
+fn permissions(model: Signal<Model>) -> impl IntoElement {
+    let pending = computed(move || {
+        let m = model.get();
+        (
+            m.locale,
+            m.session.view.map(|v| v.permissions),
+            m.session.permission_review,
+        )
+    });
+    dynamic(move || {
+        let _ = pending.get();
+        let m = model.get_untracked();
+        let mut body = view().gap_2().flex_shrink_0();
+        if let Some(v) = &m.session.view {
+            for p in &v.permissions {
+                let deny_id = p.request_id.clone();
+                let allow_id = p.request_id.clone();
+                let option = p.allow_once.clone();
+                let mut lines = vec![
+                    m.word(Msg::PermissionHelp).to_owned(),
+                    format!(
+                        "{} {}",
+                        if m.session.permission_review.as_ref() == Some(&p.request_id) {
+                            m.word(Msg::Selected)
+                        } else {
+                            m.word(Msg::PermissionTitle)
+                        },
+                        p.request_id
+                    ),
+                    m.word(Msg::PermissionKeys).to_owned(),
+                ];
+                lines.extend(
+                    p.operation
+                        .chars()
+                        .collect::<Vec<_>>()
+                        .chunks(256)
+                        .map(|s| s.iter().collect::<String>()),
+                );
+                body = body
+                    .child(card(model, m.word(Msg::PermissionTitle), lines))
+                    .child(word_action(
+                        model,
+                        Msg::DenyRequest,
+                        move || enabled(model),
+                        move || {
+                            command(
+                                model,
+                                "session.permission",
+                                json!({"request_id":deny_id,"option_id":null}),
+                            )
+                        },
+                    ))
+                    .child(word_action(
+                        model,
+                        Msg::AllowOnce,
+                        {
+                            let available = option.is_some();
+                            move || enabled(model) && available
+                        },
+                        move || {
+                            command(
+                                model,
+                                "session.permission",
+                                json!({"request_id":allow_id,"option_id":option}),
+                            )
+                        },
+                    ));
+            }
+        }
+        body
+    })
+}
 fn state_word(state: &acp_ui_spike_model::session::State) -> Msg {
     match state {
         acp_ui_spike_model::session::State::Idle => Msg::SessionIdle,
@@ -175,6 +292,9 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
             command(model, "session.stop", json!({}));
         }
     });
+    on_key_with("alt+i", global, move |_| review_permission(model));
+    on_key_with("alt+n", global, move |_| decide_permission(model, false));
+    on_key_with("alt+y", global, move |_| decide_permission(model, true));
     effect(move || {
         if !model.get().sessions || model.get().settings || model.get().connection_editor {
             prompt_ref.blur();
@@ -217,6 +337,7 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
             move || enabled(model),
             move || request(model, "session.refresh", json!({})),
         ))
+        .child(permissions(model))
         .child(dynamic(move || {
             let _ = summary.get();
             let m = model.get_untracked();
@@ -426,51 +547,6 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
             let m = model.get_untracked();
             let mut body = view().gap_2().flex_shrink_0();
             if let Some(v) = &m.session.view {
-                for p in &v.permissions {
-                    let deny_id = p.request_id.clone();
-                    let allow_id = p.request_id.clone();
-                    let option = p.allow_once.clone();
-                    // Complete bounded JSON, never an abbreviated operation next to approval.
-                    let lines = std::iter::once(m.word(Msg::PermissionHelp).to_owned())
-                        .chain(
-                            p.operation
-                                .chars()
-                                .collect::<Vec<_>>()
-                                .chunks(256)
-                                .map(|s| s.iter().collect::<String>())
-                                .collect::<Vec<_>>(),
-                        )
-                        .collect();
-                    body = body
-                        .child(card(model, m.word(Msg::PermissionTitle), lines))
-                        .child(word_action(
-                            model,
-                            Msg::DenyRequest,
-                            move || enabled(model),
-                            move || {
-                                command(
-                                    model,
-                                    "session.permission",
-                                    json!({"request_id":deny_id,"option_id":null}),
-                                )
-                            },
-                        ))
-                        .child(word_action(
-                            model,
-                            Msg::AllowOnce,
-                            {
-                                let available = option.is_some();
-                                move || enabled(model) && available
-                            },
-                            move || {
-                                command(
-                                    model,
-                                    "session.permission",
-                                    json!({"request_id":allow_id,"option_id":option}),
-                                )
-                            },
-                        ));
-                }
                 let start = m.session.event_page * 6;
                 let lines = v.events.iter().skip(start).take(6).cloned().collect();
                 body = body

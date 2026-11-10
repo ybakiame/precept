@@ -15,7 +15,7 @@ def main():
     request = json.loads(sys.argv[1])
     nonce = request["nonce"]
     assert len(nonce) == 16 and all(c in "0123456789abcdef" for c in nonce)
-    title = "Agent Control Plane — read-only console [" + nonce + "]"
+    title = "Agent Control Plane — local console [" + nonce + "]"
     u = ctypes.WinDLL("user32", use_last_error=True)
     u.SetProcessDPIAware()
     u.GetForegroundWindow.restype = W.HWND
@@ -109,6 +109,9 @@ def main():
             "alt+8": ord("8"),
             "alt+9": ord("9"),
             "alt+j": ord("J"),
+            "alt+i": ord("I"),
+            "alt+n": ord("N"),
+            "alt+y": ord("Y"),
             "alt+q": ord("Q"),
             "alt+x": ord("X"),
         }

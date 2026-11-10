@@ -57,7 +57,10 @@ def main():
                 else:
                     keys = {"Tab": [9], "Enter": [13]}.get(sequence)
                     if keys is None:
-                        keys = [0x12, ord(sequence.split("+")[1].upper())]
+                        keys = [
+                            0x11 if sequence.startswith("ctrl+") else 0x12,
+                            ord(sequence.split("+")[1].upper()),
+                        ]
                     inp.chord(*keys)
             else:
                 return window.key(sequence)
@@ -67,12 +70,6 @@ def main():
                 native_wait_marker(proc, marker)
             else:
                 return window.wait(marker)
-
-        def focus_permission(name):
-            key("alt+j")
-            time.sleep(0.3)
-            for _ in range(3 if name == "DenyRequest" else 4):
-                key("Tab")
 
         def capture(name, width=1080, height=760):
             if os.name == "nt":
@@ -110,6 +107,11 @@ def main():
             wait("state=Some(Completed)")
             capture("completed-1080.png")
             capture("completed-640.png", 640, 480)
+            key("ctrl+l")
+            wait("locale=ZhCn")
+            capture("completed-zh-640.png", 640, 480)
+            key("ctrl+l")
+            wait("locale=En")
             terminal = TerminalProbe([str(a.tui.resolve()), *flags])
             terminal.wait("turn completed")
             # Close/reopen actual clients; the same daemon-owned child/session persists.
@@ -169,9 +171,13 @@ def main():
             f.wait("waiting_permission")
             wait("state=Some(WaitingPermission)")
             terminal.wait("waiting for permission")
-            # Actual keyboard activation of Deny after the stable prompt input.
-            focus_permission("DenyRequest")
-            key("Enter")
+            # An unselected permission must never be approved by a shortcut.
+            key("alt+y")
+            assert f.query("session.get")["state"] == "waiting_permission"
+            # Explicit review binds keyboard decisions to that one pending request.
+            key("alt+i")
+            time.sleep(0.1)
+            key("alt+n")
             v = f.wait("completed")
             assert "Permission denied" in " ".join(v["events"])
             wait("state=Some(Completed)")
@@ -182,8 +188,10 @@ def main():
             )
             f.wait("waiting_permission")
             wait("state=Some(WaitingPermission)")
-            focus_permission("AllowOnce")
-            key("Enter")
+            key("alt+i")
+            time.sleep(0.1)
+            capture("permission-reviewed-1080.png")
+            key("alt+y")
             v = f.wait("completed")
             assert "Permission explicitly allowed once" in " ".join(v["events"])
             wait("state=Some(Completed)")
