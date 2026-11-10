@@ -1,62 +1,78 @@
-# P1-F design system — proposal and staging
+# P1-F shared design system — revised B0 staging
 
-Status: **B0, PENDING brand selection**. Candidate palettes live only in the
-synthetic `nsh/src/brand_preview.rs` preview. They are not three production themes.
-The existing E4 `tokens.rs` and five-page console remain the normal application.
-See [candidate identity](../brand/identity.md).
+Owner direction: **one operator product, a selectable theme collection**, informed
+by the supplied concept hierarchy and theme settings references. The revised
+actual Desktop/TUI preview is awaiting owner review before final five-page
+integration. The normal E4 console is still the existing default entry point.
 
-## Shared anatomy and meanings
+## Anatomy and reusable foundation
 
-Keep identity/project scope, page navigation, current read state and historical
-last-read time separate. Desktop at 1080×760 may use a sidebar and paired summary
-panels; 640×480 and terminals stack controls and content without losing scope or
-provenance. TUI at 160×50 / 80×30 shares semantics, shortcuts and state, not pixels.
+`shared/src/appearance.rs` defines framework-independent ThemeId, ColorMode and
+semantic opaque Colors. Instrument, Ledger and Harbor each have Light/Dark pairs;
+all use the same spacing/type/radius/layout. NSH preview components consume these
+tokens for surfaces, text, essential borders, selection, focus, warning and sample
+swatches. System appearance resolves through NSH's actual runtime report. High
+contrast overrides the semantic colors. No OS/terminal configuration is edited.
 
-The selected system will define background, panel, inset, primary/secondary text,
-essential border, accent/on-accent, success, warning, error and focus. Use one
-reusable mapping for normal/light/dark/high contrast; no per-page hardcoded colors.
-Every status also has text. A passed historical check is never a current success
-indicator. Unknown Git/fingerprint is not Clean. Confirmed preference scope/source
-must remain visible even when values truncate.
+Desktop has a custom title bar, ACP/navigation row, explicit synthetic/live source
+state, scrollable page content and shortcut help. The preview supports Overview,
+Handoff and Appearance as B0 samples, not a new sixth production page. Appearance
+contains palette cards, System/Light/Dark, high contrast and language. Its layout
+and content are identical across themes. Theme changes never reset selected scope.
 
-## Candidate layout and type
+Overview follows Workspaces / Agent access → Effective context → Resume context →
+Preference review boundary. Two summary panels remain side by side at 640px; at
+smaller allocations they stack. Only real typed fixture fields populate context;
+there are no invented agent states or completed repository checks.
 
-Preview spacing is 4/8/12/16px, 16px wide gutters, 8px compact gutters, and a 196px
-wide identity/navigation column. A and B use stacked sections; C pairs repository
-and preferences on wide desktop. Corners are A 2px / B 0px / C 12px. System sans body
-is 14px with 12px metadata; titles A/C 22px, B system serif 26px. Monospace is limited
-to compact name sketches and technical values. No font is installed or embedded.
-Terminal rendering uses cell metrics and its configured font.
+| Token | Desktop | Compact / TUI adaptation |
+| --- | --- | --- |
+| Gutters | 16px | 8px; native terminal cell metrics |
+| Spacing | 4 / 8 / 12 / 16px | 4 / 8px |
+| Type | 22px heading / 14px body / 12px metadata | terminal font; CJK width-aware |
+| Panel / control radius | 8px / 6px | same semantics; terminal renderer's own borders |
+| Title bar / caption target | 36px / 40×36px | absent in TUI |
+| Caption vector | centered 14×14px, 24×24 viewBox | absent in TUI |
+| Theme card | fixed 176px width, wraps | sample text, palette, explicit `>` selection |
+| Data bounds | 512 characters per rendered line; six disclosed evidence entries | same bound |
 
-The preview has a bounded Dashboard/Handoff example and explicit candidate/page
-buttons, visible borders/focus, Alt+A/B/C for candidates and Alt+1/4 for pages.
-These exploration keys do not replace the normal console's Alt+1–5, Ctrl/Cmd+F/K/R,
-Tab/Shift+Tab, Esc, paging, explicit copy or TUI Ctrl+Q semantics.
+The title bar uses `WindowFrameStyle::None`, a separate native drag region and
+NSH window requests for minimize/maximize-restore/close. Caption buttons use
+explicit flex centering and SVG paths; their geometric center is independent of
+font baseline. A bottom-right grip initiates native resize. Windows snap flyouts
+and all eight explicit resize edges are not yet claimed.
 
-The owner's title-bar revision is common to all candidates: desktop uses
-`WindowFrameStyle::None`, a 36px opaque app-drawn title bar with a separate drag
-region and explicitly labeled minimize/maximize-restore/close buttons. The bottom
-right grip initiates native resize. Window requests use NSH's existing desktop
-API; no backend fork, system setting or compositor change. Terminal views omit
-the bar and grip. This prototype is staged in preview mode; integrate it with the
-selected five-page design only after B0 selection. Windows snap-layout flyouts and
-all eight resize edges are not claimed by the prototype.
+## i18n foundation
 
-## After owner selection — not implemented yet
+`shared/src/i18n.rs` has a typed, exhaustive English/Simplified Chinese catalog.
+Translate interface labels and explanations at render time. Never translate or
+rewrite user/project values, preference content, task IDs or raw recorded JSON.
+Locale/theme state is independent of the shared typed snapshot and query scope.
+The preview's native and terminal language switches preserve the active workspace
+and task; a workspace switch still clears the selected task. No profile/DB write.
 
-- Consolidate shared cards/rows, badges, inputs, buttons, pagination, disclosure,
-  loading/empty/error/denied/unknown and lost-connection surfaces.
-- Map hover, pressed, focused, disabled and selected states with fixed bounds and
-  visible focus. Measure all applicable text/control pairs in each theme.
-- Preserve request-epoch/scope/cancel/reload behavior and bounded data rendering.
-- Keep reduced-motion behavior static: no decorative animation or essential motion.
-  Document any platform preference that cannot actually be observed.
-- Define a TUI monochrome fallback using labels, selection markers and rules;
-  do not claim a palette alone proves monochrome accessibility.
-- Refine Dashboard, Projects, Preferences, Handoff and Diagnostics after selection;
-  do not add backend data, write actions or task enumeration.
+Runtime preview keys: Alt+1 overview, Alt+4 Handoff, Alt+0 Appearance, Alt+A/B/C
+theme, Ctrl/Cmd+L language, Esc overview. TUI Ctrl+Q restores terminal state.
+These B0 controls do not replace normal console Alt+1–5, filter/task/reconnect,
+Tab/Esc, paging or explicit copy semantics.
 
-Candidate pair calculations meet >=4.5:1 text / >=3:1 essential boundaries as
-recorded in the identity document. Final focus order, full themes, monochrome,
-IME, screen readers and selected-design performance acceptance are **PENDING** or
-**NOT_RUN**, never inferred from palette calculations or E4's earlier results.
+Contrast tests check both modes of every theme plus high contrast. All statuses
+carry text; unknown never means clean, recorded success never means current
+success. No decorative motion is introduced. Full IME/screen readers, additional
+locales and RTL are NOT_RUN / out of the current two-locale implementation.
+
+## After revised B0 review
+
+- Integrate the approved shared components/tokens/catalog into Dashboard, Projects,
+  Preferences, Handoff and Diagnostics, preserving bounded provenance/detail/copy.
+- Preserve stable task/filter inputs, request epochs, cancellation, denied auth,
+  restart/reconnect and exact project/task validation.
+- Translate all five-page interface explanations while keeping protocol and raw
+  evidence byte semantics unchanged. Test both locales at wide/compact sizes.
+- Verify complete focus order, hover/pressed/disabled states and high contrast;
+  preserve the 10k actual-window and terminal workload regression matrix.
+- Keep the read-only backend boundary, ADR Proposed and mobile/niri deferred.
+
+Owner feedback and actual measured evidence are in
+[the evaluation](../evaluation/p1-f-local-ux.md). Palette intent, language and asset
+policy are in [identity](../brand/identity.md).

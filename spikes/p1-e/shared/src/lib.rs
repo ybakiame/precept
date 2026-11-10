@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
 
+pub mod appearance;
+pub mod i18n;
 pub mod presentation;
 
 pub const PAGE_SIZE: usize = 12;

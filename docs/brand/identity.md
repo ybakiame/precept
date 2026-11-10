@@ -1,86 +1,101 @@
-# ACP brand exploration — P1-F / B0
+# ACP identity and theme collection — P1-F
 
-Status: **PENDING owner selection**. This is a proposal, not an adopted identity.
-Working product name remains **Agent Control Plane (ACP)**. Repository, executable,
-CLI, protocol, license and public API names are unchanged. ADR-0003 is Proposed.
+Status: **owner-directed theme collection; revised local preview awaiting review**.
+The owner rejected a mutually exclusive A/B/C choice: the main differences should
+be a theme collection, with one shared information architecture. Agent Control
+Plane (ACP) remains the working product name. No official logo, repository/CLI/API
+rename or final brand acceptance is implied. ADR-0003 remains Proposed.
 
 ## Position and voice
 
 A local-first context and policy layer for developers operating coding agents.
-The console makes project scope, preference provenance, previous Handoff evidence
-and observed local service state understandable. Its authority comes from current
-repository facts and accepted ADRs, not a brand treatment or stored preferences.
+Show project scope, confirmed preference provenance, observed repository facts and
+historical Handoff evidence clearly. Repository facts and accepted ADRs outrank
+stored preferences and previous handoffs. Use calm, direct language: Unknown,
+Not run and Last successful read instead of invented assurance or activity.
 
-Use precise, calm, direct language. Name the observation, its scope and the next
-available action. Say “Last successful read” rather than “Always online”; say
-“Recorded validation” rather than “Tests passing” when evidence is historical.
-Use explicit Unknown / Not run / Access refused states. No invented histories,
-security certification, decorative charts, marketing slogans or activity pulses.
+## Recorded owner revisions
 
-## Three candidate directions
+- Treat Instrument, Ledger and Harbor as selectable themes of one product.
+- Use the supplied theme-picker reference for palette cards and separate appearance
+  controls, without copying its font assets, configuration or integration behavior.
+- Refine the supplied concept hierarchy: Workspaces / Agent access → Effective
+  context → Handoff and preference review boundaries.
+- Draw a custom title bar. Correct minimize/maximize/close centering.
+- Add i18n. The revised preview supports English and Simplified Chinese.
 
-These are visual direction labels, **not proposed product renames**. The preview
-has actual NSH Desktop/TUI rendering, two illustrative pages and synthetic text
-only. It never connects to a daemon, reads a repository or opens a user database.
+These are actual requested changes. Acceptance of the revised rendered layout and
+the final five-page implementation is still pending; do not invent that feedback.
 
-| | A — Instrument / 精密仪表 | B — Ledger / 工作手册 | C — Harbor / 分层工作台 |
+## One visual language
+
+All themes use system sans typography, a 14px body, 12px metadata, 22px headings,
+8px panel corners, 6px control corners and the same 4/8/12/16px spacing scale.
+Neither typeface, density, content ordering nor navigation changes with palette.
+The name treatment is consistently `ACP` plus Agent Control Plane in the title bar.
+No provisional theme-specific wordmark is used as an official identity.
+
+| Theme | Intent | Light background / accent | Dark background / accent |
 | --- | --- | --- | --- |
-| Character | Compact, exact, technical | Warm, deliberate, evidence-led | Calm, approachable, clearly grouped |
-| Name sketch | `[ ACP ]`, monospaced, square frame implied by text | `ACP /`, serif heading, numbered sections | `= ACP`, two text rules suggest parallel planes |
-| Background / panel | `#111718` / `#1B2425` | `#F4F0E7` / `#FFFCF5` | `#131C30` / `#202D46` |
-| Text / secondary | `#EAF2EE` / `#A6BAB2` | `#302B25` / `#695E50` | `#EDF2FC` / `#B3C2DB` |
-| Accent / warning | `#9EE6BE` / `#F3CC86` | `#8E3E26` / `#805005` | `#B5C8FF` / `#FFD394` |
-| Essential border | `#738D83` | `#8B7E6A` | `#7C91B4` |
-| Shape / grouping | 2px corners, single-column instrument panels | Square paper blocks, chapter labels | 12px corners, paired summary panels when wide |
-| Typography | System sans body, mono wordmark/Git values | System serif headings, sans body, mono Git values | System sans headings/body, mono technical values |
-| Dashboard | Stacked measured facts, restrained mint emphasis | Numbered repository/preference/resume sections | Side-by-side repository/preferences, continuation below |
-| Handoff | Objective → action → uncertainty → recorded checks | A short evidence-led working note | Separate action, uncertainty and evidence surfaces |
-| TUI | Compact rules, labels before values | Same chapters; terminal font, no serif imitation | Paired desktop panels stack; preserve labels |
-| Tradeoff | Highest technical density; can feel austere | Strongest difference from generic developer tools; serif varies by OS | Easiest visual grouping; uses more space and is closer to familiar workspace UI |
+| Instrument | restrained green / technical | `#F1F5F2` / `#246046` | `#111718` / `#9EE6BE` |
+| Ledger | warm paper / earthy | `#F4F0E7` / `#8E3E26` | `#211F1B` / `#EDB095` |
+| Harbor | cool neutral / blue | `#F2F4F9` / `#344E9C` | `#131C30` / `#B5C8FF` |
 
-All directions use a 14px desktop body and 12px metadata; Ledger explores 26px
-serif titles versus 22px sans titles. Terminal typography uses the owner's terminal
-font/cell metrics. Compact layout uses wrapping controls and a stacked content
-column. CJK/emoji use system fallback; no font download or font binary is added.
+Theme cards show a type sample, semantic color dots and a textual `>` selection
+marker. Appearance is independently Light / Dark / System, with a high-contrast
+override. System follows the appearance reported by the current NSH runtime; it
+does not modify OS settings or read another application's configuration.
+The pure shared token table is in `spikes/p1-e/shared/src/appearance.rs`.
 
-### Measured candidate contrast
+### Measured opaque token contrast
 
-WCAG relative-luminance calculation of the opaque token pairs (sRGB). Minimum
-across background/panel/inset; these are palette measurements, not a complete
-accessibility audit or a claim about all final interaction states.
+Minimum across background/panel/inset; normal text includes text, muted, accent,
+warning/error/success and text on the selected accent. These measurements do not
+claim a complete accessibility certification or screen-reader verification.
 
-| Candidate | Main text | Secondary text | Accent text | Warning text | Essential border | Selected text/accent |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| A | 11.48:1 | 6.41:1 | 9.04:1 | 8.59:1 | 3.65:1 | 11.36:1 |
-| B | 10.78:1 | 4.87:1 | 5.63:1 | 5.26:1 | 3.05:1 | 7.15:1 |
-| C | 10.02:1 | 6.24:1 | 6.79:1 | 8.03:1 | 3.52:1 | 9.20:1 |
+| Theme / mode | Minimum text ratio | Minimum essential boundary ratio |
+| --- | ---: | ---: |
+| Instrument light | 5.56:1 | 3.61:1 |
+| Instrument dark | 6.41:1 | 3.65:1 |
+| Ledger light | 4.87:1 | 3.05:1 |
+| Ledger dark | 5.82:1 | 3.54:1 |
+| Harbor light | 5.39:1 | 3.25:1 |
+| Harbor dark | 6.24:1 | 3.52:1 |
 
-Normal text target is >=4.5:1; essential control boundary target is >=3:1. All
-candidate preview colors meet those targets. Final light/dark/high-contrast,
-hover/pressed/disabled and actual keyboard focus require the selected-system pass.
+Shared regression tests check all six palettes and the high-contrast override
+against >=4.5:1 text / >=3:1 essential boundaries. Terminal meaning also uses text
+and selection markers; a palette alone is not proof of monochrome accessibility.
 
-## Mark, icon and asset policy
+## Concept hierarchy and product truth
 
-The three text sketches are provisional name treatments, not official logos.
-Do not set an application icon, rename a package or publish a new identity from
-this exploration. If chosen, a small code-defined mark can be reviewed separately.
-Use a consistent simple outline/rule vocabulary with visible text labels; never
-rely on color or an unfamiliar icon alone. Avoid raster artwork, gradients,
-decorative motion and external font services. Existing repository licenses apply
-to new code; no stock assets, third-party font binaries or new artwork licenses.
+- Workspaces: only allowlisted scope in live operation; the preview uses alpha/beta
+  from the built-in fixture. Switching clears the exact task selection.
+- Agent access: explain scoped read-only MCP and show unobserved client presence.
+  No Codex/Pi/OpenCode online status, launch controls or fabricated client list.
+- Effective context: distinguish metadata-only contract references from document
+  bodies; confirmed records from suggestions; observed Git facts from verification.
+- Handoff: exact selected task, recorded objective/next action and opaque historical
+  evidence remain separate from current HEAD/fingerprint uncertainty.
+- Preference review: explicitly unavailable in this read-only console. No fake
+  confirm/reject buttons and no suggestion auto-approval. A future review surface
+  requires the full view/confirm/reject/deprecate/delete/provenance workflow.
 
-## B0 review record
+## Language and assets
 
-- Owner revision: use a custom title bar, not the system title bar. All three
-  desktop candidates now draw their own opaque bar and window buttons, with a
-  drag region and resize grip. TUI does not render desktop window controls.
-- Selected direction: **PENDING**.
-- Owner revision notes: **PENDING**; no feedback is inferred from E4 acceptance.
-- E4 base UI was accepted as a starting point only, not a brand choice.
-- Review actual synthetic desktop at 1080×760 and 640×480 and terminal adaptation
-  at 160×50 / 80×30. Choose A/B/C or request a concrete combination/revision.
-- After selection, implement one reusable semantic system and all five pages on
-  this branch. Until then, keep the normal console on its existing E4 design.
+The exhaustive typed catalog in `shared/src/i18n.rs` covers the revised preview's
+navigation, settings, state explanations, window controls and accessible labels.
+UI language changes at runtime without changing project/task data. Project names,
+preference keys/values and raw validation JSON keep their original language.
+Both locale catalogs are tested for completeness. Additional languages, regional
+date/number formatting and RTL are not claimed.
 
-See [design-system staging](../p1/ui-design-system.md) and
+Use system fonts and CJK fallback; TUI uses the owner's terminal font. No font
+binary, downloaded artwork or reference screenshot is committed. Window-control
+icons are code-defined vectors centered in the same 14px box within 40×36px
+buttons; glyph font metrics are not used. No decorative motion or gradients.
+
+Appearance and language currently live only for the preview session. The normal
+E4 console remains staged separately until the revised B0 layout is reviewed and
+the chosen system is integrated through all five pages. See the
+[design-system staging](../p1/ui-design-system.md) and
 [local evidence](../evaluation/p1-f-local-ux.md).

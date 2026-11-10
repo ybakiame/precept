@@ -28,10 +28,11 @@ class TerminalProbe:
         import pty
         import termios
         import pyte
+        from terminal_screen import Screen
         self.master, slave = pty.openpty()
         self.original_termios = termios.tcgetattr(slave)
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 50, 160, 0, 0))
-        self.screen = pyte.Screen(160, 50)
+        self.screen = Screen(160, 50)
         self.stream = pyte.Stream(self.screen)
         self.decode = codecs.getincrementaldecoder("utf-8")("replace")
         env = {**os.environ, "TERM": "xterm-256color", "COLORTERM": "truecolor"}
@@ -100,6 +101,7 @@ class TerminalProbe:
 
     def _windows_init(self, command):
         import pyte
+        from terminal_screen import Screen
         from winpty import PTY, Backend
         # Use the low-level ConPTY binding. PtyProcess adds a TCP listener;
         # this direct pipe reader deliberately never opens one.
@@ -109,7 +111,7 @@ class TerminalProbe:
         block = "\0".join(k + "=" + v for k, v in env.items()) + "\0"
         self.started = time.monotonic()
         assert self.pty.spawn(str(command[0]), cmdline=" " + subprocess.list2cmdline(command[1:]), cwd=os.getcwd(), env=block)
-        self.screen = pyte.Screen(160, 50)
+        self.screen = Screen(160, 50)
         self.stream = pyte.Stream(self.screen)
         pty = self.pty
         class Process:
