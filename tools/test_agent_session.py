@@ -418,10 +418,12 @@ class AgentSessionTests(unittest.TestCase):
             v = f.launch("permission")
             f.query("session.prompt", session_id=v["session_id"], prompt="pending")
             pending = f.wait("waiting_permission")["permissions"][0]
+            drifted = f.root / "drifted-root"
+            drifted.mkdir()
             with closing(sqlite3.connect(f.db)) as db, db:
                 db.execute(
                     "UPDATE projects SET root=? WHERE name=?",
-                    (str(f.root / "fixture/beta"), "alpha"),
+                    (str(drifted), "alpha"),
                 )
             self.assertEqual(
                 f.query(
