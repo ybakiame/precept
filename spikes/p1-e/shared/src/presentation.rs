@@ -1,4 +1,5 @@
 //! Framework-independent page content. Every returned string is display data.
+use crate::i18n::{Locale, Msg};
 use crate::{Model, PAGE_SIZE, Phase, Section};
 
 pub fn sanitize(value: &str, limit: usize) -> String {
@@ -14,13 +15,13 @@ pub fn sanitize(value: &str, limit: usize) -> String {
 impl Model {
     pub fn read_label(&self) -> &'static str {
         match self.phase {
-            Phase::Loading => "Reading…",
-            Phase::Ready if !self.live => "Synthetic snapshot ready",
-            Phase::Ready => "Last read succeeded",
-            Phase::Empty => "No allowlisted projects",
-            Phase::Error => "Invalid task ID",
-            Phase::Unavailable if self.permission_denied => "Access refused",
-            Phase::Unavailable => "Disconnected",
+            Phase::Loading => self.word(Msg::Reading),
+            Phase::Ready if !self.live => self.word(Msg::SyntheticReady),
+            Phase::Ready => self.word(Msg::ReadSucceeded),
+            Phase::Empty => self.word(Msg::EmptyProjects),
+            Phase::Error => self.word(Msg::InvalidTask),
+            Phase::Unavailable if self.permission_denied => self.word(Msg::AccessRefused),
+            Phase::Unavailable => self.word(Msg::Disconnected),
         }
     }
     pub fn source_label(&self) -> &'static str {
@@ -34,7 +35,8 @@ impl Model {
         self.last_read_ms
             .map(|t| {
                 format!(
-                    "Last successful read {:02}:{:02}:{:02} UTC",
+                    "{} {:02}:{:02}:{:02} UTC",
+                    self.word(Msg::LastRead),
                     (t / 3_600_000) % 24,
                     (t / 60_000) % 60,
                     (t / 1000) % 60
@@ -42,9 +44,9 @@ impl Model {
             })
             .unwrap_or_else(|| {
                 if self.live {
-                    "No successful live read yet".into()
+                    self.word(Msg::NoRead).into()
                 } else {
-                    "Offline synthetic snapshot".into()
+                    self.word(Msg::Offline).into()
                 }
             })
     }
@@ -55,6 +57,9 @@ impl Model {
         let Some(p) = self.project() else {
             return vec!["No project selected".into()];
         };
+        if self.locale == Locale::ZhCn {
+            return self.chinese_lines();
+        }
         let mut lines = vec![format!("Project: {}", p.name)];
         match self.section {
             Section::Dashboard => {
@@ -122,6 +127,122 @@ impl Model {
                         p.context.documents.len()
                     ));
                 }
+            }
+        }
+        lines
+            .into_iter()
+            .take(48)
+            .map(|s| sanitize(&s, 512))
+            .collect()
+    }
+    fn chinese_lines(&self) -> Vec<String> {
+        let Some(p) = self.project() else {
+            return vec![self.word(Msg::NoProject).into()];
+        };
+        let mut lines = vec![format!("{}: {}", self.word(Msg::Project), p.name)];
+        match self.section {
+            Section::Projects => {
+                lines.push(self.word(Msg::ProjectsHelp).into());
+                lines.push(self.word(Msg::RepositoryHelp).into());
+                lines.extend(p.context.warnings.iter().take(8).cloned());
+            }
+            Section::Handoff => {
+                if let Some(h) = p
+                    .handoff
+                    .as_ref()
+                    .filter(|h| h.task_id == self.queried_task)
+                {
+                    lines.extend([
+                        format!("{} {}: {}", self.word(Msg::Handoff), h.task_id, h.objective),
+                        format!("{}: {}", self.word(Msg::NextAction), h.next_action),
+                        format!(
+                            "{}: {}",
+                            self.word(Msg::Fingerprint),
+                            h.current_repository
+                                .get("worktree_fingerprint")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or(self.word(Msg::FingerprintUnavailable))
+                        ),
+                        self.word(Msg::HistoricalEvidence).into(),
+                        self.word(Msg::EarlierNotCurrent).into(),
+                    ]);
+                    lines.extend(h.resume_warnings.iter().take(8).cloned());
+                    if self.expanded {
+                        lines.extend(
+                            h.validation
+                                .iter()
+                                .skip(self.evidence_page * 6)
+                                .take(6)
+                                .map(|v| v.to_string()),
+                        );
+                    } else {
+                        lines.push(format!(
+                            "{} {}",
+                            h.validation.len(),
+                            self.word(Msg::HistoricalEntries)
+                        ));
+                    }
+                } else if self.queried_task.is_empty() {
+                    lines.push(self.word(Msg::HandoffEmpty).into());
+                } else {
+                    lines.push(format!(
+                        "{} {} · {}",
+                        self.word(Msg::HandoffMissing),
+                        self.queried_task,
+                        self.word(Msg::InProject)
+                    ));
+                }
+            }
+            Section::Diagnostics => {
+                lines.extend(
+                    [
+                        Msg::ProtocolHelp,
+                        Msg::FrameworkHelp,
+                        Msg::ConsoleHelp,
+                        Msg::CopyHelp,
+                        Msg::HealthHelp,
+                        Msg::ContractsHelp,
+                    ]
+                    .map(|k| self.word(k).into()),
+                );
+                if self.expanded {
+                    lines.extend(
+                        p.context
+                            .documents
+                            .iter()
+                            .skip(self.evidence_page * 6)
+                            .take(6)
+                            .map(|v| v.to_string()),
+                    );
+                } else {
+                    lines.push(format!(
+                        "{} {}",
+                        p.context.documents.len(),
+                        self.word(Msg::ContractEntries)
+                    ));
+                }
+            }
+            Section::Preferences => {
+                lines.push(self.word(Msg::PreferencesHeading).into());
+                lines.push(self.page_label());
+                lines.extend(
+                    self.rows()
+                        .into_iter()
+                        .skip(self.page * PAGE_SIZE)
+                        .take(PAGE_SIZE)
+                        .map(|r| {
+                            format!(
+                                "{} = {} [{} / {}]",
+                                sanitize(&r.key, 64),
+                                sanitize(&r.value, 160),
+                                sanitize(&r.scope, 64),
+                                sanitize(&r.source, 80)
+                            )
+                        }),
+                );
+            }
+            Section::Dashboard => {
+                lines.push(self.word(Msg::ContextHelp).into());
             }
         }
         lines

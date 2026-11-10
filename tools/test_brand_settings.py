@@ -23,11 +23,12 @@ def main():
     p.add_argument("--desktop", type=Path, required=True)
     p.add_argument("--tui", type=Path, required=True)
     p.add_argument("--out", type=Path, required=True)
+    p.add_argument("--product", action="store_true")
     args = p.parse_args()
     out = args.out.resolve()
     assert out.is_relative_to(ROOT / "artifacts/local-p1-f")
     out.mkdir(parents=True, exist_ok=True, mode=0o700)
-    flags = ["--brand-preview", "c"]
+    flags = [] if args.product else ["--brand-preview", "c"]
     proc, window, _ = native_start([str(args.desktop.resolve()), *flags])
     try:
         if os.name == "nt":
@@ -70,16 +71,28 @@ def main():
         send("ctrl+l")
         wait("locale=ZhCn")
         send("alt+0")
-        wait("page=Appearance locale=ZhCn")
+        wait(
+            "settings=true locale=ZhCn"
+            if args.product
+            else "page=Appearance locale=ZhCn"
+        )
         send("alt+b")
-        wait("theme=Ledger page=Appearance locale=ZhCn")
+        wait(
+            "settings=true locale=ZhCn theme=Ledger"
+            if args.product
+            else "theme=Ledger page=Appearance locale=ZhCn"
+        )
         time.sleep(0.2)
         if os.name == "nt":
             capture_owned_window(window, out / "settings-switched.png")
         else:
             window.capture(out / "settings-switched.png", frameless=True)
         send("ctrl+l")
-        wait("theme=Ledger page=Appearance locale=En")
+        wait(
+            "settings=true locale=En theme=Ledger"
+            if args.product
+            else "theme=Ledger page=Appearance locale=En"
+        )
     finally:
         native_close(window)
         stop(proc)
@@ -87,7 +100,7 @@ def main():
     try:
         terminal.wait("Agent access")
         terminal.send(b"\x0c")
-        terminal.wait("有效上下文")
+        terminal.wait("Daemon 状态" if args.product else "有效上下文")
         terminal.send(b"\x1b0")
         terminal.wait("主题集")
         terminal.send(b"\x1bb")
@@ -96,6 +109,7 @@ def main():
         terminal.wait("Theme collection")
         terminal.resize(80, 30)
         terminal.wait("Theme collection")
+        terminal.settle()
         (out / "settings-interaction-80.txt").write_text(
             "\n".join(terminal.screen.display) + "\n", encoding="utf-8"
         )

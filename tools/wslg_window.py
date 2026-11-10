@@ -137,11 +137,14 @@ def main():
         x, y = request["position"]
         bounds = W.RECT()
         assert u.GetWindowRect(hwnd, ctypes.byref(bounds))
-        assert (
-            0 <= x < bounds.right - bounds.left - 64
-            and 0 <= y < bounds.bottom - bounds.top - 100
+        left, top, right, bottom = (
+            (0, 0, 0, 0) if request.get("frameless") else (32, 66, 32, 34)
         )
-        point = W.POINT(bounds.left + 32 + x, bounds.top + 66 + y)
+        assert (
+            0 <= x < bounds.right - bounds.left - left - right
+            and 0 <= y < bounds.bottom - bounds.top - top - bottom
+        )
+        point = W.POINT(bounds.left + left + x, bounds.top + top + y)
         u.WindowFromPoint.argtypes = [W.POINT]
         u.WindowFromPoint.restype = W.HWND
         u.GetAncestor.argtypes = [W.HWND, W.UINT]

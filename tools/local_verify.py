@@ -404,6 +404,63 @@ def main():
                 if name == "desktop-smoke" and platform.system() == "Linux":
                     name = "wayland-native"
                 results.append(run_gate(name, command, directory, env))
+        for name, command in [
+            ("terminal-cells", [PY, "tools/test_terminal_screen.py"]),
+            (
+                "p1f-settings",
+                [
+                    PY,
+                    "tools/test_brand_settings.py",
+                    "--product",
+                    "--desktop",
+                    f"spikes/p1-e/nsh/target/release/acp-nsh-native{suffix}",
+                    "--tui",
+                    f"spikes/p1-e/nsh/target/release/acp-nsh-tui{suffix}",
+                    "--out",
+                    str(directory / "settings"),
+                ],
+            ),
+            (
+                "p1f-chrome",
+                [
+                    PY,
+                    "tools/test_brand_chrome.py",
+                    "--product",
+                    "--binary",
+                    f"spikes/p1-e/nsh/target/release/acp-nsh-native{suffix}",
+                    "--out",
+                    str(directory / "chrome"),
+                ],
+            ),
+            (
+                "p1f-previews",
+                [
+                    PY,
+                    "tools/capture_product_previews.py",
+                    "--desktop",
+                    f"spikes/p1-e/nsh/target/release/acp-nsh-native{suffix}",
+                    "--tui",
+                    f"spikes/p1-e/nsh/target/release/acp-nsh-tui{suffix}",
+                    "--locale",
+                    "zh-CN",
+                    "--out",
+                    str(directory / "previews"),
+                ],
+            ),
+        ]:
+            if any(
+                r["name"] == "nsh-host-release" and r["status"] == "PASS"
+                for r in results
+            ):
+                results.append(run_gate(name, command, directory, env))
+            else:
+                results.append(
+                    dict(
+                        name=name,
+                        status="NOT_RUN",
+                        reason="fresh host release unavailable",
+                    )
+                )
         package = [
             PY,
             "tools/package_local_console.py",
@@ -613,6 +670,12 @@ def main():
     report["e4_host_acceptance"] = (
         ("PASS_LOCAL_WINDOWS" if os.name == "nt" else "PASS_LOCAL_WSL")
         if local_pass
+        else "INCOMPLETE"
+    )
+    report["p1f_host_checks"] = (
+        "PASS"
+        if local_pass
+        and {"terminal-cells", "p1f-settings", "p1f-chrome", "p1f-previews"} <= passed
         else "INCOMPLETE"
     )
     report["owner_ui_review"] = "ACCEPTED_BASE_UI" if args.owner_reviewed else "PENDING"

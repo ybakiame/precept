@@ -1,10 +1,11 @@
 # ACP identity and theme collection — P1-F
 
-Status: **owner-directed theme collection; revised local preview awaiting review**.
-The owner rejected a mutually exclusive A/B/C choice: the main differences should
-be a theme collection, with one shared information architecture. Agent Control
-Plane (ACP) remains the working product name. No official logo, repository/CLI/API
-rename or final brand acceptance is implied. ADR-0003 remains Proposed.
+Status: **owner approved the revised base for detailed implementation**. The
+owner said “可以以此版本为基础吧” and requested logic/UI refinement, a modest
+icon set, Daemon status and Windows GUI access to both Windows and WSL Daemons.
+Instrument / Ledger / Harbor form one theme collection. Agent Control Plane (ACP)
+remains the working name; no official logo or repository/CLI/API rename is made.
+ADR-0003 remains Proposed. Final implementation review is recorded separately.
 
 ## Position and voice
 
@@ -24,8 +25,8 @@ Not run and Last successful read instead of invented assurance or activity.
 - Draw a custom title bar. Correct minimize/maximize/close centering.
 - Add i18n. The revised preview supports English and Simplified Chinese.
 
-These are actual requested changes. Acceptance of the revised rendered layout and
-the final five-page implementation is still pending; do not invent that feedback.
+The revised base is accepted for implementation. This does not imply owner review
+of every subsequent five-page or connection-editor revision.
 
 ## One visual language
 
@@ -82,7 +83,7 @@ and selection markers; a palette alone is not proof of monochrome accessibility.
 
 ## Language and assets
 
-The exhaustive typed catalog in `shared/src/i18n.rs` covers the revised preview's
+The exhaustive typed catalog in `shared/src/i18n.rs` covers the actual console's
 navigation, settings, state explanations, window controls and accessible labels.
 UI language changes at runtime without changing project/task data. Project names,
 preference keys/values and raw validation JSON keep their original language.
@@ -94,8 +95,7 @@ binary, downloaded artwork or reference screenshot is committed. Window-control
 icons are code-defined vectors centered in the same 14px box within 40×36px
 buttons; glyph font metrics are not used. No decorative motion or gradients.
 
-Appearance and language currently live only for the preview session. The normal
-E4 console remains staged separately until the revised B0 layout is reviewed and
-the chosen system is integrated through all five pages. See the
-[design-system staging](../p1/ui-design-system.md) and
-[local evidence](../evaluation/p1-f-local-ux.md).
+Appearance, language and explicit connection drafts are session-only. The actual
+five-page Desktop/TUI consumes the same palette and catalog. The strict synthetic
+`--brand-preview` root preserves the historical B0 comparison; it never opens IPC.
+See [design system](../p1/ui-design-system.md) and [local evidence](../evaluation/p1-f-local-ux.md).

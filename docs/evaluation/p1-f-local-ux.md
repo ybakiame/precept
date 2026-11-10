@@ -1,5 +1,42 @@
 # P1-F local brand/UI evidence
 
+The owner accepted the revised base: “可以以此版本为基础吧”, then requested detailed
+logic/UI refinement, modest icons, Daemon state and Windows GUI access to Windows
+and WSL Daemons. This authorizes five-page integration; final after-implementation
+UI review is tracked separately. No product rename or official logo was selected.
+
+## Integrated implementation (local validation in progress)
+
+The default actual NSH Desktop/TUI now uses the shared theme collection, bilingual
+catalog, custom chrome and refined five pages. Separate connection drafts support
+Windows named-pipe IPC, Linux Unix IPC and explicit Windows-owner WSL helper
+access. Switching targets atomically invalidates pending reads and old scope,
+tasks/evidence/time. Invalid drafts cannot silently fall back to synthetic data.
+Status is the last query observation, never an always-online assertion.
+
+Raw synthetic images/logs are private under `artifacts/local-p1-f/product/`.
+Initial visual inspection found compact summary-card shrink and incomplete VT
+capture issues; content sizing and complete redraw consumption were corrected.
+Pointer regression needed the new frameless geometry rather than old CSD offsets;
+failed exploratory logs are retained privately. These failures were not treated
+as acceptance passes. Final tested SHA and full result matrix follow after the
+clean host companion run.
+
+Production backend/authorization/protocol/SQLite/fingerprint behavior is unchanged.
+The only backend-file diff is inside a test: Tokio may complete a fast Git child
+before polling an expired zero timeout, so that assertion permits the authentic
+completed output. Unix additionally exercises a real bounded timeout with Git's
+built-in infinite `/dev/zero` read, followed by a normal query. No shell, external
+fixture executable, repository write or production timeout change is introduced.
+
+GitHub Actions, niri/mobile/macOS, full IME/screen-reader and real OS clipboard
+checks are not claimed. ADR-0003 remains Proposed. Historical B0 evidence below
+retains its original scope and review status; it is not final implementation evidence.
+
+---
+
+# Historical B0 local brand/UI evidence
+
 Status: **revised B0 theme-collection preview; owner layout review PENDING**. The
 owner requested one layout with selectable themes, corrected caption centering,
 the supplied concept hierarchy and i18n. No final brand acceptance or complete

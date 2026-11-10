@@ -13,11 +13,17 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--binary", type=Path, required=True)
     p.add_argument("--out", type=Path, required=True)
+    p.add_argument("--product", action="store_true")
     args = p.parse_args()
     out = args.out.resolve()
     assert out.is_relative_to(ROOT / "artifacts/local-p1-f")
     out.mkdir(parents=True, exist_ok=True, mode=0o700)
-    proc, window, _ = native_start([str(args.binary.resolve()), "--brand-preview", "a"])
+    proc, window, _ = native_start(
+        [
+            str(args.binary.resolve()),
+            *([] if args.product else ["--brand-preview", "a"]),
+        ]
+    )
     try:
         if os.name == "nt":
             import ctypes

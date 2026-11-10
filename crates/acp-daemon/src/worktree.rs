@@ -553,7 +553,23 @@ mod tests {
         let dir = repo();
         let root = dir.path();
         assert!(git_bytes(root, &["log", "--oneline"], 1, Duration::from_secs(4)).is_none());
-        assert!(git_bytes(root, &["status"], 65536, Duration::ZERO).is_none());
+        // Tokio may poll an already-ready child before its expired timer.
+        // A zero budget may therefore return the real result; it must never be corrupt.
+        let expected = git_bytes(root, &["status"], 65536, Duration::from_secs(4)).unwrap();
+        let immediate = git_bytes(root, &["status"], 65536, Duration::ZERO);
+        assert!(immediate.is_none_or(|raw| raw == expected));
+        // An endless built-in read exercises actual timeout/kill/reap without a
+        // scheduler race, shell, executable fixture or repository mutation.
+        #[cfg(unix)]
+        assert!(
+            git_bytes(
+                root,
+                &["hash-object", "/dev/zero"],
+                65536,
+                Duration::from_millis(30)
+            )
+            .is_none()
+        );
         assert!(git_bytes(root, &["not-a-command"], 65536, Duration::from_secs(4)).is_none());
         assert!(git_bytes(root, &["rev-parse", "HEAD"], 65536, Duration::from_secs(4)).is_some());
     }

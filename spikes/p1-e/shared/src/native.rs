@@ -6,6 +6,19 @@ use std::path::PathBuf;
 
 #[derive(Clone, Parser, Default)]
 pub struct Inputs {
+    /// UI locale only; never translates stored values or protocol evidence.
+    #[arg(long, value_parser=["en","zh-CN"], default_value="en")]
+    pub locale: String,
+    #[arg(long, value_parser=["system","light","dark"], default_value="dark")]
+    pub appearance: String,
+    #[arg(long, value_parser=["instrument","ledger","harbor"], default_value="harbor")]
+    pub theme: String,
+    #[arg(long, value_parser=["dashboard","projects","preferences","handoff","diagnostics"], default_value="dashboard")]
+    pub section: String,
+    #[arg(long)]
+    pub settings: bool,
+    #[arg(long)]
+    pub connection_settings: bool,
     /// Explicit private runtime; omit both location flags for offline synthetic data.
     #[arg(long, requires = "endpoint")]
     pub runtime_dir: Option<PathBuf>,
@@ -34,6 +47,55 @@ pub struct Inputs {
     pub wsl_endpoint: Option<String>,
 }
 impl Inputs {
+    pub fn connection(&self) -> crate::connection::Connection {
+        use crate::connection::{Connection, Target};
+        Connection {
+            target: if self.wsl_distribution.is_some() {
+                Target::Wsl
+            } else if self.runtime_dir.is_some() {
+                Target::Local
+            } else {
+                Target::Synthetic
+            },
+            runtime: self
+                .runtime_dir
+                .as_ref()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            endpoint: self.endpoint.clone().unwrap_or_default(),
+            distribution: self.wsl_distribution.clone().unwrap_or_default(),
+            user: self.wsl_user.clone().unwrap_or_default(),
+            helper: self.wsl_snapshot.clone().unwrap_or_default(),
+            wsl_runtime: self.wsl_runtime_dir.clone().unwrap_or_default(),
+            wsl_endpoint: self.wsl_endpoint.clone().unwrap_or_default(),
+            synthetic_rows: self.synthetic_rows,
+        }
+    }
+    pub fn from_connection(c: &crate::connection::Connection) -> Result<Self, &'static str> {
+        use crate::connection::Target;
+        if !c.validate() {
+            return Err("Invalid connection inputs");
+        }
+        Ok(match c.target {
+            Target::Synthetic => Self {
+                synthetic_rows: c.synthetic_rows,
+                ..Default::default()
+            },
+            Target::Local => Self {
+                runtime_dir: Some(c.runtime.clone().into()),
+                endpoint: Some(c.endpoint.clone()),
+                ..Default::default()
+            },
+            Target::Wsl => Self {
+                wsl_distribution: Some(c.distribution.clone()),
+                wsl_user: Some(c.user.clone()),
+                wsl_snapshot: Some(c.helper.clone()),
+                wsl_runtime_dir: Some(c.wsl_runtime.clone()),
+                wsl_endpoint: Some(c.wsl_endpoint.clone()),
+                ..Default::default()
+            },
+        })
+    }
     pub fn is_live(&self) -> bool {
         self.runtime_dir.is_some() || self.wsl_distribution.is_some()
     }

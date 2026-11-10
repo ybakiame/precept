@@ -1,4 +1,5 @@
 """Assemble an unsigned development archive on this host; never publish/install."""
+
 import argparse
 import hashlib
 import json
@@ -16,21 +17,40 @@ def main():
     p.add_argument("--wayland-report", type=Path)
     args = p.parse_args()
     suffix = ".exe" if platform.system() == "Windows" else ""
-    files = [ROOT / "spikes/p1-e/nsh/target/release" / (name + suffix) for name in ["acp-nsh-native", "acp-nsh-tui"]]
+    files = [
+        ROOT / "spikes/p1-e/nsh/target/release" / (name + suffix)
+        for name in ["acp-nsh-native", "acp-nsh-tui"]
+    ]
     if not all(f.is_file() for f in files):
         print("NOT_RUN: both host release executables required")
         return
     if platform.system() == "Linux":
         if not args.wayland_report or not args.wayland_report.is_file():
-            print("BLOCKED: Linux desktop packaging requires an explicit passing Wayland report"); return 2
+            print(
+                "BLOCKED: Linux desktop packaging requires an explicit passing Wayland report"
+            )
+            return 2
         observed = json.loads(args.wayland_report.read_text())
-        if observed.get("acceptance") not in ("RUN_PASS_WAYLAND_WSLG", "RUN_PASS_WAYLAND_NIRI") or observed.get("status") != "PASS" or observed.get("binary_sha256") != hashlib.sha256(files[0].read_bytes()).hexdigest():
-            print("BLOCKED: Wayland report does not certify this Linux desktop binary"); return 2
+        if (
+            observed.get("acceptance")
+            not in ("RUN_PASS_WAYLAND_WSLG", "RUN_PASS_WAYLAND_NIRI")
+            or observed.get("status") != "PASS"
+            or observed.get("binary_sha256")
+            != hashlib.sha256(files[0].read_bytes()).hexdigest()
+        ):
+            print("BLOCKED: Wayland report does not certify this Linux desktop binary")
+            return 2
     args.out.mkdir(parents=True, exist_ok=True)
     notes = args.out / "README.txt"
-    notes.write_text('''Agent Control Plane — unsigned development binaries
+    notes.write_text(
+        """Agent Control Plane — unsigned development binaries
 Read-only NSH desktop and TUI. No installer, autostart or daemon startup.
 Run without flags for OFFLINE_SYNTHETIC; Ctrl+Q closes the TUI.
+The Connection target panel edits session-only Local/WSL location drafts;
+Apply and read explicitly commits a target and clears old scope/evidence.
+Settings offers three themes, System/Light/Dark, contrast and English/Chinese.
+Optional --locale en|zh-CN --appearance system|light|dark --theme instrument|ledger|harbor.
+Alt+1-5 pages, Ctrl+F filter, Ctrl+K task, Ctrl+R refresh, Alt+0 settings.
 For native live reads, explicitly start acp-daemon separately, then supply
 --runtime-dir <private-runtime> --endpoint <socket-path-or-pipe-label>.
 Optional --project <allowlisted-label> --task-id <exact-task-id>.
@@ -43,9 +63,21 @@ Linux: GTK4 >=4.14, GStreamer 1.x, Fontconfig and a verified native Wayland desk
 a VT/truecolor terminal for TUI. macOS requires its own local build/verification.
 Keep credentials and runtime outside checkouts; use only an operator-authorized DB.
 See docs/p1/local-codex-e2.md for lifecycle, permissions and local validation.
-''', encoding="utf-8")
-    manifest = dict(kind="unsigned development archive", os=platform.system(), architecture=platform.machine(),
-                    files={f.name: dict(bytes=f.stat().st_size, sha256=hashlib.sha256(f.read_bytes()).hexdigest()) for f in files})
+""",
+        encoding="utf-8",
+    )
+    manifest = dict(
+        kind="unsigned development archive",
+        os=platform.system(),
+        architecture=platform.machine(),
+        files={
+            f.name: dict(
+                bytes=f.stat().st_size,
+                sha256=hashlib.sha256(f.read_bytes()).hexdigest(),
+            )
+            for f in files
+        },
+    )
     metadata = args.out / "manifest.json"
     metadata.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     basename = f"acp-nsh-dev-{platform.system().lower()}-{platform.machine().lower()}"
