@@ -1,11 +1,99 @@
 # P1-F local brand/UI evidence
 
-Status: **B0 exploration; owner selection PENDING**. No final brand acceptance or
-complete five-page redesign is claimed. Start: latest main merge #21,
+Status: **revised B0 theme-collection preview; owner layout review PENDING**. The
+owner requested one layout with selectable themes, corrected caption centering,
+the supplied concept hierarchy and i18n. No final brand acceptance or complete
+five-page redesign is claimed. Start: latest main merge #21,
 `0ba227c077c2d4fd0176adc4fbb43730a998c17b`; branch `feat/p1-f-brand-ui`.
 No GitHub Actions, niri or mobile tests. ADR-0003 remains Proposed.
 
-## Scope and decision gate
+## Current revision — theme collection, concept hierarchy and i18n
+
+Current preview code: **`b40b299fa317aa8059cfb0ef3fae8307ef3c59f8`**. Its behavior
+was implemented in `72beab957bea380171eba1055c8d6a1c03bc729c`; the following commit
+only cleans two preexisting shared-frontend Clippy findings (equivalent conditional
+and test-module placement). No production backend, protocol or authorization code
+changed. Both actual hosts rebuilt the current code using offline caches.
+
+The owner's new direction supersedes a mutually exclusive A/B/C selection:
+Instrument / Ledger / Harbor are now a **theme collection**, each with Light/Dark
+tokens. Layout, typography, radii and navigation are identical. Revised Overview
+uses Workspaces / Agent access → Effective context → Resume context → unavailable
+preference-review boundary. No agent online states or profile review actions are
+invented from the supplied concept image. The preview reads the typed built-in
+snapshot rather than hardcoded preference counts or repository facts.
+
+English/Simplified Chinese UI catalogs are exhaustive and switch at runtime.
+Project/task names, preference values and original recorded evidence stay intact.
+Appearance, language and high contrast are session-only; System follows NSH's
+runtime appearance without editing system settings or reading another app's
+configuration. All of this remains staged in the synthetic preview until the
+revised B0 layout is reviewed for full five-page integration.
+
+| Current B0 check | Actual result |
+| --- | --- |
+| Shared native-feature tests | 12 PASS on WSL and Windows, including complete catalogs and six palettes/high contrast; scope/request tests preserved |
+| NSH fmt / Clippy, shared fmt / Clippy | PASS locally on both actual hosts; preexisting shared lint findings corrected without changing behavior |
+| NSH component tests | 4 PASS on current WSL code, including all 834 pages of 10k rows, bounded nodes, filter/detail and scope behavior |
+| Python compatibility/local safety | 16 PASS on WSL |
+| Test-only VT cell renderer | 3 PASS on WSL and Windows: intact CJK/styles and replacement of each half of a wide glyph |
+| Actual preview windows / PTY / ConPTY | PASS on both hosts: Chinese Light 3 themes × 3 pages × both sizes; English Dark Harbor Overview/Appearance × both sizes; all use current rebuilt binaries |
+| Native and terminal language/theme switching | PASS on WSLg/PTY and Windows/ConPTY, actual Ctrl+L / Alt+0 / Alt+B plus visible Chinese/English states |
+| Caption alignment | PASS in owned-window pixels: all three vectors within 0.5px of target centers on the measured host allocations |
+| Custom chrome | PASS on both hosts: real drag, maximize/restore, minimize/restore, close; no system caption / GTK decorated=false |
+| Full selected-design acceptance | PENDING: all five pages, full actual 10k performance matrix and final clean companion-source acceptance are not claimed by B0 |
+
+Both locale catalogs preserve scope. The headless regression changes theme,
+appearance and language, discloses original validation JSON, then switches project
+and proves the previous task/objective cannot return. Locale changes do not rewrite
+project values. No clipboard read or real-profile database access is involved.
+
+The first actual TUI language/page switch exposed pyte's retained empty wide-cell
+stub and `display` IndexError. A **test-only** screen view now renders replaced
+halves as spaces while retaining intact two-cell glyphs and attributes. Three
+deterministic VT regressions plus real PTY/ConPTY switching pass. Application bytes,
+terminal configuration and third-party installation were not patched. Raw initial
+failure and final logs remain private.
+
+Current private evidence is under `artifacts/local-p1-f/revision-2/`:
+
+- `windows-light/`, `wslg-light/`: three-theme Chinese Overview/Handoff/Appearance
+  PNGs at 1080×760 / 640×480 and terminal frames at 160×50 / 80×30.
+- `windows-dark-en/`, `wslg-dark-en/`: English Dark Harbor Overview/Appearance
+  samples; the theme picker also shows all three dark palette cards.
+- `windows-interaction/`, `wslg-interaction/`: actual settings-switch captures,
+  PTY/ConPTY frames, `settings-result.json` and `chrome-result.json`.
+- `contrast.json`, `source-files.json`, self-contained `preview-gallery.html` and
+  private build/test logs. Source-file copies are checked against the marked
+  disposable Windows checkout; it is not represented as a clean same-SHA checkout.
+
+Exact captured unsigned preview binary hashes (all four capture reports checked
+against the rebuilt files):
+
+| Binary | SHA-256 |
+| --- | --- |
+| Linux desktop | `3061c741edf4a3fe934b4f192cc7f1d0c0d19483cfcec05cd6bc3ca9b422ab9e` |
+| Linux TUI | `a546f064184a0863b2e04e67f36df3f6f6e3cf5d714526647594d3c0f11fbdad` |
+| Windows desktop | `8d1ac812d7106d5e688c1d52a082bb72ac48cc98c062f73776b62288c081f258` |
+| Windows TUI | `777e69d6197e48f8072aa76bdf673b91b0e3433a327605caf45d0bcb11a14d9b` |
+
+Reproducible preview entry points (native Windows uses `.exe`):
+
+```sh
+acp-nsh-native --brand-preview c --locale zh-CN --appearance light
+acp-nsh-tui --brand-preview c --preview-page appearance --locale zh-CN
+python tools/test_terminal_screen.py
+python tools/test_brand_settings.py --desktop <desktop-bin> --tui <tui-bin> --out artifacts/local-p1-f/revision-2/interaction
+python tools/capture_brand_previews.py --desktop <desktop-bin> --tui <tui-bin> --out artifacts/local-p1-f/revision-2/captures --locale zh-CN --appearance light
+```
+
+The preexisting root zero-timeout assertion failure documented below remains
+unmodified and must be resolved/dispositioned before final acceptance. No new root
+Fingerprint/MCP authority is introduced or removed. niri/mobile, native clipboard,
+full IME/screen readers, remote inference and real external repositories remain
+NOT_RUN in this preview iteration. No Actions or raw-data upload.
+
+## Historical initial B0 scope and decision gate
 
 Three independent visual directions use synthetic-only actual NSH Desktop/TUI
 previews. Default console behavior and production backend are unchanged. Preview
@@ -16,10 +104,11 @@ explicitly Unknown/NOT_RUN. No fabricated measurement or live connection.
 
 Candidate identity and tradeoffs: [identity](../brand/identity.md).
 Implementation staging: [design system](../p1/ui-design-system.md).
-Owner-selected direction/revisions: **PENDING**. Stop after proposals/base preview
-components until the owner chooses; full local acceptance and Draft PR follow later.
+The initial A/B/C selection question was superseded by the owner's theme-collection
+instruction above. Revised layout review remains pending; full five-page local
+acceptance and Draft PR follow that review.
 
-## Private evidence
+## Historical initial B0 evidence
 
 All raw synthetic screenshots, terminal frames, logs, measurements and host data
 stay under gitignored `artifacts/local-p1-f/`. Native capture uses only the owned
