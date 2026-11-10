@@ -222,6 +222,11 @@ impl Supervisor {
             .get(params.executable.as_deref().ok_or(Error::InvalidRequest)?)
             .ok_or(Error::Unauthorized)?
             .clone();
+        if program.executable.canonicalize().ok().as_ref() != Some(&program.executable)
+            || !program.executable.is_file()
+        {
+            return Err(Error::UnsafeRuntime);
+        }
         if !root.is_absolute() || !root.is_dir() || root.canonicalize().ok().as_ref() != Some(&root)
         {
             return Err(Error::UnsafeRuntime);
@@ -321,21 +326,29 @@ impl Supervisor {
             .kill_on_drop(true);
         #[cfg(windows)]
         command.creation_flags(0x08000000);
-        match command.spawn() {
+        let reaped = match command.spawn() {
             Ok(child) => self.drive(child, root, rx).await,
-            Err(_) => self.change(|v| {
-                v.state = State::Failed;
-                v.failure = Some("Launch unavailable".into());
-            }),
-        }
+            Err(_) => {
+                self.change(|v| {
+                    v.state = State::Failed;
+                    v.failure = Some("Launch unavailable".into());
+                });
+                true
+            }
+        };
         let mut i = self.inner.lock().unwrap();
-        i.view.process_alive = false;
+        i.view.process_alive = !reaped;
         i.view.permissions.clear();
         i.tx = None;
         i.view.revision += 1;
         i.view.last_event_ms = now();
     }
-    async fn drive(&self, mut child: Child, root: PathBuf, mut commands: mpsc::Receiver<Control>) {
+    async fn drive(
+        &self,
+        mut child: Child,
+        root: PathBuf,
+        mut commands: mpsc::Receiver<Control>,
+    ) -> bool {
         let mut input = child.stdin.take().unwrap();
         let output = child.stdout.take().unwrap();
         let (wire, mut frames) = mpsc::channel(16);
@@ -363,14 +376,21 @@ impl Supervisor {
             });
         }
         let _ = child.start_kill();
-        let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
+        let reaped = matches!(
+            tokio::time::timeout(Duration::from_secs(2), child.wait()).await,
+            Ok(Ok(_))
+        );
         self.change(|v| {
-            v.process_alive = false;
+            v.process_alive = !reaped;
             v.permissions.clear();
-            if v.state == State::Stopping {
+            if !reaped {
+                v.state = State::Failed;
+                v.failure = Some("Child cleanup not confirmed".into());
+            } else if v.state == State::Stopping {
                 v.state = State::Stopped;
             }
         });
+        reaped
     }
     async fn conversation(
         &self,

@@ -448,12 +448,15 @@ def main():
                 ],
             ),
         ]:
-            if not directory.is_relative_to(ROOT / "artifacts/local-p1-f"):
+            if not any(
+                directory.is_relative_to(ROOT / folder)
+                for folder in ["artifacts/local-p1-f", "artifacts/local-p1-g"]
+            ):
                 results.append(
                     dict(
                         name=name,
                         status="NOT_RUN",
-                        reason="P1-F captures require --report-dir under artifacts/local-p1-f; legacy gates remain available",
+                        reason="Product captures require a private P1-F/P1-G report directory; legacy gates remain available",
                     )
                 )
             elif any(
@@ -469,6 +472,32 @@ def main():
                         reason="fresh host release unavailable",
                     )
                 )
+        if directory.is_relative_to(ROOT / "artifacts/local-p1-g"):
+            results.append(
+                run_gate(
+                    "agent-session-process",
+                    [PY, "tools/test_agent_session.py", "-v"],
+                    directory,
+                    env,
+                )
+            )
+            results.append(
+                run_gate(
+                    "agent-session-ui",
+                    [
+                        PY,
+                        "tools/test_agent_session_ui.py",
+                        "--desktop",
+                        f"spikes/p1-e/nsh/target/release/acp-nsh-native{suffix}",
+                        "--tui",
+                        f"spikes/p1-e/nsh/target/release/acp-nsh-tui{suffix}",
+                        "--out",
+                        str(directory / "sessions"),
+                    ],
+                    directory,
+                    env,
+                )
+            )
         package = [
             PY,
             "tools/package_local_console.py",
@@ -686,6 +715,17 @@ def main():
         and {"terminal-cells", "p1f-settings", "p1f-chrome", "p1f-previews"} <= passed
         else "INCOMPLETE"
     )
+    if directory.is_relative_to(ROOT / "artifacts/local-p1-g"):
+        report["p1g_host_checks"] = (
+            "PASS"
+            if report["p1f_host_checks"] == "PASS"
+            and {"agent-session-process", "agent-session-ui"} <= passed
+            else "INCOMPLETE"
+        )
+        report["session_owner_ui_review"] = "PENDING"
+        report["real_acp_agent"] = (
+            "NOT_RUN by generic runner; see separate explicit opt-in smoke report"
+        )
     report["owner_ui_review"] = "ACCEPTED_BASE_UI" if args.owner_reviewed else "PENDING"
     report["windows_companion"] = "NOT_RUN"
     if args.windows_report:

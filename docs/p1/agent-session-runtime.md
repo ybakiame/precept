@@ -159,3 +159,11 @@ Project-root drift revokes new start/prompt/allow decisions: the daemon rechecks
 registered canonical root against its launch snapshot in a bounded blocking job.
 Cancel/Stop/Deny stay available to the authenticated owner for revocation. Timed-out
 root jobs retain their admission permit until they finish and cannot launch a child.
+
+
+A child is reported stopped only after its exit/reap is observed. If cleanup cannot
+be confirmed, the observation remains failed/alive and blocks another launch rather
+than asserting it died. Only the direct child is managed. Permission approvals and
+prompt sends also revalidate the registered root; Stop/Cancel/Deny remain available
+when registration drifts. Passive polling has a non-reactive in-flight guard and
+cannot disable keyboard controls or resurrect an older command's result.

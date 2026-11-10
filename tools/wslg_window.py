@@ -104,6 +104,13 @@ def main():
             "alt+3": ord("3"),
             "alt+4": ord("4"),
             "alt+5": ord("5"),
+            "alt+6": ord("6"),
+            "alt+7": ord("7"),
+            "alt+8": ord("8"),
+            "alt+9": ord("9"),
+            "alt+j": ord("J"),
+            "alt+q": ord("Q"),
+            "alt+x": ord("X"),
         }
         if sequence in special:
             modifier = 0x12 if sequence.startswith("alt+") else 0x11
@@ -127,6 +134,7 @@ def main():
                 "shared",
                 "missing",
                 "quality-task",
+                "session-prompt",
             )
             for c in sequence:
                 vk = 0xBD if c == "-" else ord(c.upper())
