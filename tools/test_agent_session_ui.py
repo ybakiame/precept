@@ -144,14 +144,18 @@ def main():
                 raise AssertionError("TUI prompt did not reach daemon completion")
             terminal.wait("turn completed")
             wait("revision=" + str(observed["revision"]) + " ")
+            # ConPTY resize/reflow and the app's subsequent full repaint are asynchronous.
+            # Drain the old dimensions first and require a longer quiet frame on Windows.
+            resize_quiet = 0.8 if os.name == "nt" else 0.15
             for width, height in [(160, 50), (80, 30)]:
-                terminal.resize(width, height)
                 terminal.settle()
+                terminal.resize(width, height)
+                terminal.settle(timeout=3, quiet=resize_quiet)
                 (out / f"session-{width}.txt").write_text(
                     "\n".join(terminal.screen.display) + "\n", encoding="utf-8"
                 )
             terminal.resize(160, 50)
-            terminal.settle()
+            terminal.settle(timeout=3, quiet=resize_quiet)
             # Cancellation through an actual GUI, with both clients observing the turn.
             f.end(v)
             v = f.launch("cancel")
