@@ -370,8 +370,9 @@ pub(super) fn shell(
                                         .child(
                                             text(move || {
                                                 format!(
-                                                    "{} · {}",
+                                                    "{} · {} · {}",
                                                     model.get().source_label(),
+                                                    model.get().target_label(),
                                                     model.get().read_label()
                                                 )
                                             })

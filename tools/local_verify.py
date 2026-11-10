@@ -448,7 +448,15 @@ def main():
                 ],
             ),
         ]:
-            if any(
+            if not directory.is_relative_to(ROOT / "artifacts/local-p1-f"):
+                results.append(
+                    dict(
+                        name=name,
+                        status="NOT_RUN",
+                        reason="P1-F captures require --report-dir under artifacts/local-p1-f; legacy gates remain available",
+                    )
+                )
+            elif any(
                 r["name"] == "nsh-host-release" and r["status"] == "PASS"
                 for r in results
             ):

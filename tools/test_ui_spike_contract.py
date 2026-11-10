@@ -2,20 +2,35 @@
 
 No user profile discovery. Build root binaries and shared/native snapshot first.
 """
+
 import json
 import os
 from pathlib import Path
 import subprocess
 from test_local_service import Fixture, ROOT
 
-model_bin = Path(os.environ.get("ACP_UI_SNAPSHOT", ROOT / "spikes/p1-e/shared/target/debug/acp-ui-snapshot"))
+model_bin = Path(
+    os.environ.get(
+        "ACP_UI_SNAPSHOT", ROOT / "spikes/p1-e/shared/target/debug/acp-ui-snapshot"
+    )
+)
 if os.name == "nt" and not model_bin.suffix:
     model_bin = model_bin.with_suffix(".exe")
 
-def snapshot(f, *flags, success=True):
-    p = subprocess.run([str(model_bin), *f.location, *flags], capture_output=True, text=True, encoding="utf-8", timeout=30)
+
+def snapshot(f, *flags, success=True, exit_code=None):
+    p = subprocess.run(
+        [str(model_bin), *f.location, *flags],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+    )
     assert (p.returncode == 0) == success, "UI client outcome differs"
+    if exit_code is not None:
+        assert p.returncode == exit_code
     return json.loads(p.stdout) if success else p.stderr
+
 
 with Fixture() as f:
     before = f.db.read_bytes()
@@ -25,7 +40,9 @@ with Fixture() as f:
         project = next(p for p in data["projects"] if p["name"] == name)
         reference = f.cli("context", name)
         assert project["context"]["project"] == name
-        assert project["context"]["preferences"] == [{k: v for k, v in p.items() if k != "id"} for p in reference["preferences"]]
+        assert project["context"]["preferences"] == [
+            {k: v for k, v in p.items() if k != "id"} for p in reference["preferences"]
+        ]
         h = f.cli("handoff", name, "shared")
         assert project["handoff"]["validation"] == h["validation"]
         assert project["handoff"]["resume_warnings"] == h["resume_warnings"]
@@ -41,7 +58,9 @@ with Fixture() as f:
     cap = f.runtime / "operator.cap"
     raw = cap.read_bytes()
     cap.unlink()
-    snapshot(f, success=False)
+    snapshot(f, success=False, exit_code=2)
+    cap.write_bytes(b"0" * len(raw))
+    assert "Permission denied" in snapshot(f, success=False, exit_code=3)
     cap.write_bytes(raw)
     if os.name != "nt":
         cap.chmod(0o644)
@@ -49,5 +68,13 @@ with Fixture() as f:
         cap.chmod(0o600)
     assert snapshot(f)["health"]["ready"]
     assert f.cli("health")["ready"], "client exit stopped daemon"
+    from test_local_service import stop
+
+    stop(f.proc)
+    assert "Local daemon unavailable" in snapshot(f, success=False, exit_code=2)
+    f.start()
+    assert snapshot(f)["health"]["ready"]
     assert f.db.read_bytes() == before
-print("TEST_PASS: selected project only, exact confirmed rows/evidence, empty task, hostile scope, removed/broad credentials, reconnect, unchanged synthetic DB")
+print(
+    "TEST_PASS: selected project only, exact confirmed rows/evidence, empty task, hostile scope, removed/broad credentials, reconnect, unchanged synthetic DB"
+)

@@ -160,6 +160,7 @@ catalog! {
     ContractEntries => ("contract references · collapsed", "条规范引用 · 已收起"),
     RetryHelp => ("Reconnect after checking the local daemon and private operator access. The console never starts the daemon.", "检查 Daemon 与操作员授权后重新读取。控制台不会启动 Daemon。"),
     Daemon => ("Daemon status", "Daemon 状态"),
+    DraftTarget => ("Draft target", "草稿目标"),
     Connection => ("Connection target", "连接目标"),
     SyntheticTarget => ("Offline synthetic", "离线合成数据"),
     LocalTarget => ("Local daemon", "本机 Daemon"),

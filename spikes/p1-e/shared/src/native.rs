@@ -294,6 +294,17 @@ pub fn helper_failure(code: Option<i32>) -> &'static str {
     }
 }
 
+#[cfg(unix)]
+fn missing_unix_endpoint(location: &Location) -> bool {
+    let path = std::path::Path::new(&location.endpoint);
+    let Ok(root) = location.root() else {
+        return false;
+    };
+    path.is_absolute()
+        && path.parent().and_then(|p| p.canonicalize().ok()).as_ref() == Some(&root)
+        && std::fs::symlink_metadata(path).is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+}
+
 async fn fetch(
     location: &Location,
     selected: Option<&str>,
@@ -301,11 +312,40 @@ async fn fetch(
 ) -> acp_ipc::Result<Snapshot> {
     use acp_ipc::Error;
     use serde_json::json;
-    let credential = load_credential(location, &location.credential_path(None)?)?;
+    let path = location.credential_path(None).map_err(|error| {
+        if std::fs::symlink_metadata(&location.runtime_dir)
+            .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+        {
+            Error::Unavailable
+        } else {
+            error
+        }
+    })?;
+    let credential = load_credential(location, &path).map_err(|error| {
+        // Normal daemon shutdown removes its capability. Absence alone does
+        // not establish an authorization refusal; retain an unavailable state.
+        if std::fs::symlink_metadata(&path).is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+        {
+            Error::Unavailable
+        } else {
+            error
+        }
+    })?;
     if credential.access != Access::Operator {
         return Err(Error::Unauthorized);
     }
-    let mut client = Client::connect(location, &credential).await?;
+    let connected = Client::connect(location, &credential).await;
+    #[cfg(unix)]
+    let connected = connected.map_err(|error| {
+        // IPC deliberately treats absent and unsafe Unix sockets alike. Only
+        // refine the UI failure after the guarded connect has already refused;
+        // an observed missing socket in the validated runtime is unavailable.
+        if matches!(error, Error::UnsafeRuntime) && missing_unix_endpoint(location) {
+            return Error::Unavailable;
+        }
+        error
+    });
+    let mut client = connected?;
     let health = serde_json::from_value(client.request("daemon.health", json!({})).await?)
         .map_err(|_| Error::Unavailable)?;
     #[derive(Deserialize)]
@@ -337,7 +377,18 @@ async fn fetch(
             });
             continue;
         }
-        let mut client = Client::connect(location, &credential).await?;
+        let mut client = Client::connect(location, &credential)
+            .await
+            .map_err(|error| {
+                // IPC deliberately treats absent and unsafe Unix sockets alike. Only
+                // refine the UI failure after the guarded connect has already refused;
+                // an observed missing socket in the validated runtime is unavailable.
+                #[cfg(unix)]
+                if matches!(error, Error::UnsafeRuntime) && missing_unix_endpoint(location) {
+                    return Error::Unavailable;
+                }
+                error
+            })?;
         let context = serde_json::from_value(
             client
                 .request(

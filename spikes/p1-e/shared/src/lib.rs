@@ -220,6 +220,13 @@ impl Model {
             .unwrap_or_default();
         m
     }
+    pub fn target_label(&self) -> &'static str {
+        self.word(match self.connection.target {
+            connection::Target::Synthetic => i18n::Msg::SyntheticTarget,
+            connection::Target::Local => i18n::Msg::LocalTarget,
+            connection::Target::Wsl => i18n::Msg::WslTarget,
+        })
+    }
     pub fn word(&self, key: i18n::Msg) -> &'static str {
         i18n::tr(self.locale, key)
     }

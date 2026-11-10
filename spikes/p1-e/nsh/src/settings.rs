@@ -108,7 +108,7 @@ pub(super) fn connection(model: Signal<Model>) -> impl IntoElement {
                 Target::Local => Msg::LocalTarget,
                 Target::Wsl => Msg::WslTarget,
             };
-            format!("> {}", m.word(key))
+            format!("{}: {}", m.word(Msg::DraftTarget), m.word(key))
         }))
         .child(field(
             model,

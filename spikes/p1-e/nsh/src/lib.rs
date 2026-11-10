@@ -396,7 +396,7 @@ mod tests {
         app.wait_for("Invalid connection fields; the active target is unchanged.")
             .unwrap();
         // Invalid drafts cannot clear a usable snapshot or replace its source.
-        app.wait_for("OFFLINE_SYNTHETIC · Synthetic snapshot ready")
+        app.wait_for("OFFLINE_SYNTHETIC · Offline synthetic · Synthetic snapshot ready")
             .unwrap();
         app.type_text("Private runtime directory", "/synthetic/runtime")
             .unwrap();
