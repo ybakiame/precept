@@ -795,6 +795,24 @@ mod target_tests {
         assert!(m.data.is_none());
     }
     #[test]
+    fn chinese_page_copy_retains_git_handoff_and_disclosed_value() {
+        let mut m = Model::fixture();
+        m.locale = i18n::Locale::ZhCn;
+        let lines = m.visible_lines().join("\n");
+        let p = m.project().unwrap();
+        assert!(lines.contains(p.context.repository.branch.as_deref().unwrap()));
+        assert!(lines.contains(&p.handoff.as_ref().unwrap().objective));
+        assert!(lines.contains(&p.context.warnings[0]));
+        m.section = Section::Preferences;
+        let mut snapshot = Snapshot::fixture();
+        snapshot.projects[0].context.preferences[0].value = "中文".repeat(600);
+        m.receive(Ok(snapshot));
+        m.select_preference(0);
+        m.detail_by(1);
+        assert!(m.visible_lines().join("\n").contains(&m.detail_chunk()));
+        assert!(m.visible_lines().iter().all(|s| s.chars().count() < 550));
+    }
+    #[test]
     fn chinese_ui_preserves_original_values_and_evidence() {
         let mut m = Model::fixture();
         m.locale = i18n::Locale::ZhCn;

@@ -92,11 +92,11 @@ impl Model {
                 if let Some(row) = self.preference_detail() {
                     lines.push(format!("Selected preference: {}", sanitize(&row.key, 120)));
                     lines.push(format!(
-                        "Value detail {}/{}: {}",
+                        "Value detail {}/{}",
                         self.detail_page + 1,
-                        self.detail_pages(),
-                        self.detail_chunk()
+                        self.detail_pages()
                     ));
+                    lines.push(self.detail_chunk());
                 }
             }
             Section::Handoff => lines.extend(self.handoff_lines(self.expanded)),
@@ -240,9 +240,46 @@ impl Model {
                             )
                         }),
                 );
+                if let Some(row) = self.preference_detail() {
+                    lines.push(format!(
+                        "{}: {}",
+                        self.word(Msg::SelectedPreference),
+                        sanitize(&row.key, 120)
+                    ));
+                    lines.push(format!(
+                        "{} {}/{}",
+                        self.word(Msg::ValueDetail),
+                        self.detail_page + 1,
+                        self.detail_pages()
+                    ));
+                    lines.push(self.detail_chunk());
+                }
             }
             Section::Dashboard => {
-                lines.push(self.word(Msg::ContextHelp).into());
+                let r = &p.context.repository;
+                lines.push(format!(
+                    "{}: {} · HEAD: {} · {}: {}",
+                    self.word(Msg::Branch),
+                    r.branch.as_deref().unwrap_or(self.word(Msg::Unknown)),
+                    r.head.as_deref().unwrap_or(self.word(Msg::Unknown)),
+                    self.word(Msg::Worktree),
+                    self.word(match r.dirty {
+                        Some(true) => Msg::HasChanges,
+                        Some(false) => Msg::NoChanges,
+                        None => Msg::Unknown,
+                    })
+                ));
+                lines.push(format!(
+                    "{} {} · {}",
+                    p.context.preferences.len(),
+                    self.word(Msg::ConfirmedPreferences),
+                    self.word(Msg::OpenPreferences)
+                ));
+                let mut handoff = self.clone();
+                handoff.section = Section::Handoff;
+                handoff.expanded = false;
+                lines.extend(handoff.chinese_lines().into_iter().skip(1));
+                lines.extend(p.context.warnings.iter().take(8).cloned());
             }
         }
         lines
