@@ -54,7 +54,9 @@ by this product. No permission is inferred from valid authentication.
 On a matching AUTH_REQUIRED error, observations become `auth_required`, pending
 permissions are revoked, and the direct child is killed/reaped. This is action needed,
 not a generic crash. There is **no automatic retry**. After external preparation,
-the operator repeats Start review/confirmation, producing a fresh random generation.
+the operator selects Review retry (Alt+U) and confirms Start, producing a fresh random
+generation of the same observed configured agent. A removed executable cancels pending
+review; passive polling retains an intentional valid selection.
 Prompt/permission decisions from the old generation remain invalid. Failed cleanup
 still reports failed/alive and blocks another launch. Missing or invalid auth leaves
 the model-turn acceptance NOT_RUN; rejection errors are sanitized.
@@ -86,7 +88,9 @@ owner then explicitly authorized necessary model calls during this debugging ses
 using subscription quota. Runs remain deliberate, bounded and separately recorded;
 there is no automatic prompt retry. The key is never
 sent in chat or written to tracked files. A credential-free private template was
-created outside the repo, mode 0600; the owner has reported it ready.
+created outside the repo, mode 0600; the owner filled it locally. After the authorized
+completion/cancel checks and direct-child reaping, the owned private HOME, credential
+copy and vendor-generated state were deleted.
 The runner supplies only the selected HOME path, not credential contents, to the
 configured child and never prints or archives config/session/log content.
 
@@ -97,7 +101,8 @@ activity/permission it cancels rather than authorizing tool use or another turn.
 Evidence contains known version/capability bits, bounded counters, stopReason and
 PASS/FAIL/AUTH_REQUIRED/NOT_RUN classifications, not response text or transcripts.
 Real cancellation/error compatibility is recorded separately from deterministic tests;
-one permitted prompt is not silently expanded into extra model calls.
+the initial one-call authorization was not silently expanded; the owner explicitly
+authorized debugging calls before the separately recorded follow-up attempts.
 
 ## H2 optional project-context bridge decision
 

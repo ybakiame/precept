@@ -126,3 +126,8 @@ Context MCP forwarding remains disabled. See the
 [authentication contract](docs/p1/agent-authentication.md) and
 [real-agent evidence](docs/evaluation/p1-h-real-agent-e2e.md) for verified results,
 source provenance and remaining limits.
+
+Local P1-H evidence records an opt-in Kimi Code CLI 2.5.2 authenticated streamed
+turn and separate immediate-cancel acknowledgement. Windows/ConPTY and native WSLg
+auth recovery are verified with deterministic agents; real-model GUI turns and
+context-MCP forwarding remain unverified/disabled. This is an ephemeral prototype.
