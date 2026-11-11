@@ -1,6 +1,7 @@
 """P1-K opt-in synthetic interoperability evaluation; never opens normal client state."""
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -479,6 +480,29 @@ def main():
         codex=dict(status="NOT_RUN"),
         kimi=dict(status="NOT_RUN"),
     )
+
+    report["entrypoints"] = {}
+    selected = {
+        "codex": Path(shutil.which("codex")),
+        "daemon": Path(binary("acp-daemon")),
+        "mcp": Path(binary("acp-mcp")),
+    }
+    if args.kimi_home:
+        selected["kimi"] = args.kimi_executable
+    for label, path in selected.items():
+        item = {"sha256": hashlib.sha256(path.resolve().read_bytes()).hexdigest()}
+        if label in {"codex", "kimi"}:
+            item["version"] = subprocess.check_output(
+                [str(path), "--version"],
+                env=dict(
+                    HOME=str(out),
+                    CODEX_HOME=str(out / "inventory-codex"),
+                    PATH="/usr/bin:/bin",
+                ),
+                text=True,
+                timeout=15,
+            ).strip()
+        report["entrypoints"][label] = item
 
     def save_kimi(result):
         report["kimi"] = result
