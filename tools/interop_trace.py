@@ -115,10 +115,13 @@ def main():
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     root = args.synthetic_root.resolve(strict=True)
-    assert (root / ".acp-interop-fixture").is_file()
-    assert args.out.resolve().is_relative_to(root) and not args.out.is_symlink()
+    if not (root / ".acp-interop-fixture").is_file():
+        raise ValueError("Synthetic helper validation failed")
+    if not args.out.resolve().is_relative_to(root) or args.out.is_symlink():
+        raise ValueError("Synthetic helper validation failed")
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
-    assert command and Path(command[0]).is_absolute() and Path(command[0]).is_file()
+    if not (command and Path(command[0]).is_absolute() and Path(command[0]).is_file()):
+        raise ValueError("Synthetic helper validation failed")
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(args.out, flags, 0o600)
     observer = Observer()

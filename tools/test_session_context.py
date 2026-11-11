@@ -44,7 +44,8 @@ class ContextFixture(SessionFixture):
 
     def lease_file(self):
         files = list(self.runtime.glob("session-*.cap"))
-        assert len(files) == 1, "expected one private session capability"
+        if len(files) != 1:
+            raise AssertionError("expected one private session capability")
         return files[0]
 
     def lease_peer(self, credential=None):
@@ -66,11 +67,12 @@ class ContextFixture(SessionFixture):
         deadline = time.monotonic() + 3
         while list(self.runtime.glob("session-*.cap")) and time.monotonic() < deadline:
             time.sleep(0.02)
-        assert not list(
-            self.runtime.glob("session-*.cap")
-        ), "private lease file not cleaned"
-        assert self.query("session.context")["active"] is False
-        assert self.db.read_bytes() == self.before
+        if list(self.runtime.glob("session-*.cap")):
+            raise AssertionError("private lease file not cleaned")
+        if self.query("session.context")["active"] is not False:
+            raise AssertionError("Synthetic helper validation failed")
+        if self.db.read_bytes() != self.before:
+            raise AssertionError("Synthetic helper validation failed")
 
 
 class SessionContextTests(unittest.TestCase):

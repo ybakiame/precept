@@ -106,9 +106,10 @@ class SessionFixture(Fixture):
                 method, dict(session_api_version=2, project=project, **params)
             )
         if success:
-            assert (
-                reply.get("error") is None
-            ), "sanitized operator query failed: " + str(reply.get("error"))
+            if reply.get("error") is not None:
+                raise AssertionError(
+                    "sanitized operator query failed: " + str(reply.get("error"))
+                )
             return (
                 reply["result"]["session"]
                 if method == "session.get"

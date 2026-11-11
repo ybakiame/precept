@@ -225,9 +225,11 @@ class Codex:
             ),
         )
         if not success:
-            assert "error" in reply or reply["result"].get("isError")
+            if not ("error" in reply or reply["result"].get("isError")):
+                raise RuntimeError("Synthetic interoperability invariant failed")
             return
-        assert "error" not in reply and not reply["result"].get("isError")
+        if "error" in reply or reply["result"].get("isError"):
+            raise RuntimeError("Synthetic interoperability invariant failed")
         return json.loads(reply["result"]["content"][0]["text"])
 
     def rpc(self, method, params):
@@ -245,7 +247,8 @@ class Codex:
             value = json.loads(line)
             if value.get("id") == self.serial:
                 if method in {"initialize", "thread/start", "mcpServerStatus/list"}:
-                    assert "error" not in value, "Sanitized Codex setup rejection"
+                    if "error" in value:
+                        raise RuntimeError("Sanitized Codex setup rejection")
                     return value["result"]
                 return value
         raise TimeoutError("Codex request deadline")
@@ -253,10 +256,13 @@ class Codex:
 
 def check_handoff(f, client, required):
     value = client.call("get_handoff", dict(task_id="shared"))
-    assert value == f.cli("handoff", "alpha", "shared")
-    assert value["validation"] == f.validation
+    if value != f.cli("handoff", "alpha", "shared"):
+        raise RuntimeError("Synthetic interoperability invariant failed")
+    if value["validation"] != f.validation:
+        raise RuntimeError("Synthetic interoperability invariant failed")
     flags = {WARNINGS.get(w, "unknown") for w in value["resume_warnings"]}
-    assert set(required) <= flags
+    if not set(required) <= flags:
+        raise RuntimeError("Synthetic interoperability invariant failed")
     return dict(
         result_sha256=digest(value),
         fixture_head=value["current_repository"]["head"],
@@ -273,24 +279,30 @@ def codex_trial(f, executable):
         dict(threadId=client.thread, serverName="acp_validation"),
     )
     tools = inventory["data"][0]["tools"]
-    assert set(tools) == {"get_effective_context", "get_handoff"}
+    if set(tools) != {"get_effective_context", "get_handoff"}:
+        raise RuntimeError("Synthetic interoperability invariant failed")
     context = client.call("get_effective_context", dict(include_documents=True))
-    assert context == f.cli("context", "alpha", "--include-documents")
+    if context != f.cli("context", "alpha", "--include-documents"):
+        raise RuntimeError("Synthetic interoperability invariant failed")
     contract = json.loads(
         (ROOT / "tests/fixtures/p1-preference-contract.v1.json").read_text()
     )
-    assert all(
-        marker not in json.dumps(context)
-        for marker in contract["forbidden_alpha_strings"]
-    )
-    assert context["project"] == "alpha"
+    if any(
+        marker in json.dumps(context) for marker in contract["forbidden_alpha_strings"]
+    ):
+        raise RuntimeError("Synthetic interoperability invariant failed")
+    if context["project"] != "alpha":
+        raise RuntimeError("Synthetic interoperability invariant failed")
     trials = [check_handoff(f, client, ["dirty", "historical"])]
-    assert "fingerprint" not in trials[0]["freshness"]
+    if "fingerprint" in trials[0]["freshness"]:
+        raise RuntimeError("Synthetic interoperability invariant failed")
     before = worktree_snapshot(f.project_root, include_fingerprint=True)
     f.readme.write_text("Synthetic retry scheduler: pending cancellation review B.\n")
     after = worktree_snapshot(f.project_root, include_fingerprint=True)
-    assert before["head"] == after["head"] and before["dirty"] == after["dirty"]
-    assert before["worktree_fingerprint"] != after["worktree_fingerprint"]
+    if before["head"] != after["head"] or before["dirty"] != after["dirty"]:
+        raise RuntimeError("Synthetic interoperability invariant failed")
+    if before["worktree_fingerprint"] == after["worktree_fingerprint"]:
+        raise RuntimeError("Synthetic interoperability invariant failed")
     trials.append(check_handoff(f, client, ["fingerprint", "historical"]))
     f.git("switch", "-qc", "synthetic-review")
     trials.append(check_handoff(f, client, ["branch", "fingerprint", "historical"]))
@@ -298,7 +310,10 @@ def codex_trial(f, executable):
     f.git("commit", "-qm", "synthetic cancellation drift")
     trials.append(check_handoff(f, client, ["head", "branch", "historical"]))
     legacy = client.call("get_handoff", dict(task_id="null-fingerprint"))
-    assert "missing_fingerprint" in {WARNINGS.get(w) for w in legacy["resume_warnings"]}
+    if "missing_fingerprint" not in {
+        WARNINGS.get(w) for w in legacy["resume_warnings"]
+    }:
+        raise RuntimeError("Synthetic interoperability invariant failed")
     attacks = [
         ("get_effective_context", {"project": "beta"}),
         ("get_handoff", {"task_id": "shared", "project": "beta"}),
@@ -313,19 +328,23 @@ def codex_trial(f, executable):
     stop(client.proc)
     events = [json.loads(line) for line in client.trace.read_text().splitlines()]
     for trial in trials:
-        assert any(
+        if not any(
             e.get("result_sha256") == trial["result_sha256"]
             and e["tool"] == "get_handoff"
             and e["outcome"] == "success"
             for e in events
-        )
-    assert any(
+        ):
+            raise RuntimeError("Synthetic interoperability invariant failed")
+    if not any(
         e.get("result_sha256") == digest(context)
         and e["tool"] == "get_effective_context"
         for e in events
-    )
-    assert any(e.get("exact_two_tools") for e in events)
-    assert f.db.read_bytes() == f.before
+    ):
+        raise RuntimeError("Synthetic interoperability invariant failed")
+    if not any(e.get("exact_two_tools") for e in events):
+        raise RuntimeError("Synthetic interoperability invariant failed")
+    if f.db.read_bytes() != f.before:
+        raise RuntimeError("Synthetic interoperability invariant failed")
     f.readme.write_text("Synthetic retry scheduler: pending cancellation review C.\n")
     return dict(
         status="PASS",
@@ -341,11 +360,40 @@ def codex_trial(f, executable):
     )
 
 
-def kimi_trial(f, home, executable, save):
+def validate_kimi_home(home):
     private_home(home)
-    assert kimi_configuration_allowed(
+    if not kimi_configuration_allowed(
         tomllib.loads((home / ".kimi-code/config.toml").read_text())
-    ), "Private config does not match the authorized model/service/tool policy"
+    ):
+        raise RuntimeError(
+            "Private config does not match the authorized model/service/tool policy"
+        )
+
+
+def approve_permissions(f, view, approved):
+    """Fail closed before sending any non-allowlisted vendor approval."""
+    for pending in view["permissions"]:
+        operation = json.loads(pending["operation"])
+        if not approved_readonly_request(
+            operation,
+            opt_in=True,
+            agent="kimi",
+            remaining=2 - approved,
+            allow_once=pending["allow_once"],
+        ):
+            raise RuntimeError("Unapproved vendor permission")
+        f.query(
+            "session.permission",
+            session_id=view["session_id"],
+            request_id=pending["request_id"],
+            option_id=pending["allow_once"],
+        )
+        approved += 1
+    return approved
+
+
+def kimi_trial(f, home, executable, save):
+    validate_kimi_home(home)
     f.config.write_text(
         json.dumps(
             dict(
@@ -369,9 +417,10 @@ def kimi_trial(f, home, executable, save):
     stop(f.proc)
     f.start()
     expected = f.cli("handoff", "alpha", "shared")
-    assert {"head", "branch", "fingerprint", "historical"} <= {
+    if not {"head", "branch", "fingerprint", "historical"} <= {
         WARNINGS.get(w) for w in expected["resume_warnings"]
-    }
+    }:
+        raise RuntimeError("Synthetic interoperability invariant failed")
     fingerprint = worktree_snapshot(f.project_root, include_fingerprint=True)
     result = dict(
         status="NOT_RUN",
@@ -384,7 +433,8 @@ def kimi_trial(f, home, executable, save):
             "session.start", executable="real-kimi", confirmed=True, share_context=True
         )
         view = observed(f, ["ready", "failed", "auth_required"], 20)
-        assert view["state"] == "ready" and view["agent"] == "Kimi Code CLI 2.5.2"
+        if view["state"] != "ready" or view["agent"] != "Kimi Code CLI 2.5.2":
+            raise RuntimeError("Synthetic interoperability invariant failed")
         result["prompt_submissions"] = 1
         save(result)
         f.query("session.prompt", session_id=view["session_id"], prompt=PROMPT)
@@ -392,22 +442,7 @@ def kimi_trial(f, home, executable, save):
         approved = 0
         while time.monotonic() < deadline:
             view = f.query("session.get")
-            for pending in view["permissions"]:
-                operation = json.loads(pending["operation"])
-                assert approved_readonly_request(
-                    operation,
-                    opt_in=True,
-                    agent="kimi",
-                    remaining=2 - approved,
-                    allow_once=pending["allow_once"],
-                ), "Unapproved vendor permission"
-                f.query(
-                    "session.permission",
-                    session_id=view["session_id"],
-                    request_id=pending["request_id"],
-                    option_id=pending["allow_once"],
-                )
-                approved += 1
+            approved = approve_permissions(f, view, approved)
             if view["state"] in ["completed", "failed", "auth_required"]:
                 break
             time.sleep(0.04)
@@ -436,13 +471,16 @@ def kimi_trial(f, home, executable, save):
             permission_approvals=approved,
         )
         save(result)
-        assert view["state"] == "completed" and view["stop_reason"] == "end_turn"
-        assert audit["context_calls"] == audit["handoff_calls"] == 1
-        assert (
+        if view["state"] != "completed" or view["stop_reason"] != "end_turn":
+            raise RuntimeError("Synthetic interoperability invariant failed")
+        if not (audit["context_calls"] == audit["handoff_calls"] == 1):
+            raise RuntimeError("Synthetic interoperability invariant failed")
+        if not (
             result["model_stale_marker"]
             and result["worktree_unchanged"]
             and result["historical_validation_unchanged"]
-        )
+        ):
+            raise RuntimeError("Synthetic interoperability invariant failed")
         saved = json.loads(f.lease_file().read_text())
         with f.lease_peer(saved) as peer:
             f.end(view)
@@ -450,7 +488,8 @@ def kimi_trial(f, home, executable, save):
                 peer.request("context.get", {})["error"] == "Unauthorized"
             )
         result["reconnect_denied"] = f.rejected(saved)
-        assert result["established_peer_denied"] and result["reconnect_denied"]
+        if not (result["established_peer_denied"] and result["reconnect_denied"]):
+            raise RuntimeError("Synthetic interoperability invariant failed")
         result["status"] = "PASS"
     except Exception:
         result["status"] = "FAIL"
@@ -576,7 +615,8 @@ def opencode_trial(executable):
             actual_calls="NOT_RUN",
             codemode=False,
         )
-        assert not any(e["method"] == "tools/call" for e in events)
+        if any(e["method"] == "tools/call" for e in events):
+            raise RuntimeError("Synthetic interoperability invariant failed")
         config.write_text(json.dumps(minimal))
         f.config.write_text(
             json.dumps(
@@ -623,7 +663,8 @@ def opencode_trial(executable):
                 direct_child_reaped=not f.query("session.get")["process_alive"],
             )
         result["database_unchanged"] = f.db.read_bytes() == f.before
-        assert result["database_unchanged"]
+        if not result["database_unchanged"]:
+            raise RuntimeError("Synthetic interoperability invariant failed")
     return result
 
 
@@ -636,27 +677,38 @@ def main():
     parser.add_argument("--allow-kimi-subscription-turn", action="store_true")
     parser.add_argument("--security-report", type=Path)
     args = parser.parse_args()
-    assert os.name != "nt", "Installed clients selected on Linux/WSL only"
-    assert bool(args.kimi_home) == args.allow_kimi_subscription_turn
-    assert not subprocess.check_output(
-        ["git", "status", "--porcelain"], cwd=ROOT
-    ).strip()
+    if bool(args.kimi_home) != args.allow_kimi_subscription_turn:
+        raise RuntimeError(
+            "Separate Kimi subscription-turn opt-in and private HOME required"
+        )
+    if args.kimi_home:
+        validate_kimi_home(args.kimi_home)
+    if os.name == "nt":
+        raise RuntimeError("Installed clients selected on Linux/WSL only")
+    if subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT).strip():
+        raise RuntimeError("Synthetic interoperability invariant failed")
     sha = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
     ).strip()
     if args.kimi_home:
-        assert (
+        if not (
             args.kimi_executable
             and args.kimi_executable.is_absolute()
             and args.kimi_executable.is_file()
-        )
+        ):
+            raise RuntimeError("Synthetic interoperability invariant failed")
+        if args.security_report is None:
+            raise RuntimeError("Same-source security report required")
         gates = json.loads(args.security_report.read_text())
-        assert gates["tested_git_sha"] == sha and not gates["worktree_dirty"]
-        assert {"context-process", "lease-unit", "root-clippy"} <= {
+        if gates["tested_git_sha"] != sha or gates["worktree_dirty"]:
+            raise RuntimeError("Synthetic interoperability invariant failed")
+        if not {"context-process", "lease-unit", "root-clippy"} <= {
             g["name"] for g in gates["gates"] if g["status"] == "PASS"
-        }
+        }:
+            raise RuntimeError("Synthetic interoperability invariant failed")
     out = args.out.resolve()
-    assert out.is_relative_to(ROOT / "artifacts/local-p1-k")
+    if not out.is_relative_to(ROOT / "artifacts/local-p1-k"):
+        raise RuntimeError("Synthetic interoperability invariant failed")
     out.mkdir(mode=0o700, parents=True, exist_ok=False)
     report = dict(
         tested_git_sha=sha,
@@ -699,7 +751,8 @@ def main():
             report["stage"] = "synthetic daemon startup"
             f.start()
             executable = shutil.which("codex")
-            assert executable, "Selected installed Codex unavailable"
+            if not executable:
+                raise RuntimeError("Selected installed Codex unavailable")
             report["stage"] = "Codex direct MCP trial"
             report["codex"] = codex_trial(f, Path(executable).resolve())
             if args.kimi_home:
@@ -712,10 +765,11 @@ def main():
                 )
             report["database_unchanged"] = f.db.read_bytes() == f.before
         if args.opencode_executable:
-            assert (
+            if not (
                 args.opencode_executable.is_absolute()
                 and args.opencode_executable.is_file()
-            )
+            ):
+                raise RuntimeError("Synthetic interoperability invariant failed")
             report["stage"] = "OpenCode no-model discovery/lifecycle"
             report["opencode"] = opencode_trial(args.opencode_executable.resolve())
     except Exception:
@@ -731,4 +785,8 @@ def main():
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except Exception:
+        print("Sanitized synthetic interoperability preflight failure", file=sys.stderr)
+        raise SystemExit(2)
