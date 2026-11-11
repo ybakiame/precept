@@ -2,7 +2,7 @@
 
 The [charter](product.md) and [domain/trust ADR](adr/0004-product-domain-trust.md)
 define the target. Checkmarks below refer to scoped historical evidence, not
-production readiness. Latest product baseline: main `8e979ba` (merged P1-J / PR #32).
+production readiness. Latest product baseline: main `5559255` (P1-K merged in PR #33; ADR-0004 accepted by owner).
 P1-K interoperability evidence is scoped separately below.
 
 ## Stage 1 — established engineering baseline (P0 through P1-I)
@@ -57,22 +57,26 @@ code/permission/UI expansion or real project data was required. P0 user-reported
 [continuity](evaluation/2026-11-08-codex-kimi-handoff.md), P1-I Kimi results and OpenCode
 quota/zero-read failures retain their original historical provenance. K documents
 compatibility limits; it does not imply all-vendor certification or fresh platform
-acceptance. Hosted Actions remain NOT_RUN; source review is a Draft PR, not a merge.
-PR #33's optimization-bypass findings are fixed in `c285ce7`: explicit executable
-authorization/acceptance guards, seven new regressions, 29 Python tests passing on
-both local hosts, and targeted native IPC/MCP checks. The
-[follow-up evidence](evaluation/p1-k-cross-agent-interop.md#pr-33-review-optimization-safe-executable-checks)
-retains original trial provenance; the Draft still awaits re-review.
+acceptance. Hosted Actions remain NOT_RUN. PR #33 was reviewed and merged at
+`e3b1e3ad360e1ec28c8b17dc4774961463e63a12`; Issue #31 is closed. Its optimization-bypass
+findings were fixed in `c285ce7`: explicit executable authorization/acceptance guards,
+seven new regressions, 29 Python tests passing on both local hosts, and targeted native
+IPC/MCP checks. The [follow-up evidence](evaluation/p1-k-cross-agent-interop.md#pr-33-review-optimization-safe-executable-checks)
+retains original trial provenance. K is complete at its stated scope; OpenCode/Pi and
+additional model/platform modes remain explicitly unverified, not silently passed.
 
-## Stage 4 — follow-up implementation briefs after decisions are reviewed
+## Stage 4 — sequenced implementation briefs (P1-L active)
 
-These are **draft issue briefs**, not opened implementation issues or authorization
-to begin code. Re-read merged J/main, refine the relevant ADR/spec, then create
-bounded GitHub issues. Dependencies are explicit to avoid premature migration/UI work.
+ADR-0004 was accepted by the owner on 2026-11-11 without changing its domain/trust
+decisions. [P1-L / Issue #34](https://github.com/ybakiame/agent-control-plane/issues/34)
+is now open and is the only active Stage 4 implementation task. It freezes the v1
+typed context contract before implementing the pure Rust resolver. M–R remain gated
+briefs, not opened implementation issues or authorization to begin code. Dependencies
+are explicit to avoid premature storage migration, onboarding, review UI or snapshots.
 
 | Brief | Depends on | Deliverable / acceptance gate |
 | --- | --- | --- |
-| L — typed context explanation | J merged | Versioned rule/source/selector/conflict DTO design, then pure Rust resolver changes; deterministic unresolved conflicts, scope isolation, stale/unknown and malformed-selector regressions; preserve legacy responses until versioned |
+| L — typed context explanation ([Issue #34](https://github.com/ybakiame/agent-control-plane/issues/34), active) | J merged; ADR-0004 accepted | L0: versioned rule/source/selector/conflict DTO contract; L1: pure Rust resolver; deterministic unresolved conflicts, scope isolation, stale/unknown and malformed-selector regressions; preserve legacy responses until separately versioned |
 | M — local storage and Rust write ownership | J + L semantics | DB/contract format ADR and backup/recovery/privacy design first; synthetic rollback/crash/lock/disk-failure/old-reader acceptance before any production write rollout; no implicit real-profile migration |
 | N — project onboarding and contracts | J + L; M for writes | Register/preview explicit roots, optional versioned Markdown/YAML contract format and reviewed diff workflow; no auto-scaffold, symlink escape, private profile export or stale-source activation |
 | O — complete human review | J + L + M | Operator-only versioned proposal/review API and NSH workflow with view/confirm/reject/deprecate/delete/provenance; edits/review revocation/permission changes invalidate approval; no agent-facing mutation |
