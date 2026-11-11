@@ -1,4 +1,5 @@
 //! Deterministic protocol fixture. This is NOT a real coding agent.
+mod fake_mcp;
 use serde_json::{Value, json};
 use std::io::{BufRead, Write};
 fn emit(v: Value) {
@@ -50,6 +51,7 @@ fn main() {
         return;
     }
     let mut prompt = Value::Null;
+    let mut mcp = None;
     for line in std::io::stdin().lock().lines() {
         let Ok(line) = line else { return };
         let Ok(v) = serde_json::from_str::<Value>(&line) else {
@@ -58,8 +60,17 @@ fn main() {
         match v["method"].as_str() {
             Some("initialize") => reply(v["id"].clone(), initialized(&mode)),
             Some("session/new") => {
-                if v["params"]["mcpServers"] != json!([]) {
+                if !mode.starts_with("mcp") && v["params"]["mcpServers"] != json!([]) {
                     std::process::exit(9);
+                }
+                if mode == "mcp-reject" {
+                    emit(
+                        json!({"jsonrpc":"2.0","id":v["id"],"error":{"code":-32602,"message":"SENSITIVE_AUTH_TEST"}}),
+                    );
+                    continue;
+                }
+                if mode == "mcp" {
+                    mcp = Some(fake_mcp::Mcp::new(&v["params"]["mcpServers"]));
                 }
                 let ready = std::env::var_os("HOME")
                     .is_some_and(|p| std::path::Path::new(&p).join(".p1h-ready").is_file());
@@ -100,7 +111,14 @@ fn main() {
                     "auth-unsupported" => emit(
                         json!({"jsonrpc":"2.0","id":"unsupported-auth","method":"authenticate","params":{"methodId":"login","token":"SENSITIVE_AUTH_TEST"}}),
                     ),
-                    "crash" => std::process::exit(7),
+                    "mcp" => {
+                        mcp.as_mut().unwrap().call_both();
+                        emit(
+                            json!({"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fake-session","update":{"sessionUpdate":"tool_call","status":"completed"}}}),
+                        );
+                        reply(prompt.clone(), json!({"stopReason":"end_turn"}));
+                    }
+                    "crash" | "mcp-crash" => std::process::exit(7),
                     "malformed" => {
                         println!("not-json");
                         std::io::stdout().flush().unwrap();
@@ -120,7 +138,7 @@ fn main() {
                             emit(request)
                         }
                     }
-                    "cancel" | "cancel-timeout" => emit(
+                    "cancel" | "cancel-timeout" | "mcp-cancel" => emit(
                         json!({"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fake-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Waiting for explicit cancellation"}}}}),
                     ),
                     _ => {

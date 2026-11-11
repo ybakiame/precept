@@ -25,7 +25,10 @@ operator `session.start` additionally requires `share_context: true`, the select
 allowlisted project, configured agent label and `confirmed: true`. Missing/false
 sharing keeps `mcpServers: []`, including every existing UI Start operation. No
 arbitrary caller server list, command, env, capability path or TTL is accepted.
-Operator tooling can use native authenticated IPC; Windows→WSL stays read-only.
+The native operator CLI supports `session-start <project> <agent> --confirm-start
+--share-context`, `session-context <project>` and `session-stop <project> <generation>`;
+all still authenticate with the existing private operator capability. Windows→WSL
+owner helpers remain read-only.
 
 After the direct child is spawned successfully, the daemon creates one distinct
 random credential with format **2**, access `agent` bound to project, and a binding
@@ -42,11 +45,12 @@ or user paths. Existing secure Unix mode/owner/link and Windows owner/DACL/repar
 checks apply. Collisions, broad permissions and unsafe paths fail closed. The
 agent launches only the configured stdio server; the daemon owns the capability
 lifetime, not every vendor-created descendant. Minimal explicit server environment
-is empty; the agent itself receives only the existing allowlisted explicit env.
+is empty; a vendor may inherit its own cleared, explicitly allowlisted agent env.
 No secret value appears in argv, UI, diagnostics or audit counters. The capability
 **path** is required on the private child channel and is never copied into public
 evidence. An agent may independently log its launch metadata inside its selected
-private HOME; real tests delete that owned state after child cleanup.
+private HOME; real tests remove vendor-generated state after child cleanup. The owner explicitly
+requested retaining the private authentication config for later verification.
 
 ## Lease state and revocation
 
@@ -111,3 +115,11 @@ inspect daemon call counters. Run stable local Windows/ConPTY and native WSLg
 matrices once, then only affected gates. Evidence belongs in
 `docs/evaluation/p1-i-context-bridge.md`; private artifacts under ignored
 `artifacts/local-p1-i/`. No raw credentials, conversations or identifying paths in PRs.
+
+
+I3 owner decision: the owner filled the new private Kimi config locally and explicitly
+authorized one fixed context-tool turn, including its necessary model/tool round trips,
+and retention of that key for later validation. Only two exact read-only MCP tool
+names are preauthorized in that disposable private configuration; no wildcard, yolo,
+client permission auto-approval or inferred future model-call authorization is added.
+The public code never reads the credential value.

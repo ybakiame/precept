@@ -454,6 +454,7 @@ def main():
                     "artifacts/local-p1-f",
                     "artifacts/local-p1-g",
                     "artifacts/local-p1-h",
+                    "artifacts/local-p1-i",
                 ]
             ):
                 results.append(
@@ -476,9 +477,30 @@ def main():
                         reason="fresh host release unavailable",
                     )
                 )
+        if directory.is_relative_to(ROOT / "artifacts/local-p1-i"):
+            results.append(
+                run_gate(
+                    "lease-unit",
+                    ["cargo", "test", "-p", "acp-ipc", "--offline", "--locked"],
+                    directory,
+                    env,
+                )
+            )
+            results.append(
+                run_gate(
+                    "context-process",
+                    [PY, "tools/test_session_context.py", "-v"],
+                    directory,
+                    env,
+                )
+            )
         if any(
             directory.is_relative_to(ROOT / folder)
-            for folder in ["artifacts/local-p1-g", "artifacts/local-p1-h"]
+            for folder in [
+                "artifacts/local-p1-g",
+                "artifacts/local-p1-h",
+                "artifacts/local-p1-i",
+            ]
         ):
             results.append(
                 run_gate(
@@ -502,7 +524,18 @@ def main():
                         str(directory / "sessions"),
                         *(
                             ["--auth"]
-                            if directory.is_relative_to(ROOT / "artifacts/local-p1-h")
+                            if any(
+                                directory.is_relative_to(ROOT / folder)
+                                for folder in [
+                                    "artifacts/local-p1-h",
+                                    "artifacts/local-p1-i",
+                                ]
+                            )
+                            else []
+                        ),
+                        *(
+                            ["--context"]
+                            if directory.is_relative_to(ROOT / "artifacts/local-p1-i")
                             else []
                         ),
                     ],
@@ -510,7 +543,10 @@ def main():
                     env,
                 )
             )
-        if directory.is_relative_to(ROOT / "artifacts/local-p1-h"):
+        if any(
+            directory.is_relative_to(ROOT / folder)
+            for folder in ["artifacts/local-p1-h", "artifacts/local-p1-i"]
+        ):
             results.append(
                 run_gate(
                     "real-runner-guards",
@@ -748,7 +784,11 @@ def main():
     )
     if any(
         directory.is_relative_to(ROOT / folder)
-        for folder in ["artifacts/local-p1-g", "artifacts/local-p1-h"]
+        for folder in [
+            "artifacts/local-p1-g",
+            "artifacts/local-p1-h",
+            "artifacts/local-p1-i",
+        ]
     ):
         report["p1g_host_checks"] = (
             "PASS"
@@ -760,7 +800,10 @@ def main():
         report["real_acp_agent"] = (
             "NOT_RUN by generic runner; see separate explicit opt-in smoke report"
         )
-    if directory.is_relative_to(ROOT / "artifacts/local-p1-h"):
+    if any(
+        directory.is_relative_to(ROOT / folder)
+        for folder in ["artifacts/local-p1-h", "artifacts/local-p1-i"]
+    ):
         report["p1h_host_checks"] = (
             "PASS"
             if report.get("p1g_host_checks") == "PASS"
@@ -770,6 +813,21 @@ def main():
         report["session_owner_ui_review"] = "DEFERRED_BY_OWNER_AT_PR25"
         report["context_mcp_bridge"] = (
             "NOT_RUN: explicitly not enabled; mcpServers empty"
+        )
+    if directory.is_relative_to(ROOT / "artifacts/local-p1-i"):
+        report["p1i_host_checks"] = (
+            "PASS"
+            if report.get("p1h_host_checks") == "PASS"
+            and {"lease-unit", "context-process"} <= passed
+            else "INCOMPLETE"
+        )
+        report["context_mcp_bridge"] = (
+            "PASS deterministic scoped calls/revocation"
+            if "context-process" in passed
+            else "INCOMPLETE"
+        )
+        report["real_context_agent"] = (
+            "NOT_RUN by generic runner; explicit opt-in smoke is separate"
         )
     report["owner_ui_review"] = "ACCEPTED_BASE_UI" if args.owner_reviewed else "PENDING"
     report["windows_companion"] = "NOT_RUN"
