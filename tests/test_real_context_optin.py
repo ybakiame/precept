@@ -11,10 +11,22 @@ sys.path.pop(0)
 
 
 class RealContextOptInTests(unittest.TestCase):
-    def test_exact_readonly_arguments_and_separate_permission_optin(self):
+    def test_exact_readonly_tool_claim_and_separate_permission_optin(self):
         base = dict(opt_in=True, agent="kimi", remaining=2, allow_once="once")
-        for title, raw in READONLY_REQUESTS.items():
-            call = dict(title=title, rawInput=raw)
+        for title in READONLY_REQUESTS:
+            call = dict(
+                toolCallId="synthetic-call",
+                title=title,
+                content=[
+                    {
+                        "type": "content",
+                        "content": {
+                            "type": "text",
+                            "text": "Requesting approval to Approve " + title,
+                        },
+                    }
+                ],
+            )
             self.assertTrue(approved_readonly_request(call, **base))
             for change in [
                 dict(opt_in=False),
@@ -26,9 +38,10 @@ class RealContextOptInTests(unittest.TestCase):
             for changed in [
                 None,
                 [],
-                dict(title=[title], rawInput=raw),
-                dict(title=title + " extra", rawInput=raw),
-                dict(title=title, rawInput=raw | {"project": "beta"}),
-                dict(title=title, rawInput={}),
+                call | dict(title=[title]),
+                call | dict(title=title + " extra"),
+                call | dict(rawInput={"project": "beta"}),
+                call | dict(content=[]),
+                call | dict(content=[{"type": "diff", "path": "synthetic"}]),
             ]:
                 self.assertFalse(approved_readonly_request(changed, **base))

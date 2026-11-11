@@ -20,13 +20,18 @@ PROMPT = (
 
 
 READONLY_REQUESTS = {
-    "Approve mcp__acp-context__get_effective_context": {"include_documents": True},
-    "Approve mcp__acp-context__get_handoff": {"task_id": "shared"},
+    "mcp__acp-context__get_effective_context",
+    "mcp__acp-context__get_handoff",
 }
 
 
 def approved_readonly_request(operation, *, opt_in, agent, remaining, allow_once):
-    """Only a bounded, separately authorized synthetic vendor request may be approved."""
+    """Approve only two owner-authorized tools, never broad vendor permission grants.
+
+    Kimi 2.5.2's ACP permission adapter omits arguments; its exact tool title and
+    action content are vendor claims. Daemon/MCP enforce scope independently.
+    See MoonshotAI/kimi-code packages/acp-server/src/approval.ts.
+    """
     if not isinstance(operation, dict):
         return False
     title = operation.get("title")
@@ -37,8 +42,17 @@ def approved_readonly_request(operation, *, opt_in, agent, remaining, allow_once
         and allow_once
         and isinstance(title, str)
         and title in READONLY_REQUESTS
-        and json.dumps(operation.get("rawInput"), sort_keys=True)
-        == json.dumps(READONLY_REQUESTS[title], sort_keys=True)
+        and set(operation) == {"toolCallId", "title", "content"}
+        and operation["content"]
+        == [
+            {
+                "type": "content",
+                "content": {
+                    "type": "text",
+                    "text": "Requesting approval to Approve " + title,
+                },
+            }
+        ]
     )
 
 
@@ -218,7 +232,7 @@ def main():
                 while time.monotonic() < deadline:
                     v = f.query("session.get")
                     if v["permissions"]:
-                        # Operator-approved synthetic tool requests only. These strings
+                        # Operator-approved read-only tool requests only. These strings
                         # describe vendor claims, not trusted project or authorization facts.
                         permitted = True
                         for pending in v["permissions"]:
@@ -237,9 +251,7 @@ def main():
                                     "operation_keys": sorted(operation),
                                     "known_title": isinstance(title, str)
                                     and title in READONLY_REQUESTS,
-                                    "expected_input": isinstance(title, str)
-                                    and title in READONLY_REQUESTS
-                                    and raw == READONLY_REQUESTS[title],
+                                    "arguments_exposed": raw is not None,
                                 }
                                 permitted = False
                                 break
@@ -255,7 +267,7 @@ def main():
                             continue
                         result.update(
                             status="NOT_RUN",
-                            reason="Vendor permission outside separately authorized exact read-only requests; turn stopped",
+                            reason="Vendor permission outside separately authorized read-only tool requests; turn stopped",
                         )
                         break
                     if v["state"] in ["completed", "failed", "auth_required"]:
