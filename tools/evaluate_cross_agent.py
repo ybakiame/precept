@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import time
+import tomllib
 
 from agent_control_plane.context import worktree_snapshot
 from interop_trace import WARNINGS, digest
@@ -26,6 +27,39 @@ PROMPT = (
     "If the handoff is stale and its recorded validation must remain historical, "
     "reply HANDOFF_STALE_CHECKS_HISTORICAL only; otherwise reply HANDOFF_UNKNOWN only."
 )
+
+
+def kimi_configuration_allowed(config):
+    """Bind the stage's subscription/model opt-in without emitting credential values."""
+    try:
+        model = config["models"][config["default_model"]]
+        provider = config["providers"][model["provider"]]
+        key = provider.get("api_key")
+        return (
+            model["model"] == "kimi-for-coding"
+            and provider["type"] == "kimi"
+            and provider["base_url"] == "https://api.kimi.com/coding/v1"
+            and isinstance(key, str)
+            and bool(key)
+            and "REPLACE" not in key
+            and config["default_permission_mode"] == "manual"
+            and set(config["tools"]["enabled"])
+            == {
+                "mcp__acp-context__get_effective_context",
+                "mcp__acp-context__get_handoff",
+            }
+            and all(
+                config[name] is False
+                for name in [
+                    "telemetry",
+                    "auto_session_title",
+                    "builtin_product_skills",
+                    "merge_all_available_skills",
+                ]
+            )
+        )
+    except (KeyError, TypeError):
+        return False
 
 
 class Scenario(ContextFixture):
@@ -309,6 +343,9 @@ def codex_trial(f, executable):
 
 def kimi_trial(f, home, executable, save):
     private_home(home)
+    assert kimi_configuration_allowed(
+        tomllib.loads((home / ".kimi-code/config.toml").read_text())
+    ), "Private config does not match the authorized model/service/tool policy"
     f.config.write_text(
         json.dumps(
             dict(
