@@ -133,6 +133,9 @@ change the UI. Original failed/incomplete attempts are preserved. OpenCode 2.2.7
 accepted the stdio session, but GLM/DeepSeek free-model turns were blocked by provider
 quota responses in keyed and anonymous isolated runs. The model ID is verified and
 the owner demonstrated regular WSL TUI success; the difference remains unexplained.
-Real OpenCode MCP tool use remains unverified. Replaced-lease file cleanup now follows
+An official DeepSeek Flash turn through OpenCode subsequently completed, but MCP read
+counts stayed zero: OpenCode defaults MCP tools to Code Mode, whose execute entry is
+denied by the strict test policy. Real OpenCode MCP retrieval remains unverified.
+Replaced-lease file cleanup now follows
 an atomic Starting reservation and occurs outside the supervisor mutex. See the
 [per-attempt and per-host evidence](../evaluation/p1-i-context-bridge.md).

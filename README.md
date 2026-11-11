@@ -150,6 +150,7 @@ real Kimi Code 2.5.2 completed both tools, followed by post-Stop peer/reconnect 
 and cleanup. OpenCode 2.2.7 accepted the session, but GLM/DeepSeek free-model calls were
 rejected with quota errors in both keyed and anonymous isolated tests. Its model ID
 was verified; the owner demonstrated regular WSL TUI success, whose difference remains
-unexplained. OpenCode MCP tool use remains unverified. Earlier failures are retained. See the [lease contract](docs/p1/session-context-bridge.md)
+unexplained. A separate official DeepSeek Flash turn completed, but OpenCode MCP reads
+remained zero under the strict Code Mode restriction. Earlier failures are retained. See the [lease contract](docs/p1/session-context-bridge.md)
 and [evidence / remaining acceptance](docs/evaluation/p1-i-context-bridge.md).
 This remains a local prototype, without OS sandboxing or Windows→WSL execution.

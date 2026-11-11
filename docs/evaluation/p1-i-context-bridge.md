@@ -219,6 +219,49 @@ was opened or changed to reproduce that success, and no quota reset or bypass is
 claimed. OpenCode MCP tool use and model quality remain NOT_VERIFIED; the observations
 do not support a quality/performance ranking against Kimi.
 
+### Official DeepSeek comparison through OpenCode
+
+The owner separately supplied a DeepSeek official API key and authorized testing it
+through OpenCode. The original source file was read only; it and its containing
+external project were not modified. A separate owner-only temporary authentication
+copy was used. An authenticated GET to the [official `/models` endpoint](https://api-docs.deepseek.com/api/list-models/)
+returned `deepseek-flash` (DeepSeek-V4.1-Flash) and `deepseek-v4-pro`. OpenCode's own
+model command then listed `deepseek/deepseek-flash`. This is a **different provider and
+ID** from `opencode/deepseek-v4.1-flash-free`; the official key was not sent to OpenCode's
+free-model service. The helper's new `--opencode-service deepseek` requires credential
+mode, the exact Flash model and the official `https://api.deepseek.com/v1` endpoint;
+a negative test rejects anonymous or cross-service/model selection.
+
+At clean `9b6f45a4030eccd3702b3627cc66327d2c403657`, one fixed synthetic two-tool prompt
+was submitted in `real-opencode-deepseek-official-1`. The installed agent initialized,
+authenticated model requests succeeded, and the turn completed with `end_turn`,
+11 response chunks and no supervisor/protocol error. However, daemon counters were
+**context 0 / Handoff 0**. The original strict MCP smoke therefore remains **FAIL**,
+not PASS. The model attempted a `skill` tool, whose owned vendor record says
+`executed: false` and an error; no broad permission or additional tool was approved.
+Provider HTTP request count and exact cost were not instrumented; one application
+prompt can generate multiple model requests. Build/title/summary/compaction all used
+the official Flash model; output was configured to 1024 tokens with thinking disabled.
+
+A source/configuration review found that OpenCode 2.2.7 registers MCP tools with
+`codemode: true` by default, including servers supplied through ACP, while the strict
+smoke policy denies `execute`. This hides tools reached only through Code Mode. See
+[v2.2.7 MCP tool registration](https://github.com/anomalyco/opencode/blob/v2.2.7/packages/core/src/tool/mcp.ts),
+[ACP stdio translation](https://github.com/anomalyco/opencode/blob/v2.2.7/packages/cli/src/acp/sessions.ts)
+and [execute permission semantics](https://opencode.ai/docs/permissions/). The test
+did not enable a general execution wrapper, alter the product's fixed ACP server
+entry or relax the two-tool authority to manufacture a passing comparison. No second
+official model prompt was submitted. This validates official-provider model access,
+**not** OpenCode MCP retrieval or adherence to the requested tool sequence.
+
+Only the affected Python helper regressions were supplemented on Windows/Linux
+(now **19 passing checks**), plus the helper's same-clean-source security preflight;
+no GUI/10k or whole host matrix was repeated. Temporary official-provider credentials
+and generated vendor state were removed after child reaping; the owner's source key
+remains untouched. The non-secret test configuration and content-free reports remain.
+The earlier Kimi two-tool success and free-provider failures keep their original
+source revisions and statuses.
+
 Private reports remain under ignored `artifacts/local-p1-i/`. Credentials stay outside
 the repository in owner-only local files (HOME 0700, auth config 0600); supplied key
 files and directories were also restricted to these permissions. Key values are used
@@ -267,7 +310,7 @@ UI reports. No binary archive or private screenshot is uploaded with the PR.
 | Check | Native WSLg / Linux | Native Windows |
 | --- | --- | --- |
 | Full local host gates | 35 PASS, 0 FAIL/BLOCKED, 2 NOT_RUN (composed) | 33 PASS, 0 FAIL/BLOCKED, 4 NOT_RUN (composed) |
-| Rust / Python | 50 / 18 | 49 / 18 |
+| Rust / Python | 50 / 19 | 49 / 19 |
 | JSON / SQLite parity | 120 / 78 | 120 / 78 |
 | Backup / process recovery / existing service | PASS / 11 / 11 | PASS / 11 / 11 |
 | Shared native-feature / NSH component / terminal-cell tests | 25 / 6 / 3 | 25 / 6 / 3 |
@@ -292,8 +335,8 @@ not proof of hardware acceleration. No XWayland/Xvfb substitute was accepted.
 All 834 pages of the 10k component workload mounted with fewer than 100 text nodes
 on both hosts; actual native/PTY or ConPTY filtering also passed.
 
-After the real-smoke helper changes, the Python suite (now 18 checks, including the
-permission selector and anonymous-mode negative cases) passed on both Linux/WSL and native Windows.
+After the real-smoke helper changes, the Python suite (now 19 checks, including the
+permission selector, anonymous-mode and provider-selection negative cases) passed on both Linux/WSL and native Windows.
 Only the affected Python/helper gates were supplemented; the previously passing
 GUI/ConPTY/Wayland/10k evidence remains tied to its original product source revisions.
 
@@ -327,7 +370,9 @@ lock-only runtime change. The successful Kimi tool-call evidence remains tied to
 Real installed Kimi tool-call acceptance is verified on synthetic Linux/WSL state.
 OpenCode isolated keyed and anonymous free-model tests returned quota errors, while
 the owner demonstrated interactive WSL success; that environment difference remains
-unexplained. No OpenCode MCP success or quality comparison is claimed. No extra public-project test was needed. All earlier
+unexplained. No OpenCode MCP success or quality comparison is claimed. Official DeepSeek access through
+OpenCode completed a model turn, but its strict two-tool smoke failed with zero reads
+under the documented Code Mode restriction. No extra public-project test was needed. All earlier
 failed/incomplete observations remain distinct from the final Kimi success.
 
 No native Windows real-agent model turn, real-model GUI prompt, macOS/mobile,
