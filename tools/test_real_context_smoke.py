@@ -19,6 +19,29 @@ PROMPT = (
 )
 
 
+READONLY_REQUESTS = {
+    "Approve mcp__acp-context__get_effective_context": {"include_documents": True},
+    "Approve mcp__acp-context__get_handoff": {"task_id": "shared"},
+}
+
+
+def approved_readonly_request(operation, *, opt_in, agent, remaining, allow_once):
+    """Only a bounded, separately authorized synthetic vendor request may be approved."""
+    if not isinstance(operation, dict):
+        return False
+    title = operation.get("title")
+    return bool(
+        opt_in
+        and agent == "kimi"
+        and remaining > 0
+        and allow_once
+        and isinstance(title, str)
+        and title in READONLY_REQUESTS
+        and json.dumps(operation.get("rawInput"), sort_keys=True)
+        == json.dumps(READONLY_REQUESTS[title], sort_keys=True)
+    )
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     for flag in ["opt-in", "allow-credential-use", "allow-model-call"]:
@@ -26,6 +49,8 @@ def main():
     p.add_argument("--authenticated-home", type=Path, required=True)
     p.add_argument("--executable", type=Path, required=True)
     p.add_argument("--version", required=True)
+    p.add_argument("--agent", choices=["kimi", "opencode"], default="kimi")
+    p.add_argument("--allow-readonly-mcp-permissions", action="store_true")
     p.add_argument("--security-report", type=Path, required=True)
     p.add_argument("--out", type=Path, required=True)
     p.add_argument(
@@ -39,7 +64,36 @@ def main():
     ), "Separate operator credential-use opt-in required"
     assert a.initialize_only or a.allow_model_call, "Separate model opt-in required"
     assert os.name != "nt", "This real opt-in selects the installed Linux agent"
-    home = private_home(a.authenticated_home)
+    if a.agent == "kimi":
+        home = private_home(a.authenticated_home)
+    else:
+        home = a.authenticated_home
+        assert home.is_absolute() and home.resolve() == home and home != Path.home()
+        assert not home.is_relative_to(ROOT)
+        for item in [
+            home,
+            home / ".acp-owned-smoke-home",
+            home / ".local/share/opencode/auth.json",
+        ]:
+            st = item.lstat()
+            assert (
+                not item.is_symlink()
+                and st.st_uid == os.getuid()
+                and st.st_mode & 0o077 == 0
+            )
+    if a.agent == "opencode":
+        config = json.loads((home / ".config/opencode/opencode.json").read_text())
+        model = config["model"]
+        assert model in {
+            "opencode/glm-5.3-flash-free",
+            "opencode/deepseek-v4.1-flash-free",
+        }
+        assert all(
+            config["agents"][name]["model"] == model
+            for name in ["build", "title", "summary", "compaction"]
+        )
+    else:
+        model = "kimi-for-coding"
     assert a.executable.is_absolute() and a.executable.is_file()
     sha = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
@@ -65,8 +119,11 @@ def main():
         tested_git_sha=sha,
         worktree_dirty=False,
         host="Linux/WSL native daemon",
-        agent="Kimi Code CLI",
+        agent="Kimi Code CLI" if a.agent == "kimi" else "OpenCode",
+        readonly_permission_opt_in=a.allow_readonly_mcp_permissions,
+        approved_readonly_calls=0,
         installed_version=a.version,
+        configured_model=model,
         owner_opt_in=True,
         credential_use="operator-prepared disposable private HOME",
         application_prompt_submissions=0,
@@ -99,7 +156,7 @@ def main():
                     version=1,
                     programs=[
                         dict(
-                            id="real-kimi",
+                            id="real-" + a.agent,
                             executable=str(a.executable.resolve()),
                             args=["acp"],
                             env=dict(
@@ -114,12 +171,15 @@ def main():
             f.start()
             f.query(
                 "session.start",
-                executable="real-kimi",
+                executable="real-" + a.agent,
                 confirmed=True,
                 share_context=True,
             )
             v = observed(f, ["ready", "auth_required", "failed"], 18)
-            identity = v["agent"] == "Kimi Code CLI " + a.version
+            identity = (
+                v["agent"]
+                == ("Kimi Code CLI " if a.agent == "kimi" else "OpenCode ") + a.version
+            )
             result.update(
                 identity_verified=identity,
                 session_new=v["state"],
@@ -143,16 +203,59 @@ def main():
                     "ABOUT_TO_SEND; never automatically retried"
                 )
                 save()
-                f.query("session.prompt", session_id=v["session_id"], prompt=PROMPT)
+                f.query(
+                    "session.prompt",
+                    session_id=v["session_id"],
+                    prompt=(
+                        PROMPT
+                        if a.agent == "kimi"
+                        else PROMPT.replace("mcp__acp-context__", "acp_context_")
+                    ),
+                )
                 result["prompt_submission"] = "ACKNOWLEDGED"
                 save()
                 deadline = time.monotonic() + 125
                 while time.monotonic() < deadline:
                     v = f.query("session.get")
                     if v["permissions"]:
+                        # Operator-approved synthetic tool requests only. These strings
+                        # describe vendor claims, not trusted project or authorization facts.
+                        permitted = True
+                        for pending in v["permissions"]:
+                            operation = json.loads(pending["operation"])
+                            title = operation.get("title")
+                            raw = operation.get("rawInput")
+                            approved = approved_readonly_request(
+                                operation,
+                                opt_in=a.allow_readonly_mcp_permissions,
+                                agent=a.agent,
+                                remaining=2 - result["approved_readonly_calls"],
+                                allow_once=pending["allow_once"],
+                            )
+                            if not approved:
+                                result["permission_shape"] = {
+                                    "operation_keys": sorted(operation),
+                                    "known_title": isinstance(title, str)
+                                    and title in READONLY_REQUESTS,
+                                    "expected_input": isinstance(title, str)
+                                    and title in READONLY_REQUESTS
+                                    and raw == READONLY_REQUESTS[title],
+                                }
+                                permitted = False
+                                break
+                            f.query(
+                                "session.permission",
+                                session_id=v["session_id"],
+                                request_id=pending["request_id"],
+                                option_id=pending["allow_once"],
+                            )
+                            result["approved_readonly_calls"] += 1
+                            save()
+                        if permitted:
+                            continue
                         result.update(
                             status="NOT_RUN",
-                            reason="Vendor requires manual permission; no permission automatically approved",
+                            reason="Vendor permission outside separately authorized exact read-only requests; turn stopped",
                         )
                         break
                     if v["state"] in ["completed", "failed", "auth_required"]:
