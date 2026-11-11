@@ -1,6 +1,6 @@
 # ADR-0004: product domain, ownership and evidence trust
 
-- Status: Proposed — product contract for owner review; not permission to implement
+- Status: Accepted — owner approved 2026-11-11; implementation remains sequenced by roadmap issues
 - Date: 2026-11-11
 - Authority: [Issue #30](https://github.com/ybakiame/agent-control-plane/issues/30)
 - Baseline: main `14798f2809b557a16bda16729f2cdeed7f24bbb0`
@@ -13,7 +13,7 @@ sessions. The sibling [assessment](../agent-control-assessment.md) supplies desi
 ideas, not source code or authority. The current preference/Handoff schema cannot
 be silently reinterpreted as a general rule engine or authenticated evidence log.
 
-## Decision proposal: domain objects
+## Decision: domain objects
 
 | Concept | Meaning / identity | Owner and lifetime |
 | --- | --- | --- |
