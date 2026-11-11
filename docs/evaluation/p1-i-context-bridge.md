@@ -106,49 +106,89 @@ Both original logs remain private. The corrected root-drift fixture uses a new o
 synthetic directory and explicitly distinguishes its deliberate registration writes
 from the service's read-only behavior. No failed run is relabeled as passing.
 
-## Real installed Kimi evidence
+## Real installed agent evidence
 
-Installed Kimi Code CLI 2.5.2 was independently checked with empty/disposable HOME;
-binary SHA-256 `28b0ff2e18ce35ba6e508ea50a5726095919ab6fd448682ea57070e1e3879875`.
-The owner prepared Kimi Code API-key configuration locally and explicitly authorized
-one fixed synthetic context turn, including necessary model/tool round trips. Two
-exact MCP tool names were preauthorized in that private config; no wildcard/yolo,
-client permission auto-approval or inherited login configuration. Auto session title,
-telemetry and automatic skill merging were disabled. The owner separately requested
-retention of the key for future verification; this does not authorize implicit model
-calls. The runner never reads config/key contents or publishes raw vendor output.
+The owner authorized Kimi authentication/network/model use for this debugging session,
+retention of its private key for later validation, and an OpenCode free-model comparison.
+All real turns used disposable synthetic projects and private operator-selected HOME;
+the additionally offered public project was unnecessary and was not accessed. No normal
+login state, real ACP database or external repository was copied or modified.
 
-1. `real-context-1`, clean `3dbe86571a92d570eb6d1ab67714482ce24d40f8`: **FAIL / incomplete
-   evidence**. One application prompt and one LLM-request event were counted from
-   fixed event tags in the owned synthetic wire metadata; no message text was
-   published. Cleanup incorrectly tried Stop while the failed child receiver was
-   closing and raised Unavailable. Independent daemon tool counters and final child
-   cleanup were not retained. No real MCP success is claimed from this attempt.
-2. `real-initialize-2`, clean `a7a7e1a0922aae5a8d2523ea53c18ca8c6d6f03b`: **PASS for
-   initialize/new/stop only**, zero application prompts. Installed identity verified,
-   ACP v1 accepted the stdio MCP session, counts remained zero, direct child reaped,
-   lease file removed and synthetic DB unchanged. This proves neither a model turn
-   nor a context tool call.
-3. Additional real model turn: **NOT_RUN / pending fresh opt-in**. The initial fixed
-   prompt authorization was consumed; no prompt was automatically resubmitted.
-   Consequently a successful real Agent MCP context call is **NOT_VERIFIED** in this
-   Draft PR. The actual first-turn failure is not yet classified, rather than being
-   misreported as vendor MCP incompatibility or success.
+Installed binaries were independently identified:
 
-The runner now saves content-free progress before prompt submission and preserves
-an original report for each attempt. Failed/auth-required children are allowed to
-finish their existing reaping path instead of issuing Stop to a closed receiver.
-Security gates must pass at the same clean SHA before any real prompt. Private
-reports stay under ignored `artifacts/local-p1-i/`; actual credential paths, raw
-conversations and private-home vendor files do not enter this document or PR.
+| Agent | Version | Executable SHA-256 |
+| --- | --- | --- |
+| Kimi Code CLI | 2.5.2 | `28b0ff2e18ce35ba6e508ea50a5726095919ab6fd448682ea57070e1e3879875` |
+| OpenCode | 2.2.7 | `589253d36810f21217edd51545cd435b328cdc3cf4f451fbe0cce6f88afcf5e1` |
 
-The owner-authorized private authentication config was retained in a separate user-local
-validation directory (HOME 0700, config 0600) outside the checkout. Cross-filesystem
-retention used a private local kernel file copy, not credential inspection or output;
-the original temporary copy and generated vendor sessions/logs were removed. Only the
-key-containing config and ownership marker remain. Normal login state and the existing
-ACP user database were not read or copied. Retaining this config does not reactivate
-any lease or implicitly initiate a future model call.
+The final real Kimi run, `real-context-6`, is **PASS** at clean
+`df3d8da741506544f0f8175991d95bee8e90f741`. One fixed application prompt completed with
+`end_turn`, three streamed response chunks, and independent daemon counters of
+**one `get_effective_context` and one `get_handoff` call**. Stop then denied both an
+already-authenticated IPC peer and a new handshake with the saved ephemeral secret.
+The direct child was reaped, lease file removed, and synthetic DB bytes unchanged.
+Daemon SHA-256 was `164b2cfaa5b56e79c74c3203127077194aeeed0bfcc904175606a6aadd996a66`;
+MCP SHA-256 was `d761861f928f599c1c6acd64be09964e75dbe8428fa0d4eb6664c92f42c330db`.
+Security Clippy, IPC unit and 14-case process gates passed at that same clean SHA
+before model use. Provider HTTP requests were not instrumented; one application
+prompt can require multiple model/tool round trips and is not claimed as one HTTP call.
+
+Kimi remained in manual permission mode with its tool catalog restricted to the two
+MCP tools. Auto title, telemetry and automatic skill merging were disabled. Its ACP
+adapter still requested approval despite the private tool-name allow rules. The
+separately opted-in test runner selected **allow once** for each of the two exact
+vendor tool-name/content shapes, at most twice; it never selected persistent approval.
+The vendor adapter omits arguments from this permission request, so parameter approval
+is **not** claimed. Tool names/content are vendor claims, while project/role/lease
+restrictions are independently enforced by the daemon/MCP. Unknown requests, extra
+fields, different content, absent opt-in and non-Kimi requests stop the smoke. A focused
+negative Python regression covers this selector. This is test-only behavior; product
+permission handling and the reviewed UI retain their existing operator controls.
+See the [Kimi adapter source](https://github.com/MoonshotAI/kimi-code/blob/main/packages/acp-server/src/approval.ts)
+and [configuration reference](https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files).
+
+Original failures and incomplete runs remain recorded rather than overwritten:
+
+| Private attempt | Clean source | Observation |
+| --- | --- | --- |
+| `real-context-1` | `3dbe865` | FAIL / incomplete reporting after a cleanup race; one prompt, counters not captured |
+| `real-initialize-2` | `a7a7e1a` | PASS initialize/new/stop only; zero prompts, not tool-call proof |
+| `real-context-3` | `c85e8b5` | FAIL model acceptance, `auth_required`, zero tool reads; retained template still contained a placeholder |
+| `real-context-4` | `c85e8b5` | Correct owner-supplied key installed privately; model reached first MCP approval; stopped without approving |
+| `real-context-5` | `5508e33` | Stopped at approval: strict initial selector expected raw arguments that the vendor does not expose |
+| `real-context-6` | `df3d8da` | PASS real two-tool calls and post-Stop denial/cleanup |
+
+The earlier pending-authorization claim was too narrow: the owner had already allowed
+debugging calls. The subsequent runs used that standing authorization, each as a
+separate deliberate invocation with no automatic prompt retry loop. The runner saves
+content-free progress before submission and always attempts bounded child reaping.
+
+OpenCode 2.2.7 accepted native ACP v1 `initialize` and the same stdio MCP session.
+Its isolated configuration explicitly selected free models and pinned build/title/
+summary/compaction to the same selected free model, with all tools denied except the
+two named MCP reads. The installed catalog listed both selected models, and the
+[official model page](https://opencode.ai/docs/console/models/) listed them as free
+at validation time. The [ACP reference](https://opencode.ai/docs/cli/acp/) documents
+a private stdio process that does not use the shared background service or ACP port.
+
+| OpenCode model / private attempt | Clean source | Real result |
+| --- | --- | --- |
+| `opencode/glm-5.3-flash-free` / `real-opencode-glm-1` | `5508e33` | BLOCKED by provider free-usage limit; original runner status FAIL; zero MCP calls |
+| `opencode/deepseek-v4.1-flash-free` / `real-opencode-deepseek-1` | `df3d8da` | BLOCKED by provider free-usage limit; original runner status FAIL; zero MCP calls |
+
+Each submitted one fixed prompt, returned an agent error before streamed/tool output,
+and reaped its direct child, removed the lease and preserved DB bytes. A fixed-category
+scan of the private vendor log identified `free usage` / `subscribe` / `limit` for both;
+no raw error text is published. No paid-model fallback or quota retry was attempted.
+OpenCode tool-use compatibility and model quality therefore remain **NOT_VERIFIED**;
+these results do not support a performance/quality ranking against Kimi.
+
+Private reports remain under ignored `artifacts/local-p1-i/`. Credentials stay outside
+the repository in owner-only local files (HOME 0700, auth config 0600); supplied key
+files and directories were also restricted to these permissions. Key values are used
+only to prepare private vendor configuration and are never printed or published.
+Generated vendor sessions/logs are removed after reaping; authorized credential configs
+are retained. Retention does not reactivate a lease or implicitly initiate future calls.
 
 ## Local regression matrix and source provenance
 
@@ -191,7 +231,7 @@ UI reports. No binary archive or private screenshot is uploaded with the PR.
 | Check | Native WSLg / Linux | Native Windows |
 | --- | --- | --- |
 | Full local host gates | 35 PASS, 0 FAIL/BLOCKED, 2 NOT_RUN (composed) | 33 PASS, 0 FAIL/BLOCKED, 4 NOT_RUN (composed) |
-| Rust / Python | 50 / 16 | 49 / 16 |
+| Rust / Python | 50 / 17 | 49 / 17 |
 | JSON / SQLite parity | 120 / 78 | 120 / 78 |
 | Backup / process recovery / existing service | PASS / 11 / 11 | PASS / 11 / 11 |
 | Shared native-feature / NSH component / terminal-cell tests | 25 / 6 / 3 | 25 / 6 / 3 |
@@ -216,6 +256,11 @@ not proof of hardware acceleration. No XWayland/Xvfb substitute was accepted.
 All 834 pages of the 10k component workload mounted with fewer than 100 text nodes
 on both hosts; actual native/PTY or ConPTY filtering also passed.
 
+After the real-smoke helper changes, the Python suite (now 17 checks, including the
+permission selector negative case) passed on both Linux/WSL and native Windows.
+Only the affected Python/helper gates were supplemented; the previously passing
+GUI/ConPTY/Wayland/10k evidence remains tied to its original product source revisions.
+
 All pinned Cargo build/test/run gates use `--offline --locked`; local fmt/Clippy,
 Python/parity, fingerprint and IPC/MCP guards preserve the existing core contract.
 Only owned synthetic windows receive input/capture. UI source/layout and six
@@ -224,11 +269,10 @@ Sessions visual review deferred by the owner at PR #25; no new acceptance is inf
 
 ## Remaining limitations
 
-Real Agent tool-call acceptance remains open: original fixed prompt attempt FAIL /
-incomplete evidence, initialize-only PASS, no verified real context/Handoff call.
-The source remains a Draft for review; no issue completion or real compatibility is
-inferred from deterministic success, discovery or session acceptance. A separately
-approved follow-up can use the retained private config and saved-progress runner.
+Real installed Kimi tool-call acceptance is verified on synthetic Linux/WSL state.
+OpenCode free-model turns remain blocked by the provider quota; no OpenCode MCP or
+quality comparison is claimed. No extra public-project test was needed. All earlier
+failed/incomplete observations remain distinct from the final Kimi success.
 
 No native Windows real-agent model turn, real-model GUI prompt, macOS/mobile,
 IME/screen-reader, clipboard or hardware acceleration proof. Optional web smoke

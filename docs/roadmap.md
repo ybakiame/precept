@@ -69,7 +69,9 @@ using a separate ephemeral project/agent/generation credential. Every request an
 response admission checks the lease; Stop, Cancel, expiry and lifecycle cleanup
 revoke established peers too. Existing UI and non-session clients remain compatible.
 Local deterministic security/context tests and Windows/WSLg regressions pass; real
-Agent tool-call acceptance remains unverified after an incomplete original attempt.
+Kimi Code 2.5.2 completed both tools with independent daemon counters and post-Stop
+denial. OpenCode GLM/DeepSeek free-model turns were blocked by provider quota; their
+tool use remains unverified. Original failures are retained.
 See [contract](p1/session-context-bridge.md) and
 [exact local evidence](evaluation/p1-i-context-bridge.md). No production isolation or
 framework/brand acceptance is implied; Draft source review only.

@@ -119,15 +119,17 @@ matrices once, then only affected gates. Evidence belongs in
 `artifacts/local-p1-i/`. No raw credentials, conversations or identifying paths in PRs.
 
 
-I3 owner decision: the owner filled the new private Kimi config locally and explicitly
-authorized one fixed context-tool turn, including its necessary model/tool round trips,
-and retention of that key for later validation. Only two exact read-only MCP tool
-names are preauthorized in that disposable private configuration; no wildcard, yolo,
-client permission auto-approval or inferred future model-call authorization is added.
-The public code never reads the credential value.
+I3 owner decision: the owner authorized private Kimi authentication, network/model
+calls during debugging and key retention, then additionally authorized an OpenCode
+free-model comparison. Each turn is a separate explicit local smoke invocation on a
+synthetic project; there is no automatic application prompt retry or paid fallback.
 
-Real-call acceptance is currently NOT_VERIFIED: the first authorized prompt produced
-incomplete evidence after a cleanup/reporting race, then an initialize-only probe
-passed without a prompt. The corrected runner preserves progress and waits for failed
-child reaping. No additional prompt is automatically retried. See the
+Real installed Kimi 2.5.2 now completed both read-only MCP calls, independently counted
+by the daemon, followed by established-peer/reconnect denial after Stop. Its manual
+ACP approval requests omit arguments. A separately opted-in test selector approves
+at most two exact read-only tool-name/content requests with allow-once; daemon/MCP
+still enforce project/lease/role scope. This does not add product auto-approval or
+change the UI. Original failed/incomplete attempts are preserved. OpenCode 2.2.7
+accepted the stdio session, but GLM/DeepSeek free-model turns were blocked by provider
+quota; real OpenCode tool use remains unverified. See the
 [per-attempt and per-host evidence](../evaluation/p1-i-context-bridge.md).
