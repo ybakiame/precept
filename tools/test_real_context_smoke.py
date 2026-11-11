@@ -28,10 +28,16 @@ def main():
     p.add_argument("--version", required=True)
     p.add_argument("--security-report", type=Path, required=True)
     p.add_argument("--out", type=Path, required=True)
+    p.add_argument(
+        "--initialize-only",
+        action="store_true",
+        help="create and stop the MCP session without submitting any prompt",
+    )
     a = p.parse_args()
     assert (
-        a.opt_in and a.allow_credential_use and a.allow_model_call
-    ), "Separate operator credential/network/model opt-in required"
+        a.opt_in and a.allow_credential_use
+    ), "Separate operator credential-use opt-in required"
+    assert a.initialize_only or a.allow_model_call, "Separate model opt-in required"
     assert os.name != "nt", "This real opt-in selects the installed Linux agent"
     home = private_home(a.authenticated_home)
     assert a.executable.is_absolute() and a.executable.is_file()
@@ -79,6 +85,13 @@ def main():
         context_calls=0,
         handoff_calls=0,
     )
+
+    def save():
+        pending = result_file.with_suffix(".pending")
+        pending.write_text(json.dumps(result, indent=2) + "\n")
+        pending.replace(result_file)
+
+    save()
     with ContextFixture() as f:
         f.config.write_text(
             json.dumps(
@@ -113,15 +126,26 @@ def main():
                 capabilities=v["agent_features"],
                 auth_method_types=v["authentication"]["methods"],
             )
-            if v["state"] == "ready" and identity:
+            save()
+            if v["state"] == "ready" and identity and a.initialize_only:
+                result.update(
+                    status="PASS", model_turn="NOT_RUN: explicit initialize-only probe"
+                )
+            elif v["state"] == "ready" and identity:
                 before = f.query("session.context")
                 assert (
                     before["active"]
                     and before["context_calls"] == 0
                     and before["handoff_calls"] == 0
                 )
-                f.query("session.prompt", session_id=v["session_id"], prompt=PROMPT)
                 result["application_prompt_submissions"] = 1
+                result["prompt_submission"] = (
+                    "ABOUT_TO_SEND; never automatically retried"
+                )
+                save()
+                f.query("session.prompt", session_id=v["session_id"], prompt=PROMPT)
+                result["prompt_submission"] = "ACKNOWLEDGED"
+                save()
                 deadline = time.monotonic() + 125
                 while time.monotonic() < deadline:
                     v = f.query("session.get")
@@ -134,6 +158,9 @@ def main():
                     if v["state"] in ["completed", "failed", "auth_required"]:
                         break
                     time.sleep(0.04)
+                result["final_session_state"] = v["state"]
+                result["supervisor_failure"] = v["failure"]
+                save()
                 audit = f.query("session.context")
                 result.update(
                     context_calls=audit["context_calls"],
@@ -176,25 +203,40 @@ def main():
                 reason="Sanitized local real-context validation failure; no raw vendor output retained",
             )
         finally:
-            if f.proc and f.proc.poll() is None:
-                latest = f.query("session.get")
-                if latest and latest["process_alive"]:
-                    f.end(latest)
-                latest = f.query("session.get")
-                result["direct_child_reaped"] = (
-                    not latest or not latest["process_alive"]
+            try:
+                latest = (
+                    f.query("session.get") if f.proc and f.proc.poll() is None else None
                 )
-                result["lease_file_removed"] = not list(f.runtime.glob("session-*.cap"))
-                result["database_unchanged"] = f.db.read_bytes() == f.before
-                if not all(
-                    result[k]
-                    for k in [
-                        "direct_child_reaped",
-                        "lease_file_removed",
-                        "database_unchanged",
-                    ]
-                ):
-                    result["status"] = "FAIL"
+                if latest and latest["process_alive"]:
+                    # Failed/auth-required children are already being reaped; do not enqueue
+                    # Stop onto their closed control receiver or assume a Stopped transition.
+                    if latest["state"] not in ["failed", "auth_required"]:
+                        f.query(
+                            "session.stop",
+                            session_id=latest["session_id"],
+                            success=False,
+                        )
+                    deadline = time.monotonic() + 3
+                    while latest["process_alive"] and time.monotonic() < deadline:
+                        time.sleep(0.03)
+                        latest = f.query("session.get")
+                result["direct_child_reaped"] = bool(
+                    latest and not latest["process_alive"]
+                )
+            except Exception:
+                result["direct_child_reaped"] = False
+            result["lease_file_removed"] = not list(f.runtime.glob("session-*.cap"))
+            result["database_unchanged"] = f.db.read_bytes() == f.before
+            if not all(
+                result[k]
+                for k in [
+                    "direct_child_reaped",
+                    "lease_file_removed",
+                    "database_unchanged",
+                ]
+            ):
+                result["status"] = "FAIL"
+            save()
     result_file.write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result))
     return int(result["status"] == "FAIL")
