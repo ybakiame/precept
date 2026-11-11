@@ -87,6 +87,14 @@ Legacy responses, schemas, write ownership, dependencies and UI remain unchanged
 Hosted Actions and new UI/vendor-model acceptance remain NOT_RUN. Local validation
 does not itself mark the candidate reviewed or merged.
 
+PR #35 review found that an unresolved authority set could still claim a resolved
+preference mask. Fix `495e197` defers those masks until complete key analysis;
+18 resolver cases, core/legacy tests, 29 Python tests and 120 cross-language
+comparisons pass on both local hosts. The
+[review follow-up evidence](evaluation/p1-l-typed-context-resolver.md#pr-35-review-follow-up--unresolved-authorities-cannot-resolve-a-mask)
+retains the original full-matrix source and records the narrower correction checks.
+The Draft remains pending re-review and owner merge.
+
 | Brief | Depends on | Deliverable / acceptance gate |
 | --- | --- | --- |
 | L — typed context explanation ([Issue #34](https://github.com/ybakiame/agent-control-plane/issues/34), locally validated; review pending) | J merged; ADR-0004 accepted | L0 contract, L1 pure resolver and L2 local compatibility evidence delivered; legacy responses preserved; owner review/merge remains pending |

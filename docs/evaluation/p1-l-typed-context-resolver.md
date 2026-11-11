@@ -129,7 +129,9 @@ source identifiers and sanitized host/toolchain metadata.
 
 ## Acceptance and limits
 
-L0, L1 and local L2 pass at the scope above. The final diff inspection verifies no
+The initial local L2 results above belong to `22b6ffc`. The source review found an
+explanation defect not covered by those 15 original resolver cases; the corrected
+behavior and follow-up checks are recorded below. The final diff inspection verifies no
 Python/store/MCP/IPC/session implementation, legacy fixture, Cargo dependency/lock
 or UI source changed. Review remains a Draft PR; no automatic merge or issue close
 has occurred. M–R remain gated briefs in the [roadmap](../roadmap.md).
@@ -140,3 +142,61 @@ evidence retains its original source/provenance; it is not renewed by these test
 No API key, authentication HOME or external development repository was needed.
 This additive library is not full MCP certification, a generic policy language,
 OS enforcement, a durable snapshot or a cryptographic evidence implementation.
+
+## PR #35 review follow-up — unresolved authorities cannot resolve a mask
+
+[Review 5866647760](https://github.com/ybakiame/agent-control-plane/pull/35#pullrequestreview-5866647760)
+at `4516bad` identified three instances of the same explanation defect. The old
+resolver withheld effective values but could still mask a preference as resolved
+using an empty contract/constraint intersection, a drifted observation or one of
+several disagreeing observations. The old test results are retained at their
+original source; they did not establish correctness for these missed scenarios.
+
+Fix `495e197c8ffbd43fcaa87dd274d1b75f551ec540` defers all authority-based preference
+masking until the key's full contract/constraint/policy/observation analysis has
+completed. Any relevant unresolved conflict, drift or unknown source keeps the
+remaining preference candidate conflicted, with no resolved authority mask.
+Nonempty compatible authority sets still mask legitimate lower-authority choices.
+Consistent observations retain every contributing source in the resolved conflict.
+Independent legacy fallback/supersession and unrelated keys remain unchanged. The
+[v1 contract](../p1/typed-context-v1.md) clarifies this invariant without changing
+DTO fields, enums, wire/schema versions, dependencies or authorization.
+
+Three new table-driven review regressions first **failed against the pre-fix
+resolver** (`Masked` instead of `Conflicted`), then passed after the fix. Together
+they cover 13 negative scenarios: empty/competing/stale/unknown contract sets,
+empty/competing constraints, contract/policy conflicts and unknown policy, repository
+drift against an agreeing contract/preference or constraint/preference, disagreeing
+facts and an unknown second observation. They check stable input permutations,
+absence of resolved authority claims, retained affected-key uncertainty and an
+unaffected selected key. The new positive case uses two consistent observations
+and verifies all source references; the original positive single-observation case
+also remains. The typed resolver suite now has **18 tests**.
+
+The following narrower checks ran on **clean `495e197`, dirty=false, on both local
+hosts**. Host/toolchain versions are unchanged from the table above. Cargo remained
+offline through `CARGO_NET_OFFLINE=true`; Python children used `PYTHONPATH=src`.
+`python` below denotes the same selected local interpreter as above.
+
+| Exact command | Linux/WSL | Native Windows |
+| --- | --- | --- |
+| `cargo fmt --all -- --check` | PASS | PASS |
+| `cargo clippy -p acp-core --all-targets --locked -- -D warnings` | PASS | PASS |
+| `cargo test -p acp-core --all-targets --locked` | PASS, 30 tests | PASS, 29 tests |
+| `cargo build --locked --example contract_reader` | PASS | PASS |
+| `python -m unittest discover -s tests -v` | PASS, 29 tests | PASS, 29 tests |
+| `python tools/check_p1_parity.py` | PASS, 120 comparisons | PASS, 120 comparisons; appended Windows reader argv as above |
+| `git diff --check` | PASS | PASS |
+
+Both core totals include all 18 typed resolver cases; the Unix-only legacy symlink
+case accounts for the one-test host difference. Package tests also cover the
+unchanged legacy core/fingerprint behavior. The correction is confined to the
+additive pure resolver and its tests; legacy implementations are unchanged. Full
+workspace/SQLite/IPC/session/recovery and GUI/vendor/platform matrices were **not
+repeated** for this follow-up. Their earlier evidence remains pinned to `22b6ffc`,
+not promoted to this correction's source. Hosted Actions remain NOT_RUN.
+
+Ignored follow-up evidence lives in `artifacts/local-p1-l/review-red.log`,
+`review-green.log`, `review-wsl-1/`, `review-windows-1/` and `review_validation.py`.
+No raw logs or local paths were uploaded, and no auth/model call was needed.
+The corrected candidate remains Draft for re-review; the fixes are not merge approval.
