@@ -5,7 +5,11 @@ from pathlib import Path
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from test_real_context_smoke import approved_readonly_request, READONLY_REQUESTS
+from test_real_context_smoke import (
+    approved_readonly_request,
+    READONLY_REQUESTS,
+    credential_mode_allowed,
+)
 
 sys.path.pop(0)
 
@@ -45,3 +49,11 @@ class RealContextOptInTests(unittest.TestCase):
                 call | dict(content=[{"type": "diff", "path": "synthetic"}]),
             ]:
                 self.assertFalse(approved_readonly_request(changed, **base))
+
+    def test_anonymous_mode_never_uses_credentials_and_is_opencode_only(self):
+        self.assertTrue(credential_mode_allowed("opencode", True, False))
+        for agent in ["kimi", "opencode"]:
+            self.assertTrue(credential_mode_allowed(agent, False, True))
+            self.assertFalse(credential_mode_allowed(agent, False, False))
+            self.assertFalse(credential_mode_allowed(agent, True, True))
+        self.assertFalse(credential_mode_allowed("kimi", True, False))

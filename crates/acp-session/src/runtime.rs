@@ -295,13 +295,12 @@ impl Supervisor {
         if i.view.process_alive || i.tx.is_some() {
             return Err(Error::Busy);
         }
-        if let Some(old) = i.context.take() {
-            old.revoke();
-        }
-        i.context_enabled = share;
-        i.next = i.next.checked_add(1).ok_or(Error::Unavailable)?;
+        let next = i.next.checked_add(1).ok_or(Error::Unavailable)?;
         let mut nonce = [0u8; 16];
         getrandom::fill(&mut nonce).map_err(|_| Error::Unavailable)?;
+        let old = i.context.take();
+        i.context_enabled = share;
+        i.next = next;
         let id = format!(
             "session-{}-{}",
             i.next,
@@ -322,6 +321,11 @@ impl Supervisor {
         i.tx = Some(tx);
         let view = i.view.clone();
         drop(i);
+        // Reserve Starting and its control channel atomically, then retire the
+        // previous lease without blocking session readers on credential-file I/O.
+        if let Some(old) = old {
+            old.revoke();
+        }
         let owner = self.clone();
         tokio::spawn(async move {
             owner.run(program, root, rx, share).await;

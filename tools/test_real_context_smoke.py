@@ -56,11 +56,22 @@ def approved_readonly_request(operation, *, opt_in, agent, remaining, allow_once
     )
 
 
+def credential_mode_allowed(agent, anonymous, allow_credentials):
+    return (agent == "opencode" and anonymous and not allow_credentials) or (
+        not anonymous and allow_credentials
+    )
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     for flag in ["opt-in", "allow-credential-use", "allow-model-call"]:
         p.add_argument("--" + flag, action="store_true")
-    p.add_argument("--authenticated-home", type=Path, required=True)
+    p.add_argument("--authenticated-home", "--private-home", type=Path, required=True)
+    p.add_argument(
+        "--anonymous",
+        action="store_true",
+        help="OpenCode free-model test with no credential file or inherited environment",
+    )
     p.add_argument("--executable", type=Path, required=True)
     p.add_argument("--version", required=True)
     p.add_argument("--agent", choices=["kimi", "opencode"], default="kimi")
@@ -73,9 +84,10 @@ def main():
         help="create and stop the MCP session without submitting any prompt",
     )
     a = p.parse_args()
-    assert (
-        a.opt_in and a.allow_credential_use
-    ), "Separate operator credential-use opt-in required"
+    assert a.opt_in, "Separate operator real-agent opt-in required"
+    assert credential_mode_allowed(
+        a.agent, a.anonymous, a.allow_credential_use
+    ), "Select explicit credential use or anonymous OpenCode, never both"
     assert a.initialize_only or a.allow_model_call, "Separate model opt-in required"
     assert os.name != "nt", "This real opt-in selects the installed Linux agent"
     if a.agent == "kimi":
@@ -84,11 +96,14 @@ def main():
         home = a.authenticated_home
         assert home.is_absolute() and home.resolve() == home and home != Path.home()
         assert not home.is_relative_to(ROOT)
-        for item in [
-            home,
-            home / ".acp-owned-smoke-home",
-            home / ".local/share/opencode/auth.json",
-        ]:
+        auth_file = home / ".local/share/opencode/auth.json"
+        if a.anonymous:
+            assert (
+                not auth_file.exists() and not auth_file.is_symlink()
+            ), "Anonymous HOME must not contain authentication state"
+        for item in [home, home / ".acp-owned-smoke-home"] + (
+            [] if a.anonymous else [auth_file]
+        ):
             st = item.lstat()
             assert (
                 not item.is_symlink()
@@ -97,6 +112,18 @@ def main():
             )
     if a.agent == "opencode":
         config = json.loads((home / ".config/opencode/opencode.json").read_text())
+        if a.anonymous:
+            assert set(config) <= {
+                "model",
+                "agents",
+                "permissions",
+                "update",
+                "share",
+                "snapshots",
+                "lsp",
+                "formatter",
+            }, "Anonymous config may not contain provider credentials or extensions"
+            assert all(set(agent) == {"model"} for agent in config["agents"].values())
         model = config["model"]
         assert model in {
             "opencode/glm-5.3-flash-free",
@@ -139,7 +166,11 @@ def main():
         installed_version=a.version,
         configured_model=model,
         owner_opt_in=True,
-        credential_use="operator-prepared disposable private HOME",
+        credential_use=(
+            "NONE: explicit anonymous HOME; no inherited environment"
+            if a.anonymous
+            else "operator-prepared disposable private HOME"
+        ),
         application_prompt_submissions=0,
         provider_http_requests="NOT_INSTRUMENTED",
         invocation="installed absolute executable + fixed argv [acp]; cleared env; explicit private HOME",
