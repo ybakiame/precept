@@ -115,6 +115,16 @@ reviewed rules or observations conservatively block that key's effective value;
 no-match and unreviewed/excluded rules do not block it. Unrelated keys remain
 inspectable. Masking and uncertainty are distinct outcomes.
 
+Authority-based preference masking is deferred until the complete relevant
+contract/constraint/policy/observation set has been examined. If the key has any
+unresolved conflict (including drift or unknown sources), its remaining candidate
+preferences are conflicted, never reported as resolved authority masks. Contract
+and constraint intersections must be nonempty and resolvable; trusted observations
+must agree with each other and with all selected contracts/constraints. A resolved
+observation mask retains every contributing observation source. Independent legacy
+project/global fallback, ID tie-break and explicit supersession reasons remain
+valid even when the resulting candidate key is unresolved.
+
 | Condition | Outcome / category / next action |
 | --- | --- |
 | Preference suggested/rejected/deprecated or contract unaccepted | Excluded / review reason; no effective value from that record |

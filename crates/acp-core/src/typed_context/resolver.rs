@@ -569,23 +569,6 @@ pub fn resolve(input: &ResolutionInputV1) -> Result<EffectiveContextV1, InputErr
                 &mut conflicts,
             );
         }
-        if let Some(limit) = &contract_values {
-            for i in selected(&rows, &group, RuleKind::Preference) {
-                if !subset(&rows[i].rule.allowed_values, limit) {
-                    mask(&mut rows[i], Reason::RepositoryContract);
-                    let affected: Vec<_> = contracts.iter().copied().chain([i]).collect();
-                    add_conflict(
-                        &rows,
-                        &affected,
-                        ConflictCategory::PreferenceVsContract,
-                        ConflictStatus::ResolvedByAuthority,
-                        ReviewAction::InspectPreference,
-                        &[],
-                        &mut conflicts,
-                    );
-                }
-            }
-        }
         let constraints = selected(&rows, &group, RuleKind::Constraint);
         for &i in &constraints {
             if contract_values
@@ -622,23 +605,17 @@ pub fn resolve(input: &ResolutionInputV1) -> Result<EffectiveContextV1, InputErr
                 }
             }
         }
-        if let Some(limit) = intersection(&rows, &constraints) {
-            if limit.is_empty() {
-                add_conflict(
-                    &rows,
-                    &constraints,
-                    ConflictCategory::RuleVsRule,
-                    ConflictStatus::Unresolved,
-                    ReviewAction::ReviewRules,
-                    &[],
-                    &mut conflicts,
-                );
-            }
-            for i in selected(&rows, &group, RuleKind::Preference) {
-                if !subset(&rows[i].rule.allowed_values, &limit) {
-                    mask(&mut rows[i], Reason::SessionConstraint);
-                }
-            }
+        let constraint_values = intersection(&rows, &constraints);
+        if constraint_values.as_ref().is_some_and(BTreeSet::is_empty) {
+            add_conflict(
+                &rows,
+                &constraints,
+                ConflictCategory::RuleVsRule,
+                ConflictStatus::Unresolved,
+                ReviewAction::ReviewRules,
+                &[],
+                &mut conflicts,
+            );
         }
         let mut observed_values = BTreeSet::new();
         let mut observed_sources = Vec::new();
@@ -665,20 +642,6 @@ pub fn resolve(input: &ResolutionInputV1) -> Result<EffectiveContextV1, InputErr
                     &mut conflicts,
                 );
             }
-            for i in selected(&rows, &group, RuleKind::Preference) {
-                if !rows[i].rule.allowed_values.contains(&fact.value) {
-                    mask(&mut rows[i], Reason::RepositoryObservation);
-                    add_conflict(
-                        &rows,
-                        &[i],
-                        ConflictCategory::RuleVsRepository,
-                        ConflictStatus::ResolvedByAuthority,
-                        ReviewAction::InspectPreference,
-                        std::slice::from_ref(&fact.source.reference),
-                        &mut conflicts,
-                    );
-                }
-            }
         }
         if observed_values.len() > 1 {
             add_conflict(
@@ -690,6 +653,55 @@ pub fn resolve(input: &ResolutionInputV1) -> Result<EffectiveContextV1, InputErr
                 &observed_sources,
                 &mut conflicts,
             );
+        }
+        // Explanations must not claim resolution using authorities that are themselves
+        // unresolved. Inspect the complete contract/constraint/policy/observation set
+        // before masking any remaining preference; retain independent legacy fallback.
+        if !conflicts
+            .iter()
+            .any(|c| c.key == key && c.status == ConflictStatus::Unresolved)
+        {
+            if let Some(limit) = contract_values.as_ref().filter(|v| !v.is_empty()) {
+                for i in selected(&rows, &group, RuleKind::Preference) {
+                    if !subset(&rows[i].rule.allowed_values, limit) {
+                        mask(&mut rows[i], Reason::RepositoryContract);
+                        let affected: Vec<_> = contracts.iter().copied().chain([i]).collect();
+                        add_conflict(
+                            &rows,
+                            &affected,
+                            ConflictCategory::PreferenceVsContract,
+                            ConflictStatus::ResolvedByAuthority,
+                            ReviewAction::InspectPreference,
+                            &[],
+                            &mut conflicts,
+                        );
+                    }
+                }
+            }
+            if let Some(limit) = constraint_values.as_ref().filter(|v| !v.is_empty()) {
+                for i in selected(&rows, &group, RuleKind::Preference) {
+                    if !subset(&rows[i].rule.allowed_values, limit) {
+                        mask(&mut rows[i], Reason::SessionConstraint);
+                    }
+                }
+            }
+            // No unresolved observation disagreement/drift/unknown remains here.
+            if let Some(observed) = observed_values.first() {
+                for i in selected(&rows, &group, RuleKind::Preference) {
+                    if !rows[i].rule.allowed_values.contains(observed) {
+                        mask(&mut rows[i], Reason::RepositoryObservation);
+                        add_conflict(
+                            &rows,
+                            &[i],
+                            ConflictCategory::RuleVsRepository,
+                            ConflictStatus::ResolvedByAuthority,
+                            ReviewAction::InspectPreference,
+                            &observed_sources,
+                            &mut conflicts,
+                        );
+                    }
+                }
+            }
         }
         let active: Vec<_> = group
             .iter()
