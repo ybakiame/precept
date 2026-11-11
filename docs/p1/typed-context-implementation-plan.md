@@ -1,8 +1,9 @@
 # P1-L implementation plan — Issue #34
 
-Status: executing L0–L2 in one PR. The [v1 contract](typed-context-v1.md) is frozen
-and the additive pure resolver is implemented. Local L2 compatibility validation
-is the remaining acceptance gate; the original planning checklist is retained below.
+Status: L0–L2 implemented and locally validated in one PR candidate, pending Draft
+review and owner merge. The [v1 contract](typed-context-v1.md) and pure resolver are
+covered by the [local evidence](../evaluation/p1-l-typed-context-resolver.md).
+The original planning checklist below is retained as the implementation sequence.
 
 Authority: [Issue #34](https://github.com/ybakiame/agent-control-plane/issues/34),
 [Accepted ADR-0004](../adr/0004-product-domain-trust.md) and [AGENTS.md](../../AGENTS.md).
@@ -109,7 +110,8 @@ do not repeatedly rerun the entire platform matrix without a new reason.
 
 The implementation report `docs/evaluation/p1-l-typed-context-resolver.md` must
 record exact source SHA/dirty state, host OS/toolchain, command, outcome and limits.
-The following are **planned commands, all NOT_RUN for P1-L at this checkpoint**:
+The following were the planned commands. Actual results, platform argv and clean
+source provenance are now recorded in the linked L2 evidence report:
 
 ```sh
 cargo fmt --all -- --check
@@ -151,5 +153,5 @@ directory or API key is needed for this task.
   leakage and secret handling. Keep SQLite records/schema, Python write ownership,
   two MCP tools, legacy response fields, capability checks and revocation intact.
 - Use `[skip ci]` for pushed commits. Create a Draft PR for the completed work and
-  leave merging to the owner. This planning checkpoint creates no implementation
-  PASS or premature completion claim.
+  leave merging to the owner. Acceptance claims come from the linked L2 report;
+  the planning checklist alone is not evidence.
