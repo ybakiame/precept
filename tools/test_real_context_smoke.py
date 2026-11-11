@@ -62,6 +62,15 @@ def credential_mode_allowed(agent, anonymous, allow_credentials):
     )
 
 
+def opencode_model_allowed(model, service, anonymous):
+    if service == "deepseek":
+        return not anonymous and model == "deepseek/deepseek-flash"
+    return service == "free" and model in {
+        "opencode/glm-5.3-flash-free",
+        "opencode/deepseek-v4.1-flash-free",
+    }
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     for flag in ["opt-in", "allow-credential-use", "allow-model-call"]:
@@ -75,6 +84,7 @@ def main():
     p.add_argument("--executable", type=Path, required=True)
     p.add_argument("--version", required=True)
     p.add_argument("--agent", choices=["kimi", "opencode"], default="kimi")
+    p.add_argument("--opencode-service", choices=["free", "deepseek"], default="free")
     p.add_argument("--allow-readonly-mcp-permissions", action="store_true")
     p.add_argument("--security-report", type=Path, required=True)
     p.add_argument("--out", type=Path, required=True)
@@ -125,10 +135,12 @@ def main():
             }, "Anonymous config may not contain provider credentials or extensions"
             assert all(set(agent) == {"model"} for agent in config["agents"].values())
         model = config["model"]
-        assert model in {
-            "opencode/glm-5.3-flash-free",
-            "opencode/deepseek-v4.1-flash-free",
-        }
+        assert opencode_model_allowed(model, a.opencode_service, a.anonymous)
+        if a.opencode_service == "deepseek":
+            assert (
+                config["providers"]["deepseek"]["settings"]["baseURL"]
+                == "https://api.deepseek.com/v1"
+            ), "Official credential must only target the official endpoint"
         assert all(
             config["agents"][name]["model"] == model
             for name in ["build", "title", "summary", "compaction"]
@@ -165,6 +177,7 @@ def main():
         approved_readonly_calls=0,
         installed_version=a.version,
         configured_model=model,
+        model_service=a.opencode_service if a.agent == "opencode" else "Kimi Code",
         owner_opt_in=True,
         credential_use=(
             "NONE: explicit anonymous HOME; no inherited environment"

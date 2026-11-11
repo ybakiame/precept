@@ -9,6 +9,7 @@ from test_real_context_smoke import (
     approved_readonly_request,
     READONLY_REQUESTS,
     credential_mode_allowed,
+    opencode_model_allowed,
 )
 
 sys.path.pop(0)
@@ -57,3 +58,22 @@ class RealContextOptInTests(unittest.TestCase):
             self.assertFalse(credential_mode_allowed(agent, False, False))
             self.assertFalse(credential_mode_allowed(agent, True, True))
         self.assertFalse(credential_mode_allowed("kimi", True, False))
+
+    def test_official_deepseek_is_separate_from_free_and_requires_credentials(self):
+        self.assertTrue(
+            opencode_model_allowed("deepseek/deepseek-flash", "deepseek", False)
+        )
+        self.assertFalse(
+            opencode_model_allowed("deepseek/deepseek-flash", "deepseek", True)
+        )
+        self.assertFalse(
+            opencode_model_allowed(
+                "opencode/deepseek-v4.1-flash-free", "deepseek", False
+            )
+        )
+        self.assertFalse(
+            opencode_model_allowed("deepseek/deepseek-flash", "free", False)
+        )
+        self.assertFalse(
+            opencode_model_allowed("deepseek/deepseek-v4-pro", "deepseek", False)
+        )
