@@ -131,5 +131,8 @@ at most two exact read-only tool-name/content requests with allow-once; daemon/M
 still enforce project/lease/role scope. This does not add product auto-approval or
 change the UI. Original failed/incomplete attempts are preserved. OpenCode 2.2.7
 accepted the stdio session, but GLM/DeepSeek free-model turns were blocked by provider
-quota; real OpenCode tool use remains unverified. See the
+quota responses in keyed and anonymous isolated runs. The model ID is verified and
+the owner demonstrated regular WSL TUI success; the difference remains unexplained.
+Real OpenCode MCP tool use remains unverified. Replaced-lease file cleanup now follows
+an atomic Starting reservation and occurs outside the supervisor mutex. See the
 [per-attempt and per-host evidence](../evaluation/p1-i-context-bridge.md).

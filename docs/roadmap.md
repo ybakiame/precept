@@ -70,8 +70,10 @@ response admission checks the lease; Stop, Cancel, expiry and lifecycle cleanup
 revoke established peers too. Existing UI and non-session clients remain compatible.
 Local deterministic security/context tests and Windows/WSLg regressions pass; real
 Kimi Code 2.5.2 completed both tools with independent daemon counters and post-Stop
-denial. OpenCode GLM/DeepSeek free-model turns were blocked by provider quota; their
-tool use remains unverified. Original failures are retained.
+denial. Isolated OpenCode keyed/anonymous tests returned quota errors despite correct
+model IDs and owner-observed WSL TUI success; its MCP tool use remains unverified.
+Review follow-up moves replaced-lease cleanup outside the supervisor mutex; affected
+backend/18-case Python checks pass on both hosts. Original failures are retained.
 See [contract](p1/session-context-bridge.md) and
 [exact local evidence](evaluation/p1-i-context-bridge.md). No production isolation or
 framework/brand acceptance is implied; Draft source review only.

@@ -176,12 +176,48 @@ a private stdio process that does not use the shared background service or ACP p
 | `opencode/glm-5.3-flash-free` / `real-opencode-glm-1` | `5508e33` | BLOCKED by provider free-usage limit; original runner status FAIL; zero MCP calls |
 | `opencode/deepseek-v4.1-flash-free` / `real-opencode-deepseek-1` | `df3d8da` | BLOCKED by provider free-usage limit; original runner status FAIL; zero MCP calls |
 
-Each submitted one fixed prompt, returned an agent error before streamed/tool output,
-and reaped its direct child, removed the lease and preserved DB bytes. A fixed-category
-scan of the private vendor log identified `free usage` / `subscribe` / `limit` for both;
-no raw error text is published. No paid-model fallback or quota retry was attempted.
-OpenCode tool-use compatibility and model quality therefore remain **NOT_VERIFIED**;
-these results do not support a performance/quality ranking against Kimi.
+Each original keyed run submitted one fixed prompt, returned an agent error before
+streamed/tool output, and reaped its direct child, removed the lease and preserved DB
+bytes. A fixed-category scan identified `free usage` / `subscribe` / `limit`; original
+FAIL reports are retained. This establishes the service response for those isolated
+runs, **not** that the owner's account or interactive terminal has exhausted its quota.
+No paid-model fallback or application retry loop was attempted.
+
+### Review follow-up: anonymous OpenCode and actual model ID
+
+The owner demonstrated a successful WSL TUI response using **DeepSeek V4.1 Flash Free**.
+The screenshot remains private and is not uploaded. The installed command
+`opencode models --standalone`, in an owned HOME without credentials or inherited
+environment, returned exactly `opencode/deepseek-v4.1-flash-free` for DeepSeek. This
+matches the model ID used in the original comparisons. The vendor's
+[v2.2.7 provider source](https://github.com/anomalyco/opencode/blob/v2.2.7/packages/core/src/plugin/provider/opencode.ts)
+also enables free models with a built-in public credential when no user key is present;
+a user-supplied API key is not a prerequisite for trying these free models.
+
+Follow-up tests reused one separate anonymous HOME, without copying normal login,
+user/device identity, database or project state. The test configuration pins build,
+title, summary and compaction to the free model and denies non-MCP tools. The helper
+now accepts explicit `--anonymous --agent opencode --private-home …`; anonymous and
+credential-use flags are mutually exclusive, Kimi cannot select anonymous mode, and
+an existing authentication file or provider/extension-bearing config is refused.
+The new negative Python case covers the credential-mode combinations.
+
+| Anonymous follow-up | Source | Observation |
+| --- | --- | --- |
+| Catalog query | installed OpenCode 2.2.7 | DeepSeek ID verified; no auth file |
+| Fixed no-tool `run --standalone --model opencode/deepseek-v4.1-flash-free` | installed OpenCode 2.2.7 | No marker response; free-usage error, not model-not-found |
+| Fixed two-tool ACP prompt, `real-opencode-deepseek-anonymous-1` | clean `01b3a307f93d7a22d612d22ecfd6593ce7cb8f9f` | Session accepted; zero MCP calls; original runner FAIL; BLOCKED by free-usage response; reaping/revocation/DB preservation pass |
+| Fixed no-tool TUI prompt on a private PTY | same installed binary and anonymous HOME | Owned synthetic vendor DB confirms actual provider `opencode`, model `deepseek-v4.1-flash-free`, HTTP 429/free-usage assistant errors; no response marker |
+
+Terminal redraws of the synthetic prompt are not counted as model responses. Only
+allowlisted model metadata, numeric status, error-category flags and marker booleans
+were extracted from the owned synthetic vendor DB; no raw conversations or identifiers
+are published. Provider HTTP request counts remain uninstrumented. This independently
+rules out a mistyped ID in these runs, while **not explaining** the difference from
+the owner's successful regular WSL terminal. No normal user database/config/session
+was opened or changed to reproduce that success, and no quota reset or bypass is
+claimed. OpenCode MCP tool use and model quality remain NOT_VERIFIED; the observations
+do not support a quality/performance ranking against Kimi.
 
 Private reports remain under ignored `artifacts/local-p1-i/`. Credentials stay outside
 the repository in owner-only local files (HOME 0700, auth config 0600); supplied key
@@ -231,7 +267,7 @@ UI reports. No binary archive or private screenshot is uploaded with the PR.
 | Check | Native WSLg / Linux | Native Windows |
 | --- | --- | --- |
 | Full local host gates | 35 PASS, 0 FAIL/BLOCKED, 2 NOT_RUN (composed) | 33 PASS, 0 FAIL/BLOCKED, 4 NOT_RUN (composed) |
-| Rust / Python | 50 / 17 | 49 / 17 |
+| Rust / Python | 50 / 18 | 49 / 18 |
 | JSON / SQLite parity | 120 / 78 | 120 / 78 |
 | Backup / process recovery / existing service | PASS / 11 / 11 | PASS / 11 / 11 |
 | Shared native-feature / NSH component / terminal-cell tests | 25 / 6 / 3 | 25 / 6 / 3 |
@@ -256,8 +292,8 @@ not proof of hardware acceleration. No XWayland/Xvfb substitute was accepted.
 All 834 pages of the 10k component workload mounted with fewer than 100 text nodes
 on both hosts; actual native/PTY or ConPTY filtering also passed.
 
-After the real-smoke helper changes, the Python suite (now 17 checks, including the
-permission selector negative case) passed on both Linux/WSL and native Windows.
+After the real-smoke helper changes, the Python suite (now 18 checks, including the
+permission selector and anonymous-mode negative cases) passed on both Linux/WSL and native Windows.
 Only the affected Python/helper gates were supplemented; the previously passing
 GUI/ConPTY/Wayland/10k evidence remains tied to its original product source revisions.
 
@@ -267,11 +303,31 @@ Only owned synthetic windows receive input/capture. UI source/layout and six
 surfaces remain unchanged. P1-F base acceptance stays separate from the dedicated
 Sessions visual review deferred by the owner at PR #25; no new acceptance is inferred.
 
+## Review lock-hygiene fix
+
+The source review correctly identified that `Supervisor::start` still retired its old
+lease while holding the session mutex. At clean
+`01b3a307f93d7a22d612d22ecfd6593ce7cb8f9f`, Start now checks fallible generation setup
+before taking the old lease, atomically reserves the new Starting view and control
+channel, releases the mutex, then revokes/drops the old lease before spawning the new
+child. Credential metadata/read/unlink work therefore runs outside the supervisor
+mutex, while concurrent Starts still observe the reserved busy state. No public DTO,
+permission, UI or lease lifetime contract changed.
+
+Only seven affected backend/helper gates were rerun on each host: root fmt, native
+binary build, workspace Clippy, five IPC unit cases, 14 context process cases, 18
+existing session process cases, and 18 Python checks. All passed with no skipped test
+in the process suites. Private `review-supp-{host}/report.json` records the exact clean
+source and commands. Prior native GUI/ConPTY/Wayland/10k evidence is preserved with its
+original source provenance; no full matrix or Kimi model turn was repeated for this
+lock-only runtime change. The successful Kimi tool-call evidence remains tied to df3d8da.
+
 ## Remaining limitations
 
 Real installed Kimi tool-call acceptance is verified on synthetic Linux/WSL state.
-OpenCode free-model turns remain blocked by the provider quota; no OpenCode MCP or
-quality comparison is claimed. No extra public-project test was needed. All earlier
+OpenCode isolated keyed and anonymous free-model tests returned quota errors, while
+the owner demonstrated interactive WSL success; that environment difference remains
+unexplained. No OpenCode MCP success or quality comparison is claimed. No extra public-project test was needed. All earlier
 failed/incomplete observations remain distinct from the final Kimi success.
 
 No native Windows real-agent model turn, real-model GUI prompt, macOS/mobile,

@@ -148,6 +148,8 @@ The local Windows/ConPTY and native WSLg regressions pass with explicit per-gate
 provenance. Deterministic ACP-to-MCP calls and negative revocation tests pass;
 real Kimi Code 2.5.2 completed both tools, followed by post-Stop peer/reconnect denial
 and cleanup. OpenCode 2.2.7 accepted the session, but GLM/DeepSeek free-model calls were
-blocked by provider quota; its tool use remains unverified. Earlier failures are retained. See the [lease contract](docs/p1/session-context-bridge.md)
+rejected with quota errors in both keyed and anonymous isolated tests. Its model ID
+was verified; the owner demonstrated regular WSL TUI success, whose difference remains
+unexplained. OpenCode MCP tool use remains unverified. Earlier failures are retained. See the [lease contract](docs/p1/session-context-bridge.md)
 and [evidence / remaining acceptance](docs/evaluation/p1-i-context-bridge.md).
 This remains a local prototype, without OS sandboxing or Windows→WSL execution.
