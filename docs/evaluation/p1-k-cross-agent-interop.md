@@ -266,6 +266,48 @@ Windows client/model call is claimed. No full Rust/UI/10k/ConPTY/Wayland matrix,
 macOS/mobile/IME/AT or hosted Actions was rerun for this evaluation-only change.
 Prior product platform evidence remains historical at its original revisions.
 
+### PR #33 review: optimization-safe executable checks
+
+The [source review at `7557a4b`](https://github.com/ybakiame/agent-control-plane/pull/33#pullrequestreview-5858562589)
+found that Python optimization removed authorization and acceptance `assert`s from
+the executable evaluation tools. Fix `c285ce7ebdfb35b318baf15e24744e765cc4afae`
+uses explicit runtime checks throughout the runner and observer, including the
+shared private-HOME guard and reused IPC/fixture checks. The runner validates HOME
+and the provider/model policy before starting clients, and again before the Kimi
+trial. A vendor permission can reach `session.permission` only after the ordinary
+allowlist branch succeeds; the two-approval budget remains enforced. Preflight
+errors exit nonzero with a static sanitized diagnostic. Failed acceptance checks
+remain failures under `-O`; product interfaces and permissions are unchanged.
+
+Seven new regressions include actual-function `python -O` subprocess checks and
+observer executable checks. They cover absent opt-in, normal HOME rejection before
+client/prompt startup, non-allowlisted and exhausted-budget approval rejection,
+outside-root/marker/command checks before writing or launching, dirty/mismatched
+source and missing security gates, failed result/freshness invariants, and reused
+IPC/CLI/lease checks. A structural regression prevents reintroducing `assert` into
+the two executable helpers or the shared HOME guard. Tests use synthetic state and
+mocks; they do not open authentication files or invoke an installed agent/model.
+
+Local follow-up evidence (no hosted Actions):
+
+- All **29 Python tests PASS on Linux/WSL and native Windows at clean `c285ce7`**.
+- Linux/WSL: all 14 context/revocation process tests PASS under `-O`; native MCP
+  parity PASS for 132 responses, three SQLite schemas and six real bridges. These
+  ran during the fix worktree before equivalent readability cleanup; the final
+  required Python run above includes all new guard regressions.
+- Native Windows at clean `c285ce7`: the same 132-response/three-schema/six-bridge
+  parity case PASS, plus the established-peer/reconnect/old-generation Stop case
+  PASS under `-O`. Existing native binaries were reused because production Rust
+  source did not change.
+- No additional model prompt, credential access, GUI/platform matrix, niri/mobile
+  test or production change was needed. The real-agent trial remains historical
+  at `757eac3`; these fixes do not claim it ran with the later guards.
+
+Ignored logs are `review-python-final.log`, `review-windows-python.log`,
+`review-context-optimized.log`, `review-local-service.log` and
+`review-windows-process.log` under `artifacts/local-p1-k/`. The PR remains Draft
+pending re-review; fixing the findings does not itself confer approval to merge.
+
 ## Privacy and acceptance limits
 
 All calls use disposable synthetic data. No normal user DB/config, private repository,

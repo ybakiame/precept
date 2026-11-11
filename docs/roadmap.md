@@ -58,6 +58,11 @@ code/permission/UI expansion or real project data was required. P0 user-reported
 quota/zero-read failures retain their original historical provenance. K documents
 compatibility limits; it does not imply all-vendor certification or fresh platform
 acceptance. Hosted Actions remain NOT_RUN; source review is a Draft PR, not a merge.
+PR #33's optimization-bypass findings are fixed in `c285ce7`: explicit executable
+authorization/acceptance guards, seven new regressions, 29 Python tests passing on
+both local hosts, and targeted native IPC/MCP checks. The
+[follow-up evidence](evaluation/p1-k-cross-agent-interop.md#pr-33-review-optimization-safe-executable-checks)
+retains original trial provenance; the Draft still awaits re-review.
 
 ## Stage 4 — follow-up implementation briefs after decisions are reviewed
 
