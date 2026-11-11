@@ -32,6 +32,7 @@ def main():
             "artifacts/local-p1-f",
             "artifacts/local-p1-g",
             "artifacts/local-p1-h",
+            "artifacts/local-p1-i",
         ]
     )
     out.mkdir(parents=True, exist_ok=True, mode=0o700)

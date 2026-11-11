@@ -2,6 +2,8 @@
 use serde::{Deserialize, Serialize};
 pub const SESSION_API: u32 = 2;
 #[cfg(feature = "runtime")]
+mod bridge;
+#[cfg(feature = "runtime")]
 mod handshake;
 #[cfg(feature = "runtime")]
 pub mod runtime;

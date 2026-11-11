@@ -62,6 +62,7 @@ name = "acp-query"
 version = "0.1.0"
 dependencies = [
  "acp-ipc",
+ "acp-session",
  "clap",
  "serde",
  "serde_json",

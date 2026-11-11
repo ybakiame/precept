@@ -60,3 +60,23 @@ API v2 rejects older session requests explicitly; core IPC/MCP/SQLite stay uncha
 The optional context bridge is deferred until safe per-session credential revocation
 exists; no operator or long-lived project credential is forwarded. See
 [contract](p1/agent-authentication.md) and [local evidence](evaluation/p1-h-real-agent-e2e.md).
+
+
+## P1-I revocable scoped session context
+
+An explicit per-start native operator opt-in can attach the two-tool stdio bridge
+using a separate ephemeral project/agent/generation credential. Every request and
+response admission checks the lease; Stop, Cancel, expiry and lifecycle cleanup
+revoke established peers too. Existing UI and non-session clients remain compatible.
+Local deterministic security/context tests and Windows/WSLg regressions pass; real
+Kimi Code 2.5.2 completed both tools with independent daemon counters and post-Stop
+denial. Isolated OpenCode keyed/anonymous tests returned quota errors despite correct
+model IDs and owner-observed WSL TUI success; its MCP tool use remains unverified.
+Review follow-up moves replaced-lease cleanup outside the supervisor mutex; affected
+backend checks pass on both hosts. The official DeepSeek provider completed a model
+turn through OpenCode, but its strict MCP test had zero reads under the Code Mode
+restriction. Python helper regressions now pass 19 checks per host. Original failures
+are retained.
+See [contract](p1/session-context-bridge.md) and
+[exact local evidence](evaluation/p1-i-context-bridge.md). No production isolation or
+framework/brand acceptance is implied; Draft source review only.

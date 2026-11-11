@@ -2,6 +2,8 @@
 
 import argparse
 import json
+import hashlib
+import subprocess
 import os
 from pathlib import Path
 import time
@@ -27,16 +29,29 @@ def main():
         action="store_true",
         help="exercise external synthetic auth readiness and explicit retry",
     )
+    p.add_argument(
+        "--context",
+        action="store_true",
+        help="exercise explicit operator-started scoped context session with unchanged UI",
+    )
     a = p.parse_args()
     out = a.out.resolve()
     assert any(
         out.is_relative_to(ROOT / folder)
-        for folder in ["artifacts/local-p1-g", "artifacts/local-p1-h"]
+        for folder in [
+            "artifacts/local-p1-g",
+            "artifacts/local-p1-h",
+            "artifacts/local-p1-i",
+        ]
     )
     out.mkdir(parents=True, exist_ok=True, mode=0o700)
-    with SessionFixture() as f:
+    if a.context:
+        from test_session_context import ContextFixture
+    with ContextFixture() if a.context else SessionFixture() as f:
         f.set_programs(
-            ["normal", "permission", "cancel"] + (["auth-recover"] if a.auth else [])
+            ["normal", "permission", "cancel"]
+            + (["mcp"] if a.context else [])
+            + (["auth-recover"] if a.auth else [])
         )
         cfg = json.loads(f.config.read_text())
         cfg["programs"][0]["id"] = "agent"
@@ -99,7 +114,7 @@ def main():
 
         try:
             proc, window, sample = launch()
-            wait("configured=" + str(4 if a.auth else 3))
+            wait("configured=" + str(3 + int(a.auth) + int(a.context)))
             key("alt+7")
             wait("confirm=true")
             time.sleep(0.9)
@@ -265,11 +280,47 @@ def main():
                 terminal.send(b"\x1bx")
                 f.wait("stopped")
                 wait("state=Some(Stopped)")
+            if a.context:
+                f.query(
+                    "session.start",
+                    executable="mcp",
+                    confirmed=True,
+                    share_context=True,
+                )
+                v = f.wait("ready")
+                wait("state=Some(Ready)")
+                terminal.wait(v["session_id"])
+                key("alt+j")
+                time.sleep(0.15)
+                key("session-prompt")
+                key("alt+9")
+                f.wait("completed")
+                wait("state=Some(Completed)")
+                terminal.wait("turn completed")
+                audit = f.query("session.context")
+                assert audit["context_calls"] == 1 and audit["handoff_calls"] == 1
+                capture("scoped-context-completed-1080.png")
+                key("alt+x")
+                f.wait("stopped")
+                assert not f.query("session.context")["active"]
+                assert not list(f.runtime.glob("session-*.cap"))
+                assert f.db.read_bytes() == f.before
             stop(f.proc)
             terminal.wait("Session unavailable or access refused")
             wait("state=None")
             result = dict(
                 status="PASS",
+                tested_git_sha=subprocess.check_output(
+                    ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+                ).strip(),
+                worktree_dirty=bool(
+                    subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT)
+                ),
+                script_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                binary_sha256={
+                    name: hashlib.sha256(path.resolve().read_bytes()).hexdigest()
+                    for name, path in [("desktop", a.desktop), ("tui", a.tui)]
+                },
                 agent="deterministic Rust fake ACP agent; NOT a real coding agent",
                 native=sample,
                 explicit_native_start_prompt_cancel=True,
@@ -280,6 +331,7 @@ def main():
                 database_unchanged=True,
                 external_synthetic_auth_and_explicit_retry=a.auth,
                 same_observed_executable_after_retry=a.auth,
+                explicit_operator_scoped_context_calls_and_gui_stop=a.context,
                 clipboard="NOT_RUN",
                 real_agent="NOT_RUN by deterministic UI test; explicit opt-in smoke is separate",
             )

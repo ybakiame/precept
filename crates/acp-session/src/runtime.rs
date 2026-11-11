@@ -56,11 +56,14 @@ struct Inner {
     view: View,
     tx: Option<mpsc::Sender<Control>>,
     next: u64,
+    context: Option<Arc<acp_ipc::session_lease::SessionLease>>,
+    context_enabled: bool,
 }
 #[derive(Clone, Default)]
 pub struct Supervisor {
     inner: Arc<Mutex<Inner>>,
     programs: Arc<BTreeMap<String, Program>>,
+    bridge: Option<crate::bridge::Bridge>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -73,6 +76,7 @@ pub struct Params {
     pub prompt: Option<String>,
     pub request_id: Option<String>,
     pub option_id: Option<String>,
+    pub share_context: Option<bool>,
 }
 struct Control {
     method: String,
@@ -182,6 +186,51 @@ impl Supervisor {
             ..Default::default()
         })
     }
+    pub fn with_context_bridge(
+        mut self,
+        path: Option<&Path>,
+        location: acp_ipc::Location,
+        registry: acp_ipc::session_lease::Registry,
+        ttl: Duration,
+        roots: &[PathBuf],
+    ) -> Result<Self> {
+        self.bridge = path
+            .map(|p| crate::bridge::Bridge::new(p, location, registry, ttl, roots))
+            .transpose()?;
+        Ok(self)
+    }
+    pub fn context(&self, project: &str) -> Value {
+        let i = self.inner.lock().unwrap();
+        if i.view.project != project {
+            return Value::Null;
+        }
+        i.context.as_ref().map(|lease| lease.observation()).unwrap_or_else(|| json!({"enabled":i.context_enabled,"active":false,"context_calls":0,"handoff_calls":0}))
+    }
+    pub fn invalidate_context(&self, project: &str) {
+        let lease = {
+            let i = self.inner.lock().unwrap();
+            (i.view.project == project)
+                .then(|| i.context.clone())
+                .flatten()
+        };
+        if let Some(lease) = lease {
+            lease.revoke();
+        }
+    }
+    fn revoke_context(&self) {
+        let lease = self.inner.lock().unwrap().context.clone();
+        if let Some(lease) = lease {
+            lease.revoke();
+        }
+    }
+    fn expire_context(&self) {
+        let lease = self.inner.lock().unwrap().context.clone();
+        if let Some(lease) = lease
+            && lease.expired()
+        {
+            lease.revoke();
+        }
+    }
     pub fn capabilities(&self) -> Capabilities {
         Capabilities {
             session_api_version: SESSION_API,
@@ -199,6 +248,10 @@ impl Supervisor {
         f(&mut i.view);
         i.view.last_event_ms = now();
         i.view.revision += 1;
+    }
+    fn reject(&self, stage: &'static str, error: Error) -> Error {
+        self.event(format!("ACP rejected: {stage}"));
+        error
     }
     fn event(&self, s: String) {
         self.change(|v| {
@@ -227,17 +280,27 @@ impl Supervisor {
         {
             return Err(Error::UnsafeRuntime);
         }
-        if !root.is_absolute() || !root.is_dir() || root.canonicalize().ok().as_ref() != Some(&root)
+        if root.to_str().is_none()
+            || !root.is_absolute()
+            || !root.is_dir()
+            || root.canonicalize().ok().as_ref() != Some(&root)
         {
             return Err(Error::UnsafeRuntime);
+        }
+        let share = params.share_context == Some(true);
+        if share && self.bridge.is_none() {
+            return Err(Error::Unavailable);
         }
         let mut i = self.inner.lock().unwrap();
         if i.view.process_alive || i.tx.is_some() {
             return Err(Error::Busy);
         }
-        i.next = i.next.checked_add(1).ok_or(Error::Unavailable)?;
+        let next = i.next.checked_add(1).ok_or(Error::Unavailable)?;
         let mut nonce = [0u8; 16];
         getrandom::fill(&mut nonce).map_err(|_| Error::Unavailable)?;
+        let old = i.context.take();
+        i.context_enabled = share;
+        i.next = next;
         let id = format!(
             "session-{}-{}",
             i.next,
@@ -258,14 +321,22 @@ impl Supervisor {
         i.tx = Some(tx);
         let view = i.view.clone();
         drop(i);
+        // Reserve Starting and its control channel atomically, then retire the
+        // previous lease without blocking session readers on credential-file I/O.
+        if let Some(old) = old {
+            old.revoke();
+        }
         let owner = self.clone();
         tokio::spawn(async move {
-            owner.run(program, root, rx).await;
+            owner.run(program, root, rx, share).await;
         });
         Ok(view)
     }
     pub async fn control(&self, method: &str, params: Params) -> Result<View> {
-        if params.executable.is_some() || params.confirmed.is_some() {
+        if params.share_context.is_some()
+            || params.executable.is_some()
+            || params.confirmed.is_some()
+        {
             return Err(Error::InvalidRequest);
         }
         let tx = {
@@ -292,6 +363,7 @@ impl Supervisor {
         self.get(&project).ok_or(Error::NotFound)
     }
     pub async fn shutdown(&self) {
+        self.revoke_context();
         let v = self.inner.lock().unwrap().view.clone();
         if v.process_alive {
             let p = Params {
@@ -303,6 +375,7 @@ impl Supervisor {
                 prompt: None,
                 request_id: None,
                 option_id: None,
+                share_context: None,
             };
             let _ = self.control("session.stop", p).await;
             for _ in 0..100 {
@@ -313,12 +386,12 @@ impl Supervisor {
             }
         }
     }
-    async fn run(&self, p: Program, root: PathBuf, rx: mpsc::Receiver<Control>) {
+    async fn run(&self, p: Program, root: PathBuf, rx: mpsc::Receiver<Control>, share: bool) {
         let mut command = Command::new(&p.executable);
         command
-            .args(p.args)
+            .args(&p.args)
             .env_clear()
-            .envs(p.env)
+            .envs(&p.env)
             .current_dir(&root)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -327,7 +400,38 @@ impl Supervisor {
         #[cfg(windows)]
         command.creation_flags(0x08000000);
         let reaped = match command.spawn() {
-            Ok(child) => self.drive(child, root, rx).await,
+            Ok(mut child) => {
+                let servers = if share {
+                    let (project, generation) = {
+                        let i = self.inner.lock().unwrap();
+                        (i.view.project.clone(), i.view.session_id.clone())
+                    };
+                    self.bridge
+                        .as_ref()
+                        .ok_or(Error::Unavailable)
+                        .and_then(|b| b.issue(&project, &generation, &p.id))
+                        .map(|(lease, servers)| {
+                            self.inner.lock().unwrap().context = Some(Arc::new(lease));
+                            servers
+                        })
+                } else {
+                    Ok(json!([]))
+                };
+                match servers {
+                    Ok(servers) => self.drive(child, root, rx, servers).await,
+                    Err(_) => {
+                        self.change(|v| {
+                            v.state = State::Failed;
+                            v.failure = Some("Context bridge unavailable".into());
+                        });
+                        let _ = child.start_kill();
+                        matches!(
+                            tokio::time::timeout(Duration::from_secs(2), child.wait()).await,
+                            Ok(Ok(_))
+                        )
+                    }
+                }
+            }
             Err(_) => {
                 self.change(|v| {
                     v.state = State::Failed;
@@ -336,6 +440,7 @@ impl Supervisor {
                 true
             }
         };
+        self.revoke_context();
         let mut i = self.inner.lock().unwrap();
         i.view.process_alive = !reaped;
         i.view.permissions.clear();
@@ -348,6 +453,7 @@ impl Supervisor {
         mut child: Child,
         root: PathBuf,
         mut commands: mpsc::Receiver<Control>,
+        servers: Value,
     ) -> bool {
         let mut input = child.stdin.take().unwrap();
         let output = child.stdout.take().unwrap();
@@ -363,8 +469,16 @@ impl Supervisor {
             }
         });
         let result = self
-            .conversation(&mut child, &mut input, &root, &mut commands, &mut frames)
+            .conversation(
+                &mut child,
+                &mut input,
+                &root,
+                &mut commands,
+                &mut frames,
+                servers,
+            )
             .await;
+        self.revoke_context();
         reader.abort();
         let _ = reader.await;
         if let Err(e) = result {
@@ -402,6 +516,7 @@ impl Supervisor {
         root: &Path,
         commands: &mut mpsc::Receiver<Control>,
         frames: &mut mpsc::Receiver<Result<Value>>,
+        servers: Value,
     ) -> Result<()> {
         let mut rpc = 1u64;
         let mut waiting = Some((
@@ -420,6 +535,7 @@ impl Supervisor {
         loop {
             tokio::select! {
                 _=tick.tick()=>{
+                    self.expire_context();
                     if waiting.as_ref().is_some_and(|(_,_,t)|tokio::time::Instant::now()>=*t){return Err(Error::Timeout)}
                     let expired:Vec<_>=pending.iter().filter(|(_,(_,_,t))|now()>=*t).map(|(id,_)|id.clone()).collect();
                     for id in expired {let(raw,_,_)=pending.remove(&id).unwrap();send(input,denied(raw)).await?;self.event("Permission expired: denied".into());}
@@ -442,6 +558,7 @@ impl Supervisor {
                     match c.method.as_str(){
                         "session.prompt"=>{rpc+=1;send(input,json!({"jsonrpc":"2.0","id":rpc,"method":"session/prompt","params":{"sessionId":session,"prompt":[{"type":"text","text":c.params.prompt.unwrap()}]}})).await?;waiting=Some((rpc,"session/prompt",tokio::time::Instant::now()+Duration::from_secs(120)));self.change(|v|{v.state=State::Running;v.stop_reason=None;});},
                         "session.cancel"|"session.stop"=>{
+                            self.revoke_context();
                             for(_,(id,_,_))in std::mem::take(&mut pending){send(input,denied(id)).await?;}
                             self.change(|v|v.permissions.clear());
                             if !session.is_empty(){send(input,json!({"jsonrpc":"2.0","method":"session/cancel","params":{"sessionId":session}})).await?;}
@@ -455,7 +572,7 @@ impl Supervisor {
                 message=frames.recv()=>{
                     let m=message.ok_or(Error::Unavailable)??;total+=1;if total>4096{return Err(Error::TooLarge)}
                     let o=m.as_object().ok_or(Error::InvalidRequest)?;
-                    if o.get("jsonrpc")!=Some(&json!("2.0")) || o.keys().any(|k|!["jsonrpc","id","method","params","result","error"].contains(&k.as_str())){return Err(Error::InvalidRequest)}
+                    if o.get("jsonrpc")!=Some(&json!("2.0")) || o.keys().any(|k|!["jsonrpc","id","method","params","result","error"].contains(&k.as_str())){return Err(self.reject("envelope",Error::InvalidRequest))}
                     if let Some(method)=m.get("method"){
                         if m.get("result").is_some()||m.get("error").is_some(){return Err(Error::InvalidRequest)}
                         let method=method.as_str().ok_or(Error::InvalidRequest)?;let params=m.get("params").ok_or(Error::InvalidRequest)?;
@@ -482,23 +599,23 @@ impl Supervisor {
                                 if early_metadata.len()>=8 { return Err(Error::TooLarge); }
                                 early_metadata.push((observed.to_owned(),kind.to_owned()));continue;
                             }
-                            if observed!=session { return Err(Error::InvalidRequest); }
+                            if observed!=session { return Err(self.reject("update scope",Error::InvalidRequest)); }
                             if crate::handshake::is_metadata(kind) { self.event(format!("{kind}: observed"));continue; }
-                            if !waiting.as_ref().is_some_and(|(_,m,_)|*m=="session/prompt") { return Err(Error::InvalidRequest); }
-                            let message=match kind {"agent_message_chunk"|"agent_thought_chunk"|"user_message_chunk"=>{if update["content"]["type"]!="text"{return Err(Error::Unsupported)}format!("{kind}: {}",update["content"]["text"].as_str().ok_or(Error::InvalidRequest)?)},"tool_call"|"tool_call_update"=>format!("{kind}: {}",update.get("status").and_then(Value::as_str).unwrap_or("observed")),"plan"|"available_commands_update"|"current_mode_update"|"config_option_update"|"usage_update"|"session_info_update"=>format!("{kind}: observed"),_=>return Err(Error::Unsupported)};
+                            if !waiting.as_ref().is_some_and(|(_,m,_)|*m=="session/prompt") { return Err(self.reject("update outside prompt",Error::InvalidRequest)); }
+                            let message=match kind {"agent_message_chunk"|"agent_thought_chunk"|"user_message_chunk"=>{if update["content"]["type"]!="text"{return Err(self.reject("non-text message",Error::Unsupported))}format!("{kind}: {}",update["content"]["text"].as_str().ok_or(Error::InvalidRequest)?)},"tool_call"|"tool_call_update"=>format!("{kind}: {}",update.get("status").and_then(Value::as_str).unwrap_or("observed")),"plan"|"available_commands_update"|"current_mode_update"|"config_option_update"|"usage_update"|"session_info_update"=>format!("{kind}: observed"),_=>return Err(self.reject("update kind",Error::Unsupported))};
                             self.change(|v| {
                                 if kind=="agent_message_chunk" { v.activity.response_chunks+=1;v.activity.response_characters+=update["content"]["text"].as_str().unwrap().chars().count() as u64; }
                                 if matches!(kind,"tool_call"|"tool_call_update") { v.activity.tool_events+=1; }
                             });
                             self.event(message);
-                        }else{return Err(Error::Unsupported)}
+                        }else{return Err(self.reject("notification method",Error::Unsupported))}
                     }else{
                         let(id,method,_)=waiting.take().ok_or(Error::InvalidRequest)?;
-                        if m.get("id")!=Some(&json!(id)) || m.get("result").is_some()==m.get("error").is_some(){return Err(Error::InvalidRequest)}
-                        if let Some(error)=m.get("error"){if error.get("code").and_then(Value::as_i64)==Some(-32000){self.change(|v|{v.state=State::AuthRequired;v.authentication.status=AuthStatus::Required;v.failure=None;v.permissions.clear();});return Err(Error::Unauthorized)}return Err(Error::Unavailable)}
+                        if m.get("id")!=Some(&json!(id)) || m.get("result").is_some()==m.get("error").is_some(){return Err(self.reject("response correlation",Error::InvalidRequest))}
+                        if let Some(error)=m.get("error"){if error.get("code").and_then(Value::as_i64)==Some(-32000){self.change(|v|{v.state=State::AuthRequired;v.authentication.status=AuthStatus::Required;v.failure=None;v.permissions.clear();});return Err(Error::Unauthorized)}return Err(self.reject("agent error",Error::Unavailable))}
                         let result=m.get("result").filter(|v|v.is_object()).ok_or(Error::InvalidRequest)?;
                         match method {
-                            "initialize"=>{let observed=crate::handshake::initialize(result)?;self.change(|v|{v.agent=observed.agent;v.load_session_advertised=observed.load_session;v.agent_features=observed.features;v.authentication.methods=observed.methods;});rpc+=1;send(input,json!({"jsonrpc":"2.0","id":rpc,"method":"session/new","params":{"cwd":root,"mcpServers":[]}})).await?;waiting=Some((rpc,"session/new",tokio::time::Instant::now()+Duration::from_secs(5)));},
+                            "initialize"=>{let observed=crate::handshake::initialize(result)?;self.change(|v|{v.agent=observed.agent;v.load_session_advertised=observed.load_session;v.agent_features=observed.features;v.authentication.methods=observed.methods;});rpc+=1;send(input,json!({"jsonrpc":"2.0","id":rpc,"method":"session/new","params":{"cwd":root,"mcpServers":servers}})).await?;waiting=Some((rpc,"session/new",tokio::time::Instant::now()+Duration::from_secs(5)));},
                             "session/new"=>{session=result["sessionId"].as_str().filter(|s|bounded(s,128)).ok_or(Error::InvalidRequest)?.into();if early_metadata.iter().any(|(id,_)|*id!=session){return Err(Error::InvalidRequest)}self.change(|v|{v.state=State::Ready;v.authentication.status=AuthStatus::SessionAccepted;});self.event("ACP v1 session ready".into());for(_,kind)in std::mem::take(&mut early_metadata){self.event(format!("{kind}: observed"));}},
                             "session/prompt"=>{if !pending.is_empty(){return Err(Error::InvalidRequest)}let reason=result["stopReason"].as_str().filter(|s|["end_turn","cancelled","max_tokens","max_turn_requests","refusal"].contains(s)).ok_or(Error::InvalidRequest)?;self.change(|v|{v.state=State::Completed;v.stop_reason=Some(reason.into());});self.event(format!("Turn ended: {reason}"));},
                             _=>return Err(Error::Unsupported),

@@ -122,7 +122,7 @@ P1-H adds bounded auth/capability observations and an explicit auth-required rec
 path. Prepare private agent authentication outside the app, then review Start again;
 there is no login/credential widget or automatic retry. The optional local session
 extension uses API v2; existing IPC v1 and read-only two-tool MCP are unchanged.
-Context MCP forwarding remains disabled. See the
+The default authenticated turn keeps Context MCP off; P1-I adds the separate opt-in below. See the
 [authentication contract](docs/p1/agent-authentication.md) and
 [real-agent evidence](docs/evaluation/p1-h-real-agent-e2e.md) for verified results,
 source provenance and remaining limits.
@@ -130,4 +130,27 @@ source provenance and remaining limits.
 Local P1-H evidence records an opt-in Kimi Code CLI 2.5.2 authenticated streamed
 turn and separate immediate-cancel acknowledgement. Windows/ConPTY and native WSLg
 auth recovery are verified with deterministic agents; real-model GUI turns and
-context-MCP forwarding remain unverified/disabled. This is an ephemeral prototype.
+GUI context forwarding remain unverified. Native operator context opt-in is covered below.
+This is an ephemeral prototype.
+
+
+## Revocable native session context
+
+P1-I optionally attaches the existing two read-only MCP tools to one native managed
+ACP session. Configure a trusted absolute `--context-mcp` executable, then explicitly
+run operator `session-start <project> <agent> --confirm-start --share-context` through
+`acp-query`. Existing UI Start remains unshared by default; no layout/control changes.
+`session-context` reports content-free counts and lease activity; `session-stop`
+requires the exact generation. Stop, prompt Cancel, expiry, failure and restart revoke
+access even on an established peer. Static non-session credentials stay compatible.
+
+The local Windows/ConPTY and native WSLg regressions pass with explicit per-gate
+provenance. Deterministic ACP-to-MCP calls and negative revocation tests pass;
+real Kimi Code 2.5.2 completed both tools, followed by post-Stop peer/reconnect denial
+and cleanup. OpenCode 2.2.7 accepted the session, but GLM/DeepSeek free-model calls were
+rejected with quota errors in both keyed and anonymous isolated tests. Its model ID
+was verified; the owner demonstrated regular WSL TUI success, whose difference remains
+unexplained. A separate official DeepSeek Flash turn completed, but OpenCode MCP reads
+remained zero under the strict Code Mode restriction. Earlier failures are retained. See the [lease contract](docs/p1/session-context-bridge.md)
+and [evidence / remaining acceptance](docs/evaluation/p1-i-context-bridge.md).
+This remains a local prototype, without OS sandboxing or Windows→WSL execution.

@@ -1,7 +1,7 @@
 use acp_core::{ContextResolver, documents::FileDocuments};
 use acp_ipc::{
     Access, Error, Location, MAX_PEERS, MAX_REQUESTS, Request, Response, RuntimeLease, Stream,
-    accept_handshake, read_frame, write_frame,
+    read_frame, write_frame,
 };
 use acp_store::SqliteStore;
 use clap::Parser;
@@ -21,6 +21,11 @@ struct Args {
     /// Explicit private operator configuration; absent disables execution.
     #[arg(long)]
     agent_config: Option<PathBuf>,
+    /// Trusted absolute stdio bridge; per-start share_context opt-in is still required.
+    #[arg(long)]
+    context_mcp: Option<PathBuf>,
+    #[arg(long, default_value_t = 300, value_parser = clap::value_parser!(u64).range(1..=3600))]
+    context_lease_seconds: u64,
 }
 #[derive(Clone)]
 struct Service {
@@ -28,6 +33,7 @@ struct Service {
     projects: Vec<String>,
     roots: std::collections::BTreeMap<String, PathBuf>,
     sessions: acp_session::runtime::Supervisor,
+    grants: acp_ipc::session_lease::Registry,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -109,8 +115,9 @@ impl Service {
             return Err(Error::Unauthorized);
         }
         match request.method.as_str() {
-            "session.capabilities" | "session.list" | "session.get" => {
-                if p.session_id.is_some()
+            "session.capabilities" | "session.list" | "session.get" | "session.context" => {
+                if p.share_context.is_some()
+                    || p.session_id.is_some()
                     || p.executable.is_some()
                     || p.confirmed.is_some()
                     || p.prompt.is_some()
@@ -121,6 +128,7 @@ impl Service {
                 }
                 match request.method.as_str() {
                     "session.capabilities" => Ok(json!(self.sessions.capabilities())),
+                    "session.context" => Ok(self.sessions.context(&p.project)),
                     "session.list" => Ok(json!(
                         self.sessions
                             .get(&p.project)
@@ -145,7 +153,12 @@ impl Service {
             _ => Err(Error::Unsupported),
         }
     }
-    fn query(&self, access: Access, request: Request) -> acp_ipc::Result<Value> {
+    fn query(
+        &self,
+        access: Access,
+        request: Request,
+        session_bound: bool,
+    ) -> acp_ipc::Result<Value> {
         let params = request.params;
         let store = SqliteStore::open(&self.database).map_err(|_| Error::Unavailable)?;
         if request.method == "daemon.health" {
@@ -191,6 +204,16 @@ impl Service {
         if task.as_ref().is_some_and(|s| s.chars().count() > 120) {
             return Err(Error::InvalidRequest);
         }
+        if session_bound {
+            let root = store
+                .read_project(&project)
+                .ok()
+                .and_then(|p| p.root.canonicalize().ok());
+            if root.as_ref() != self.roots.get(&project) {
+                self.sessions.invalidate_context(&project);
+                return Err(Error::UnsafeRuntime);
+            }
+        }
         let resolver = ContextResolver::new(
             &project,
             &store,
@@ -217,13 +240,14 @@ async fn peer(
     service: Service,
     permit: Arc<OwnedSemaphorePermit>,
 ) {
-    let access = match accept_handshake(&mut stream, &credentials).await {
+    let authority = match service.grants.accept(&mut stream, &credentials).await {
         Ok(a) => a,
         Err(e) => {
             let _ = write_frame(&mut stream, &Response::error(None, e)).await;
             return;
         }
     };
+    let access = authority.access();
     let mut ids = HashSet::new();
     for _ in 0..MAX_REQUESTS {
         let value = match read_frame(&mut stream).await {
@@ -253,6 +277,11 @@ async fn peer(
             let _ = write_frame(&mut stream, &Response::error(Some(id), e)).await;
             return;
         }
+        if let Err(e) = authority.check() {
+            let _ = write_frame(&mut stream, &Response::error(Some(id), e)).await;
+            return;
+        }
+        let method = request.method.clone();
         let result = if request.method.starts_with("session.") {
             service
                 .session(access.clone(), request, permit.clone())
@@ -261,10 +290,12 @@ async fn peer(
             let service = service.clone();
             let access = access.clone();
             let held = permit.clone();
+            let auth = authority.clone();
             // A timed-out blocking job retains its admission slot.
             let job = tokio::task::spawn_blocking(move || {
                 let _held = held;
-                service.query(access, request)
+                auth.check()?;
+                service.query(access, request, auth.is_session())
             });
             match tokio::time::timeout(Duration::from_secs(5), job).await {
                 Ok(Ok(r)) => r,
@@ -272,6 +303,10 @@ async fn peer(
                 Err(_) => Err(Error::Timeout),
             }
         };
+        let result = authority.check().and(result);
+        if result.is_ok() {
+            authority.record(&method);
+        }
         let close = result == Err(Error::Timeout);
         let response = match result {
             Ok(v) => Response::ok(id.clone(), v),
@@ -370,6 +405,15 @@ async fn run(args: Args) -> acp_ipc::Result<()> {
     )?;
     drop(store);
     let mut lease = RuntimeLease::acquire(&args.location)?;
+    let grants = acp_ipc::session_lease::Registry::default();
+    grants.cleanup_stale(&args.location)?;
+    let sessions = sessions.with_context_bridge(
+        args.context_mcp.as_deref(),
+        args.location.clone(),
+        grants.clone(),
+        Duration::from_secs(args.context_lease_seconds),
+        &roots.values().cloned().collect::<Vec<_>>(),
+    )?;
     let mut listener = acp_ipc::transport::Listener::bind(&args.location).await?;
     let credentials = Arc::new(lease.credentials(&args.projects)?);
     let service = Service {
@@ -377,6 +421,7 @@ async fn run(args: Args) -> acp_ipc::Result<()> {
         projects: args.projects,
         roots,
         sessions,
+        grants,
     };
     let slots = Arc::new(Semaphore::new(MAX_PEERS));
     let mut tasks = tokio::task::JoinSet::new();
@@ -432,6 +477,8 @@ mod tests {
             database: PathBuf::new(),
             projects: vec!["alpha".into(), "ALPHA".into()],
             agent_config: None,
+            context_mcp: None,
+            context_lease_seconds: 300,
         };
         assert_eq!(run(args).await, Err(Error::InvalidRequest));
     }

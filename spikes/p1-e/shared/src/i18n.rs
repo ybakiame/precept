@@ -58,7 +58,7 @@ catalog! {
     AuthSessionAccepted => ("Session accepted; no additional privileges granted", "会话已接受；未授予额外权限"),
     AuthMethods => ("Advertised login methods: agent / terminal / unsupported", "声明的登录方式：agent / 终端 / 不支持"),
     AuthCapabilities => ("Advertised: image / audio / embedded context / MCP HTTP / MCP SSE / logout", "声明能力：图像 / 音频 / 内嵌上下文 / MCP HTTP / MCP SSE / 退出登录"),
-    AuthCapabilitiesHelp => ("Advertised capabilities do not imply use. Client login, file/terminal tools, context MCP forwarding and persistent resume remain disabled.", "声明能力不代表实际使用。客户端登录、文件/终端工具、上下文 MCP 转发和持久恢复均未启用。"),
+    AuthCapabilitiesHelp => ("Advertised capabilities do not imply use. Context MCP requires explicit native session opt-in. Client login, file/terminal tools and persistent resume remain disabled.", "声明能力不代表实际使用。上下文 MCP 需要显式开启本机会话共享；客户端登录、文件/终端工具和持久恢复仍未启用。"),
     AuthRetry => ("Review retry… (Alt+U)", "重试前审阅… (Alt+U)"),
     SessionFailed => ("failed", "失败"),
     SessionStopping => ("stopping", "停止中"),
