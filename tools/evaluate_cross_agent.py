@@ -225,6 +225,8 @@ def check_handoff(f, client, required):
     assert set(required) <= flags
     return dict(
         result_sha256=digest(value),
+        fixture_head=value["current_repository"]["head"],
+        fixture_branch=value["current_repository"]["branch"],
         freshness=sorted(flags),
         historical_validation_unchanged=True,
     )
@@ -444,11 +446,156 @@ def kimi_trial(f, home, executable, save):
     return result
 
 
+def opencode_trial(executable):
+    """No model/auth: isolated native CLI discovery and managed ACP lifecycle."""
+    result = dict(
+        executable_sha256=hashlib.sha256(executable.read_bytes()).hexdigest(),
+        provider_model="NOT_RUN: no model prompt or credentials",
+    )
+    with ContextFixture() as f:
+        (f.root / ".acp-interop-fixture").touch(mode=0o600)
+        home = f.root / "private-opencode"
+        home.mkdir(mode=0o700)
+        config = home / ".config/opencode/opencode.json"
+        config.parent.mkdir(parents=True, mode=0o700)
+        trace = f.root / "opencode-trace.jsonl"
+        command = [
+            sys.executable,
+            str(ROOT / "tools/interop_trace.py"),
+            "--synthetic-root",
+            str(f.root),
+            "--out",
+            str(trace),
+            "--",
+            binary("acp-mcp"),
+            *f.location,
+            "--project",
+            "alpha",
+            "--capability-file",
+            str(f.runtime / "agent-alpha.cap"),
+        ]
+        minimal = dict(
+            update="disable",
+            share="disabled",
+            snapshots=False,
+            permissions=[dict(action="*", resource="*", effect="deny")],
+        )
+        config.write_text(
+            json.dumps(
+                minimal
+                | dict(
+                    mcp=dict(
+                        servers=dict(
+                            acp_validation=dict(
+                                type="local", command=command, codemode=False
+                            )
+                        )
+                    )
+                )
+            )
+        )
+        env = dict(HOME=str(home), PATH="/usr/bin:/bin", TMPDIR=str(f.root))
+        result["version"] = subprocess.check_output(
+            [str(executable), "--version"], env=env, text=True, timeout=10
+        ).strip()
+        f.start()
+        documents = subprocess.run(
+            [str(executable), "debug", "config", "--standalone"],
+            cwd=f.root,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=25,
+        )
+        declared = False
+        if documents.returncode == 0:
+            for doc in json.loads(documents.stdout):
+                declared |= isinstance(doc, dict) and "acp_validation" in doc.get(
+                    "info", {}
+                ).get("mcp", {}).get("servers", {})
+        listing = subprocess.run(
+            [str(executable), "mcp", "list", "--standalone"],
+            cwd=f.root,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=25,
+        )
+        events = (
+            [json.loads(line) for line in trace.read_text().splitlines()]
+            if trace.exists()
+            else []
+        )
+        result["direct"] = dict(
+            config_declared=declared,
+            cli_exit=listing.returncode,
+            discovery=(
+                "PASS"
+                if any(e.get("exact_two_tools") for e in events)
+                else "NOT_VERIFIED"
+            ),
+            no_servers_reported="No MCP servers configured" in listing.stdout,
+            server_trace=events,
+            actual_calls="NOT_RUN",
+            codemode=False,
+        )
+        assert not any(e["method"] == "tools/call" for e in events)
+        config.write_text(json.dumps(minimal))
+        f.config.write_text(
+            json.dumps(
+                dict(
+                    version=1,
+                    programs=[
+                        dict(
+                            id="real-opencode",
+                            executable=str(executable),
+                            args=["acp"],
+                            env=env,
+                        )
+                    ],
+                )
+            )
+        )
+        f.config.chmod(0o600)
+        stop(f.proc)
+        f.start()
+        f.query(
+            "session.start",
+            executable="real-opencode",
+            confirmed=True,
+            share_context=True,
+        )
+        view = observed(f, ["ready", "auth_required", "failed"], 25)
+        result["acp"] = dict(
+            state=view["state"],
+            identity=view["agent"],
+            actual_calls="BLOCKED: default Code Mode execute is not granted",
+        )
+        if view["state"] == "ready":
+            saved = json.loads(f.lease_file().read_text())
+            audit = f.query("session.context")
+            with f.lease_peer(saved) as peer:
+                f.end(view)
+                result["acp"]["established_peer_denied"] = (
+                    peer.request("context.get", {})["error"] == "Unauthorized"
+                )
+            result["acp"].update(
+                audit=audit,
+                reconnect_denied=f.rejected(saved),
+                lease_removed=not list(f.runtime.glob("session-*.cap")),
+                direct_child_reaped=not f.query("session.get")["process_alive"],
+            )
+        result["database_unchanged"] = f.db.read_bytes() == f.before
+        assert result["database_unchanged"]
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--kimi-home", type=Path)
     parser.add_argument("--kimi-executable", type=Path)
+    parser.add_argument("--opencode-executable", type=Path)
     parser.add_argument("--allow-kimi-subscription-turn", action="store_true")
     parser.add_argument("--security-report", type=Path)
     args = parser.parse_args()
@@ -527,6 +674,13 @@ def main():
                     save_kimi,
                 )
             report["database_unchanged"] = f.db.read_bytes() == f.before
+        if args.opencode_executable:
+            assert (
+                args.opencode_executable.is_absolute()
+                and args.opencode_executable.is_file()
+            )
+            report["stage"] = "OpenCode no-model discovery/lifecycle"
+            report["opencode"] = opencode_trial(args.opencode_executable.resolve())
     except Exception:
         report["evaluation_failure"] = (
             "Sanitized synthetic interoperability failure; original report retained"
