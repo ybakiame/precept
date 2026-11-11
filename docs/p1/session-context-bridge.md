@@ -3,8 +3,8 @@
 ## I0 baseline and protocol review (before implementation)
 
 Start from clean main `3c7799a2c72dd80c1ec142fdfbbfe2347cf987d4` after PR #27;
-branch `feat/p1-i-revocable-session-mcp`. Existing NSH surfaces and their models
-remain unchanged. ADR-0003 remains Proposed. No hosted Actions or production DB use.
+branch `feat/p1-i-revocable-session-mcp`. Existing NSH surfaces, layout and model architecture
+remain unchanged; one obsolete bilingual capability-help sentence is corrected. ADR-0003 remains Proposed. No hosted Actions or production DB use.
 
 Reviewed official [ACP v1 session setup](https://agentclientprotocol.com/protocol/v1/session-setup),
 [Kimi ACP reference](https://www.kimi.com/code/docs/en/kimi-code-cli/reference/kimi-acp)
@@ -42,7 +42,9 @@ rights. No SQLite, fingerprint, profile authority or core MCP tool schema change
 A private runtime file is created exclusively/non-following, written and synced
 before publication to the agent's ACP channel. Random filenames contain no project
 or user paths. Existing secure Unix mode/owner/link and Windows owner/DACL/reparse
-checks apply. Collisions, broad permissions and unsafe paths fail closed. The
+checks apply. Collisions, broad permissions and unsafe paths fail closed. Paths that cannot be
+represented as JSON strings are explicitly rejected; no path-serialization panic
+is allowed to poison the session mutex. The
 agent launches only the configured stdio server; the daemon owns the capability
 lifetime, not every vendor-created descendant. Minimal explicit server environment
 is empty; a vendor may inherit its own cleared, explicitly allowlisted agent env.
@@ -61,10 +63,10 @@ extend authority. Only one managed session/lease is active. A replacement always
 gets a new secret and random generation, even for the same project/agent.
 
 Every context/handoff request checks the bound live lease at admission and again
-before returning computed data, including an already-authenticated peer. Revocation
+before admitting computed data for publication, including an already-authenticated peer. Revocation
 also removes its secret from new-handshake lookup. Requests after revoke/expiry are
-Unauthorized; data already returned cannot be recalled, and bytes whose publication
-already began before revocation may finish. A long computation that observes
+Unauthorized; data already returned cannot be recalled, and responses admitted by the final check
+before revocation may finish writing. A long computation that observes
 revocation before publication is discarded. Existing framing/admission/deadline/
 32-request-per-connection bounds remain; a held peer grants no permanent authority.
 
@@ -123,3 +125,9 @@ and retention of that key for later validation. Only two exact read-only MCP too
 names are preauthorized in that disposable private configuration; no wildcard, yolo,
 client permission auto-approval or inferred future model-call authorization is added.
 The public code never reads the credential value.
+
+Real-call acceptance is currently NOT_VERIFIED: the first authorized prompt produced
+incomplete evidence after a cleanup/reporting race, then an initialize-only probe
+passed without a prompt. The corrected runner preserves progress and waits for failed
+child reaping. No additional prompt is automatically retried. See the
+[per-attempt and per-host evidence](../evaluation/p1-i-context-bridge.md).

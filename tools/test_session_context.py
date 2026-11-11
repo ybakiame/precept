@@ -219,6 +219,27 @@ class SessionContextTests(unittest.TestCase):
             f.wait("stopped")
             f.revoked()
 
+    def test_unrepresentable_canonical_runtime_path_fails_closed_without_panic(self):
+        with ContextFixture() as f:
+            if os.name == "nt":
+                f.runtime = f.root / ("nonunicode-" + chr(0xD800))
+            else:
+                target = f.root / os.fsdecode(b"nonunicode-\xff")
+                target.mkdir()
+                alias = f.root / "runtime-alias"
+                alias.symlink_to(target, target_is_directory=True)
+                f.runtime = alias / "run"
+                f.endpoint = str(f.runtime / "control.sock")
+            f.location = ["--runtime-dir", str(f.runtime), "--endpoint", f.endpoint]
+            result = subprocess.run(
+                f.args(), capture_output=True, timeout=8, env=f.environment
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertIn(b"UnsafeRuntime", result.stderr)
+            self.assertNotIn(b"panicked", result.stderr)
+            self.assertFalse(list(f.runtime.glob("*.cap")))
+            self.assertEqual(f.db.read_bytes(), f.before)
+
     def test_expiry_denies_already_connected_peer_and_new_handshake(self):
         with ContextFixture(ttl=1) as f:
             f.start()

@@ -43,5 +43,17 @@ P1-H never retains agent-auth method IDs, descriptions, login argv/env or raw au
 errors. It records only bounded method types/known capability bits and content-free
 activity counters. Private agent HOME is an explicit operator choice, not inherited
 or copied credentials. The agent may access it with user privileges; authentication
-and a successful session do not confer permission approval. No client login or
-context-MCP attachment is enabled. See [auth boundaries](p1/agent-authentication.md).
+and a successful session do not confer permission approval. Client login remains
+disabled; P1-I below adds a separately opted-in context attachment. See [auth boundaries](p1/agent-authentication.md).
+
+
+P1-I session context never reuses startup/operator credentials. A separate format-2
+capability belongs to one selected native project/agent/generation, expires by a
+monotonic deadline and is checked for every request and response admission. Stop,
+prompt Cancel, failure, root drift and shutdown revoke it; restart rejects cached
+secrets and cleans recognized private files under the runtime lock. An established
+peer cannot retain session authority after revoke. Earlier-admitted responses may
+finish writing, and delivered data cannot be recalled. Format-1 non-session users
+retain their prior per-launch behavior; they do not gain revocation guarantees.
+Same-user filesystem access remains outside this transport boundary. See
+[the session bridge threat model](p1/session-context-bridge.md).

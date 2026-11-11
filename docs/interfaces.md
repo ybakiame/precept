@@ -47,3 +47,14 @@ receive Version; other IPC API v1 requests and MCP remain compatible. AUTH_REQUI
 is an observed action-needed state, never automatic login or prompt retry. Authentication
 RPC/terminal login and MCP attachment overrides remain unsupported; see the
 [auth/capability contract](p1/agent-authentication.md).
+
+
+P1-I adds explicit native `session.start.share_context` and operator-only
+`session.context` inspection to optional session API v2. Existing view DTOs and core
+IPC/auth v1 remain unchanged. New **credential format 2** is only for ephemeral,
+project/agent/generation-bound session leases; format-1 operator and ordinary project
+credentials keep their prior behavior. Session leases are validated on every request
+and before response admission, including established peers. They never permit
+project listing, session control or profile mutation. MCP still exposes the same
+two read-only schemas; the default server list is empty. See the
+[lease/expiry/revocation contract](p1/session-context-bridge.md).

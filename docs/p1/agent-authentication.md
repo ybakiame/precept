@@ -1,5 +1,9 @@
 # P1-H: native agent authentication and capability contract
 
+P1-I supersedes the H2 forwarding deferment with a separately opted-in
+[revocable session bridge](session-context-bridge.md). Default turns remain unshared;
+the private-authentication and explicit operator-permission boundaries below remain.
+
 ## Baseline and owner decision
 
 Start: clean main `ff8db143fcbd6f2dc1614094a20a3ac697317f26`, merge #25,

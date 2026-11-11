@@ -28,6 +28,9 @@ impl Bridge {
         {
             return Err(Error::InvalidRequest);
         }
+        if location.runtime_dir.to_str().is_none() || location.root()?.to_str().is_none() {
+            return Err(Error::UnsafeRuntime);
+        }
         let executable = executable.canonicalize().map_err(|_| Error::Unavailable)?;
         if !executable.is_file()
             || executable.to_str().is_none()
@@ -77,7 +80,13 @@ impl Bridge {
         let lease = self
             .registry
             .issue(&self.location, project, session, agent, self.ttl)?;
-        let servers = json!([{"name":"acp-context","command":self.executable,"args":["--runtime-dir",self.location.runtime_dir,"--endpoint",self.location.endpoint,"--project",project,"--capability-file",lease.path()],"env":[]}]);
+        let runtime = self
+            .location
+            .runtime_dir
+            .to_str()
+            .ok_or(Error::UnsafeRuntime)?;
+        let credential = lease.path().to_str().ok_or(Error::UnsafeRuntime)?;
+        let servers = json!([{"name":"acp-context","command":self.executable,"args":["--runtime-dir",runtime,"--endpoint",self.location.endpoint,"--project",project,"--capability-file",credential],"env":[]}]);
         Ok((lease, servers))
     }
 }

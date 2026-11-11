@@ -60,3 +60,16 @@ API v2 rejects older session requests explicitly; core IPC/MCP/SQLite stay uncha
 The optional context bridge is deferred until safe per-session credential revocation
 exists; no operator or long-lived project credential is forwarded. See
 [contract](p1/agent-authentication.md) and [local evidence](evaluation/p1-h-real-agent-e2e.md).
+
+
+## P1-I revocable scoped session context
+
+An explicit per-start native operator opt-in can attach the two-tool stdio bridge
+using a separate ephemeral project/agent/generation credential. Every request and
+response admission checks the lease; Stop, Cancel, expiry and lifecycle cleanup
+revoke established peers too. Existing UI and non-session clients remain compatible.
+Local deterministic security/context tests and Windows/WSLg regressions pass; real
+Agent tool-call acceptance remains unverified after an incomplete original attempt.
+See [contract](p1/session-context-bridge.md) and
+[exact local evidence](evaluation/p1-i-context-bridge.md). No production isolation or
+framework/brand acceptance is implied; Draft source review only.

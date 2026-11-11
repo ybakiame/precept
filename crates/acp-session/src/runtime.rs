@@ -280,7 +280,10 @@ impl Supervisor {
         {
             return Err(Error::UnsafeRuntime);
         }
-        if !root.is_absolute() || !root.is_dir() || root.canonicalize().ok().as_ref() != Some(&root)
+        if root.to_str().is_none()
+            || !root.is_absolute()
+            || !root.is_dir()
+            || root.canonicalize().ok().as_ref() != Some(&root)
         {
             return Err(Error::UnsafeRuntime);
         }
@@ -395,13 +398,14 @@ impl Supervisor {
         let reaped = match command.spawn() {
             Ok(mut child) => {
                 let servers = if share {
-                    let generation = self.inner.lock().unwrap().view.session_id.clone();
+                    let (project, generation) = {
+                        let i = self.inner.lock().unwrap();
+                        (i.view.project.clone(), i.view.session_id.clone())
+                    };
                     self.bridge
                         .as_ref()
                         .ok_or(Error::Unavailable)
-                        .and_then(|b| {
-                            b.issue(&self.inner.lock().unwrap().view.project, &generation, &p.id)
-                        })
+                        .and_then(|b| b.issue(&project, &generation, &p.id))
                         .map(|(lease, servers)| {
                             self.inner.lock().unwrap().context = Some(Arc::new(lease));
                             servers
