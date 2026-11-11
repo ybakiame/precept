@@ -1,7 +1,8 @@
 # P1-L implementation plan — Issue #34
 
-Status: planning only. The v1 contract is not frozen and the typed resolver is not
-implemented. This document does not complete any implementation acceptance gate.
+Status: executing L0–L2 in one PR. The [v1 contract](typed-context-v1.md) is frozen
+and the additive pure resolver is implemented. Local L2 compatibility validation
+is the remaining acceptance gate; the original planning checklist is retained below.
 
 Authority: [Issue #34](https://github.com/ybakiame/agent-control-plane/issues/34),
 [Accepted ADR-0004](../adr/0004-product-domain-trust.md) and [AGENTS.md](../../AGENTS.md).
