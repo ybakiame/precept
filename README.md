@@ -1,8 +1,26 @@
 # Agent Control Plane
 
-Local-first, developer-centric context control plane for coding agents. **P0 prototype**: a working SQLite context hub, explicit preference review, task handoffs, and a project-scoped read-only MCP stdio server. No GUI or external memory backend is required.
+**A local-first, developer-centric control plane for engineering context, project rules and continuity across coding agents and harnesses.** Make the right context available to the right agent, explain why it applies, preserve it across Handoffs, and distinguish reported work from observed or independently verified evidence. See the [product charter](docs/product.md).
 
-> Current status: `0.1.0a0` engineering prototype. Python 3.11+ remains the **stdlib-only** profile write path. A Rust read-only core, local daemon/IPC/MCP, and isolated NSH desktop/TUI console are implemented. Framework selection remains **Proposed**; an optional single-agent native session slice is documented below, without a production security boundary.
+> Implementation maturity: `0.1.0a0` engineering prototype, entering product formalization in [Issue #30](https://github.com/ybakiame/agent-control-plane/issues/30). Rust is the domain/core and daemon foundation; [NSH Rust is the accepted single Desktop/TUI UI direction](docs/adr/0003-ui-framework-selection.md). Python 3.11+ remains the **stdlib-only** persistent profile/Handoff write path. Formalizing the product does not implement structured contracts, generalized suggestions/review UI, frozen constraints or an evidence chain. No production readiness, OS sandbox or universal vendor compatibility is claimed.
+
+## Implementation and support status
+
+The Rust read-only core/store, local daemon/IPC/MCP, shared NSH console and optional
+operator-controlled native ACP session are implemented. P1-I adds separately opted-in,
+revocable session context. [Architecture](docs/architecture.md) separates this baseline
+from the target domain; the [roadmap](docs/roadmap.md) gates later implementation.
+
+Windows Desktop/ConPTY and native WSLg/TUI have scoped local regression evidence.
+macOS has historical UI-spike build/window smoke, but current product behavior is
+not revalidated. Mobile/browser are outside current product targets; full IME,
+screen readers and clean-machine release support remain unverified. Theme contrast
+and compilation do not establish accessibility or platform support.
+
+P1-I independently observed Kimi 2.5.2 reading both MCP tools; OpenCode's official
+DeepSeek model turn made zero MCP reads and is not an MCP pass. Broader client and
+Handoff acceptance remains in [Issue #31](https://github.com/ybakiame/agent-control-plane/issues/31),
+after product formalization. See [source-specific evidence](docs/evaluation/p1-i-context-bridge.md).
 
 ## Why
 
@@ -81,15 +99,23 @@ src/agent_control_plane/
   mcp.py         # read-only MCP stdio
   cli.py         # operator-controlled writes and inspection
 tests/           # stdlib unittest integration / security checks
+crates/          # Rust domain/store, daemon/IPC/MCP, operator/session and rehearsal
+spikes/p1-e/shared/ # framework-neutral typed Desktop/TUI presentation
+spikes/p1-e/nsh/    # implemented NSH Rust UI; historical comparison paths remain
 docs/            # architecture, interfaces, risks, roadmap, UI ADR
 ```
 
 ## Design and roadmap
 
+- [Product charter and capability boundaries](docs/product.md)
+- [Domain, human review and evidence trust ADR](docs/adr/0004-product-domain-trust.md)
+- [Product UI information architecture](docs/product-ui.md)
+- [agent-control design-reference assessment](docs/agent-control-assessment.md)
+- [ADR-0003: accepted NSH Rust Desktop/TUI direction and limits](docs/adr/0003-ui-framework-selection.md)
 - [Architecture](docs/architecture.md)
 - [Wire interfaces and conformance boundaries](docs/interfaces.md)
 - [Threat model](docs/security.md)
-- [P0/P1/P2 roadmap and acceptance](docs/roadmap.md)
+- [Product stages, acceptance and follow-up task briefs](docs/roadmap.md)
 - [Codex/Kimi context and Handoff E2E evidence (2026-11-08)](docs/evaluation/2026-11-08-codex-kimi-handoff.md)
 - [P0 MCP negative-boundary test plan](docs/evaluation/p0-mcp-negative-boundaries.md)
 - [Local NSH console, Windows/WSL ownership and verification quickstart](docs/p1/local-codex-e2.md)
@@ -100,7 +126,7 @@ The standalone [agent-development-protocol](https://github.com/ybakiame/agent-de
 
 ## Test status
 
-`python -m unittest discover -s tests -v` runs 16 Python runtime/write/reference/local-runner compatibility checks. E4 moves the seven P0 negative cases and duplicate fingerprint assertions to verified Rust core and real IPC/MCP process tests; see the [migration matrix](docs/p1/rust-test-migration.md) and [E4 local results](docs/evaluation/p1-e4-local-ux.md). P1-E2 also measures the Windows NSH desktop and ConPTY, local daemon/IPC/MCP, and the installed local Codex MCP client with disposable state and explicit project opt-in; see [sanitized local results](docs/evaluation/p1-e2-local-validation.md). These checks establish the documented scope, not every harness/version, complete MCP conformance, production security or universal native-platform support.
+`PYTHONPATH=src python -m unittest discover -s tests -v` runs the Python runtime/write/reference/local-runner compatibility checks. Rust core and real IPC/MCP process tests cover the migrated negative boundaries; see the [migration matrix](docs/p1/rust-test-migration.md). [P1-I evidence](docs/evaluation/p1-i-context-bridge.md) records later local Windows/WSLg checks and exact source provenance. These checks establish their documented scope, not every harness/version, complete MCP conformance, production security or universal platform support. J changes documentation only and makes no new client/device test claim.
 
 
 ## Optional native agent session prototype

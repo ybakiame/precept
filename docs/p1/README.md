@@ -1,6 +1,11 @@
 # P1 Implementation Plan — Rust Core, Local Daemon and UI Spike
 
-Status: **implementation proposal** (not a claim that Rust code or GUI exists).
+Status: **historical P1-A implementation proposal**. The core, local service,
+NSH UI and optional native sessions now exist. Use the current
+[architecture](../architecture.md), [product roadmap](../roadmap.md) and
+[Accepted NSH ADR](../adr/0003-ui-framework-selection.md) for current decisions.
+The original slice names/statuses below are retained as planning history;
+production Rust writes/migration remain unimplemented.
 
 ## Preconditions: stabilize P0 on main
 

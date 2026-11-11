@@ -1,6 +1,6 @@
 # ADR-0001: Core before UI (GPUI Kit / NSH under evaluation)
 
-- Status: Proposed
+- Status: Historical proposal; UI-selection portion superseded by [Accepted ADR-0003](0003-ui-framework-selection.md). Rust read-only core/daemon are implemented; Python retains persistent writes.
 - Date: 2026-11-08
 
 ## Context
