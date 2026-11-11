@@ -58,7 +58,7 @@ class Scenario(ContextFixture):
             [
                 sys.executable,
                 "-m",
-                "agent_control_plane",
+                "agent_control_plane.cli",
                 "--data-dir",
                 str(self.db.parent),
                 "handoff",
@@ -486,12 +486,16 @@ def main():
 
     save_kimi(report["kimi"])
     try:
+        report["stage"] = "synthetic fixture setup"
         with Scenario() as f:
+            report["stage"] = "synthetic daemon startup"
             f.start()
             executable = shutil.which("codex")
             assert executable, "Selected installed Codex unavailable"
+            report["stage"] = "Codex direct MCP trial"
             report["codex"] = codex_trial(f, Path(executable).resolve())
             if args.kimi_home:
+                report["stage"] = "Kimi managed ACP resume"
                 report["kimi"] = kimi_trial(
                     f,
                     args.kimi_home,
