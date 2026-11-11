@@ -173,7 +173,12 @@ Final path review also guards unrepresentable UTF-8 canonical runtime/project pa
 before ACP JSON serialization and releases the session mutex before lease-file I/O.
 An added native process case proves sanitized refusal on both platforms. Only affected
 root build/fmt/Clippy, IPC unit and context-process gates were supplemented; existing
-UI binaries/surfaces do not depend on the changed runtime-only modules.
+UI binaries/surfaces do not depend on the changed runtime-only modules. These six
+backend gates passed on both hosts at clean
+`2d4e1c476a531405a3030d3b52625f29dc470dde`; private
+`path-supp-{host}/report.json` records exact commands and counts. The 14-case process
+suite includes the native Windows unpaired-UTF-16 runtime and Unix non-UTF-8 canonical
+alias cases, with no skipped case.
 
 Private provenance: original `final-windows/report.json` (owned Windows clone) and
 `final-wsl/report.json`; `ui-supp-{host}/report.json` at cc01652; final
