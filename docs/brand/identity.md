@@ -1,15 +1,20 @@
-# ACP identity and theme collection — P1-F
+# Agent Control Plane identity and theme collection — P1-F
 
 Status: **owner approved the revised base for detailed implementation**. The
 owner said “可以以此版本为基础吧” and requested logic/UI refinement, a modest
 icon set, Daemon status and Windows GUI access to both Windows and WSL Daemons.
-Instrument / Ledger / Harbor form one theme collection. Agent Control Plane (ACP)
+Instrument / Ledger / Harbor form one theme collection. Agent Control Plane
 remains the working name; no official logo or repository/CLI/API rename is made.
 [ADR-0003](../adr/0003-ui-framework-selection.md) now accepts the NSH direction in
 P1-J; this identity and its recorded review remain unchanged. After implementation the owner confirmed “没有阻塞问题，
 可作为本阶段基础”; the local evidence records that review separately.
 
 ## Position and voice
+
+Use the full product name **Agent Control Plane** in product and brand copy.
+Reserve **ACP** for **Agent Client Protocol**, including references to native ACP
+sessions. Historical UI labels and existing repository/CLI/API identifiers are
+unchanged by this documentation convention.
 
 A local-first context and policy layer for developers operating coding agents.
 Show project scope, confirmed preference provenance, observed repository facts and

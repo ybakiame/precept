@@ -2,13 +2,14 @@
 
 **A local-first, developer-centric control plane for engineering context, project rules and continuity across coding agents and harnesses.** Make the right context available to the right agent, explain why it applies, preserve it across Handoffs, and distinguish reported work from observed or independently verified evidence. See the [product charter](docs/product.md).
 
-> Implementation maturity: `0.1.0a0` engineering prototype, entering product formalization in [Issue #30](https://github.com/ybakiame/agent-control-plane/issues/30). Rust is the domain/core and daemon foundation; [NSH Rust is the accepted single Desktop/TUI UI direction](docs/adr/0003-ui-framework-selection.md). Python 3.11+ remains the **stdlib-only** persistent profile/Handoff write path. Formalizing the product does not implement structured contracts, generalized suggestions/review UI, frozen constraints or an evidence chain. No production readiness, OS sandbox or universal vendor compatibility is claimed.
+> Implementation maturity: `0.1.0a0` engineering prototype. The product charter and architecture decisions are documented under [P1-J / Issue #30](https://github.com/ybakiame/agent-control-plane/issues/30). Rust is the domain/core and daemon foundation; [NSH Rust is the accepted single Desktop/TUI UI direction](docs/adr/0003-ui-framework-selection.md). Python 3.11+ remains the **stdlib-only** persistent profile/Handoff write path. Formalizing the product does not implement structured contracts, generalized suggestions/review UI, frozen constraints or an evidence chain. No production readiness, OS sandbox or universal vendor compatibility is claimed.
 
 ## Implementation and support status
 
 The Rust read-only core/store, local daemon/IPC/MCP, shared NSH console and optional
-operator-controlled native ACP session are implemented. P1-I adds separately opted-in,
-revocable session context. [Architecture](docs/architecture.md) separates this baseline
+operator-controlled native Agent Client Protocol (ACP) session are implemented.
+P1-I adds separately opted-in, revocable session context.
+[Architecture](docs/architecture.md) separates this baseline
 from the target domain; the [roadmap](docs/roadmap.md) gates later implementation.
 
 Windows Desktop/ConPTY and native WSLg/TUI have scoped local regression evidence.

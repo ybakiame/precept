@@ -1,6 +1,7 @@
 # Agent Control Plane — product charter
 
-Status: P1-J product contract for owner review in [Issue #30](https://github.com/ybakiame/agent-control-plane/issues/30).
+Product definition: P1-J charter developed under [Issue #30](https://github.com/ybakiame/agent-control-plane/issues/30).
+Decision and review history: [PR #32](https://github.com/ybakiame/agent-control-plane/pull/32).
 Baseline: main `14798f2809b557a16bda16729f2cdeed7f24bbb0` (merged PR #29), reviewed 2026-11-11.
 This defines the product direction; it does not mark planned capabilities implemented.
 
@@ -55,8 +56,9 @@ migration. No new UI framework, runtime, dependency or migration is introduced b
    Planned repository-contract changes use a human-reviewed diff and the project's
    review process; a local approval never silently rewrites a checkout.
 3. **Give an agent scoped context.** Use the existing project-bound two-tool MCP
-   interface. For an optional managed ACP session, review Start and separately opt
-   into session context through the current native operator CLI. UI Start currently
+   interface. For an optional managed Agent Client Protocol (ACP) session, review
+   Start and separately opt into session context through the current native operator
+   CLI. UI Start currently
    shares no MCP context. Authentication, context sharing and permission approval
    are separate decisions.
 4. **Resume through Handoff.** Capture objective/next action and exact historical

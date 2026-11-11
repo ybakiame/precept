@@ -29,17 +29,22 @@ library and cross-language checks; see [implementation and validation evidence](
 P1-C1 adds a [read-only SQLite adapter](sqlite-readonly.md); P1-C2A adds an
 [owned temporary migration rehearsal](synthetic-migration.md). P1-C2B1 adds
 [test-only persistent process recovery](process-recovery.md). Production P1-C2B2
-write/migration rollout remains unimplemented. P1-D now provides a
-[runnable local read-only service](local-service.md); P1-E now has an
-[isolated comparative UI experiment](ui-spike-evaluation.md), with no accepted
-framework or production UI rollout. P1-F remains unimplemented. Remote CI/platform results must be reported
-separately from local validation.
+write/migration rollout remains unimplemented. P1-D provides a
+[runnable local read-only service](local-service.md). At the original P1-E checkpoint,
+the [isolated comparative UI experiment](ui-spike-evaluation.md) had not accepted a
+framework or production UI rollout, and the planned P1-F session-adapter slice was
+not implemented. Those are historical plan statuses; the current
+[roadmap](../roadmap.md) records the later UI/session work, and
+[ADR-0003](../adr/0003-ui-framework-selection.md) now accepts NSH Rust Desktop/TUI.
+Remote CI/platform results must be reported separately from local validation.
 
-P1-E2 develops the [read-only NSH operator console](local-codex-e2.md), prioritizing
-Windows desktop/ConPTY and explicit Windows-owner access to WSL. Verification is
-local-only while Actions quota is exhausted; see the
+P1-E2 developed the [read-only NSH operator console](local-codex-e2.md), prioritizing
+Windows desktop/ConPTY and explicit Windows-owner access to WSL. Verification at
+that checkpoint was local-only while Actions quota was exhausted; see the
 [sanitized measured evidence](../evaluation/p1-e2-local-validation.md).
-ADR-0003 remains Proposed and mobile work is deferred.
+ADR-0003 was Proposed at that checkpoint; its current status is
+[Accepted for NSH Rust Desktop/TUI](../adr/0003-ui-framework-selection.md).
+Mobile remains outside current product targets.
 
 ## Crate layout (core/store/rehearsal and local service crates exist)
 

@@ -44,3 +44,23 @@ source-specific results; current entry documents link to the later decision.
 
 The documentation/link review is a local inspection, not an implementation test of
 the planned domain model or a new independent verification of historical events.
+
+## PR #32 review follow-up
+
+The [owner's review of `53a52a4`](https://github.com/ybakiame/agent-control-plane/pull/32#pullrequestreview-5858092110)
+identified three documentation consistency points, without a blocking architecture
+or trust-boundary defect:
+
+- Mark the original P1-E/E2 framework/session statements as historical and link
+  directly to the current Accepted NSH ADR and roadmap.
+- Replace temporary “entering”/“for owner review” charter positioning with a stable
+  product-definition reference to Issue #30 and its PR review history. This does not
+  claim a merge or change ADR-0004's Proposed status.
+- Spell out Agent Control Plane in brand copy and reserve ACP for Agent Client
+  Protocol, expanding the protocol name at first use in README and the charter.
+
+Follow-up scope is documentation only. Local diff, relative-link, code-fence and
+naming/status consistency checks were repeated; existing Python results above are
+from the initial J validation and were not rerun for these wording edits. Hosted
+Actions and new Rust/UI/client/model/device tests remain NOT_RUN. PR readiness and
+merge remain owner decisions; this follow-up does not change Draft status.
