@@ -338,6 +338,22 @@ class SessionContextTests(unittest.TestCase):
                     "SENSITIVE_AUTH_TEST", json.dumps(f.query("session.get"))
                 )
 
+    def test_protocol_failure_diagnostics_do_not_retain_untrusted_method_or_body(self):
+        with ContextFixture() as f:
+            f.set_programs(["mcp-unsupported-notification"])
+            f.start()
+            v = f.launch_context("mcp-unsupported-notification")
+            f.query(
+                "session.prompt",
+                session_id=v["session_id"],
+                prompt="synthetic protocol failure",
+            )
+            v = f.wait("failed")
+            f.revoked()
+            self.assertIn("ACP rejected: notification method", v["events"])
+            self.assertNotIn("SENSITIVE_AUTH_TEST", json.dumps(v))
+            self.assertNotIn("_UNTRUSTED_SHOULD_NOT_BE_LOGGED", json.dumps(v))
+
     def test_hard_kill_restart_removes_stale_file_and_refuses_saved_secret(self):
         with ContextFixture() as f:
             f.start()

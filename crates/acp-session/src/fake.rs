@@ -111,6 +111,9 @@ fn main() {
                     "auth-unsupported" => emit(
                         json!({"jsonrpc":"2.0","id":"unsupported-auth","method":"authenticate","params":{"methodId":"login","token":"SENSITIVE_AUTH_TEST"}}),
                     ),
+                    "mcp-unsupported-notification" => emit(
+                        json!({"jsonrpc":"2.0","method":"_UNTRUSTED_SHOULD_NOT_BE_LOGGED","params":{"token":"SENSITIVE_AUTH_TEST"}}),
+                    ),
                     "mcp" => {
                         mcp.as_mut().unwrap().call_both();
                         emit(

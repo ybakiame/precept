@@ -249,6 +249,10 @@ impl Supervisor {
         i.view.last_event_ms = now();
         i.view.revision += 1;
     }
+    fn reject(&self, stage: &'static str, error: Error) -> Error {
+        self.event(format!("ACP rejected: {stage}"));
+        error
+    }
     fn event(&self, s: String) {
         self.change(|v| {
             if v.events.len() == 64 {
@@ -560,7 +564,7 @@ impl Supervisor {
                 message=frames.recv()=>{
                     let m=message.ok_or(Error::Unavailable)??;total+=1;if total>4096{return Err(Error::TooLarge)}
                     let o=m.as_object().ok_or(Error::InvalidRequest)?;
-                    if o.get("jsonrpc")!=Some(&json!("2.0")) || o.keys().any(|k|!["jsonrpc","id","method","params","result","error"].contains(&k.as_str())){return Err(Error::InvalidRequest)}
+                    if o.get("jsonrpc")!=Some(&json!("2.0")) || o.keys().any(|k|!["jsonrpc","id","method","params","result","error"].contains(&k.as_str())){return Err(self.reject("envelope",Error::InvalidRequest))}
                     if let Some(method)=m.get("method"){
                         if m.get("result").is_some()||m.get("error").is_some(){return Err(Error::InvalidRequest)}
                         let method=method.as_str().ok_or(Error::InvalidRequest)?;let params=m.get("params").ok_or(Error::InvalidRequest)?;
@@ -587,20 +591,20 @@ impl Supervisor {
                                 if early_metadata.len()>=8 { return Err(Error::TooLarge); }
                                 early_metadata.push((observed.to_owned(),kind.to_owned()));continue;
                             }
-                            if observed!=session { return Err(Error::InvalidRequest); }
+                            if observed!=session { return Err(self.reject("update scope",Error::InvalidRequest)); }
                             if crate::handshake::is_metadata(kind) { self.event(format!("{kind}: observed"));continue; }
-                            if !waiting.as_ref().is_some_and(|(_,m,_)|*m=="session/prompt") { return Err(Error::InvalidRequest); }
-                            let message=match kind {"agent_message_chunk"|"agent_thought_chunk"|"user_message_chunk"=>{if update["content"]["type"]!="text"{return Err(Error::Unsupported)}format!("{kind}: {}",update["content"]["text"].as_str().ok_or(Error::InvalidRequest)?)},"tool_call"|"tool_call_update"=>format!("{kind}: {}",update.get("status").and_then(Value::as_str).unwrap_or("observed")),"plan"|"available_commands_update"|"current_mode_update"|"config_option_update"|"usage_update"|"session_info_update"=>format!("{kind}: observed"),_=>return Err(Error::Unsupported)};
+                            if !waiting.as_ref().is_some_and(|(_,m,_)|*m=="session/prompt") { return Err(self.reject("update outside prompt",Error::InvalidRequest)); }
+                            let message=match kind {"agent_message_chunk"|"agent_thought_chunk"|"user_message_chunk"=>{if update["content"]["type"]!="text"{return Err(self.reject("non-text message",Error::Unsupported))}format!("{kind}: {}",update["content"]["text"].as_str().ok_or(Error::InvalidRequest)?)},"tool_call"|"tool_call_update"=>format!("{kind}: {}",update.get("status").and_then(Value::as_str).unwrap_or("observed")),"plan"|"available_commands_update"|"current_mode_update"|"config_option_update"|"usage_update"|"session_info_update"=>format!("{kind}: observed"),_=>return Err(self.reject("update kind",Error::Unsupported))};
                             self.change(|v| {
                                 if kind=="agent_message_chunk" { v.activity.response_chunks+=1;v.activity.response_characters+=update["content"]["text"].as_str().unwrap().chars().count() as u64; }
                                 if matches!(kind,"tool_call"|"tool_call_update") { v.activity.tool_events+=1; }
                             });
                             self.event(message);
-                        }else{return Err(Error::Unsupported)}
+                        }else{return Err(self.reject("notification method",Error::Unsupported))}
                     }else{
                         let(id,method,_)=waiting.take().ok_or(Error::InvalidRequest)?;
-                        if m.get("id")!=Some(&json!(id)) || m.get("result").is_some()==m.get("error").is_some(){return Err(Error::InvalidRequest)}
-                        if let Some(error)=m.get("error"){if error.get("code").and_then(Value::as_i64)==Some(-32000){self.change(|v|{v.state=State::AuthRequired;v.authentication.status=AuthStatus::Required;v.failure=None;v.permissions.clear();});return Err(Error::Unauthorized)}return Err(Error::Unavailable)}
+                        if m.get("id")!=Some(&json!(id)) || m.get("result").is_some()==m.get("error").is_some(){return Err(self.reject("response correlation",Error::InvalidRequest))}
+                        if let Some(error)=m.get("error"){if error.get("code").and_then(Value::as_i64)==Some(-32000){self.change(|v|{v.state=State::AuthRequired;v.authentication.status=AuthStatus::Required;v.failure=None;v.permissions.clear();});return Err(Error::Unauthorized)}return Err(self.reject("agent error",Error::Unavailable))}
                         let result=m.get("result").filter(|v|v.is_object()).ok_or(Error::InvalidRequest)?;
                         match method {
                             "initialize"=>{let observed=crate::handshake::initialize(result)?;self.change(|v|{v.agent=observed.agent;v.load_session_advertised=observed.load_session;v.agent_features=observed.features;v.authentication.methods=observed.methods;});rpc+=1;send(input,json!({"jsonrpc":"2.0","id":rpc,"method":"session/new","params":{"cwd":root,"mcpServers":servers}})).await?;waiting=Some((rpc,"session/new",tokio::time::Instant::now()+Duration::from_secs(5)));},

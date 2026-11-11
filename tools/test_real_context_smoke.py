@@ -160,6 +160,9 @@ def main():
                     time.sleep(0.04)
                 result["final_session_state"] = v["state"]
                 result["supervisor_failure"] = v["failure"]
+                result["protocol_rejections"] = [
+                    event for event in v["events"] if event.startswith("ACP rejected: ")
+                ]
                 save()
                 audit = f.query("session.context")
                 result.update(
