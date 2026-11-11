@@ -69,14 +69,35 @@ additional model/platform modes remain explicitly unverified, not silently passe
 
 ADR-0004 was accepted by the owner on 2026-11-11 without changing its domain/trust
 decisions. [P1-L / Issue #34](https://github.com/ybakiame/agent-control-plane/issues/34)
-is now open and is the only active Stage 4 implementation task. It freezes the v1
-typed context contract before implementing the pure Rust resolver. M–R remain gated
+is the only active Stage 4 implementation task. Its L0–L2 candidate is implemented
+and locally validated, pending Draft PR review and owner merge. M–R remain gated
 briefs, not opened implementation issues or authorization to begin code. Dependencies
 are explicit to avoid premature storage migration, onboarding, review UI or snapshots.
 
+- [x] L0: [v1 domain/selector/conflict contract](p1/typed-context-v1.md) frozen
+  before implementation; additive DTO remains separate from the MCP wire contract.
+- [x] L1: pure `acp-core::typed_context` model/resolver, explicit unknown/unresolved
+  outcomes, source/review reasons, provenance and deterministic ordering.
+- [x] L2: 15 focused resolver cases on both hosts; native Windows and Linux/WSL
+  workspace, Python/Rust, SQLite, synthetic recovery and IPC/session regressions
+  pass at clean `22b6ffc`. Exact commands, counts and limitations are in the
+  [P1-L evidence report](evaluation/p1-l-typed-context-resolver.md).
+
+Legacy responses, schemas, write ownership, dependencies and UI remain unchanged.
+Hosted Actions and new UI/vendor-model acceptance remain NOT_RUN. Local validation
+does not itself mark the candidate reviewed or merged.
+
+PR #35 review found that an unresolved authority set could still claim a resolved
+preference mask. Fix `495e197` defers those masks until complete key analysis;
+18 resolver cases, core/legacy tests, 29 Python tests and 120 cross-language
+comparisons pass on both local hosts. The
+[review follow-up evidence](evaluation/p1-l-typed-context-resolver.md#pr-35-review-follow-up--unresolved-authorities-cannot-resolve-a-mask)
+retains the original full-matrix source and records the narrower correction checks.
+The Draft remains pending re-review and owner merge.
+
 | Brief | Depends on | Deliverable / acceptance gate |
 | --- | --- | --- |
-| L — typed context explanation ([Issue #34](https://github.com/ybakiame/agent-control-plane/issues/34), active) | J merged; ADR-0004 accepted | L0: versioned rule/source/selector/conflict DTO contract; L1: pure Rust resolver; deterministic unresolved conflicts, scope isolation, stale/unknown and malformed-selector regressions; preserve legacy responses until separately versioned |
+| L — typed context explanation ([Issue #34](https://github.com/ybakiame/agent-control-plane/issues/34), locally validated; review pending) | J merged; ADR-0004 accepted | L0 contract, L1 pure resolver and L2 local compatibility evidence delivered; legacy responses preserved; owner review/merge remains pending |
 | M — local storage and Rust write ownership | J + L semantics | DB/contract format ADR and backup/recovery/privacy design first; synthetic rollback/crash/lock/disk-failure/old-reader acceptance before any production write rollout; no implicit real-profile migration |
 | N — project onboarding and contracts | J + L; M for writes | Register/preview explicit roots, optional versioned Markdown/YAML contract format and reviewed diff workflow; no auto-scaffold, symlink escape, private profile export or stale-source activation |
 | O — complete human review | J + L + M | Operator-only versioned proposal/review API and NSH workflow with view/confirm/reject/deprecate/delete/provenance; edits/review revocation/permission changes invalidate approval; no agent-facing mutation |

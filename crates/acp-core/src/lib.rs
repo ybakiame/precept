@@ -6,6 +6,7 @@ use std::{collections::BTreeMap, path::PathBuf};
 
 pub mod documents;
 pub mod fingerprint;
+pub mod typed_context;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
