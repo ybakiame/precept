@@ -2,6 +2,8 @@
 
 import argparse
 import json
+import hashlib
+import subprocess
 import os
 from pathlib import Path
 import time
@@ -112,7 +114,7 @@ def main():
 
         try:
             proc, window, sample = launch()
-            wait("configured=" + str(4 if a.auth else 3))
+            wait("configured=" + str(3 + int(a.auth) + int(a.context)))
             key("alt+7")
             wait("confirm=true")
             time.sleep(0.9)
@@ -287,12 +289,14 @@ def main():
                 )
                 v = f.wait("ready")
                 wait("state=Some(Ready)")
+                terminal.wait(v["session_id"])
                 key("alt+j")
                 time.sleep(0.15)
                 key("session-prompt")
                 key("alt+9")
                 f.wait("completed")
                 wait("state=Some(Completed)")
+                terminal.wait("turn completed")
                 audit = f.query("session.context")
                 assert audit["context_calls"] == 1 and audit["handoff_calls"] == 1
                 capture("scoped-context-completed-1080.png")
@@ -306,6 +310,17 @@ def main():
             wait("state=None")
             result = dict(
                 status="PASS",
+                tested_git_sha=subprocess.check_output(
+                    ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+                ).strip(),
+                worktree_dirty=bool(
+                    subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT)
+                ),
+                script_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                binary_sha256={
+                    name: hashlib.sha256(path.resolve().read_bytes()).hexdigest()
+                    for name, path in [("desktop", a.desktop), ("tui", a.tui)]
+                },
                 agent="deterministic Rust fake ACP agent; NOT a real coding agent",
                 native=sample,
                 explicit_native_start_prompt_cancel=True,
