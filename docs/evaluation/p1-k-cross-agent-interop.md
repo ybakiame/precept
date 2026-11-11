@@ -52,10 +52,11 @@ optional docs, task/project isolation and unchanged fixture DB bytes. Managed se
 must deny established peers and saved-secret reconnects after Stop. Historical Kimi
 I evidence is linked as historical until a current authorized run exists.
 
-## Results at clean `757eac3f44614405c1dbf50e550377b604eccf84`
+## Results and exact per-attempt source provenance
 
 The table above preserves the pre-implementation K0 plan. The following results are
-current K observations on local Linux/WSL, not renewed claims for every platform or
+current K observations on local Linux/WSL (Kimi/Codex resume at clean `757eac3`,
+final no-model Codex/OpenCode probe at clean `a26825f`), not renewed claims for every platform or
 provider. Installed binaries were not upgraded or substituted. No product defect was
 reproduced, and no production source, schema, permission or UI was changed.
 
@@ -74,6 +75,9 @@ Codex calls were explicitly submitted by the evaluator through installed
 `turn/start`, model credential or model request. Its provider was the deliberately
 non-functional `local_validation` endpoint `http://127.0.0.1:9/v1`; this is a client/
 transport PASS, not evidence that a Codex model autonomously chose the tools.
+The [official MCP configuration reference](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
+describes stdio configuration; the experimental invocation API was checked by the
+actual installed app-server calls, rather than inferred from that documentation.
 The isolated thread used read-only sandbox and `approvalPolicy=never`. No normal
 Codex configuration, login state or history was copied.
 
@@ -109,6 +113,7 @@ Private attempts are distinct and never overwritten:
 | `cross-agent-resume-1` | `757eac3f44614405c1dbf50e550377b604eccf84` | Codex direct PASS and Kimi managed resume PASS in the same synthetic fixture |
 | `opencode-current.json` | `757eac3f44614405c1dbf50e550377b604eccf84` | Direct discovery NOT_VERIFIED, no model calls; ACP startup/Stop subchecks pass |
 | `opencode-current-2.json` | same clean SHA | Direct explicit-connect attempt failed before bridge launch; ACP subchecks again pass; neither result is a tool-call PASS |
+| `final-no-model` | `a26825f7df51f081d543949f8598515525d79e43` | Public runner confirms Codex direct PASS, OpenCode config declared but no discovery; ACP/Stop subchecks pass with zero reads |
 
 The first setup failure was fixed before consuming the one Kimi authorization.
 Content-free stage diagnostics were added so future setup failures are not mistaken
@@ -124,7 +129,7 @@ and correlates actual server responses with requests. It records only sequence,
 allowlisted method/tool/result labels, exact-two-tool inventory, canonical returned-
 data SHA-256, known freshness labels and wire validation statuses. Raw IDs,
 arguments, credentials, paths, documents, messages and unknown error text are not
-persisted. Unknown labels become `unknown`, not user-controlled strings. Two negative
+persisted. Unknown labels become `unknown`, not user-controlled strings. Negative
 Python regressions cover secret-marker exclusion, correlation and preservation of
 historical FAIL/NOT_RUN statuses without promotion.
 
@@ -195,7 +200,8 @@ remain evaluation outcomes and were not added to serialized Handoff status enums
 ### OpenCode and Pi limits
 
 OpenCode's installed native CLI exposes configuration/status commands and the ACP
-server. The inspected v2.2.7 native MCP API group exposes add/remove/connect/status
+server. The inspected v2.2.7 [native MCP API group](https://github.com/anomalyco/opencode/blob/v2.2.7/packages/protocol/src/groups/mcp.ts)
+exposes add/remove/connect/status
 and resources, not a direct operator tool-call endpoint. Direct discovery attempts
 used only disposable HOME/config and `mcp list --standalone`, then an explicit
 native `experimental.mcp.connect`; no bridge frame was observed. The config appeared
@@ -206,7 +212,7 @@ A direct model test with supported per-server `codemode:false` may be evaluated 
 separate future authorization; it was not silently folded into the Kimi allowance.
 
 Managed ACP replaces the server's config with its standard ACP stdio entry, leaving
-OpenCode's default Code Mode. Under K2, this route remains BLOCKED without a safe
+OpenCode's [default Code Mode registration](https://github.com/anomalyco/opencode/blob/v2.2.7/packages/core/src/tool/mcp.ts). Under K2, this route remains BLOCKED without a safe
 narrow alternative to broad execute. No fixed product server entry, permission or
 client login config was changed to force a pass. The earlier official DeepSeek turn
 with zero MCP reads is still not a successful MCP integration. The owner's previously
@@ -241,14 +247,22 @@ negative security gates, then append these arguments to the command above:
 
 The report requires PASS for `root-clippy`, `lease-unit` and `context-process`, with
 matching clean Git SHA; it submits no automatic prompt retries. Existing I tools
-supply the gates. Use a new attempt directory each time. Private auth is retained only
-as explicitly authorized; generated vendor state is removed after reaping. Do not
+supply the gates. Use a new attempt directory each time. The runner now also checks private config metadata for the authorized Kimi model,
+official endpoint/type, manual mode, exact two-tool allowlist and disabled telemetry,
+title and skill merging. A negative case rejects provider/model-policy switches and
+placeholder keys. This guard was added after the one real run. A separate post-run
+config and vendor model-metadata check confirmed the original run used the authorized
+`kimi-for-coding`; it is not misreported as a guard already present at `757eac3`.
+Private auth is retained only as explicitly authorized; generated vendor state is
+removed after reaping. Do not
 reuse a normal client HOME or copy its auth/history/device identity.
 
-Current local checks at `757eac3` (no production source changes): workspace Clippy
-PASS; five IPC unit cases PASS; 14 context/revocation process cases PASS; 21 Python
-checks PASS on Linux/WSL. Native Windows also passed the affected 21 Python checks at the same source;
-no native Windows client/model call is claimed. No full Rust/UI/10k/ConPTY/Wayland matrix,
+Native security checks at `757eac3`: workspace Clippy PASS, five IPC unit cases PASS
+and 14 context/revocation process cases PASS. Python initially passed 21 checks on
+Linux/WSL and native Windows at that source. A subsequent helper-only provider guard
+adds one case; all **22 Python checks pass on both hosts at clean
+`4ec40ed689488e3aabda255632a54ceb55c0683f`**. No product source changed and no native
+Windows client/model call is claimed. No full Rust/UI/10k/ConPTY/Wayland matrix,
 macOS/mobile/IME/AT or hosted Actions was rerun for this evaluation-only change.
 Prior product platform evidence remains historical at its original revisions.
 
