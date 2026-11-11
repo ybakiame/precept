@@ -19,20 +19,20 @@ PROMPT = (
 
 def private_home(path):
     """Validate ownership/shape only. Never read the operator's credential/config content."""
-    assert path.is_absolute() and path.resolve() == path and not path.is_symlink()
-    assert (
-        path != Path.home().resolve()
-    ), "normal user HOME is not a disposable smoke home"
-    assert (
-        path / ".acp-owned-smoke-home"
-    ).is_file(), "explicit disposable smoke home required"
-    assert not path.is_relative_to(
-        ROOT
-    ), "credential state must stay outside repository"
+    if not path.is_absolute() or path.resolve() != path or path.is_symlink():
+        raise ValueError("Synthetic helper validation failed")
+    if path == Path.home().resolve():
+        raise ValueError("normal user HOME is not a disposable smoke home")
+    if not (path / ".acp-owned-smoke-home").is_file():
+        raise ValueError("explicit disposable smoke home required")
+    if path.is_relative_to(ROOT):
+        raise ValueError("credential state must stay outside repository")
     for item in [path, path / ".kimi-code", path / ".kimi-code/config.toml"]:
         metadata = item.lstat()
-        assert not stat.S_ISLNK(metadata.st_mode), "auth state symlinks refused"
-        assert metadata.st_uid == os.getuid() and metadata.st_mode & 0o077 == 0
+        if stat.S_ISLNK(metadata.st_mode):
+            raise ValueError("auth state symlinks refused")
+        if not (metadata.st_uid == os.getuid() and metadata.st_mode & 0o077 == 0):
+            raise ValueError("Synthetic helper validation failed")
     return path
 
 

@@ -2,7 +2,8 @@
 
 The [charter](product.md) and [domain/trust ADR](adr/0004-product-domain-trust.md)
 define the target. Checkmarks below refer to scoped historical evidence, not
-production readiness. Latest reviewed baseline: main `14798f2` (PR #29).
+production readiness. Latest product baseline: main `8e979ba` (merged P1-J / PR #32).
+P1-K interoperability evidence is scoped separately below.
 
 ## Stage 1 — established engineering baseline (P0 through P1-I)
 
@@ -23,29 +24,45 @@ Evidence: [P0 negative boundaries](evaluation/p0-mcp-negative-boundaries.md),
 [H](evaluation/p1-h-real-agent-e2e.md), [I](evaluation/p1-i-context-bridge.md).
 Older plans/evaluations record their original status; they are not current roadmap authority.
 
-## Stage 2 — P1-J product formalization / Issue #30 (this work)
+## Stage 2 — P1-J product formalization / Issue #30 (merged)
 
 Deliver the charter, implemented/target architecture, domain/trust ADR, accepted NSH
 ADR, UI IA, sibling adoption assessment and consistent README. This stage changes
-no code, schema, tools, permissions or UI. Owner review/merge remains the decision
-gate; documentation alone does not complete implementation acceptance.
+no code, schema, tools, permissions or UI. P1-J was reviewed and merged in PR #32; documentation alone does not
+complete implementation acceptance.
 
-## Stage 3 — P1-K interoperability / Issue #31 (separate)
+## Stage 3 — P1-K interoperability / Issue #31
 
-[Issue #31](https://github.com/ybakiame/agent-control-plane/issues/31) depends on J
-review/merge. Do not fold it into this stage or call it complete from J documents.
+[Issue #31](https://github.com/ybakiame/agent-control-plane/issues/31) follows merged J.
+The [current evaluation](evaluation/p1-k-cross-agent-interop.md) distinguishes exact
+client/provider identities, mode and independently observed reads from catalog claims.
 
-- [ ] Independently captured Codex/Kimi traces plus installed Pi/OpenCode matrix,
-  distinguishing direct MCP, ACP forwarding, client and provider/model.
-- [ ] Synthetic cross-harness Handoff resume with source/version and stale-state checks.
-- [ ] Actual server-side call evidence for each PASS, project/permission isolation,
-  unchanged fixture DB and post-Stop established-peer/reconnect denial.
+- [x] Independently captured Codex direct MCP and Kimi managed ACP evidence, with an
+  installed-client matrix that explicitly retains Pi absence and OpenCode limits.
+- [x] Synthetic cross-client Handoff resume verifies same-HEAD dirty content drift,
+  branch/HEAD changes, legacy unknown fingerprints and historical validation states.
+- [x] Each claimed tool-call PASS has server-side observation, policy/equality checks
+  and unchanged fixture DB; managed Stop denies established peers and reconnects.
+- [ ] OpenCode actual MCP tool calls remain unverified: direct discovery did not
+  launch the bridge, and managed Code Mode stays BLOCKED without broad execute.
+- [ ] Upstream Pi trial remains NOT_RUN because the selected client was not found.
+  Installed Oh My Pi is a distinct fork and is not substituted.
+- [ ] Codex model-selected tool use and additional platform/provider modes are not
+  inferred from its no-inference app-server invocation or the one Kimi turn.
 
-P0 Codex/Kimi [user-reported continuity](evaluation/2026-11-08-codex-kimi-handoff.md)
-is historical. P1-I Kimi 2.5.2 completed both tools with independent daemon counters;
-OpenCode's official DeepSeek model turn had **zero MCP reads**, so it is not an MCP
-pass. Original quota/permission failures remain preserved. K owns further evaluation,
-provider opt-in and compatibility conclusions; J runs no agent/model experiments.
+Current K evidence at `757eac3`: Codex CLI 0.167.1 independently invokes both read-only
+MCP tools without a model; Kimi Code 2.5.2 / `kimi-for-coding` completes one separately
+opted-in stale Handoff resume, with daemon counts and post-Stop denials. No product
+code/permission/UI expansion or real project data was required. P0 user-reported
+[continuity](evaluation/2026-11-08-codex-kimi-handoff.md), P1-I Kimi results and OpenCode
+quota/zero-read failures retain their original historical provenance. K documents
+compatibility limits; it does not imply all-vendor certification or fresh platform
+acceptance. Hosted Actions remain NOT_RUN; source review is a Draft PR, not a merge.
+PR #33's optimization-bypass findings are fixed in `c285ce7`: explicit executable
+authorization/acceptance guards, seven new regressions, 29 Python tests passing on
+both local hosts, and targeted native IPC/MCP checks. The
+[follow-up evidence](evaluation/p1-k-cross-agent-interop.md#pr-33-review-optimization-safe-executable-checks)
+retains original trial provenance; the Draft still awaits re-review.
 
 ## Stage 4 — follow-up implementation briefs after decisions are reviewed
 

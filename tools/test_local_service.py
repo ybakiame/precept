@@ -75,15 +75,18 @@ def windows_pipe(endpoint):
     adv.GetTokenInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
     kernel.CloseHandle.argtypes = [wintypes.HANDLE]
     token = wintypes.HANDLE()
-    assert adv.OpenProcessToken(kernel.GetCurrentProcess(), 8, ctypes.byref(token))
+    if not adv.OpenProcessToken(kernel.GetCurrentProcess(), 8, ctypes.byref(token)):
+        raise AssertionError("Synthetic helper validation failed")
     size = wintypes.DWORD()
     adv.GetTokenInformation(token, 1, None, 0, ctypes.byref(size))
     data = ctypes.create_string_buffer(size.value)
-    assert adv.GetTokenInformation(token, 1, data, size, ctypes.byref(size))
+    if not adv.GetTokenInformation(token, 1, data, size, ctypes.byref(size)):
+        raise AssertionError("Synthetic helper validation failed")
     sid = ctypes.cast(data, ctypes.POINTER(ctypes.c_void_p))[0]
     text = ctypes.c_void_p()
     adv.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
-    assert adv.ConvertSidToStringSidW(sid, ctypes.byref(text))
+    if not adv.ConvertSidToStringSidW(sid, ctypes.byref(text)):
+        raise AssertionError("Synthetic helper validation failed")
     value = ctypes.wstring_at(text)
     kernel.LocalFree.argtypes = [ctypes.c_void_p]
     kernel.LocalFree(text)
@@ -114,7 +117,8 @@ class Raw:
         if hello:
             self.send({"api_version": 1, "credential": fixture.credential(cap)["token"]})
             ack = self.recv()
-            assert ack.get("ready") is True, "IPC handshake refused"
+            if ack.get("ready") is not True:
+                raise AssertionError("IPC handshake refused")
 
     def send_bytes(self, data):
         if os.name == "nt":
@@ -153,7 +157,8 @@ class Raw:
 
     def recv(self):
         n = struct.unpack(">I", self.read_exact(4))[0]
-        assert n <= MAX_FRAME, "response framing bound violated"
+        if n > MAX_FRAME:
+            raise AssertionError("response framing bound violated")
         return json.loads(self.read_exact(n))
 
     def request(self, method, params=None, ident="r", version=1):
@@ -186,7 +191,8 @@ class Bridge:
         if isinstance(message, dict) and message.get("jsonrpc") == "2.0" and "id" not in message:
             return None
         raw = self.lines.get(timeout=12)
-        assert raw is not None, "bridge exited without a JSON response"
+        if raw is None:
+            raise AssertionError("bridge exited without a JSON response")
         return json.loads(raw)
 
 
@@ -247,7 +253,8 @@ class Fixture:
     def cli(self, *query, success=True):
         p = subprocess.run([binary("acp-query"), *self.location, *query], capture_output=True,
                            text=True, encoding="utf-8", timeout=12)
-        assert (p.returncode == 0) == success, "operator CLI exit outcome differs"
+        if (p.returncode == 0) != success:
+            raise AssertionError("operator CLI exit outcome differs")
         return json.loads(p.stdout)
 
     def close(self):
