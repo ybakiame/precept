@@ -1,7 +1,9 @@
 # E4 operator console UX specification
 
-Scope: one local-first, read-only NSH Rust Desktop/TUI client. ADR-0003 is Proposed;
-mobile and production writes remain deferred. The owner reviews actual synthetic
+Historical E4 scope: one local-first, read-only NSH Rust Desktop/TUI client.
+P1-J now accepts NSH in [ADR-0003](../adr/0003-ui-framework-selection.md); the
+[product IA](../product-ui.md) defines future navigation without redesigning E4.
+Mobile and production writes remain deferred. The owner reviews actual synthetic
 windows before Draft PR finalization. Raw before/after captures stay private.
 
 ## Baseline observations and direction

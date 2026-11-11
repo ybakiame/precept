@@ -1,58 +1,72 @@
-# ADR-0003: compare read-only UI frontends before selecting a framework
+# ADR-0003: NSH Rust for Desktop and TUI
 
-Status: Proposed
-Date: 2026-11-09
-Authority: Issue #14; this document does not accept a framework or production rollout.
+- Status: **Accepted** — product framework direction; not production/platform acceptance
+- Proposed: 2026-11-09; accepted direction: 2026-11-11
+- Authority: owner direction and [Issue #30](https://github.com/ybakiame/agent-control-plane/issues/30)
+- Supersedes the framework comparison proposal in this ADR and the UI-selection portion of ADR-0001
 
-## Context
+## Context and decision
 
-The existing Rust local service has an explicit authenticated operator interface
-and project-bound MCP. A UI must stay a read-only client with an independent
-lifetime. Browser runtimes cannot reach its Unix sockets/Windows named pipes.
-Desktop density, accessibility and operational packaging need empirical evidence;
-framework platform lists and a successful compiler invocation are insufficient.
+The measured P1-E comparison led to NSH Desktop/TUI implementation and successive
+E2–I local verification. The owner has now selected the existing stack for formal
+productization. **Use NSH Rust as the single primary UI framework for Desktop and
+TUI**, with one framework-neutral typed presentation model and Rust domain logic
+behind the existing daemon/local IPC boundary. Do not introduce GPUI/GPUI Kit,
+a hybrid renderer, Electron, React or a new runtime into the product application.
 
-## Proposal
+Keep `spikes/p1-e/shared` and `spikes/p1-e/nsh` as the implemented baseline;
+production packaging/location can be specified later. Historical Kit/hybrid
+benchmark directories remain experimental evidence, not competing product paths.
+J does not remove dependencies, move workspaces or redesign screens. Desktop/TUI
+are two surfaces of the same product; neither queries SQLite or reimplements
+resolution/review rules. Optional session controls still require native operator
+authority, and Windows→WSL remains read-only.
 
-Keep a framework-neutral typed presentation model and unchanged native IPC
-semantics. Evaluate GPUI Kit, Rust-only NSH and Kit hosting an NSH AppView in
-independent optional workspaces. Use the same disposable snapshot and workflows,
-including errors/loading/unknown fingerprint, effective confirmed preference
-provenance, handoff warnings and opaque recorded validation evidence. Native
-clients receive explicit endpoint paths; offline web carries only synthetic data.
-No UI writes, SQLite access, browser gateway, automatic service start or new
-production authority is part of this trial.
+## Rationale and evidence
 
-Provisional recommendation: retain **NSH Rust as the cross-target candidate**,
-with **GPUI Kit as the dense desktop benchmark**. Keep the hybrid as a feasible
-fallback if NSH alone cannot meet desktop density/accessibility needs; do not
-commit to its extra renderer/engine cost before focus and theme interoperation
-are measured. This is an experiment ordering, not a final product framework.
+The [P1-E comparison](../p1/ui-spike-evaluation.md) measured alternatives rather
+than choosing from upstream platform claims. Later NSH work established the shared
+five-page model, explicit connection handling, bounded 10k-row presentation,
+keyboard/terminal behavior and an owner-reviewed theme family. The
+[P1-F local evidence](../evaluation/p1-f-local-ux.md) records Instrument/Ledger/
+Harbor, English/Simplified Chinese, light/dark/high-contrast and reviewed windows.
+[P1-I local evidence](../evaluation/p1-i-context-bridge.md) records subsequent
+Windows/ConPTY and native WSLg regressions and preserves earlier failed attempts.
+These provide a practical baseline for continued work without another UI experiment.
 
-## Decision weights and acceptance gates
+The decision is an owner-selected product direction using scoped evidence, **not**
+a claim that every gate in the earlier comparative proposal passed. That proposal
+required three-OS interaction/accessibility, clean-machine packaging, repeated
+startup/RSS and browser authentication evaluation before accepting a universal
+framework winner. J narrows the product to existing Desktop/TUI and accepts NSH
+with the following gaps retained as future release gates, rather than implying
+those broader criteria were met. No aggregate comparative score is asserted.
 
-Desktop usability/density/accessibility 30%; native IPC/security 25%; TUI/web/mobile
-reuse 20%; packaging/build/maintenance/churn 15%; measured startup/RSS/bundle/UI
-responsiveness 10%. Do not turn missing measurements into zeroes or publish an
-aggregate winner. The [comparison](../p1/ui-spike-evaluation.md) lists evidence
-and counterevidence for each dimension.
+## Counterevidence and platform limits
 
-Before an Accepted decision: verify keyboard/focus/IME and screen readers on the
-three actual desktop OSs, package and launch on clean machines, test identical
-10k-row UI workloads (not just a model filter), compare isolated release builds
-and repeated startup/RSS samples, validate simulator/device backends separately,
-and resolve the browser's authenticated data design without weakening the daemon.
-Hybrid additionally needs host/embedded focus traversal, theme synchronization,
-resize/unmount and per-surface lifecycle tests. Owner review of those results is
-required for a later framework decision; this PR remains Draft and unmerged.
+| Target / behavior | Evidence-backed status | Remaining limit |
+| --- | --- | --- |
+| Windows Desktop / ConPTY | Local E2–I native windows, input/state/10k and deterministic session checks | Not proof of every device, full IME/AT or real-model GUI behavior |
+| Native WSLg / Linux TUI | Local Wayland display observations and PTY interaction/regression evidence | Not general Linux compositor or physical GPU acceptance; niri excluded |
+| macOS | Historical P1-E CI native build/window smoke at its recorded SHA | Latest product/theme/session behavior and packaging not revalidated; no current macOS support claim |
+| English / Simplified Chinese | Shared catalogs, switching and scoped CJK paste evidence | Full IME composition, regional formatting and RTL not verified |
+| Accessibility | Token contrast, visible focus and scoped keyboard checks | Screen-reader/assistive-technology and complete accessibility certification NOT_RUN |
+| Mobile / browser | Historical experiments/typechecks only | Outside current product targets; no mobile release or authenticated browser UI |
+| Packaging/performance | Local release/probe results at source-specific SHAs | Clean-machine distribution and repeated production startup/RSS budgets remain open |
 
-## Counterevidence and consequences
+NSH is pinned to development source `87c7e8da85d2f15a56107baa6f0fabb419b508b3`;
+release 0.4.0 lacked TUI. Linux brings GTK/GStreamer even with JS disabled, and
+Rust changes require rebuilds. Kit's dense virtualized table remains useful
+counterevidence; the hybrid adds focus/theme/lifecycle and renderer cost without a
+current product need. These are maintenance and release risks, not reasons to add
+a second renderer preemptively. Framework changes require a new measured ADR.
 
-NSH release 0.4.0 lacks TUI; this trial needs a newer exact development commit.
-Its Linux backend brings GTK/GStreamer even with JS disabled. Rust changes rebuild
-instead of TSX hot reload; TSX was not benchmarked and receives no cost/benefit
-score. Kit has a real virtualized table, but its WASM docs label support
-showcase-only and mobile uses a separate compatibility baseline. The hybrid
-aligns GPUI Fast versions but increases binary/dependency burden and leaves
-interaction boundaries to the host. Software-rendered Xvfb results do not establish
-physical-GPU performance, hardware accessibility or universal OS support.
+## Consequences
+
+Preserve the [visual identity](../brand/identity.md) and existing
+[typed console architecture](../p1/ui-console-architecture.md). The planned
+[product information architecture](../product-ui.md) organizes workflows without
+adding pages/controls in J. Full preference review, onboarding and context
+explanations require separately reviewed operator APIs and tests before UI work.
+A framework decision grants no MCP write authority, session auto-start or production
+security claim. Original reports retain their historical “Proposed” status language.

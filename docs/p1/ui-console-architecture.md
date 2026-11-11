@@ -1,8 +1,10 @@
 # NSH read-only console architecture (E4)
 
-This is an optional measured Rust UI spike, outside the P0 Python package and
-root Rust workspace. [ADR-0003](../adr/0003-ui-framework-selection.md) remains
-**Proposed**. Mobile and production writes remain deferred.
+The implemented NSH Rust console remains outside the P0 Python package and root
+Rust workspace. [ADR-0003](../adr/0003-ui-framework-selection.md) now **accepts NSH**
+as the product Desktop/TUI direction; paths and behavior below are unchanged.
+[Product IA](../product-ui.md) describes later workflows, not implemented pages.
+Mobile and production writes remain deferred.
 
 ## Ownership and pages
 

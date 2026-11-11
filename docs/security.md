@@ -1,4 +1,10 @@
-# P0 threat model and privacy limitations
+# Threat model and privacy limitations — P0 plus optional native sessions
+
+The implemented controls and limitations below remain unchanged by P1-J.
+[ADR-0004](adr/0004-product-domain-trust.md) proposes the product's explicit
+agent-reported / daemon-observed / independently verified evidence model and
+repository-contract vs user-local state ownership. These are target semantics,
+not a new enforcement, storage or cryptographic implementation.
 
 ## Threat model
 
