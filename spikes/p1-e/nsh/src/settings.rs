@@ -78,6 +78,12 @@ pub(super) fn connection(model: Signal<Model>) -> impl IntoElement {
         .bg(move || palette(model).panel)
         .child(text(move || model.get().word(Msg::Connection)).font_weight(FontWeight::SEMIBOLD))
         .child(text(move || model.get().word(Msg::DraftHelp)).text_size(px(12.0)))
+        .child(word_action(
+            model,
+            Msg::ProfileOperator,
+            || true,
+            move || operator::open(model),
+        ))
         .child(
             view().flex_row().flex_wrap().gap_1().children(
                 [

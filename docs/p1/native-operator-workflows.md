@@ -68,7 +68,7 @@ existing resolver's current Git/worktree observations. context.get stays confirm
 
 Use one auxiliary operator panel in the existing shared Model and both renderers,
 with existing tokens, English/zh-CN, compact scrolling and native keyboard focus.
-Alt+7 opens it; Escape cancels review and restores ordinary navigation. Existing
+Alt+O opens it (Alt+7 remains the existing Sessions start review); Escape cancels review and restores ordinary navigation. Existing
 Alt+1–5, Sessions and user Windows screenshot shortcut remain intact.
 
 The minimal UI supports explicit Profile create/select/info, grant enable/disable,

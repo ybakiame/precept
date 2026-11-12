@@ -7,6 +7,8 @@ use serde_json::{Value, json};
 use tokens::palette;
 pub(super) fn open(model: Signal<Model>) {
     model.update(|m| {
+        m.operator.open = false;
+        m.operator.review = None;
         m.sessions = true;
         m.settings = false;
         m.connection_editor = false;

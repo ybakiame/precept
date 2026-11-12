@@ -438,7 +438,7 @@ mod tests {
         };
         let mut lease = RuntimeLease::acquire(&location).unwrap();
         let credentials = lease.credentials(&[]).unwrap();
-        let mut listener = transport::Listener::bind(&location).unwrap();
+        let mut listener = transport::Listener::bind(&location).await.unwrap();
         let cap = load_credential(&location, &location.credential_path(None).unwrap()).unwrap();
         let server = tokio::spawn(async move {
             for denied in [true, false] {

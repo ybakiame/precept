@@ -35,6 +35,9 @@ nsh-platform-windows = { git = "https://github.com/longbridge/nsh", rev = "87c7e
 nsh-platform-web = { git = "https://github.com/longbridge/nsh", rev = "87c7e8da85d2f15a56107baa6f0fabb419b508b3", default-features = false }
 
 [dev-dependencies]
+tokio = { version = "1", features = ["rt","net","time"] }
+acp-ipc = { path = "../../../crates/acp-ipc" }
+tempfile = "3"
 nsh-testing = { git = "https://github.com/longbridge/nsh", rev = "87c7e8da85d2f15a56107baa6f0fabb419b508b3", default-features = false }
 nsh-engine = { git = "https://github.com/longbridge/nsh", rev = "87c7e8da85d2f15a56107baa6f0fabb419b508b3", default-features = false }
 

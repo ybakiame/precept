@@ -6,6 +6,7 @@ use std::sync::Arc;
 pub mod appearance;
 pub mod connection;
 pub mod i18n;
+pub mod operator;
 pub mod presentation;
 pub mod session;
 
@@ -143,6 +144,7 @@ impl Section {
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct Model {
+    pub operator: operator::Operator,
     pub epoch: u64,
     pub sessions: bool,
     pub session: session::SessionModel,
@@ -180,6 +182,7 @@ pub struct Model {
 impl Model {
     pub fn loading() -> Self {
         Self {
+            operator: Default::default(),
             epoch: 0,
             sessions: false,
             session: Default::default(),
@@ -243,6 +246,7 @@ impl Model {
         }
         self.epoch = self.epoch.checked_add(1).expect("request epoch exhausted");
         self.session = Default::default();
+        self.operator.invalidate();
         self.connection = self.connection_draft.clone();
         self.connection_invalid = false;
         self.live = self.connection.target != connection::Target::Synthetic;
@@ -269,6 +273,7 @@ impl Model {
     pub fn begin_read(&mut self) -> Result<ReadRequest, &'static str> {
         self.epoch = self.epoch.checked_add(1).expect("request epoch exhausted");
         self.session = Default::default();
+        self.operator.invalidate();
         self.data = None;
         self.selected_preference = None;
         self.copied = false;
@@ -366,6 +371,7 @@ impl Model {
     pub fn select(&mut self, index: usize) {
         if let Some(name) = self.project_names.get(index).cloned() {
             self.session = Default::default();
+            self.operator.invalidate();
             self.selected = index;
             self.selected_project = Some(name);
             self.page = 0;

@@ -3,9 +3,19 @@
 version = 4
 
 [[package]]
+name = "acp-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "acp-ipc"
 version = "0.1.0"
 dependencies = [
+ "acp-core",
  "clap",
  "getrandom",
  "libc",
@@ -29,6 +39,7 @@ dependencies = [
 name = "acp-ui-spike-model"
 version = "0.1.0"
 dependencies = [
+ "acp-core",
  "acp-ipc",
  "acp-session",
  "clap",

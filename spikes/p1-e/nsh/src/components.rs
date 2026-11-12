@@ -131,6 +131,8 @@ fn navigation(model: Signal<Model>) -> impl IntoElement {
                         .focus(|s| s.border_color(palette(model).text))
                         .on_press(move || {
                             model.update(|m| {
+                                m.operator.open = false;
+                                m.operator.review = None;
                                 m.settings = false;
                                 m.sessions = false;
                                 m.session.confirm_start = false;
@@ -157,7 +159,9 @@ fn toolbar(model: Signal<Model>) -> impl IntoElement {
         .child(
             text(move || {
                 let m = model.get();
-                m.word(if m.sessions {
+                m.word(if m.operator.open {
+                    Msg::ProfileOperator
+                } else if m.sessions {
                     Msg::Sessions
                 } else if m.settings {
                     Msg::Settings
@@ -173,6 +177,8 @@ fn toolbar(model: Signal<Model>) -> impl IntoElement {
         .child(control(model, Msg::Reconnect, move || reconnect(model)))
         .child(control(model, Msg::Settings, move || {
             model.update(|m| {
+                m.operator.open = false;
+                m.operator.review = None;
                 m.sessions = false;
                 m.session.confirm_start = false;
                 m.settings = !m.settings;
@@ -181,6 +187,8 @@ fn toolbar(model: Signal<Model>) -> impl IntoElement {
         }))
         .child(control(model, Msg::Connection, move || {
             model.update(|m| {
+                m.operator.open = false;
+                m.operator.review = None;
                 m.sessions = false;
                 m.session.confirm_start = false;
                 m.connection_editor = !m.connection_editor;
@@ -195,6 +203,7 @@ fn toolbar(model: Signal<Model>) -> impl IntoElement {
                     && !model.get().settings
                     && !model.get().connection_editor
                     && !model.get().sessions
+                    && !model.get().operator.open
             },
             move || copy_page(model),
         ))
@@ -206,6 +215,7 @@ fn task_input(model: Signal<Model>, task_ref: ElementRef) -> impl IntoElement {
             move || {
                 model.get().settings
                     || model.get().sessions
+                    || model.get().operator.open
                     || model.get().connection_editor
                     || model.get().section != Section::Handoff
             },
@@ -244,6 +254,7 @@ fn preference_input(model: Signal<Model>, filter_ref: ElementRef) -> impl IntoEl
             move || {
                 model.get().settings
                     || model.get().sessions
+                    || model.get().operator.open
                     || model.get().connection_editor
                     || model.get().section != Section::Preferences
             },
@@ -367,7 +378,9 @@ pub(super) fn shell(
                                         )
                                         .child(
                                             text(move || {
-                                                model.get().word(if model.get().sessions {
+                                                model.get().word(if model.get().operator.open {
+                                                    Msg::OperatorHelp
+                                                } else if model.get().sessions {
                                                     Msg::SessionAuthority
                                                 } else {
                                                     Msg::ReadOnlyHelp
@@ -440,6 +453,14 @@ pub(super) fn shell(
                                             .child(
                                                 view()
                                                     .style_when(
+                                                        move || !model.get().operator.open,
+                                                        |s| s.hidden(),
+                                                    )
+                                                    .child(operator::panel(model)),
+                                            )
+                                            .child(
+                                                view()
+                                                    .style_when(
                                                         move || !model.get().sessions,
                                                         |s| s.hidden(),
                                                     )
@@ -451,6 +472,7 @@ pub(super) fn shell(
                                                         move || {
                                                             model.get().settings
                                                                 || model.get().sessions
+                                                                || model.get().operator.open
                                                                 || model.get().connection_editor
                                                         },
                                                         |s| s.hidden(),
