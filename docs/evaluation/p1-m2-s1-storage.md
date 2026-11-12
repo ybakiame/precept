@@ -21,6 +21,7 @@ and authorized this same-PR implementation after the contract-first commit.
 | `dc791761966750fc919aec9092ebd23082844f50` | Final runtime: sidecar disappearance handling, isolated identity replacement test, pre-publication fault and UTC vectors. Clean full matrices pass 86 tests on each host |
 | `1751c5bbeefab3d33659db798dbf0821aa3c91de` | Evidence/documentation update after the original full matrices |
 | `5e47349586b750ded4e8aaeb95a919e8fba05c06` | Review revision: Windows reserved spelling fix, test-only verification counts/measurement and explicit later selection identity gate. Clean targeted storage gates and release measurements pass on both native hosts |
+| `c6c9052595ee8240495266cbc1172c5d01571870` | Documentation-only relative to `5e47349`; subsequent clean full Workspace validation passes 87 tests on Linux/WSL and 88 on native Windows, including seven real daemon/IPC/MCP process cases on each |
 
 The latest evidence update after `5e47349` is documentation only. Runtime results
 are not relabeled as tests of a later documentation SHA. Historical M1/C2A/C2B1 outcomes retain their original
@@ -271,10 +272,56 @@ mixed-case cases). The manually run performance case is reported separately,
 not added to normal regression totals. The unchanged Python baseline passes 29
 on Linux, separately scoped. The original 86-test full workspace and seven real
 process results remain evidence of `dc79176`, not relabeled as this revision.
-No full workspace/UI/IPC/model matrix was rerun for this localized change.
+At that targeted-validation stage the full Workspace matrix was not rerun; the
+subsequent owner-requested full rerun is recorded below. UI/model matrices remain
+outside this localized change.
 
 PR #42 remains Draft for re-review. No IPC, daemon write authorization, CLI, NSH,
 Python retirement or schema/DDL implementation scope is added by this revision.
+
+## Latest-source full Workspace rerun
+
+At the owner's request, the entire original Workspace gate set was repeated on
+both native hosts at clean **c6c9052595ee8240495266cbc1172c5d01571870**. This is
+the latest PR source before this evidence-only update. Its code includes the
+`5e47349` Windows fix and count regression; the only difference from that commit
+is the preceding evidence document. These are new executions, not a relabeling
+of `dc79176` or reuse of the targeted package results.
+
+| Command at clean c6c9052 | Linux/WSL | Native Windows |
+| --- | --- | --- |
+| `cargo fmt --all -- --check` | PASS | PASS |
+| `cargo build --workspace --bins --locked` | PASS | PASS |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | PASS | PASS |
+| `cargo test --workspace --all-targets --locked` | PASS, 87 | PASS, 88 |
+| `git diff origin/main --check` | PASS | PASS |
+
+The hosts/toolchains and isolated Windows checkout are as recorded above. Each
+runner verifies exact HEAD and a clean tracked worktree before execution, uses
+local locked caches with `CARGO_NET_OFFLINE=true`, and builds native binaries
+before running tests. Both full runs independently pass all seven real
+daemon/IPC/MCP process regressions, with zero failures. Workspace test execution
+took 3.982 seconds on Linux/WSL and 92.662 seconds on native Windows; these are
+local gate durations, not a performance comparison or latency acceptance claim.
+
+Compared with the original 86 per host at `dc79176`, the count regression adds one
+on both hosts; the new mixed-case collision test adds one more on Windows. Store
+totals are now 10 per host, writer totals 27 Linux / 29 Windows, with the existing
+Unix-only core case accounting for the remaining platform difference. Zero-test
+targets do not inflate totals.
+
+Each normal Workspace run reports exactly one ignored case: the explicitly opt-in
+`synthetic_profile_read_cost` measurement. No acceptance/security regression is
+ignored or disabled. That measurement's separate release PASS and numerical
+results remain attributed to `5e47349`; it was not remeasured during this full
+rerun. No test, product code, assertion or integrity check changed for this rerun.
+
+Only this evidence document and PR metadata are updated after the tested source;
+the next documentation commit is not claimed as an independently tested runtime
+SHA. Raw reports/logs stay private under ignored `artifacts/local-p1-m2/`.
+No GitHub Actions, real Profile, retained authentication, model call, external
+checkout, GUI/NSH, selection/lease/authorization or Python retirement work was
+performed. PR #42 remains Draft, unmerged and awaiting human re-review.
 
 ## Scope and remaining work
 
