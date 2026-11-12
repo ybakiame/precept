@@ -23,7 +23,7 @@ trusted agent ─ two-tool MCP stdio ─ acp-mcp ─ project capability ─┘
 ```
 
 This is the accepted target after P1-M2, not a claim that the current main tree
-already has production writes. The current Python P0 path and v0/v1 reader are
+already has production writes. The current Python P0 path and legacy profile readers are
 disposable validation-era implementation details scheduled for removal by [Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40).
 
 | Component | Current responsibility | Must not own |
@@ -45,7 +45,7 @@ The current main tree still contains the disposable Python P0 prototype.
 Its CLI and MCP launch path share an initializing read/write `Store`; this is a
 historical implementation defect, not an accepted target. ADR-0006 retires that
 runtime rather than building a second Python read-only adapter. P1-M2 replaces the
-active v0/v1 Rust reader with strict Profile v2 reads and routes every product
+active legacy Rust reader with strict reads for the selected current Profile schema and routes every product
 mutation through the daemon-owned `acp-write` capability. Until M2 merges, this
 target topology is not yet an implemented end-user runtime.
 
