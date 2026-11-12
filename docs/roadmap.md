@@ -5,18 +5,19 @@ define the target. Checkmarks below refer to scoped historical evidence, not
 production readiness. Current completed engineering baseline: PR #37 merged at
 `d6168e0ca5bff150942711b8f398516e03769703` (P1-M0); PR #39 merged at
 `3083c407d02c34bbbfef402f7ae57bb7eda248d1` (P1-M1 synthetic-only Rust writer);
-ADR-0004 and ADR-0005 are Accepted. [P1-M2 / Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40)
-is active for synthetic-only Python compatibility and daemon ownership integration.
-No real-profile migration or production write activation is authorized.
+ADR-0004, ADR-0005 and ADR-0006 are Accepted. [P1-M2 / Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40)
+is active for Rust-only runtime cutover and Python prototype retirement under
+[ADR-0006](adr/0006-rust-only-runtime.md). M2 remains validation-only; local prototype state may be deleted, and no production
+write activation is authorized.
 P1-K interoperability evidence is scoped separately below.
 
 ## Stage 1 — established engineering baseline (P0 through P1-I)
 
 | Capability | Implemented / evidenced | Outstanding |
 | --- | --- | --- |
-| Context and personal preferences | Python local SQLite registry/review/writes, legacy Rust resolver, bounded live sources; P1-L pure typed selectors/conflicts | Live structured-contract adapters, persisted generalized model and complete review UI |
+| Context and personal preferences | Legacy Python P0 registry/review/writes remain temporarily in the tree; Rust typed resolver and bounded live sources are implemented | Rust-native Profile v1 persistence and complete operator review workflow (P1-M2/M4) |
 | Continuity | Exact project/task Handoff, historical checks, revision/worktree/fingerprint warnings | Frozen constraint snapshots, portable bundle format and independent cross-client acceptance |
-| Rust ownership and storage | Read-only core/store, parity and synthetic backup/migration/process recovery; M1 isolated v2 writer/transaction candidate locally validated | Production Rust writes, live reader/owner integration, real-data migration/recovery and backup/export/import/retention workflows |
+| Rust ownership and storage | Read-only core/store and M1's disposable synthetic v2 writer/transaction evidence | Rust-native Profile v1 writes and live reader/owner integration; any later data-lifecycle feature must be justified by actual product use |
 | Local service and MCP | Unix sockets/named pipes, operator/project capabilities, two-tool read-only stdio | Full MCP conformance and broader versioned client matrix |
 | NSH Desktop/TUI | Shared model, five pages, Sessions panel, connections/settings, themes/locales and bounded 10k display | Product IA realization, clean-machine release/accessibility and current macOS verification |
 | Optional ACP sessions | Explicit native lifecycle/auth observations; P1-I opt-in lease, expiry and revocation | Persistent resume, vendor parity and sandboxing are not delivered or promised |
@@ -70,7 +71,7 @@ IPC/MCP checks. The [follow-up evidence](evaluation/p1-k-cross-agent-interop.md#
 retains original trial provenance. K is complete at its stated scope; OpenCode/Pi and
 additional model/platform modes remain explicitly unverified, not silently passed.
 
-## Stage 4 — P1-L / M0 / M1 complete; P1-M2 compatibility and exclusive-owner integration active
+## Stage 4 — P1-L / M0 / M1 complete; P1-M2 Rust-only runtime cutover active
 
 ADR-0004 was accepted by the owner on 2026-11-11 without changing its domain/trust
 decisions. [P1-L / Issue #34](https://github.com/ybakiame/agent-control-plane/issues/34)
@@ -83,9 +84,9 @@ merged at `d6168e0ca5bff150942711b8f398516e03769703` and the owner separately
 accepted ADR-0005 on 2026-11-12. [P1-M1 / Issue #38](https://github.com/ybakiame/agent-control-plane/issues/38)
 is complete: [PR #39](https://github.com/ybakiame/agent-control-plane/pull/39)
 merged at `3083c407d02c34bbbfef402f7ae57bb7eda248d1`. [P1-M2 / Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40)
-is now the active Stage 4 implementation task, restricted to disposable synthetic
-profiles. M3–M5 and N–R remain gated briefs; no real-profile access, production
-write activation, catalog cutover or rollout is authorized. Dependencies avoid
+is now the active Stage 4 implementation task, restricted to disposable validation
+profiles. Local prototype state may be deleted; production write activation is not
+authorized. M3–M5 and N–R remain gated briefs. Dependencies avoid
 premature migration, onboarding, review UI or snapshots.
 
 - [x] L0: [v1 domain/selector/conflict contract](p1/typed-context-v1.md) frozen
@@ -110,50 +111,40 @@ retains the original full-matrix source and records the narrower correction chec
 The review correction was included in the merged PR; its narrower checks do not
 retroactively rerun the earlier full matrix at the merge commit.
 
-M0 delivered [Accepted ADR-0005](adr/0005-local-storage-and-write-ownership.md) and a
-[storage ownership plan](p1/storage-ownership-plan.md): single opted-in daemon
-writer, separate writer library, Python compatibility/fencing, explicit schema
-versions and verified-generation cutover/rollback. It changes documentation only.
-The owner resolved the transition decision in PR #37: reject new
-suggested→deprecated under the future writer, preserve historical records and
-follow ADR-0004. M1 is complete: [PR #39](https://github.com/ybakiame/agent-control-plane/pull/39)
-merged the synthetic-only Rust writer, exact v2 schema and transaction/history-
-preservation tests. Current Python behavior remains unchanged. Live CLI compatibility,
-Python read-only access and daemon ownership fencing are the active M2 work in Issue #40. Production Rust
-writes and real-profile rollout remain NOT_IMPLEMENTED / NOT_RUN. Completed C2A
-synthetic migration and C2B1 genuine process recovery, including the corrected
-historical Linux/macOS/Windows process matrix, remain prerequisites already proven
-at their recorded scope. M0 neither repeats them nor claims production recovery.
+M0 delivered [Accepted ADR-0005](adr/0005-local-storage-and-write-ownership.md)
+and the original [storage ownership plan](p1/storage-ownership-plan.md). The owner
+accepted [ADR-0006](adr/0006-rust-only-runtime.md) on 2026-11-12, superseding the
+Python frontend/read-only/rollback-owner decisions, v0/v1 runtime compatibility,
+and schema downgrade. The retained architecture is a Rust-only runtime, a fresh Rust-native Profile schema v1, and one daemon write owner. The legacy Python v1 and M1 synthetic v2 are historical, incompatible formats with no migration requirement.
 
-ADR-0005 acceptance was a separate explicit owner decision after PR merge.
-Issue #38 is closed after PR #39 merged. Issue #40 now authorizes only synthetic
-M2 compatibility and daemon-owner integration. M3 synthetic cutover/recovery/privacy,
-M4 independently consented per-profile rollout and M5 rollback closure/direct-writer
-retirement remain unopened. No real profile access, production Rust writes, catalog
-cutover or daemon/IPC/MCP/UI write activation is authorized. Exact gates and NOT_RUN
-limitations stay in the plan.
+M1 is complete: [PR #39](https://github.com/ybakiame/agent-control-plane/pull/39)
+merged the isolated synthetic v2 writer and its CAS/receipt/strict-transition
+evidence. Its legacy-v0/v1-to-v2 migration cases remain historical evidence only.
+M1's v2 schema is not the product schema and is not migrated into Rust-native v1. See the [M1 evidence report](evaluation/p1-m1-synthetic-writer.md).
 
-M1 froze the [exact profile-v2/writer and planned catalog contract](p1/profile-v2-schema-and-writer.md)
-and added `acp-write` with fresh owned fixtures only. New-copy v0/v1→v2
-migration, independent verification, transactional CAS/receipts, strict transitions
-and historical preservation were validated on Windows and Linux/WSL. The pre-review
-baseline at clean `39de165` passed 27 M1 tests per host; after both allocation-history
-review fixes, clean `1538938` passed 32 M1 tests and 29 Python tests per host, with
-format, writer Clippy and diff checks passing. [PR #39](https://github.com/ybakiame/agent-control-plane/pull/39)
-merged this synthetic-only implementation at `3083c407d02c34bbbfef402f7ae57bb7eda248d1`;
-[the M1 evidence report](evaluation/p1-m1-synthetic-writer.md) retains exact sources
-and limitations. Genuine v2 child-kill boundaries are separate from C2B1 recovery.
-No public path-adoption API, production dependency/entrypoint, runtime v2 reader
-adoption or usable catalog was added. M1 completion does not authorize real-profile
-access or production writes; M2 is separately scoped by Issue #40.
+[P1-M2 / Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40)
+is re-scoped to Rust-only runtime cutover: explicit creation of a fresh Rust-native
+Profile v1, strict v1 reader adoption, daemon-owned operator write IPC, native CLI/NSH integration,
+and removal of Python runtime/tests/dependencies plus active legacy paths. M2 uses disposable validation fixtures. Existing local Python-prototype files and
+old validation profiles may be deleted during a deliberate ACP development reset;
+no backward-compatibility or retention guarantee is required. Production writes are
+not activated.
+
+P1-M3 remains conditional. Open it only if M2 reveals a concrete Profile v1 lifecycle
+or recovery need; do not assume backup/restore/retention work in advance. It has no
+Python owner handoff or legacy-schema migration. P1-M4 completes the
+operator review/profile workflows under ADR-0004. P1-M5 handles release hardening.
+Any real-profile operation or release requires a separate explicit owner decision.
 
 | Brief | Depends on | Deliverable / acceptance gate |
 | --- | --- | --- |
 | L — typed context explanation ([Issue #34](https://github.com/ybakiame/agent-control-plane/issues/34), merged PR #35) | J merged; ADR-0004 accepted | L0 contract, L1 pure resolver and L2 scoped local compatibility/review evidence delivered; legacy responses preserved |
 | M0 — local storage design ([Issue #36](https://github.com/ybakiame/agent-control-plane/issues/36), merged PR #37) | J + merged L; Accepted ADR-0004 | ADR-0005 and ownership/compatibility/recovery matrices delivered and explicitly accepted; no code or real-data authorization |
-| M1 — synthetic Rust writer and exact v2 schema ([Issue #38](https://github.com/ybakiame/agent-control-plane/issues/38), merged PR #39) | Accepted ADR-0005; resolved transition semantics | Exact v2 contract, isolated `acp-write`, transaction/CAS/receipt/strict-transition/history-preservation evidence; merged at `3083c407`; synthetic-only, no production entrypoint |
-| M2 — Python RO compatibility and daemon-exclusive owner integration ([Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40), active) | M1 merged; Accepted ADR-0005 | Versioned operator-only write IPC, distinct write grant, Python RO/guarded compatibility, shared profile gate and writer lease; synthetic-only, no real-profile cutover |
-| M3–M5 — synthetic cutover through explicit rollout (unopened) | M2 accepted; sequential gates from storage plan | Synthetic cutover/recovery/privacy, independently consented per-profile rollout, then rollback closure/Python direct-writer retirement; no implicit adoption or dual writers |
+| M1 — synthetic Rust writer and exact v2 schema ([Issue #38](https://github.com/ybakiame/agent-control-plane/issues/38), merged PR #39) | Accepted ADR-0005; resolved transition semantics | Historical exact v2 contract, isolated `acp-write`, transaction/CAS/receipt/strict-transition evidence; merged at `3083c407`; disposable synthetic-only, not the product schema |
+| M2 — Rust-only runtime cutover and Python prototype retirement ([Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40), active) | M1 merged; Accepted ADR-0006 | Fresh Rust-native Profile v1 creation/reads, daemon-only `acp-write`, operator write grant/IPC, native `acp-query` and NSH integration, removal of Python runtime/tests/dependencies and legacy migration paths; disposable validation fixtures only |
+| M3 — Profile v1 lifecycle and recovery (conditional/unopened) | M2 accepted plus a demonstrated product need | Only the minimum Rust-native v1 lifecycle/recovery behavior actually required; no assumed backup/restore/retention system, legacy migration, Python owner or downgrade |
+| M4 — operator review and profile workflows (unopened) | M2/M3 accepted; ADR-0004 | Human review/provenance, explicit profile lifecycle UX and permission-safe end-to-end acceptance |
+| M5 — release hardening (unopened) | M2–M4 accepted | Clean-machine packaging, accessibility, supported-platform evidence, security and performance gates |
 | N — project onboarding and contracts | J + L; M for writes | Register/preview explicit roots, optional versioned Markdown/YAML contract format and reviewed diff workflow; no auto-scaffold, symlink escape, private profile export or stale-source activation |
 | O — complete human review | J + L + M | Operator-only versioned proposal/review API and NSH workflow with view/confirm/reject/deprecate/delete/provenance; edits/review revocation/permission changes invalidate approval; no agent-facing mutation |
 | P — snapshot and Handoff continuity | J + L; M for persistence | Versioned immutable constraint/source references, resume comparison and legacy unknowns; checksum wording only; stale worktree/contract/permission and evidence-origin regressions; interoperability acceptance stays K |

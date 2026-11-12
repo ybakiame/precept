@@ -1,25 +1,73 @@
 # AGENTS.md — Agent Control Plane
 
-## Scope
+## Product and authority
 
-Keep the product a local-first context and policy layer, not another Agent harness. Existing repository facts and accepted ADRs outrank stored preferences or handoffs. Never infer project truth from stale memory.
+Keep ACP a local-first developer context and policy layer, not another agent harness.
+Current repository facts, project-owned contracts and accepted ADRs outrank stored
+preferences or Handoffs. Never infer project truth from stale memory.
 
-## P0 architectural boundary
+Read these before changing architecture or persisted behavior:
+- [Product charter](docs/product.md)
+- [Architecture](docs/architecture.md)
+- [ADR-0004: domain, ownership and evidence trust](docs/adr/0004-product-domain-trust.md)
+- [ADR-0005: storage ownership](docs/adr/0005-local-storage-and-write-ownership.md), only where not superseded
+- [ADR-0006: Rust-only runtime and Python prototype retirement](docs/adr/0006-rust-only-runtime.md)
 
-- `store.py`: SQLite schema, review states and scoped persistence.
-- `context.py`: live, narrowly allowlisted repository facts and git revision checks.
-- `mcp.py`: read-only MCP stdio, never profile or task mutation.
-- `cli.py`: explicit human/operator-authorized profile and task writes.
-- No network listener, no subprocess shell execution, no automatic repository rewriting, no preference auto-confirmation.
+## Accepted runtime direction
 
-Do not add GUI/PTY/ACP dependencies to the P0 core before a measured integration spike. Proposed GPUI, GPUI Kit, and NSH choices are tracked in docs/adr.
+- Rust is the only supported product runtime. The Python P0 implementation is
+  legacy and scheduled for removal by P1-M2. Do not add Python features, runtime
+  dependencies, compatibility shims, new Python tests, or Python release paths.
+- The first Rust-native product Profile schema is v1 (`PRAGMA user_version=1`). It is a fresh schema, not compatible with the retired Python prototype's legacy v1 or M1's synthetic v2. M1 v2 is historical only; do not add legacy readers, migration, downgrade, or compatibility fallback.
+- The native daemon is the only production write owner. Only the daemon may invoke
+  the private `acp-write` implementation.
+- `acp-store` remains read-only. UI, `acp-query`, MCP and agents never receive
+  writable SQLite connections or raw SQL access.
+- Operator writes use a separately versioned, typed, profile-scoped local IPC
+  capability. Operator read/session grants do not imply write authority.
+- MCP retains exactly the two project-bound read-only tools. Agents, prompts,
+  Handoffs and session context cannot confirm or mutate profile state.
+- Profile creation is an explicit operator action. Never scan for, adopt, migrate,
+  reset, delete or overwrite an existing profile automatically.
+- No Python rollback owner, Python read-only adapter, schema downgrade, or
+  daemon-unavailable direct-write fallback.
 
-## Validation
+Until P1-M2 removes the Python prototype from the tree, treat it as disposable legacy
+code only. Local prototype files and old validation profiles may be deleted during
+an explicit ACP development reset; no compatibility or data-retention guarantee exists. Existing baseline checks may still run when needed to establish an
+unmodified comparison, but do not extend its behavior or treat it as the target.
 
-Run `PYTHONPATH=src python -m unittest discover -s tests -v` after code changes. Add targeted regression tests for scope isolation, stale worktrees, malformed tool requests and permission changes. Check the final diff, links, secret handling, and scope. Document unverified client or device behavior honestly.
+## Engineering and validation
 
-## Security and permission
+Use Rust workspace conventions and the repository CI as the source of truth.
+For Rust changes, run formatting, Clippy with warnings denied, workspace/package
+tests, and targeted real-process IPC/daemon/MCP tests appropriate to the change. During
+validation, coordinated IPC/session/MCP and Profile schema breaking changes are
+acceptable; do not add old/new version support or migration layers.
+For UI changes, run the affected NSH and shared presentation checks. Run native
+Windows and Linux/WSL acceptance when the changed boundary is platform-sensitive.
+Do not claim hosted CI, macOS, device, model, or clean-machine results unless they
+actually ran.
 
-Do not write personal profile data to tracked repository files. All persistent data lives in a user-local SQLite DB. No agent-facing MCP writes; all preferences start in suggested state until explicit confirmation. Log only sanitized failures. Never store credentials, raw agent conversations, or user device identifiers in test fixtures. A handoff does not confer approval to push, publish, deploy, or modify devices.
+Add regressions for scope isolation, stale worktrees, malformed requests,
+authorization/revocation, schema refusal, CAS/replay, process concurrency and
+recovery where applicable. Check the final diff, links, secret handling and scope.
+Report exact source revision, commands, platform, PASS/FAIL/BLOCKED/NOT_RUN and
+limitations honestly.
 
-For future user-facing profile UI, provide view/confirm/reject/deprecate/delete and provenance inspection before adding automatic suggestions.
+## Security and data handling
+
+Do not write personal profile data to tracked repository files. Persistent profile
+state stays in user-local storage. Never log raw SQLite diagnostics, private paths,
+preference values, Handoff bodies, credentials, raw agent conversations or device
+identifiers. Do not store secrets or personal data in test fixtures.
+
+All preference proposals start as suggested. Confirmation requires an explicit
+operator action on the exact record/revision. Preserve ADR-0004 authority ordering:
+repository contracts outrank personal preferences; session constraints may narrow
+work but never grant permissions or weaken contracts. Historical Handoff validation
+is not fresh evidence.
+
+No agent-facing MCP writes, automatic preference approval, network listener,
+automatic repository rewriting, shell execution, OS sandbox claim, or broad
+execution permission is implied by the Rust-only migration.

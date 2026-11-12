@@ -1,47 +1,53 @@
-# Architecture — implemented baseline and product target
+# Architecture — implemented baseline and accepted Rust-only target
 
-Current baseline: main `2a5949120aacd0523cd7fa5e417548e1e648bc81` (P1-L, PR #35 merged).
+Documented implementation baseline: main `10bad176381668aa2dcbe516edde2c17dc6ff3bb` (pre-M2; M1 PR #39 and M0 follow-up merged).
 P1-J's original product baseline remains recorded in its charter and ADR.
 The [product charter](product.md) defines purpose; [ADR-0004](adr/0004-product-domain-trust.md)
-defines target domain semantics. Target concepts below are not new APIs or tables.
+defines target domain semantics; [ADR-0006](adr/0006-rust-only-runtime.md) selects the Rust-only runtime and retires the Python prototype. Target concepts below are not new APIs or tables.
 
-## Implemented topology and ownership
+## Accepted topology after P1-M2
 
 ```text
-operator ─ Python acpctl ─ store/context ─ user-local SQLite (profile/Handoff writes)
-                          │                    ▲
-                          └─ P0 MCP stdio       │ read-only acp-store
-                                               │
-NSH Desktop / TUI ─ shared typed model ─ local IPC ─ Rust daemon ─ acp-core
-native acp-query ─ operator capability ────────┘       │             │
-                                                     │       bounded live Git/docs
-trusted agent ─ two-tool MCP stdio ─ acp-mcp ─ project capability ──┘
-                                                     │
-                               optional native ACP session supervisor
-                               explicit Start / permission / Cancel / Stop
-                               separate opted-in P1-I context lease
+operator ─ NSH Desktop/TUI / native acp-query ─ operator IPC ─ Rust daemon
+                                                          │
+                                                acp-core + acp-write
+                                                          │
+                                                acp-store (read-only)
+                                                          │
+                                              explicit local Rust-native Profile v1
+trusted agent ─ two-tool MCP stdio ─ acp-mcp ─ project capability ─┘
+                                                │
+                              optional native ACP session supervisor
+                              explicit Start / permission / Cancel / Stop
+                              separate opted-in P1-I context lease
 ```
+
+This is the accepted target after P1-M2, not a claim that the current main tree
+already has production writes. The current Python P0 path and legacy profile readers are
+disposable validation-era implementation details scheduled for removal by [Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40).
 
 | Component | Current responsibility | Must not own |
 | --- | --- | --- |
-| `src/agent_control_plane` | P0 schema, operator CLI writes, reference resolver/MCP | Automatic preference approval or repository rewriting |
+| Legacy Python P0 | Historical prototype currently present before M2; scheduled for removal under ADR-0006 | Any new product feature, compatibility path, or release dependency |
 | `crates/acp-core` | Legacy confirmed preference/Handoff resolver plus P1-L pure typed selector/conflict explanation; bounded document/fingerprint semantics through adapters | SQLite connections, UI, process execution, protocol transport or authorization grants |
-| `crates/acp-store` | Explicit-path read-only SQLite adapter and known-schema validation | Production migration or profile writes |
+| `crates/acp-store` | Target: explicit-path, strict read-only adapter for the fresh Rust-native Profile v1 | Writes, schema migration, legacy-format compatibility |
 | `crates/acp-rehearsal` | Synthetic migration/recovery experiments | Real-profile migration rollout |
 | `crates/acp-ipc`, `acp-daemon` | Local capability/peer checks, scoped reads, live repository adapter, lease authority | TCP listener or caller-selected wider scope |
 | `crates/acp-session` | Optional configured native ACP child lifecycle and bounded observations | OS sandbox, arbitrary shell execution or credential login |
 | `crates/acp-mcp` | Read-only stdio bridge to project-bound IPC | Profile/task/session mutation |
-| `crates/acp-query` | Explicit native operator reads/session controls | Replacing Python's persistent writer today |
+| `crates/acp-write` | M1 historical synthetic v2 writer; M2 implements the daemon-only Rust-native v1 writer | Public arbitrary-path opens, direct UI/CLI writes, generic SQL |\n| `crates/acp-query` | Native operator reads/session controls; M2 adds typed write requests through daemon IPC | Direct database access or a second writer |
 | `spikes/p1-e/shared`, `spikes/p1-e/nsh` | Shared typed presentation and NSH Desktop/TUI surfaces | Direct database access, duplicate resolution logic or autonomous daemon startup |
 
 The paths remain as implemented; accepting NSH does not move crates or remove
 historical comparison workspaces. Windows→WSL owner queries remain read-only.
 
-Python CLI read commands and the Python MCP launch path currently construct
-`Store`, which opens read-write, enables WAL and initializes/extends schema. Their
-read-only tool surface is not a guarantee of write-free initialization. Rust
-`SqliteStore` remains an explicit-path read-only adapter. No M0 documentation
-change fixes these entrypoints or transfers Python's write ownership.
+The current main tree still contains the disposable Python P0 prototype.
+Its CLI and MCP launch path share an initializing read/write `Store`; this is a
+historical implementation defect, not an accepted target. ADR-0006 retires that
+runtime rather than building a second Python read-only adapter. P1-M2 replaces the
+active legacy Rust reader with strict reads for the fresh Rust-native Profile v1 and routes every product
+mutation through the daemon-owned `acp-write` capability. Until M2 merges, this
+target topology is not yet an implemented end-user runtime.
 
 ## Target domain and data ownership
 
@@ -70,35 +76,27 @@ not scaffold, migrate, rewrite AGENTS.md or activate examples automatically.
 SQLite may index contract metadata/source digests; it must not become a hidden
 authoritative copy. Dirty source versions need a content digest as well as HEAD.
 
-No schema change occurred in J or L. Rust write ownership remains gated on versioned
-migration, consistent backup, recovery and reader compatibility as documented in
-[SQLite boundaries](p1/sqlite-readonly.md). The Rust reader rejects unknown versions;
-current Python Store has no version fence. Future structured contract formats and
-DB schemas have independent versions, with future readers/writers required to
-reject unsupported versions without silent conversion. Records lacking provenance
-or snapshots remain readable as historical/unknown, never retroactively verified
-or confirmed.
+ADR-0005 selected the native daemon as the single ordinary write owner and
+established operator-only versioned IPC, explicit grants, typed transactions,
+CAS/receipts and strict preference transitions. [ADR-0006](adr/0006-rust-only-runtime.md)
+now supersedes its Python compatibility, legacy schema support, migration handoff
+and cross-schema downgrade decisions. The accepted target is a single Rust runtime with one current profile schema
+(fresh Rust-native Profile v1): explicit creation, strict reads,
+daemon-owned writes, and no Python runtime or legacy migration. Breaking changes
+are acceptable during validation; old local prototype files may be deleted. The [historical storage ownership plan](p1/storage-ownership-plan.md)
+retains original M0/M1 evidence but is superseded as an execution plan.
 
-P1-M0 / [Issue #36](https://github.com/ybakiame/agent-control-plane/issues/36)
-is completed and [PR #37](https://github.com/ybakiame/agent-control-plane/pull/37)
-merged. [Accepted ADR-0005](adr/0005-local-storage-and-write-ownership.md)
-selects an explicitly opted-in native daemon writer, separate writer library,
-genuine Python read-only compatibility, offline exclusive maintenance and verified
-database generations with a private SQLite control catalog. Profile v2 and catalog
-versions, operator write IPC, fencing, cutover and rollback are proposals only.
-The [ownership/compatibility and recovery plan](p1/storage-ownership-plan.md) retains
-completed C2A/C2B1 synthetic evidence and sequences later implementation and
-separately authorized per-profile rollout. [P1-M1 / Issue #38](https://github.com/ybakiame/agent-control-plane/issues/38)
-is now active for **synthetic-only** writer and exact v2 schema work. ADR-0005
-acceptance is architectural, not production write or real-profile authorization;
-ADR-0004 is unchanged.
+[P1-M1 / Issue #38](https://github.com/ybakiame/agent-control-plane/issues/38)
+completed in [PR #39](https://github.com/ybakiame/agent-control-plane/pull/39):
+the isolated synthetic v2 transaction writer, exact schema, CAS/receipts and strict
+transitions were validated against disposable fixtures. This is historical evidence,
+not the product data schema. [P1-M2 / Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40)
+is re-scoped by ADR-0006 to a fresh Rust-native Profile v1 runtime and Python
+prototype retirement. The new v1 is not compatible with either legacy Python v1
+or M1 synthetic v2; no conversion is required. It remains validation-only: disposable old ACP prototype state may be deleted; no production write activation is authorized.
 
-The owner resolved the transition difference in PR #37: future writes reject
-suggested→deprecated and preserve historical deprecated records, following
-ADR-0004. Current Python still allows that edge; M1/M2 implementation and
-parity/transition tests are pending. Rust writes, v2 migration and real-profile
-rollout remain NOT_IMPLEMENTED / NOT_RUN. Initial technical revisions/receipts
-are not the full human ReviewDecision history, which remains P1-O work.
+Initial technical revisions/receipts are not the full human ReviewDecision history,
+which remains P1-O work.
 
 ## Context resolution
 
@@ -125,7 +123,7 @@ freeze obsolete permissions or hide new repository rules.
 
 ## Trust and compatibility
 
-MCP retains exactly `get_effective_context` and `get_handoff`. Local IPC separates
+MCP is project-bound and read-only (`get_effective_context` and `get_handoff` are the current tools). Local IPC separates
 operator capability from project-bound agent capability; OS user identity alone
 does not grant operator role. Unix sockets/Windows named pipes stay local, without
 a browser gateway. Optional ACP Start, context sharing and individual permission
@@ -141,6 +139,8 @@ identity or event truth; there is no implemented signature/evidence-chain system
 Same-user filesystem access bypasses cooperative protocol boundaries. See
 [security](security.md), [interfaces](interfaces.md) and [ADR-0002](adr/0002-local-ipc-capabilities.md).
 
-Preserve current IPC/MCP schemas, fingerprint bytes, Python writer and explicit
-unknown states until separately reviewed changes. No network listener, new runtime,
-automatic repository rewrite or broad execution permission is part of this target.
+Keep current authorization, scope, revocation and explicit-unknown semantics.
+During validation, IPC/session/MCP wire schemas and profile schema may be replaced
+together; do not add old-version compatibility or migration layers. Python writer
+retirement is accepted by ADR-0006; no network listener, automatic repository
+rewrite or broad execution permission is part of this target.
