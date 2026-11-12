@@ -74,7 +74,10 @@ commands. Source commits remain in this PR for reproduction:
 - `2c49cbb2a5886e06a34218c68b97cc25387d102b`: pre-review head; only documentation
   differs from the preceding tested runtime.
 - `27ce3644818a86ccc0529e8586326838ab5d0768`: review correction to complete
-  allocation-watermark validation; exact-source focused results are recorded below.
+  sequence row/type validation; observed focused results are recorded below, but
+  the second review found its missing-history acceptance and positive test invalid.
+- `15389388c36707a4a50a7738627a83190d6093da`: second-review correction refusing
+  missing allocation history, including empty tables; current focused source.
 
 Cargo used `CARGO_NET_OFFLINE=true`, `--locked` and existing caches. `PYTHONPATH`
 contains the checkout's `src` and `tools`; `ACP_TEST_PYTHON` names the selected test
@@ -141,6 +144,11 @@ full compatibility/recovery matrix was repeated for this refinement.
 
 ## PR #39 review correction: complete allocation history
 
+This subsection preserves the first-pass observations at 27ce364. Its
+empty/no-sequence acceptance was subsequently found incorrect; these passing
+commands do not establish the full allocation-history invariant. The corrected
+contract and current acceptance are in the second-pass subsection below.
+
 The [blocking review](https://github.com/ybakiame/agent-control-plane/pull/39#discussion_r4548806661)
 identified identity reuse from an empty table retaining `seq=0`, and duplicate
 sequence rows hidden by scalar queries. Two new regressions first failed against
@@ -148,12 +156,13 @@ the pre-review implementation: source migration incorrectly succeeded and v2
 writer reopen incorrectly succeeded for the zero-watermark case. Those failures
 are retained privately, not counted as passing evidence.
 
-At clean **27ce3644818a86ccc0529e8586326838ab5d0768**, validation inspects every
+At clean **27ce3644818a86ccc0529e8586326838ab5d0768**, validation inspected every
 `sqlite_sequence` row and its stored SQLite type. Only a single `preferences`
-row with positive INTEGER watermark covering all live IDs is accepted. An absent
-row is accepted only for an empty table, with v2 separately checking tombstones
-against that same validated watermark. The writer no longer performs an independent
-scalar sequence lookup. No damaged history is reset or repaired.
+row with positive INTEGER watermark covering all live IDs was accepted. An absent
+row was accepted only for an empty table, with v2 separately checking tombstones
+against that same validated watermark. The writer stopped performing an independent
+scalar sequence lookup. However, the absence exception still permitted erased
+history to pass as never-allocated; it is removed by the second-review correction.
 
 Four added tests cover:
 
@@ -165,9 +174,10 @@ Four added tests cover:
 - The same 42 cases on v2 refuse writer reopen, command execution and explicit
   candidate verification. Denied commands leave all logical tables unchanged;
   reopening/verification leave candidate bytes intact, and prior copies verify.
-- Three shapes × empty/no-sequence and empty/positive-watermark cases preserve
-  source/backup bytes and allocation history. The next inserted ID is respectively
-  1 or 1001; the existing nonempty high-watermark/gap regression remains enabled.
+- Three shapes × empty/no-sequence and empty/positive-watermark cases passed,
+  with next IDs respectively 1 and 1001. The no-sequence branch incorrectly erased
+  previously allocated history and asserted ID reuse; it is not valid acceptance
+  evidence and has been replaced. The retained-positive-watermark case is valid.
 - Three shapes × missing/too-low sequence after ten ordinary synthetic
   deletes: the resulting empty table still has tombstones, so writer reopening
   and new allocation refuse without logical changes.
@@ -184,6 +194,53 @@ writer package tests, required Python unittest suite and diff whitespace check.
 The unaffected full workspace/parity/rehearsal/recovery matrices retain their
 original source SHAs; they are not repeated or relabeled for this localized fix.
 
+## Second-pass review: refuse missing allocation history
+
+The [schema review](https://github.com/ybakiame/agent-control-plane/pull/39#discussion_r4549082594)
+and [fixture review](https://github.com/ybakiame/agent-control-plane/pull/39#discussion_r4549082608)
+correctly identify that database emptiness cannot prove a never-allocated history.
+M1 takes the permitted conservative option: a missing `sqlite_sequence` row is
+always `InvalidRecord`, before source copying or any writer command. No private
+provenance bypass, new admission API, persisted proof or watermark repair is added.
+This intentionally excludes even a genuinely never-inserted empty table from M1
+admission; supporting that state requires a separately designed trusted proof.
+
+At **15389388c36707a4a50a7738627a83190d6093da**:
+
+- All previous 14 invalid sequence cases remain unchanged. A fifteenth deletes
+  both every preference and its sequence row from the populated fixture. Across
+  all three source shapes it refuses before backup/candidate creation, preserves
+  source bytes and admits no writer. The same 45 cases refuse v2 reopen,
+  command execution and explicit candidate verification, preserving candidate
+  bytes and all logical tables; prior copies still verify.
+- The valid empty-table regression now only deletes preference rows, retaining
+  its original watermark 1000; migration preserves it and the next ID is 1001.
+  It no longer claims erased history can authorize ID 1.
+- A separate test constructs each of the three source schemas in a fresh
+  in-memory SQLite connection, never inserts any preference and checks
+  `total_changes == 0`. These genuinely empty/no-sequence tables are explicitly
+  refused without changes, consistent with the documented unsupported case.
+- The actual ten-delete regression still tests missing/low watermarks with
+  tombstones. An additional branch erases tombstones, receipts and commit sequence
+  as well as allocation history, removing other metadata inconsistencies that
+  could mask the missing-watermark check. Reopen, execution and candidate
+  verification still refuse without logical or candidate-file changes.
+
+The new/expanded four tests first failed against 1e06f81's runtime: corrupted
+source migration and v2 reopening incorrectly succeeded, erased tombstone/history
+reopening incorrectly succeeded, and the unsupported empty construction was
+accepted. The retained-positive-watermark case continued to pass. Red results
+are retained privately and are not counted as current acceptance.
+
+The same five focused gates run on the exact clean source on each host; the full
+unaffected workspace/parity/rehearsal/recovery matrices keep their original SHAs.
+
+| Gate at clean 1538938 | Linux/WSL | Native Windows |
+| --- | --- | --- |
+| Format / writer Clippy / diff | PASS | PASS |
+| `cargo test --locked -p acp-write --lib` | PASS, 32 tests | PASS, 32 tests |
+| `python -m unittest discover -s tests -v` | PASS, 29 tests | PASS, 29 tests |
+
 Each M1 suite reports one intentionally ignored **private worker entrypoint**.
 The parent process test invokes that helper explicitly six times with `--ignored`;
 it is not an omitted acceptance scenario. No tests/policies/assertions were disabled
@@ -192,7 +249,7 @@ existing 11-test C2B1 process target.
 
 ## Adversarial M1 evidence
 
-[`tests.rs`](../../crates/acp-write/src/tests.rs) now runs 31 acceptance tests per host,
+[`tests.rs`](../../crates/acp-write/src/tests.rs) now runs 32 acceptance tests per host,
 with table-driven subcases rather than inflating the top-level count:
 
 | Boundary | Actual assertions |
@@ -203,7 +260,7 @@ with table-driven subcases rather than inflating the top-level count:
 | Scope and atomicity | Confirm deprecates only same-key/scope/project confirmed peers and advances all revisions together; global/foreign-project peers remain untouched; partial data/revision/precommit faults roll back the entire operation |
 | CAS and fencing labels | Stale/missing/occupied expectations, scope, generation and epoch negatives; simultaneous independent SQLite connections produce one CAS winner and one conflict, never two commits |
 | Idempotency | Lost-response fault after commit, connection close/reopen and exact receipt replay; same-ID changed canonical content conflicts; raw opaque JSON string bytes matter; replay still works at receipt capacity; no pruning |
-| Allocation/capacity | Complete allocation row/type/cardinality validation, empty-table/retained-history cases and tombstone coverage; revision overflow, actual SQLite AUTOINCREMENT exhaustion and oversized peer/receipt sets refuse atomically; injected StorageFull is a simulation, not physical disk-full |
+| Allocation/capacity | Complete allocation row/type/cardinality validation; missing history always refuses, including truly never-inserted tables and erased tombstones/receipts; valid empty tables retain positive history; revision overflow, actual SQLite AUTOINCREMENT exhaustion and oversized peer/receipt sets refuse atomically; injected StorageFull is a simulation, not physical disk-full |
 | WAL and busy | Live-source committed WAL included/uncommitted changes excluded by backup; v2 RO snapshot sees no partial data/revision/receipt; real writer lock contention returns bounded Busy, then succeeds after release |
 | Migration outcome | Before-commit schema/version rollback, proven nonterminal one-page backup interruption at 39de165, full injection and committed-before-response OutcomeUnknown; candidate remains ineligible until independent explicit verification; original/verified backup intact |
 | New metadata regression | Changed imported revision or initial receipt limit is rejected despite otherwise valid v2 data; the test failed against c9c7cd9's verifier and passed after the correction at e27cd73 |
@@ -255,10 +312,11 @@ not identity attestation, authenticated operator attribution or proof of model b
 Private ignored artifacts: `artifacts/local-p1-m1/wsl-1/`, `wsl-final/`,
 `windows-1/` (failed build-order attempt), `windows-final/`, `wsl-last/`,
 `windows-focused/`, `development/` and
-`review-development/`, `review-wsl-1/`, `windows-review-1/` plus private
+`review-development/`, `review-wsl-1/`, `windows-review-1/`,
+`review2-development/`, `review2-wsl-1/`, `windows-review2-1/` and private
 runner/tool metadata; native output was copied locally for inspection.
 Raw diagnostics/private checkout paths are not committed or uploaded. Current
-runtime evidence is pinned to 27ce364; later report-only edits do not renew those
+runtime evidence is pinned to 1538938; later report-only edits do not renew those
 runtime results. Pre-review evidence retains the exact earlier SHAs above.
 Review follow-up documentation checks passed for three documents and 32 relative
 links/anchors, balanced fences, the exact 14-file scope, private-path/credential
