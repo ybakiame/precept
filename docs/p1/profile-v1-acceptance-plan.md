@@ -1,6 +1,6 @@
 # P1-M2 — Profile v1 runtime acceptance plan
 
-- Status: contract-first test plan; tests are not yet implemented or run.
+- Status: Stage 1 storage plan confirmed by owner 2026-11-12; implementation/results pending. Later M2 boundaries remain separately gated.
 - Contract: [Rust-native Profile v1 and runtime contract](profile-v1-runtime-contract.md).
 - Issue: [#40](https://github.com/ybakiame/agent-control-plane/issues/40).
 - First implementation slice: [#43 — Profile v1 storage foundation](https://github.com/ybakiame/agent-control-plane/issues/43).
@@ -35,6 +35,8 @@ full completion gate in section 10 remains the parent Issue #40 gate.
 | S07 | Mutate schema shape | Refuse extra/missing tables, indexes, views, triggers, columns, changed DDL, type/nullability/PK/FK/check drift and unknown objects. |
 | S08 | Corrupt records/metadata | Refuse missing/duplicate singleton metadata, invalid IDs, bad counters, malformed JSON, invalid enum/scope, broken FK and integrity errors. |
 | S09 | Reopen after close/process restart | Same profile identity/generation and logical data remain readable; no implicit creation, repair or epoch increment occurs in read-only mode. |
+| S10 | Concurrent fresh creators and publication failures | At most one no-replace publisher; loser preserves winning file. Pre-publish cleanup removes only owned temp files; post-publish failure preserves DB and reports OutcomeUnknown. |
+| S11 | Actual storage types and pinned verification | Reject NULL text keys and REAL counters despite SQLite affinity; schema/rows/receipts are checked within one read snapshot under concurrent commits. |
 
 ## 3. Domain transaction behavior
 
@@ -62,6 +64,8 @@ full completion gate in section 10 remains the parent Issue #40 gate.
 | R05 | Stale generation/epoch replay | Reject before receipt lookup; old credentials cannot replay against a new owner/generation. |
 | R06 | Receipt capacity | At 4096 receipts, an existing operation still replays; a new operation fails Capacity with complete state unchanged. |
 | R07 | Receipt integrity | Reject malformed digest/result, duplicate/non-monotonic commit sequence, generation mismatch and oversized receipt. |
+| R08 | Delete and allocation history | Historical receipts remain valid after deletion; latest versions match live rows or terminal deletes; next ID covers deleted IDs; missing history/resurrection/counter rollback is refused. |
+| R09 | Canonical bytes and privacy | Outer JSON reordering replays; raw validation JSON byte changes conflict; byte/scalar limits and redacted Debug/errors hold. |
 
 ## 5. Profile identity, write grant and revocation
 
