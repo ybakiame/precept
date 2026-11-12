@@ -99,6 +99,10 @@ It does not authorize real-profile use, release, or completion of parent M2.
 ## Strict wire surface and unchanged storage
 
 All lifecycle DTOs deny unknown fields. Empty params mean exactly `{}`.
+Paths are absolute UTF-8 strings bounded to 32768 bytes, with NUL rejected.
+`write_enabled` reports a live grant matching the current stored binding; epoch
+drift cannot be presented as a current grant. Mutation timeouts with uncertain
+outcome are `OutcomeUnknown`; the caller retains the same operation ID.
 
 | Method | Role and params | Result |
 | --- | --- | --- |
@@ -141,3 +145,8 @@ unit faults from real independent processes. Required gates:
 Raw local logs remain ignored/private. Hosted Actions, models/vendors, real
 profiles, production activation, macOS/mobile/niri and release are NOT_RUN.
 Use `[skip ci]`; create one Draft PR with `Closes #44`, `Refs #40`; never merge.
+
+The [native S2 evidence](../evaluation/p1-m2-s2-ownership.md) records implementation
+SHAs, actual tests, development failures and NOT_RUN boundaries. S1's 5/6 scan
+measurement is historical: S2 adds selected binding and root admission, and does
+not implement the separately proposed snapshot optimization.
