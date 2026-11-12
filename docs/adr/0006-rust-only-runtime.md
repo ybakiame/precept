@@ -138,7 +138,7 @@ callback, agent-facing mutation, MCP mutation, automatic preference approval, or
 unreviewed content/scope edit is introduced. Retain CAS, idempotency receipts,
 bounded transactions, strict transitions, and atomic peer deprecation where they
 remain necessary for the fresh Rust-native v1 design. Re-evaluate M1-specific
-metadata tables and sequence/fingerprint machinery against concrete product needs;
+metadata tables and sequence/fingerprint machinery against concrete product needs.
 M1's exact v2 DDL and migration-preservation rules are not binding.
 
 ### 4. Keep domain and trust boundaries; simplify migration ownership
