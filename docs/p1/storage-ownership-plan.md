@@ -1,5 +1,8 @@
 # P1-M0 storage ownership and acceptance plan
 
+> **Historical design record — execution plan superseded by [ADR-0006](../adr/0006-rust-only-runtime.md).** This document preserves the original M0 analysis, M1 contract and historical evidence. Its Python read-only adapter, Python rollback owner, v0/v1 runtime compatibility, compatibility-release, v2-to-v1 downgrade, and multi-generation cutover steps are no longer current requirements. Follow [ADR-0006](../adr/0006-rust-only-runtime.md) and [Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40) for current work. Do not implement the superseded Python compatibility or schema rollback plan.
+
+
 Design-only companion to [Accepted ADR-0005](../adr/0005-local-storage-and-write-ownership.md).
 The owner accepted ADR-0005 on 2026-11-12 after PR #37 merged; this did not
 approve a real-profile operation or production writer.
@@ -239,7 +242,26 @@ Windows records file-sync-only, not directory durability. Windows temporary ACL
 inheritance is not proof of the proposed protected-DACL policy. M0 makes no new
 macOS/Windows/WSLg/TUI/UI acceptance claim.
 
-## Phased follow-up briefs
+## Current Rust-only execution direction
+
+The accepted [ADR-0006](../adr/0006-rust-only-runtime.md) replaces the original
+M2–M5 proposal below. The current sequence is:
+
+| Phase | Scope | Acceptance |
+| --- | --- | --- |
+| M1 — synthetic v2 writer (complete) | Merged PR #39; exact v2 schema, transaction/CAS/receipt and strict-transition evidence | Historical PASS remains scoped to the merged synthetic implementation; it is not production activation |
+| M2 — Rust-only runtime cutover ([Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40)) | Explicit v2 profile creation, strict v2 reader, daemon-only writer and operator IPC, native CLI/NSH integration, Python runtime/test/dependency retirement, removal of active v0/v1 paths | Fresh synthetic v2 fixtures on native Windows and Linux/WSL; existing IPC v1, session API v2 and two-tool MCP boundaries preserved; no Python product path remains |
+| M3 — v2 profile lifecycle | Rust-only backup, restore, retention, lock and process-recovery design | Synthetic v2 recovery, privacy and platform-specific filesystem acceptance; no Python rollback or schema downgrade |
+| M4 — operator review and profile workflows | ADR-0004 review/provenance semantics and explicit profile lifecycle UX | Exact-record human approval, permission revocation and end-to-end tests |
+| M5 — release hardening | Packaging, clean-machine setup, accessibility, security, performance and platform support | Explicit release criteria with source-specific platform evidence |
+
+M2 is still synthetic-only. It must not open or modify any existing user-local profile,
+default state directory, credential, or external checkout. It does not authorize
+production write activation, real-profile migration, or release. Existing v0/v1
+files are refused and left untouched; a future explicit import requires a separate
+decision. Recovery in M3 is v2-to-v2 only.
+
+## Historical phased follow-up briefs (superseded by ADR-0006)
 
 The owner separately accepted ADR-0005 after merging M0. **M1 completed in
 [PR #39](https://github.com/ybakiame/agent-control-plane/pull/39), merged at
