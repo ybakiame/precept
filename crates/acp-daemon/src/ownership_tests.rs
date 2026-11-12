@@ -1,0 +1,124 @@
+//! Deterministic drain scheduling over real framing/dispatch and real SQLite.
+//! The admission barrier exists only in cfg(test), never in a product daemon.
+use super::*;
+use std::sync::Barrier;
+
+async fn open(
+    service: &Service,
+    credentials: Arc<Vec<acp_ipc::Credential>>,
+    credential: &acp_ipc::Credential,
+) -> (tokio::io::DuplexStream, Value) {
+    let (server, mut client) = tokio::io::duplex(8192);
+    let permit = Arc::new(Arc::new(Semaphore::new(1)).acquire_owned().await.unwrap());
+    tokio::spawn(peer(Box::new(server), credentials, service.clone(), permit));
+    let token = serde_json::to_value(credential).unwrap()["token"].clone();
+    write_frame(
+        &mut client,
+        &json!({"api_version":acp_ipc::API_VERSION,"credential":token}),
+    )
+    .await
+    .unwrap();
+    let ack = read_frame(&mut client).await.unwrap();
+    (client, ack)
+}
+async fn send(stream: &mut tokio::io::DuplexStream, id: &str, method: &str, params: Value) {
+    write_frame(
+        stream,
+        &Request {
+            api_version: acp_ipc::API_VERSION,
+            id: id.into(),
+            method: method.into(),
+            params,
+        },
+    )
+    .await
+    .unwrap();
+}
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn revoke_closes_admissions_drains_and_preserves_admitted_committed_response() {
+    let t = tempfile::tempdir().unwrap();
+    let state = t.path().join("state");
+    acp_ipc::transport::private_dir(&state, true).unwrap();
+    let db = state.join("profile.sqlite3");
+    acp_write::Profile::create(&db).unwrap();
+    let location = Location {
+        runtime_dir: t.path().join("run"),
+        endpoint: "unused".into(),
+    };
+    let mut runtime = RuntimeLease::acquire(&location).unwrap();
+    let credentials = Arc::new(runtime.credentials(&[]).unwrap());
+    let grants = acp_ipc::session_lease::Registry::default();
+    let profiles = Arc::new(
+        profiles::Profiles::new(location.clone(), vec![], &[], Some(&db), grants.1.clone())
+            .unwrap(),
+    );
+    let service = Service {
+        profiles: profiles.clone(),
+        projects: vec![],
+        agent_config: None,
+        context_mcp: None,
+        context_lease_seconds: 300,
+        sessions: Default::default(),
+        grants,
+    };
+    let (mut operator, ack) = open(&service, credentials.clone(), &credentials[0]).await;
+    assert_eq!(ack["ready"], true);
+    send(&mut operator, "info", "profile.info", json!({})).await;
+    let info = read_frame(&mut operator).await.unwrap()["result"].clone();
+    send(&mut operator,"enable","profile.write.enable",json!({"profile_id":info["binding"]["profile_id"],"generation":info["binding"]["generation"],"confirm":true})).await;
+    let enabled = read_frame(&mut operator).await.unwrap()["result"].clone();
+    let c = acp_ipc::load_credential(&location, &location.runtime_dir.join("operator-write.cap"))
+        .unwrap();
+    let (mut writer, ack) = open(&service, credentials.clone(), &c).await;
+    assert_eq!(ack["ready"], true);
+    let (reached, observed) = std::sync::mpsc::channel();
+    let release = Arc::new(Barrier::new(2));
+    let barrier = release.clone();
+    *profiles.before_begin.lock().unwrap() = Some(Arc::new(move || {
+        reached.send(()).unwrap();
+        barrier.wait();
+    }));
+    let mutation = json!({"version":1,"binding":enabled["binding"],"operation_id":"admitted","command":{"command":"suggest_preference","scope":{"kind":"global"},"key":"synthetic","value":"synthetic","source":"synthetic","expected":{"kind":"absent"}}});
+    send(&mut writer, "write", "profile.mutate", mutation.clone()).await;
+    tokio::task::spawn_blocking(move || observed.recv_timeout(Duration::from_secs(2)).unwrap())
+        .await
+        .unwrap();
+    send(&mut operator, "disable", "profile.write.disable", json!({})).await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    loop {
+        let (_, ack) = open(&service, credentials.clone(), &c).await;
+        if ack["error"] == "Unauthorized" {
+            break;
+        }
+        assert!(tokio::time::Instant::now() < deadline);
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+    let mut disabled = Box::pin(read_frame(&mut operator));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), &mut disabled)
+            .await
+            .is_err()
+    );
+    release.wait();
+    let committed = read_frame(&mut writer).await.unwrap();
+    assert_eq!(committed["error"], Value::Null);
+    assert_eq!(committed["result"]["operation_id"], "admitted");
+    assert_eq!(disabled.await.unwrap()["result"]["write_enabled"], false);
+    assert!(!location.runtime_dir.join("operator-write.cap").exists());
+    send(&mut writer, "after", "profile.mutate", mutation).await;
+    assert_eq!(
+        read_frame(&mut writer).await.unwrap()["error"],
+        "Unauthorized"
+    );
+    let metadata = acp_store::SqliteStore::open(&db)
+        .unwrap()
+        .metadata()
+        .unwrap();
+    assert_eq!(metadata.commit_sequence, 1);
+    assert_eq!(metadata.next_preference_id, 2);
+    // Disable has drained the transaction and released the lease.
+    acp_write::owner::Selected::select(&db)
+        .unwrap()
+        .acquire()
+        .unwrap();
+}

@@ -8,6 +8,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{collections::HashSet, path::PathBuf, sync::Arc, time::Duration};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+#[cfg(test)]
+mod ownership_tests;
 mod profiles;
 mod worktree;
 #[derive(Parser)]

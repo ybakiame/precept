@@ -60,7 +60,7 @@ pub fn check(db: &Connection, guard: &File) -> Result<()> {
     #[cfg(windows)]
     {
         use std::os::windows::io::FromRawHandle;
-        let mut handle = std::ptr::null_mut();
+        let mut handle: windows_sys::Win32::Foundation::HANDLE = std::ptr::null_mut();
         let rc = unsafe {
             ffi::sqlite3_file_control(
                 db.handle(),

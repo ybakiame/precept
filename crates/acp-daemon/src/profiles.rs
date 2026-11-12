@@ -24,6 +24,8 @@ struct State {
     grant: Option<Arc<Grant>>,
 }
 pub struct Profiles {
+    #[cfg(test)]
+    pub(crate) before_begin: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
     state: Mutex<State>,
     pub location: Location,
     runtime: PathBuf,
@@ -95,6 +97,8 @@ impl Profiles {
             }
         }
         let this = Self {
+            #[cfg(test)]
+            before_begin: Mutex::new(None),
             state: Mutex::new(State {
                 selected: None,
                 roots: Roots::new(),
@@ -248,9 +252,19 @@ impl Profiles {
             if name.is_some_and(|name| !self.projects.contains(name)) {
                 return Err(Error::Unauthorized);
             }
+            #[cfg(test)]
+            let observations = std::sync::atomic::AtomicUsize::new(0);
             let receipt = owner
                 .execute(&request, &|| {
-                    grant.check().map_err(|_| acp_write::Error::Unauthorized)
+                    grant.check().map_err(|_| acp_write::Error::Unauthorized)?;
+                    #[cfg(test)]
+                    if observations.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 1 {
+                        let hook = self.before_begin.lock().unwrap().clone();
+                        if let Some(hook) = hook {
+                            hook();
+                        }
+                    }
+                    Ok(())
                 })
                 .map_err(storage_error)?;
             if let Command::RegisterProject { name, root, .. } = &request.command {
