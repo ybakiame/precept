@@ -379,18 +379,18 @@ async fn fetch(
             });
             continue;
         }
-        let mut client = Client::connect(location, &credential)
-            .await
-            .map_err(|error| {
-                // IPC deliberately treats absent and unsafe Unix sockets alike. Only
-                // refine the UI failure after the guarded connect has already refused;
-                // an observed missing socket in the validated runtime is unavailable.
-                #[cfg(unix)]
-                if matches!(error, Error::UnsafeRuntime) && missing_unix_endpoint(location) {
-                    return Error::Unavailable;
-                }
-                error
-            })?;
+        let connected = Client::connect(location, &credential).await;
+        #[cfg(unix)]
+        let connected = connected.map_err(|error| {
+            // IPC deliberately treats absent and unsafe Unix sockets alike. Only
+            // refine the UI failure after the guarded connect has already refused;
+            // an observed missing socket in the validated runtime is unavailable.
+            if matches!(error, Error::UnsafeRuntime) && missing_unix_endpoint(location) {
+                return Error::Unavailable;
+            }
+            error
+        });
+        let mut client = connected?;
         let context = serde_json::from_value(
             client
                 .request(

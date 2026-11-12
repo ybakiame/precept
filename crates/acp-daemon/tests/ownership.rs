@@ -914,3 +914,27 @@ fn unsafe_existing_lease_files_fail_before_epoch_admission() {
             .exists()
     );
 }
+
+#[test]
+fn epoch_drift_refuses_existing_grant_and_never_reports_it_as_current() {
+    let f = Fixture::created(false);
+    let b = f.daemon.enable();
+    let db = rusqlite::Connection::open(&f.db).unwrap();
+    db.execute("UPDATE acp_profile SET owner_epoch=?1", [b.owner_epoch + 1])
+        .unwrap();
+    drop(db);
+    let before = logical(&f.db);
+    assert_eq!(
+        f.daemon.control("profile.info", json!({})).unwrap()["write_enabled"],
+        false
+    );
+    assert_eq!(
+        f.daemon.mutate(&b, "epoch-drift", suggest()),
+        Err(Error::OwnerMismatch)
+    );
+    assert_eq!(logical(&f.db), before);
+    f.daemon
+        .control("profile.write.disable", json!({}))
+        .unwrap();
+    assert_eq!(f.daemon.enable().owner_epoch, b.owner_epoch + 2);
+}

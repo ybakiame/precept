@@ -182,8 +182,13 @@ impl Profiles {
             .metadata()
             .map_err(|_| Error::Unavailable)?
             .binding;
+        let access = Access::OperatorWrite {
+            profile_id: binding.profile_id.clone(),
+            generation: binding.generation.clone(),
+            owner_epoch: binding.owner_epoch,
+        };
         Ok(
-            json!({"selected":true,"binding":binding,"write_enabled":s.grant.as_ref().is_some_and(|g|g.check().is_ok())}),
+            json!({"selected":true,"binding":binding,"write_enabled":s.grant.as_ref().is_some_and(|g|g.check().is_ok() && g.access()==access)}),
         )
     }
     pub fn disable(&self) -> Result<Value> {
