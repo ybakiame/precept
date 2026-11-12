@@ -341,6 +341,11 @@ fn unregistered_unknown_and_mutating_tools_have_no_authority() {
     let mut bridge = Bridge::new(&f, "alpha");
     for tool in [
         "unknown",
+        "profile.preferences.list",
+        "profile.preferences.get",
+        "profile.handoff.get",
+        "profile.mutate",
+        "profile.write.enable",
         "preference_confirm",
         "preference_suggest",
         "project_add",

@@ -45,6 +45,24 @@ struct Enable {
     generation: String,
     confirm: bool,
 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PreferenceList {
+    scope: Scope,
+    after_id: i64,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PreferenceGet {
+    scope: Scope,
+    id: i64,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HandoffGet {
+    project: String,
+    task_id: String,
+}
 pub fn storage_error(e: acp_write::Error) -> Error {
     match e {
         acp_write::Error::Unauthorized => Error::Unauthorized,
@@ -279,6 +297,73 @@ impl Profiles {
         }
         if access != Access::Operator {
             return Err(Error::Unauthorized);
+        }
+        if matches!(
+            method,
+            "profile.preferences.list" | "profile.preferences.get" | "profile.handoff.get"
+        ) {
+            let (store, roots) = self.read()?;
+            let check_scope = |scope: &Scope| -> Result<()> {
+                if let Scope::Project { name } = scope {
+                    if !self.projects.contains(name) {
+                        return Err(Error::Unauthorized);
+                    }
+                    let root = store
+                        .read_project(name)
+                        .map_err(|_| Error::NotFound)?
+                        .root
+                        .canonicalize()
+                        .map_err(|_| Error::UnsafeRuntime)?;
+                    if roots.get(name) != Some(&root) {
+                        return Err(Error::UnsafeRuntime);
+                    }
+                }
+                Ok(())
+            };
+            let value = match method {
+                "profile.preferences.list" => {
+                    let p: PreferenceList = super::decode(params)?;
+                    if p.after_id < 0 {
+                        return Err(Error::InvalidRequest);
+                    }
+                    check_scope(&p.scope)?;
+                    serde_json::to_value(
+                        store
+                            .operator_preferences(&p.scope, p.after_id)
+                            .map_err(|_| Error::Unavailable)?,
+                    )
+                }
+                "profile.preferences.get" => {
+                    let p: PreferenceGet = super::decode(params)?;
+                    if p.id <= 0 {
+                        return Err(Error::InvalidRequest);
+                    }
+                    check_scope(&p.scope)?;
+                    serde_json::to_value(store.operator_preference(&p.scope, p.id).map_err(
+                        |e| match e {
+                            acp_store::Error::PreferenceNotFound => Error::NotFound,
+                            _ => Error::Unavailable,
+                        },
+                    )?)
+                }
+                _ => {
+                    let p: HandoffGet = super::decode(params)?;
+                    if !acp_ipc::valid_project(&p.project)
+                        || !acp_store::profile::text(&p.task_id, 120, true)
+                    {
+                        return Err(Error::InvalidRequest);
+                    }
+                    check_scope(&Scope::Project {
+                        name: p.project.clone(),
+                    })?;
+                    serde_json::to_value(
+                        store
+                            .operator_handoff(&p.project, &p.task_id)
+                            .map_err(|_| Error::Unavailable)?,
+                    )
+                }
+            };
+            return value.map_err(|_| Error::Unavailable);
         }
         match method {
             "profile.write.disable" => {

@@ -1,7 +1,6 @@
 //! Exact fresh Rust-native Profile v1; verification never mutates database data.
 use crate::{Error, Result};
 use rusqlite::{Connection, types::Value};
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 // Thread-local and test-only: no runtime metric, cache or validation bypass.
@@ -78,49 +77,7 @@ pub const DDL: [&str; 6] = [
     HANDOFFS,
     RECEIPTS,
 ];
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Binding {
-    pub profile_id: String,
-    pub generation: String,
-    pub owner_epoch: i64,
-}
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RecordVersion {
-    pub kind: String,
-    pub project: String,
-    pub record_id: String,
-    pub revision: i64,
-    pub deleted: bool,
-}
-impl RecordVersion {
-    pub fn key(&self) -> (String, String, String) {
-        (
-            self.kind.clone(),
-            self.project.clone(),
-            self.record_id.clone(),
-        )
-    }
-}
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Receipt {
-    pub generation: String,
-    pub operation_id: String,
-    pub commit_sequence: i64,
-    pub affected: Vec<RecordVersion>,
-}
-impl std::fmt::Debug for Receipt {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Receipt(redacted)")
-    }
-}
-impl std::fmt::Debug for Binding {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Binding(redacted)")
-    }
-}
+pub use acp_core::operator::{Binding, Receipt, RecordVersion};
 #[derive(Clone)]
 pub struct Metadata {
     pub binding: Binding,

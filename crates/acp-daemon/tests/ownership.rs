@@ -736,6 +736,29 @@ fn real_fake_session_mcp_v2_read_only_and_established_peer_revocation() {
             .unwrap()["project"],
         "alpha"
     );
+    for (method, params) in [
+        (
+            "profile.preferences.list",
+            json!({"scope":{"kind":"global"},"after_id":0}),
+        ),
+        (
+            "profile.preferences.get",
+            json!({"scope":{"kind":"global"},"id":1}),
+        ),
+        (
+            "profile.handoff.get",
+            json!({"project":"alpha","task_id":"shared"}),
+        ),
+    ] {
+        let before = logical(&f.db);
+        assert_eq!(
+            f.daemon
+                .runtime
+                .block_on(established.request(method, params)),
+            Err(Error::Unauthorized)
+        );
+        assert_eq!(logical(&f.db), before);
+    }
     let mut prompt = p.clone();
     prompt["session_id"] = view["session_id"].clone();
     prompt["prompt"] = json!("synthetic context smoke");
@@ -937,4 +960,476 @@ fn epoch_drift_refuses_existing_grant_and_never_reports_it_as_current() {
         .control("profile.write.disable", json!({}))
         .unwrap();
     assert_eq!(f.daemon.enable().owner_epoch, b.owner_epoch + 2);
+}
+
+fn cli(f: &Fixture, args: &[&str]) -> (bool, Value) {
+    let output = std::process::Command::new(exe("acp-query"))
+        .arg("--runtime-dir")
+        .arg(&f.daemon.location.runtime_dir)
+        .arg("--endpoint")
+        .arg(&f.daemon.location.endpoint)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        output.stderr.is_empty(),
+        "CLI must sanitize errors on stdout"
+    );
+    let value = serde_json::from_slice(&output.stdout).expect("bounded CLI JSON");
+    (output.status.success(), value)
+}
+fn cli_mutate(f: &Fixture, b: &acp_write::Binding, op: &str, args: &[&str]) -> (bool, Value) {
+    let epoch = b.owner_epoch.to_string();
+    let mut argv = args.to_vec();
+    argv.extend([
+        "--profile-id",
+        &b.profile_id,
+        "--generation",
+        &b.generation,
+        "--owner-epoch",
+        &epoch,
+        "--operation-id",
+        op,
+    ]);
+    cli(f, &argv)
+}
+#[test]
+fn native_cli_lifecycle_seven_commands_preview_cas_and_exact_retry() {
+    let f = Fixture::unselected(false);
+    assert_eq!(cli(&f, &["profile", "info"]).1["selected"], false);
+    assert!(cli(&f, &["profile", "create", f.db.to_str().unwrap()]).0);
+    let info = cli(&f, &["profile", "info"]).1;
+    assert_eq!(info["write_enabled"], false);
+    assert_eq!(
+        cli(&f, &["profile", "select", f.db.to_str().unwrap()]).1["error"],
+        "RestartRequired"
+    );
+    let b0: acp_write::Binding = serde_json::from_value(info["binding"].clone()).unwrap();
+    let state = logical(&f.db);
+    assert_eq!(
+        cli(
+            &f,
+            &[
+                "profile",
+                "write",
+                "enable",
+                "--profile-id",
+                &b0.profile_id,
+                "--generation",
+                &b0.generation
+            ]
+        )
+        .1["error"],
+        "InvalidRequest"
+    );
+    assert_eq!(logical(&f.db), state);
+    let info = cli(
+        &f,
+        &[
+            "profile",
+            "write",
+            "enable",
+            "--profile-id",
+            &b0.profile_id,
+            "--generation",
+            &b0.generation,
+            "--confirm",
+        ],
+    );
+    assert!(info.0);
+    let b: acp_write::Binding = serde_json::from_value(info.1["binding"].clone()).unwrap();
+    let root = f.temp.path().join("alpha").canonicalize().unwrap();
+    assert!(
+        cli_mutate(
+            &f,
+            &b,
+            "cli-register",
+            &["project-register", "alpha", root.to_str().unwrap()]
+        )
+        .0
+    );
+    let result = cli_mutate(
+        &f,
+        &b,
+        "cli-suggest",
+        &[
+            "preference-suggest",
+            "--scope",
+            "project",
+            "--project",
+            "alpha",
+            "--key",
+            "editor",
+            "--value",
+            "synthetic",
+            "--source",
+            "operator",
+        ],
+    );
+    assert!(result.0);
+    let id = result.1["affected"][0]["record_id"].as_str().unwrap();
+    let state = logical(&f.db);
+    let replay = cli_mutate(
+        &f,
+        &b,
+        "cli-suggest",
+        &[
+            "preference-suggest",
+            "--scope",
+            "project",
+            "--project",
+            "alpha",
+            "--key",
+            "editor",
+            "--value",
+            "synthetic",
+            "--source",
+            "operator",
+        ],
+    );
+    assert_eq!(result, replay);
+    assert_eq!(logical(&f.db), state);
+    assert_eq!(
+        cli_mutate(
+            &f,
+            &b,
+            "cli-suggest",
+            &[
+                "preference-suggest",
+                "--scope",
+                "project",
+                "--project",
+                "alpha",
+                "--key",
+                "editor",
+                "--value",
+                "changed",
+                "--source",
+                "operator"
+            ]
+        )
+        .1["error"],
+        "IdempotencyConflict"
+    );
+    assert_eq!(logical(&f.db), state);
+    let preview = cli(
+        &f,
+        &[
+            "preferences",
+            "get",
+            id,
+            "--scope",
+            "project",
+            "--project",
+            "alpha",
+        ],
+    );
+    assert!(preview.0);
+    assert_eq!(preview.1["record"]["revision"], 1);
+    assert_eq!(preview.1["record"]["status"], "suggested");
+    assert!(
+        cli(&f, &["preferences", "list", "--scope", "global"]).1["records"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        cli(&f, &["preferences", "get", id, "--scope", "global"]).1["error"],
+        "NotFound"
+    );
+    assert_eq!(
+        cli(
+            &f,
+            &[
+                "preferences",
+                "list",
+                "--scope",
+                "project",
+                "--project",
+                "outside"
+            ]
+        )
+        .1["error"],
+        "Unauthorized"
+    );
+    assert_eq!(
+        cli_mutate(
+            &f,
+            &b,
+            "cli-no-confirm",
+            &[
+                "preference-confirm",
+                id,
+                "--scope",
+                "project",
+                "--project",
+                "alpha",
+                "--expected-revision",
+                "1"
+            ]
+        )
+        .1["error"],
+        "InvalidRequest"
+    );
+    assert_eq!(logical(&f.db), state);
+    assert!(
+        cli_mutate(
+            &f,
+            &b,
+            "cli-confirm",
+            &[
+                "preference-confirm",
+                id,
+                "--scope",
+                "project",
+                "--project",
+                "alpha",
+                "--expected-revision",
+                "1",
+                "--confirm"
+            ]
+        )
+        .0
+    );
+    let state = logical(&f.db);
+    assert_eq!(
+        cli_mutate(
+            &f,
+            &b,
+            "cli-cas",
+            &[
+                "preference-deprecate",
+                id,
+                "--scope",
+                "project",
+                "--project",
+                "alpha",
+                "--expected-revision",
+                "1",
+                "--confirm"
+            ]
+        )
+        .1["error"],
+        "Conflict"
+    );
+    assert_eq!(logical(&f.db), state);
+    assert!(
+        cli_mutate(
+            &f,
+            &b,
+            "cli-deprecate",
+            &[
+                "preference-deprecate",
+                id,
+                "--scope",
+                "project",
+                "--project",
+                "alpha",
+                "--expected-revision",
+                "2",
+                "--confirm"
+            ]
+        )
+        .0
+    );
+    assert!(
+        cli_mutate(
+            &f,
+            &b,
+            "cli-delete",
+            &[
+                "preference-delete",
+                id,
+                "--scope",
+                "project",
+                "--project",
+                "alpha",
+                "--expected-revision",
+                "3",
+                "--confirm"
+            ]
+        )
+        .0
+    );
+    let result = cli_mutate(
+        &f,
+        &b,
+        "cli-suggest-reject",
+        &[
+            "preference-suggest",
+            "--scope",
+            "global",
+            "--key",
+            "editor",
+            "--value",
+            "synthetic",
+            "--source",
+            "operator",
+        ],
+    );
+    assert!(result.0);
+    let id = result.1["affected"][0]["record_id"].as_str().unwrap();
+    assert!(
+        cli_mutate(
+            &f,
+            &b,
+            "cli-reject",
+            &[
+                "preference-reject",
+                id,
+                "--scope",
+                "global",
+                "--expected-revision",
+                "1",
+                "--confirm"
+            ]
+        )
+        .0
+    );
+    assert!(cli(&f, &["handoff-record", "alpha", "task"]).1["record"].is_null());
+    let input = f.temp.path().join("handoff.json");
+    fs::write(&input,json!({"objective":"synthetic objective","completed":"","next_action":"inspect","validation_json":"[]","snapshot":{"base_sha":"","branch":"","state":"unknown","fingerprint":null}}).to_string()).unwrap();
+    assert!(
+        cli_mutate(
+            &f,
+            &b,
+            "cli-handoff",
+            &[
+                "handoff-put",
+                "alpha",
+                "task",
+                "--expected-absent",
+                "--input",
+                input.to_str().unwrap()
+            ]
+        )
+        .0
+    );
+    assert_eq!(
+        cli(&f, &["handoff-record", "alpha", "task"]).1["record"]["revision"],
+        1
+    );
+    assert_eq!(
+        cli(&f, &["handoff", "alpha", "task"]).1["objective"],
+        "synthetic objective"
+    );
+    assert!(cli(&f, &["profile", "write", "disable"]).0);
+    assert_eq!(cli(&f, &["profile", "info"]).1["write_enabled"], false);
+    let state = logical(&f.db);
+    assert!(
+        !cli_mutate(
+            &f,
+            &b,
+            "cli-disabled",
+            &[
+                "preference-suggest",
+                "--scope",
+                "global",
+                "--key",
+                "a",
+                "--value",
+                "b",
+                "--source",
+                "c"
+            ]
+        )
+        .0
+    );
+    assert_eq!(logical(&f.db), state);
+}
+#[test]
+fn operator_preview_exact_scope_bounds_roles_and_malformed_state_preservation() {
+    let f = Fixture::created(false);
+    let b = f.daemon.enable();
+    f.register(&b, "alpha");
+    f.register(&b, "beta");
+    for i in 0..14 {
+        f.daemon
+            .mutate(&b, &format!("preview-{i}"), suggest())
+            .unwrap();
+    }
+    f.daemon
+        .mutate(
+            &b,
+            "project-secret",
+            Command::SuggestPreference {
+                scope: Scope::Project {
+                    name: "beta".into(),
+                },
+                key: "k".into(),
+                value: "synthetic-other-scope".into(),
+                source: "test".into(),
+                expected: Expected::Absent,
+            },
+        )
+        .unwrap();
+    let params = json!({"scope":{"kind":"global"},"after_id":0});
+    let page = f
+        .daemon
+        .control("profile.preferences.list", params.clone())
+        .unwrap();
+    assert_eq!(page["records"].as_array().unwrap().len(), 12);
+    assert_eq!(page["next_after_id"], 12);
+    let next = f
+        .daemon
+        .control(
+            "profile.preferences.list",
+            json!({"scope":{"kind":"global"},"after_id":12}),
+        )
+        .unwrap();
+    assert_eq!(next["records"].as_array().unwrap().len(), 2);
+    assert!(next["next_after_id"].is_null());
+    assert!(
+        f.daemon
+            .control(
+                "profile.preferences.list",
+                json!({"scope":{"kind":"project","name":"alpha"},"after_id":0})
+            )
+            .unwrap()["records"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    for name in ["agent-alpha.cap", "operator-write.cap"] {
+        let cap = f.daemon.credential(name);
+        let mut peer = f.daemon.client(&cap).unwrap();
+        for (method, params) in [
+            ("profile.preferences.list", params.clone()),
+            (
+                "profile.preferences.get",
+                json!({"scope":{"kind":"global"},"id":1}),
+            ),
+            (
+                "profile.handoff.get",
+                json!({"project":"alpha","task_id":"task"}),
+            ),
+        ] {
+            let before = logical(&f.db);
+            assert_eq!(
+                f.daemon.runtime.block_on(peer.request(method, params)),
+                Err(Error::Unauthorized)
+            );
+            assert_eq!(logical(&f.db), before);
+        }
+    }
+    for params in [
+        json!({"scope":{"kind":"global"},"after_id":-1}),
+        json!({"scope":{"kind":"global","name":"beta"},"after_id":0}),
+        json!({"scope":{"kind":"global"},"after_id":0,"sql":"never"}),
+    ] {
+        denied(
+            &f,
+            "profile.preferences.list",
+            params,
+            Error::InvalidRequest,
+        );
+    }
+    let context = f
+        .daemon
+        .control(
+            "context.get",
+            json!({"project":"alpha","include_documents":false}),
+        )
+        .unwrap();
+    assert!(context["preferences"].as_array().unwrap().is_empty());
 }

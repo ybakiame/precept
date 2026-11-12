@@ -10,6 +10,7 @@ use std::{
 };
 use subtle::ConstantTimeEq;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+pub mod operator;
 pub mod session_lease;
 pub mod transport;
 pub mod write_grant;
@@ -370,6 +371,13 @@ impl Client {
     pub async fn request(&mut self, method: &str, params: Value) -> Result<Value> {
         self.next += 1;
         let id = self.next.to_string();
+        let transport_error = |e| {
+            if method == "profile.mutate" {
+                Error::OutcomeUnknown
+            } else {
+                e
+            }
+        };
         write_frame(
             &mut self.stream,
             &Request {
@@ -379,18 +387,23 @@ impl Client {
                 params,
             },
         )
-        .await?;
+        .await
+        .map_err(transport_error)?;
         // The server limits computation too; the response frame has its own absolute deadline.
-        let value = read_with_deadline(&mut self.stream, Duration::from_secs(7)).await?;
+        let value = read_with_deadline(&mut self.stream, Duration::from_secs(7))
+            .await
+            .map_err(transport_error)?;
         let response: Response =
-            serde_json::from_value(value).map_err(|_| Error::InvalidRequest)?;
+            serde_json::from_value(value).map_err(|_| transport_error(Error::InvalidRequest))?;
         if response.api_version != API_VERSION || response.id != Some(id) {
-            return Err(Error::InvalidRequest);
+            return Err(transport_error(Error::InvalidRequest));
         }
         if let Some(e) = response.error {
             return Err(e);
         }
-        response.result.ok_or(Error::InvalidRequest)
+        response
+            .result
+            .ok_or_else(|| transport_error(Error::InvalidRequest))
     }
 }
 #[cfg(test)]
@@ -404,6 +417,59 @@ mod tests {
         a.write_u32(1).await.unwrap();
         a.write_all(b"[").await.unwrap();
         assert_eq!(read_frame(&mut b).await.unwrap_err(), Error::InvalidRequest);
+    }
+    #[tokio::test]
+    async fn lost_mutation_reply_is_unknown_but_server_denial_stays_precise() {
+        let temp = tempfile::Builder::new()
+            .prefix("acp-s3-ipc-")
+            .tempdir()
+            .unwrap();
+        let location = Location {
+            runtime_dir: temp.path().join("runtime"),
+            endpoint: if cfg!(windows) {
+                format!("s3-{}", temp.path().file_name().unwrap().to_string_lossy())
+            } else {
+                temp.path()
+                    .join("runtime/control.sock")
+                    .to_str()
+                    .unwrap()
+                    .into()
+            },
+        };
+        let mut lease = RuntimeLease::acquire(&location).unwrap();
+        let credentials = lease.credentials(&[]).unwrap();
+        let mut listener = transport::Listener::bind(&location).unwrap();
+        let cap = load_credential(&location, &location.credential_path(None).unwrap()).unwrap();
+        let server = tokio::spawn(async move {
+            for denied in [true, false] {
+                let mut stream = listener.accept().await.unwrap();
+                accept_handshake(&mut stream, &credentials).await.unwrap();
+                let request: Request =
+                    serde_json::from_value(read_frame(&mut stream).await.unwrap()).unwrap();
+                assert_eq!(request.method, "profile.mutate");
+                if denied {
+                    write_frame(
+                        &mut stream,
+                        &Response::error(Some(request.id), Error::InvalidRequest),
+                    )
+                    .await
+                    .unwrap();
+                }
+                // Second connection consumes submission, then loses its reply.
+            }
+        });
+        let mut client = Client::connect(&location, &cap).await.unwrap();
+        assert_eq!(
+            client.request("profile.mutate", json!({})).await,
+            Err(Error::InvalidRequest)
+        );
+        drop(client);
+        let mut client = Client::connect(&location, &cap).await.unwrap();
+        assert_eq!(
+            client.request("profile.mutate", json!({})).await,
+            Err(Error::OutcomeUnknown)
+        );
+        server.await.unwrap();
     }
     #[test]
     fn labels_are_paths_never() {

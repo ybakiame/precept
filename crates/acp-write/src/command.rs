@@ -2,78 +2,8 @@
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 
+pub use acp_core::operator::{Command, Expected, Scope, Snapshot};
 pub use acp_store::profile::{Binding, Receipt, RecordVersion};
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    tag = "kind",
-    content = "revision",
-    rename_all = "snake_case",
-    deny_unknown_fields
-)]
-pub enum Expected {
-    Absent,
-    Revision(i64),
-}
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum Scope {
-    Global,
-    Project { name: String },
-}
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Snapshot {
-    pub base_sha: String,
-    pub branch: String,
-    pub state: String,
-    pub fingerprint: Option<String>,
-}
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "command", rename_all = "snake_case", deny_unknown_fields)]
-pub enum Command {
-    RegisterProject {
-        name: String,
-        root: String,
-        expected: Expected,
-    },
-    SuggestPreference {
-        scope: Scope,
-        key: String,
-        value: String,
-        source: String,
-        expected: Expected,
-    },
-    ConfirmPreference {
-        id: i64,
-        scope: Scope,
-        expected: Expected,
-    },
-    RejectPreference {
-        id: i64,
-        scope: Scope,
-        expected: Expected,
-    },
-    DeprecatePreference {
-        id: i64,
-        scope: Scope,
-        expected: Expected,
-    },
-    DeletePreference {
-        id: i64,
-        scope: Scope,
-        expected: Expected,
-    },
-    PutHandoff {
-        project: String,
-        task_id: String,
-        objective: String,
-        completed: String,
-        next_action: String,
-        validation_json: String,
-        snapshot: Snapshot,
-        expected: Expected,
-    },
-}
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
