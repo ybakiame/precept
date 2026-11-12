@@ -30,7 +30,7 @@ disposable validation-era implementation details scheduled for removal by [Issue
 | --- | --- | --- |
 | Legacy Python P0 | Historical prototype currently present before M2; scheduled for removal under ADR-0006 | Any new product feature, compatibility path, or release dependency |
 | `crates/acp-core` | Legacy confirmed preference/Handoff resolver plus P1-L pure typed selector/conflict explanation; bounded document/fingerprint semantics through adapters | SQLite connections, UI, process execution, protocol transport or authorization grants |
-| `crates/acp-store` | Target: explicit-path, strict Profile v2 read-only adapter; current v0/v1 reader is temporary | Writes, schema migration, legacy-format compatibility |
+| `crates/acp-store` | Target: explicit-path, strict read-only adapter for one selected current Profile schema; M1 v2 is a replaceable baseline | Writes, schema migration, legacy-format compatibility |
 | `crates/acp-rehearsal` | Synthetic migration/recovery experiments | Real-profile migration rollout |
 | `crates/acp-ipc`, `acp-daemon` | Local capability/peer checks, scoped reads, live repository adapter, lease authority | TCP listener or caller-selected wider scope |
 | `crates/acp-session` | Optional configured native ACP child lifecycle and bounded observations | OS sandbox, arbitrary shell execution or credential login |
@@ -81,7 +81,7 @@ established operator-only versioned IPC, explicit grants, typed transactions,
 CAS/receipts and strict preference transitions. [ADR-0006](adr/0006-rust-only-runtime.md)
 now supersedes its Python compatibility, legacy schema support, migration handoff
 and v2-to-v1 rollback decisions. The accepted target is a single Rust runtime with one current profile schema
-(M1's v2 schema is the working baseline): explicit creation, strict reads,
+(M1's v2 schema is a replaceable working baseline): explicit creation, strict reads,
 daemon-owned writes, and no Python runtime or legacy migration. Breaking changes
 are acceptable during validation; old local prototype files may be deleted. The [historical storage ownership plan](p1/storage-ownership-plan.md)
 retains original M0/M1 evidence but is superseded as an execution plan.
@@ -139,7 +139,8 @@ identity or event truth; there is no implemented signature/evidence-chain system
 Same-user filesystem access bypasses cooperative protocol boundaries. See
 [security](security.md), [interfaces](interfaces.md) and [ADR-0002](adr/0002-local-ipc-capabilities.md).
 
-Preserve current IPC/MCP schemas, fingerprint bytes and explicit unknown states
-unless separately reviewed. Python writer retirement is accepted by ADR-0006; no
-network listener, automatic repository rewrite or broad execution permission is
-part of this target.
+Keep current authorization, scope, revocation and explicit-unknown semantics.
+During validation, IPC/session/MCP wire schemas and profile schema may be replaced
+together; do not add old-version compatibility or migration layers. Python writer
+retirement is accepted by ADR-0006; no network listener, automatic repository
+rewrite or broad execution permission is part of this target.
