@@ -14,16 +14,20 @@ and local Handoff workflow. The project has since established Rust domain, stora
 writer, daemon, IPC, MCP, native CLI, and NSH Desktop/TUI components. M1 delivered
 the isolated Rust v2 transaction writer and its synthetic acceptance evidence.
 
-The product has not entered production use and has no released Python runtime
-compatibility commitment or deployed profile population that must be preserved.
-Continuing to maintain Python as a frontend, read-only adapter, rollback owner, or
+The product is still in validation and has no production-integrated profile
+population. The early Python prototype was used only briefly and has produced no
+material local data that needs to be retained. The owner explicitly accepts
+breaking changes and deletion of local prototype files during this validation
+phase. Maintaining Python as a frontend, read-only adapter, rollback owner, or
 second test implementation would preserve a prototype boundary rather than a
 product requirement. It would also keep two runtime languages, two storage paths,
 and cross-language parity work in the critical path.
 
 The owner therefore chooses to end the Python prototype and complete the product
-on the Rust architecture. This is an intentional pre-release breaking change, not
-a general policy that mature products should discard user data or compatibility.
+on the Rust architecture. This is an intentional validation-phase breaking change. Do not design for
+hypothetical compatibility or preserve disposable prototype data. When production
+integration or a concrete compatibility requirement exists, the owner will state
+that requirement explicitly and it will be handled as a new scoped decision.
 
 ## Decision
 
@@ -65,12 +69,14 @@ Profile v2 is the sole schema accepted by the Rust product runtime:
 - v0 and v1 are not supported runtime formats. There is no Python compatibility
   reader, legacy runtime reader, automatic migration, in-place upgrade, downgrade
   projection, or v2-to-v1 rollback owner.
-- Existing v0/v1 files are never auto-discovered, opened for writing, reset,
-  deleted, or overwritten. If explicitly selected, they are refused with a
-  sanitized, actionable unsupported-format result and left untouched.
-- A future import tool, if justified by actual user demand, requires a separate
-  decision, explicit source/destination selection, and independent data-preservation
-  acceptance. It is not part of P1-M2.
+- Existing Python/v0/v1 prototype files are disposable validation artifacts.
+  They may be deleted as part of a deliberate local development reset; no backup,
+  import, migration, rollback, or preservation guarantee is required.
+- Do not build an automatic legacy-file discovery/cleanup subsystem. A reset or
+  replacement operation must target the known ACP development profile/path, not
+  unrelated user files. A future production-data import requirement must be
+  explicitly raised by the owner and designed as new scoped work; it is not part
+  of P1-M2.
 
 M1's v0/v1-to-v2 synthetic migration work and its evidence remain valid historical
 engineering evidence for that merged revision. P1-M2 must remove legacy migration
@@ -78,11 +84,12 @@ from production-reachable crates and either remove or isolate any remaining lega
 fixture/rehearsal code so it cannot be shipped or invoked as a product migration.
 The M1 report must not be rewritten to imply its historical tests did not run.
 
-Profile creation is an explicit operator action. Startup must not scan for old
-databases, infer a default profile to adopt, or silently create/replace a profile.
-The application may choose an app-managed local destination after the operator
-chooses Create Profile, but the selected destination and resulting profile identity
-must be explicit and validated. No existing file may be overwritten on collision.
+Profile creation is an explicit operator action. Startup must not scan for or
+adopt old databases. During validation, an explicit development reset may delete
+the known ACP prototype profile and create a fresh current-schema profile; no
+compatibility conversion is needed. The selected destination and resulting profile
+identity must still be explicit and validated. Do not silently overwrite unrelated
+files or add broad filesystem cleanup logic.
 
 ### 3. The native daemon is the single write owner
 
@@ -92,9 +99,9 @@ production component that may link and invoke `acp-write`. `acp-store` remains a
 read-only interface; no UI, CLI, MCP bridge, agent process, or generic library
 receives a writable SQLite connection.
 
-Operator writes use a separately versioned, typed, operator-only local IPC
-extension. Existing IPC API v1 read methods, session API v2, and the existing
-two-tool read-only MCP contract remain compatible. The write capability is
+Operator writes use a typed, operator-only local IPC interface. IPC, session and
+MCP interfaces may be revised together during validation; no backward-compatible
+old/new API support or compatibility shim is required. Keep the write capability
 profile-scoped and distinct from operator read/session credentials and all agent
 credentials. Operator role alone is not write authority.
 
@@ -144,38 +151,38 @@ concrete need.
 
 ### 5. Compatibility policy
 
-The following remain supported as product contracts:
+Validation-phase compatibility policy:
 
-- IPC API v1 read operations.
-- Session API v2 and its existing capability/revocation behavior.
-- The existing two read-only MCP tools and their documented protocol behavior.
-- ADR-0004 domain semantics and the accepted preference transition matrix.
-- The exact v2 logical record, revision, CAS, and receipt contract.
-
-The following are intentionally not compatibility commitments:
-
-- Python CLI commands, Python imports, Python MCP launch/configuration, or Python
-  package installation.
-- Python direct database access or a Python rollback/read-only adapter.
-- v0/v1 profile runtime access, migration, or downgrade.
-- Cross-language Python/Rust behavioral parity.
-
-Do not keep dead Python wrappers, aliases, shims, or compatibility dependencies
-after the native Rust command/UI paths are complete.
+- No backward-compatibility promise is made for Python commands/imports, local
+  profile files, database schemas, IPC versions, session APIs, MCP schemas, or
+  client configuration. Interfaces may be changed together when the Rust product
+  architecture requires it.
+- Do not maintain old/new protocol versions in parallel, compatibility adapters,
+  aliases, wrappers, migration shims, downgrade paths, or parity suites merely to
+  preserve behavior from the prototype or an earlier validation commit.
+- Keep the current functional and security invariants: operator-only writes,
+  profile-scoped authorization, daemon-exclusive ownership, read-only agent/MCP
+  access, strict domain transitions, CAS/idempotency, and sanitized failures.
+  These are product correctness requirements, not backward-compatibility promises.
+- When the owner later identifies a production integration or concrete compatibility
+  requirement, define the exact consumer/data/version scope in a new decision;
+  do not pre-build for hypothetical consumers.
 
 ## Implementation sequence
 
 | Phase | Scope | Gate |
 | --- | --- | --- |
-| P1-M2 — Rust-only runtime cutover / Issue #40 | Native v2 profile create/read/write; operator-only daemon write IPC; `acp-query` and NSH integration; single writer lease; remove Python runtime, tests, dependencies, and active v0/v1 paths | Native Windows and Linux/WSL synthetic acceptance; existing read/session/MCP boundaries unchanged; no Python runtime or v0/v1 production path remains |
+| P1-M2 — Rust-only runtime cutover / Issue #40 | Native current-schema profile create/read/write; operator-only daemon write IPC; `acp-query` and NSH integration; single writer lease; remove Python runtime, tests, dependencies, and active legacy-schema paths | Native Windows and Linux/WSL synthetic acceptance; core authorization/domain boundaries hold; no Python runtime or legacy migration path remains |
 | P1-M3 — v2 profile lifecycle | Explicit v2 backup, restore, retention, and genuine process-recovery behavior | Rust-only synthetic recovery and privacy/ACL acceptance; no schema migration or Python downgrade |
 | P1-M4 — product review and profile workflows | Complete operator review/provenance workflow and explicit profile lifecycle UX | ADR-0004 human-review semantics, permission boundaries, and end-to-end acceptance |
 | P1-M5 — release hardening | Packaging, clean-machine installation, accessibility, platform support, security and performance | Explicit release criteria and verified platform evidence |
 
-M2 implementation and tests use fresh disposable v2 fixtures only. This ADR does
-not authorize access to any existing local profile, default state directory, or
-personal database, nor does it authorize production write activation or release.
-The owner must separately approve any real-profile operation or release gate.
+M2 implementation and tests use fresh disposable fixtures of the selected current
+schema. Local Python prototype files and disposable validation profiles may be
+deleted during a deliberate reset; no real user data is expected or protected by a
+compatibility process. This does not authorize touching unrelated files, credentials,
+or external checkouts, nor does it authorize production write activation or release.
+The owner will explicitly identify any future production-data or compatibility need.
 
 ## Consequences
 
@@ -189,9 +196,10 @@ Positive:
 
 Costs and accepted limitations:
 
-- Existing Python commands and v0/v1 databases are not supported by the product.
-- Any valuable legacy data requires a separately approved explicit import; no
-  automatic migration is promised.
+- Existing Python commands and old prototype databases are disposable and have
+  no retention or migration guarantee during validation.
+- Production-data compatibility is deferred until the owner explicitly identifies
+  an actual integration and its requirements.
 - Writes are unavailable when the daemon or write authorization is unavailable.
 - M2 must finish profile creation, runtime v2 reads, native write IPC, and removal
   of prototype dependencies before the product can claim a complete Rust runtime.
