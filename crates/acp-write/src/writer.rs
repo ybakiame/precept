@@ -74,7 +74,7 @@ fn profile(db: &Connection, binding: &Binding) -> Result<Profile> {
 }
 pub(crate) fn verify(db: &Connection, binding: &Binding) -> Result<()> {
     let metadata = profile(db, binding)?;
-    schema::validate_records(db)?;
+    let allocated = schema::validate_records(db)?;
     let records = schema::records(db)?;
     let revs = revisions(db)?;
     let mut live = BTreeMap::new();
@@ -94,13 +94,6 @@ pub(crate) fn verify(db: &Connection, binding: &Binding) -> Result<()> {
             live.insert(handoff_key(project, task), ());
         }
     }
-    let allocated: i64 = db
-        .query_row(
-            "SELECT coalesce((SELECT seq FROM sqlite_sequence WHERE name='preferences'),0)",
-            [],
-            |r| r.get(0),
-        )
-        .map_err(|_| Error::InvalidRecord)?;
     for (key, rev) in &revs {
         if rev.revision <= 0 {
             return Err(Error::InvalidRecord);

@@ -229,7 +229,8 @@ pub(crate) fn records(db: &Connection) -> Result<Records> {
             .map_err(|_|Error::InvalidRecord)?.collect::<rusqlite::Result<_>>().map_err(|_|Error::InvalidRecord)
     }).collect()
 }
-pub(crate) fn validate_records(db: &Connection) -> Result<()> {
+/// Validate all records and return the checked preference allocation watermark.
+pub(crate) fn validate_records(db: &Connection) -> Result<i64> {
     integrity(db)?;
     let rows = records(db)?;
     for row in &rows[0] {
@@ -260,22 +261,23 @@ pub(crate) fn validate_records(db: &Connection) -> Result<()> {
             return Err(Error::InvalidRecord);
         }
     }
-    let seq: Option<i64> = db
-        .query_row(
-            "SELECT seq FROM sqlite_sequence WHERE name='preferences'",
-            [],
-            |r| r.get(0),
-        )
-        .optional()
-        .map_err(|_| Error::InvalidRecord)?;
     let max: i64 = db
         .query_row("SELECT coalesce(max(id),0) FROM preferences", [], |r| {
             r.get(0)
         })
         .map_err(|_| Error::InvalidRecord)?;
-    if seq.is_some_and(|n| n < max) || (max > 0 && seq.is_none()) {
-        return Err(Error::InvalidRecord);
+    // sqlite_sequence has neither column affinity nor a unique name constraint.
+    // A scalar/coerced lookup can hide duplicate rows or a reset allocation ID.
+    match rows[3].as_slice() {
+        [] if max == 0 => Ok(0),
+        [row] => match (&row[0], &row[1]) {
+            (Value::Text(name), Value::Integer(seq))
+                if name == "preferences" && *seq > 0 && *seq >= max =>
+            {
+                Ok(*seq)
+            }
+            _ => Err(Error::InvalidRecord),
+        },
+        _ => Err(Error::InvalidRecord),
     }
-    Ok(())
 }
-use rusqlite::OptionalExtension;

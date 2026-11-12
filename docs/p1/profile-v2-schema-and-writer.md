@@ -96,6 +96,13 @@ containing identity/revision/deleted flag, never their value, key, source or sco
 All live rows have exactly one live revision; no unrelated revision may exist.
 Preference IDs are positive signed-64-bit SQLite integers, never reused after delete;
 `sqlite_sequence` is preserved and must cover live and tombstoned allocated IDs.
+Validate its complete contents: only one row named `preferences` is permitted,
+with a stored SQLite INTEGER `seq > 0` and `seq >= max(live preference ID)`.
+No sequence row is permitted only for an empty, never-allocated table; v2 also
+requires no preference tombstones in that case. Duplicate rows, unexpected names,
+NULL/non-integer values and zero/negative watermarks are invalid records, refused
+before backup/candidate creation or any writer command. An empty table with a
+positive retained watermark remains valid and its next ID must exceed that watermark.
 Technical revisions and sequence are positive signed-64-bit integers; exhaustion
 refuses without wraparound. Receipt count equals commit sequence because no pruning
 occurs in this generation. Every receipt binds this generation and one unique

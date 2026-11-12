@@ -160,6 +160,149 @@ fn all_source_shapes_migrate_exact_history_and_allocation_without_writes_to_prio
     }
 }
 #[test]
+fn corrupt_allocation_watermarks_refuse_all_source_shapes_before_copying() {
+    for shape in SHAPES {
+        for sql in INVALID_ALLOCATION {
+            let mut w = SyntheticWorkspace::new(shape).unwrap();
+            let db = workspace::connect(&w.path(Role::Source), false).unwrap();
+            db.execute_batch(sql).unwrap();
+            drop(db);
+            let before = std::fs::read(w.path(Role::Source)).unwrap();
+            assert_eq!(w.prepare(), Err(Error::InvalidRecord));
+            assert_eq!(std::fs::read(w.path(Role::Source)).unwrap(), before);
+            assert!(!w.path(Role::Backup).exists());
+            assert!(!w.path(Role::Candidate).exists());
+            assert!(w.writer().is_err());
+        }
+    }
+}
+// sqlite_sequence has no affinity or uniqueness constraints: inspect every row
+// and its stored SQLite type, including corrupt rows unrelated to preferences.
+const INVALID_ALLOCATION: [&str; 14] = [
+    "DELETE FROM preferences; UPDATE sqlite_sequence SET seq=0",
+    "DELETE FROM preferences; UPDATE sqlite_sequence SET seq=1; INSERT INTO sqlite_sequence VALUES('preferences',1000)",
+    "INSERT INTO sqlite_sequence VALUES('preferences',2000)",
+    "UPDATE sqlite_sequence SET seq=-1",
+    "UPDATE sqlite_sequence SET seq='1000'",
+    "UPDATE sqlite_sequence SET seq=1000.0",
+    "UPDATE sqlite_sequence SET seq=x'31303030'",
+    "UPDATE sqlite_sequence SET seq=NULL",
+    "INSERT INTO sqlite_sequence VALUES('unexpected',1000)",
+    "INSERT INTO sqlite_sequence VALUES(NULL,1000)",
+    "UPDATE sqlite_sequence SET name=x'707265666572656e636573'",
+    "UPDATE sqlite_sequence SET name=1",
+    "DELETE FROM sqlite_sequence",
+    "UPDATE sqlite_sequence SET seq=1",
+];
+#[test]
+fn empty_allocation_history_preserves_absence_or_positive_watermark() {
+    for shape in SHAPES {
+        for allocated in [false, true] {
+            let mut w = SyntheticWorkspace::new(shape).unwrap();
+            let db = workspace::connect(&w.path(Role::Source), false).unwrap();
+            db.execute_batch("DELETE FROM preferences").unwrap();
+            if !allocated {
+                db.execute_batch("DELETE FROM sqlite_sequence").unwrap();
+            }
+            let before = schema::records(&db).unwrap();
+            drop(db);
+            let source_bytes = std::fs::read(w.path(Role::Source)).unwrap();
+            w.prepare().unwrap();
+            let backup_bytes = std::fs::read(w.path(Role::Backup)).unwrap();
+            let mut writer = w.writer().unwrap();
+            assert_eq!(schema::records(&writer.db).unwrap(), before);
+            let receipt = writer
+                .execute(&request(&w, "empty-allocate", suggest(Scope::Global)))
+                .unwrap();
+            assert_eq!(
+                receipt.affected[0].record_id,
+                if allocated { "1001" } else { "1" }
+            );
+            writer::verify(&writer.db, &w.binding()).unwrap();
+            w.verify_prior().unwrap();
+            assert_eq!(std::fs::read(w.path(Role::Source)).unwrap(), source_bytes);
+            assert_eq!(std::fs::read(w.path(Role::Backup)).unwrap(), backup_bytes);
+        }
+    }
+}
+#[test]
+fn corrupt_v2_allocation_refuses_reopen_execution_and_candidate_verification() {
+    for shape in SHAPES {
+        for sql in INVALID_ALLOCATION {
+            let mut w = ready(shape);
+            let mut writer = w.writer().unwrap();
+            writer.db.execute_batch(sql).unwrap();
+            // Preserve the independent live-revision invariant in empty cases,
+            // so refusal must come from the corrupted allocation history.
+            writer.db.execute_batch("DELETE FROM acp_revisions WHERE kind='preference' AND NOT EXISTS (SELECT 1 FROM preferences WHERE cast(id AS TEXT)=record_id)").unwrap();
+            let before = dump(&writer.db);
+            let bytes = std::fs::read(w.path(Role::Candidate)).unwrap();
+            assert_eq!(w.writer().unwrap_err(), Error::InvalidRecord);
+            assert_eq!(std::fs::read(w.path(Role::Candidate)).unwrap(), bytes);
+            assert_eq!(
+                writer.execute(&request(&w, "corrupt-allocation", suggest(Scope::Global))),
+                Err(Error::InvalidRecord)
+            );
+            assert_eq!(dump(&writer.db), before);
+            drop(writer);
+            assert_eq!(w.verify_candidate(), Err(Error::InvalidRecord));
+            assert_eq!(std::fs::read(w.path(Role::Candidate)).unwrap(), bytes);
+            w.verify_prior().unwrap();
+        }
+    }
+}
+#[test]
+fn empty_v2_with_tombstones_still_requires_the_allocated_watermark() {
+    for shape in SHAPES {
+        for seq in [None, Some(1)] {
+            let w = ready(shape);
+            let mut writer = w.writer().unwrap();
+            for id in 1..=10 {
+                let scope = match id {
+                    1..=4 => Scope::Global,
+                    5..=9 => Scope::Project {
+                        name: "alpha".into(),
+                    },
+                    _ => Scope::Project {
+                        name: "beta".into(),
+                    },
+                };
+                writer
+                    .execute(&request(
+                        &w,
+                        &format!("delete-{id}"),
+                        Command::DeletePreference {
+                            id,
+                            scope,
+                            expected: Expected::Revision(1),
+                        },
+                    ))
+                    .unwrap();
+            }
+            writer::verify(&writer.db, &w.binding()).unwrap();
+            if let Some(seq) = seq {
+                writer
+                    .db
+                    .execute("UPDATE sqlite_sequence SET seq=?1", [seq])
+                    .unwrap();
+            } else {
+                writer
+                    .db
+                    .execute_batch("DELETE FROM sqlite_sequence")
+                    .unwrap();
+            }
+            let before = dump(&writer.db);
+            assert_eq!(w.writer().unwrap_err(), Error::InvalidRecord);
+            assert_eq!(
+                writer.execute(&request(&w, "reuse-deleted-id", suggest(Scope::Global))),
+                Err(Error::InvalidRecord)
+            );
+            assert_eq!(dump(&writer.db), before);
+            w.verify_prior().unwrap();
+        }
+    }
+}
+#[test]
 fn complete_strict_transition_matrix_and_denials_preserve_every_logical_table() {
     for shape in SHAPES {
         for (id, old) in [
