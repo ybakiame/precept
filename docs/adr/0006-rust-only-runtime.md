@@ -197,7 +197,7 @@ Positive:
 - One implementation language and one product runtime.
 - One storage authority and one write path.
 - No Python fallback, rollback owner, adapter, or cross-language parity burden.
-- A smaller schema support surface: exact v2 only.
+- A smaller schema support surface: exactly one current schema, with no legacy readers or converters.
 - Native CLI, UI, and MCP use the same Rust domain and permission boundaries.
 
 Costs and accepted limitations:
