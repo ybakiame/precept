@@ -65,10 +65,13 @@ commands. Source commits remain in this PR for reproduction:
   matrix and Windows dedicated M1 suite (26 passing cases each).
 - `e27cd737b18c16c91d2043abb44ee92f28f2054a`: stricter initial-candidate metadata
   admission and regression; Windows full matrix, Linux focused writer/required
-  Python checks. Both hosts pass all **27 final M1 cases** at this source.
-- The earlier Linux full matrix is not relabeled as an e27cd73 run. A later
-  one-page backup-interruption/reservation-error correction awaits its separately
-  recorded focused checks; prior full matrices are not promoted to that source.
+  Python checks. Both hosts passed 27 M1 cases at this source, before the stricter
+  incomplete-backup assertion below.
+- `39de165109b148595168f3879d94f36919527c29`: final one-page backup-interruption
+  proof and reservation I/O classification. Both hosts pass the complete **27
+  final M1 cases**, writer Clippy, format, 29 Python tests and diff checks on this
+  clean source. Earlier full matrices are not relabeled as this follow-up run.
+- Subsequent changes are documentation only, not new runtime validation.
 
 Cargo used `CARGO_NET_OFFLINE=true`, `--locked` and existing caches. `PYTHONPATH`
 contains the checkout's `src` and `tools`; `ACP_TEST_PYTHON` names the selected test
@@ -124,6 +127,15 @@ workspace/parity/rehearsal/recovery matrix:
 | `python -m unittest discover -s tests -v` | PASS, 29 tests |
 | `git diff origin/main --check` | PASS |
 
+Final focused follow-up at clean **39de165 on both hosts** uses the same five
+commands as the preceding Linux follow-up table: fmt, writer Clippy, writer tests
+(27 PASS each), Python (29 PASS each), diff check. The backup fault now uses one
+page and requires SQLite More before interruption; independent reopen must reject
+the incomplete copy. That assertion first failed against e27cd73's old 16-page
+fault point, which could finish a small fixture. Reservation errors now distinguish
+actual collisions from generic I/O failure without raw diagnostics. No unaffected
+full compatibility/recovery matrix was repeated for this refinement.
+
 Each M1 suite reports one intentionally ignored **private worker entrypoint**.
 The parent process test invokes that helper explicitly six times with `--ignored`;
 it is not an omitted acceptance scenario. No tests/policies/assertions were disabled
@@ -145,7 +157,7 @@ with table-driven subcases rather than inflating the top-level count:
 | Idempotency | Lost-response fault after commit, connection close/reopen and exact receipt replay; same-ID changed canonical content conflicts; raw opaque JSON string bytes matter; replay still works at receipt capacity; no pruning |
 | Allocation/capacity | Revision overflow, actual SQLite AUTOINCREMENT exhaustion and oversized peer/receipt sets refuse atomically; injected StorageFull is a simulation, not physical disk-full |
 | WAL and busy | Live-source committed WAL included/uncommitted changes excluded by backup; v2 RO snapshot sees no partial data/revision/receipt; real writer lock contention returns bounded Busy, then succeeds after release |
-| Migration outcome | Before-commit schema/version rollback, partial backup/full injection and committed-before-response OutcomeUnknown; candidate remains ineligible until independent explicit verification; original/verified backup intact |
+| Migration outcome | Before-commit schema/version rollback, proven nonterminal one-page backup interruption at 39de165, full injection and committed-before-response OutcomeUnknown; candidate remains ineligible until independent explicit verification; original/verified backup intact |
 | New metadata regression | Changed imported revision or initial receipt limit is rejected despite otherwise valid v2 data; the test failed against c9c7cd9's verifier and passed after the correction at e27cd73 |
 | Genuine child termination | Three source shapes × before/after command COMMIT: real child kill/wait (SIGKILL / TerminateProcess), fresh SQLite reopen and v2 verification; precommit state entirely old, postcommit data/revisions/sequence/receipt entirely committed; prior copies unchanged |
 | Cross-language preservation | Separate Python process opens source/backup/v2 RO without Store, compares full logical rows/raw JSON and initial technical state, emits only PASS; all three main files unchanged after this read |
@@ -160,7 +172,8 @@ cleanup. This proves v2 SQLite transaction boundaries, not production owner rest
 parent-loss recovery, a public fixture-adoption API or a durable catalog.
 
 Development failures remain private and are not relabeled PASS: the new metadata
-regression first failed against the earlier verifier; Windows orchestration first
+regression first failed against the earlier verifier; the incomplete-backup check
+also first failed against the earlier fault point. Windows orchestration first
 failed before gates because Git was missing, then seven process-security cases
 failed because its fresh checkout lacked prebuilt binaries. The private runner's
 Git environment/build order was corrected; all final Windows gates above passed
@@ -192,14 +205,15 @@ or real-profile recovery guarantee. Checksums/digests are comparison metadata,
 not identity attestation, authenticated operator attribution or proof of model behavior.
 
 Private ignored artifacts: `artifacts/local-p1-m1/wsl-1/`, `wsl-final/`,
-`windows-1/` (failed build-order attempt), `windows-final/`, `development/` and
+`windows-1/` (failed build-order attempt), `windows-final/`, `wsl-last/`,
+`windows-focused/`, `development/` and
 private runner/tool metadata; native output was copied locally for inspection.
-Raw diagnostics/private checkout paths are not committed or uploaded. The final
-backup fault-point refinement needs its separately recorded focused evidence.
+Raw diagnostics/private checkout paths are not committed or uploaded. Final
+runtime evidence is pinned to 39de165; later report/catalog-document edits are
+document-only and do not renew the runtime results.
 Final documentation checks passed for three documents and 32 relative
 links/anchors, balanced fences, the exact 14-file scope, private-path/credential
 patterns and whitespace. Protected application/workflow paths and third-party
-lock entries are unchanged. Runtime changes after e27cd73 are confined to the
-synthetic writer backup-fault/reservation path and its regression assertion.
-The candidate will be submitted for Draft PR review after focused follow-up
-verification, not automatic merge or permission for M2–M5. Production writes and every real-profile operation remain separately gated.
+lock entries are unchanged; only documentation differs from the final tested code.
+The candidate is ready for Draft PR review, not automatic merge or permission
+for M2–M5. Production writes and every real-profile operation remain separately gated.

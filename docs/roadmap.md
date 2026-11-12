@@ -133,10 +133,10 @@ M1 freezes the [exact profile-v2/writer and planned catalog contract](p1/profile
 before implementation and adds `acp-write` with fresh owned fixtures only. New-copy
 v0/v1→v2 migration, independent verification, transactional CAS/receipts, strict
 transitions, historical preservation and 27 final M1 cases pass on both local
-Windows and Linux/WSL at clean `e27cd73`. The
+Windows and Linux/WSL at clean `39de165`. The
 [M1 evidence report](evaluation/p1-m1-synthetic-writer.md) retains exact sources:
-the earlier Linux full matrix, final Windows full matrix and narrower Linux
-metadata-verification correction checks. Genuine v2 child kill boundaries are
+the earlier Linux/Windows full matrices and narrower metadata/backup-fault
+correction checks on their exact sources. Genuine v2 child kill boundaries are
 separate from the existing C2B1 recovery target. No public path-adoption API,
 production dependency/entrypoint, runtime v2 reader adoption or usable catalog is
 added. This is a Draft PR candidate, not merged completion or M2 authorization.
