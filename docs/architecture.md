@@ -30,7 +30,7 @@ disposable validation-era implementation details scheduled for removal by [Issue
 | --- | --- | --- |
 | Legacy Python P0 | Historical prototype currently present before M2; scheduled for removal under ADR-0006 | Any new product feature, compatibility path, or release dependency |
 | `crates/acp-core` | Legacy confirmed preference/Handoff resolver plus P1-L pure typed selector/conflict explanation; bounded document/fingerprint semantics through adapters | SQLite connections, UI, process execution, protocol transport or authorization grants |
-| `crates/acp-store` | Target: explicit-path, strict read-only adapter for one selected current Profile schema; M1 v2 is historical only; the product target is a fresh Rust-native v1 | Writes, schema migration, legacy-format compatibility |
+| `crates/acp-store` | Target: explicit-path, strict read-only adapter for the fresh Rust-native Profile v1 | Writes, schema migration, legacy-format compatibility |
 | `crates/acp-rehearsal` | Synthetic migration/recovery experiments | Real-profile migration rollout |
 | `crates/acp-ipc`, `acp-daemon` | Local capability/peer checks, scoped reads, live repository adapter, lease authority | TCP listener or caller-selected wider scope |
 | `crates/acp-session` | Optional configured native ACP child lifecycle and bounded observations | OS sandbox, arbitrary shell execution or credential login |
@@ -45,7 +45,7 @@ The current main tree still contains the disposable Python P0 prototype.
 Its CLI and MCP launch path share an initializing read/write `Store`; this is a
 historical implementation defect, not an accepted target. ADR-0006 retires that
 runtime rather than building a second Python read-only adapter. P1-M2 replaces the
-active legacy Rust reader with strict reads for the selected current Profile schema and routes every product
+active legacy Rust reader with strict reads for the fresh Rust-native Profile v1 and routes every product
 mutation through the daemon-owned `acp-write` capability. Until M2 merges, this
 target topology is not yet an implemented end-user runtime.
 
