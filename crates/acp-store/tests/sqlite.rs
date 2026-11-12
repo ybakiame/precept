@@ -1,275 +1,165 @@
-use acp_core::{ContextResolver, Project, Worktree, WorktreeInspector, documents};
-use acp_store::{Error, Schema, SqliteStore};
+mod support;
+use acp_store::{Error, Schema, SqliteStore, profile};
 use rusqlite::Connection;
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    process::Command,
-};
-
-fn fixture(legacy: bool, empty: bool) -> (tempfile::TempDir, PathBuf) {
-    let temp = tempfile::tempdir().unwrap();
-    let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let mut cmd =
-        Command::new(std::env::var("ACP_TEST_PYTHON").unwrap_or_else(|_| "python".into()));
-    cmd.arg(repo.join("tools/sqlite_fixture.py"))
-        .arg(temp.path())
-        .env("PYTHONPATH", repo.join("src"));
-    if legacy {
-        cmd.arg("--legacy");
-    }
-    if empty {
-        cmd.arg("--empty");
-    }
-    let output = cmd.output().expect("Python fixture builder required");
+use std::{fs, path::Path};
+fn fresh() -> (tempfile::TempDir, std::path::PathBuf) {
+    let t = tempfile::tempdir().unwrap();
+    let p = support::fixture(&t.path().join("fixture"));
+    (t, p)
+}
+#[test]
+fn exact_v1_reads_are_scoped_readonly_and_expose_separate_revisions() {
+    let (_t, p) = fresh();
+    let before = fs::read(&p).unwrap();
+    let s = SqliteStore::open(&p).unwrap();
+    assert_eq!(s.schema().unwrap(), Schema::Version1);
+    assert_eq!(s.metadata().unwrap().binding.owner_epoch, 0);
+    assert_eq!(s.project_revision("alpha").unwrap(), 1);
+    assert_eq!(s.preference_revision(1).unwrap(), 1);
+    assert_eq!(s.handoff_revision("alpha", "shared").unwrap(), 1);
     assert!(
-        output.status.success(),
-        "synthetic Python fixture generation failed"
+        s.read_preferences("alpha")
+            .unwrap()
+            .iter()
+            .all(|p| p.project.as_deref() != Some("beta"))
     );
-    let path = temp.path().join("state/context.sqlite3");
-    (temp, path)
-}
-struct UnknownWorktree;
-impl WorktreeInspector for UnknownWorktree {
-    fn inspect(&self, _: &Project, _: bool) -> acp_core::Result<Worktree> {
-        Ok(Worktree::default())
-    }
-}
-fn context(store: &SqliteStore, project: &str) -> acp_core::Result<serde_json::Value> {
-    ContextResolver::new(
-        project,
-        store,
-        store,
-        store,
-        &UnknownWorktree,
-        &documents::FileDocuments,
-    )?
-    .context(true)
-}
-#[test]
-fn python_legacy_and_current_are_read_without_changing_database() {
-    for legacy in [false, true] {
-        let (_temp, path) = fixture(legacy, false);
-        let before = fs::read(&path).unwrap();
-        {
-            let store = SqliteStore::open(&path).unwrap();
-            assert_eq!(
-                store.schema().unwrap(),
-                if legacy {
-                    Schema::Legacy
-                } else {
-                    Schema::Fingerprinted
-                }
-            );
-            let result = context(&store, "alpha").unwrap();
-            let prefs = result["preferences"].as_array().unwrap();
-            assert_eq!(prefs.len(), 2);
-            assert_eq!(prefs[0]["value"], "newest");
-            assert_eq!(prefs[0]["source"], "fixture-new");
-            for marker in [
-                "BETA_PRIVATE_PREFERENCE",
-                "PENDING_NOT_FOR_AGENT",
-                "REJECTED_NOT_FOR_AGENT",
-                "DEPRECATED_NOT_FOR_AGENT",
-            ] {
-                assert!(!result.to_string().contains(marker));
-            }
-            let h = store.read_handoff("alpha", "shared").unwrap();
-            assert_eq!(
-                h.worktree_fingerprint.as_deref(),
-                if legacy { None } else { Some("saved") }
-            );
-            assert_eq!(h.validation.len(), 4);
-            assert_eq!(h.validation[0].extra["evidence"]["nested"][3]["log"], "ref");
-            assert!(
-                store
-                    .read_handoff("alpha", "null-fingerprint")
-                    .unwrap()
-                    .worktree_fingerprint
-                    .is_none()
-            );
-            assert_eq!(
-                store.read_handoff("alpha", "beta-only").unwrap_err(),
-                Error::HandoffNotFound
-            );
-            assert_eq!(
-                store.read_project("missing").unwrap_err(),
-                Error::UnknownProject
-            );
-            assert_eq!(
-                store.read_preferences("missing").unwrap_err(),
-                Error::UnknownProject
-            );
-            assert_eq!(
-                store.read_handoff("missing", "shared").unwrap_err(),
-                Error::UnknownProject
-            );
-            assert_eq!(
-                store.read_project("alpha' OR 1=1 --").unwrap_err(),
-                Error::UnknownProject
-            );
-            assert_eq!(
-                store.read_handoff("alpha", "' OR 1=1 --").unwrap_err(),
-                Error::HandoffNotFound
-            );
-        }
-        assert_eq!(fs::read(path).unwrap(), before);
-    }
-}
-#[test]
-fn missing_empty_and_invalid_databases_never_get_initialized() {
-    let temp = tempfile::tempdir().unwrap();
-    let missing = temp.path().join("missing.sqlite3");
-    assert!(matches!(
-        SqliteStore::open(&missing),
-        Err(Error::OpenFailed)
-    ));
-    assert!(!missing.exists());
-    for bytes in [b"".as_slice(), b"not a SQLite database".as_slice()] {
-        let path = temp.path().join("empty.sqlite3");
-        fs::write(&path, bytes).unwrap();
-        assert!(matches!(
-            SqliteStore::open(&path),
-            Err(Error::IncompatibleSchema)
-        ));
-        assert_eq!(fs::read(&path).unwrap(), bytes);
-    }
-    let (_temp, path) = fixture(false, true);
-    let store = SqliteStore::open(&path).unwrap();
     assert_eq!(
-        store.read_project("alpha").unwrap_err(),
-        Error::UnknownProject
+        s.read_handoff("alpha", "beta-only").unwrap_err(),
+        Error::HandoffNotFound
     );
+    assert_eq!(
+        s.read_handoff("alpha", "shared").unwrap().validation.len(),
+        4
+    );
+    assert_eq!(fs::read(p).unwrap(), before);
 }
 #[test]
-fn future_versions_and_incompatible_shapes_fail_closed() {
-    for ddl in [
-        "PRAGMA user_version=2",
-        "ALTER TABLE projects ADD COLUMN future TEXT",
-        "DROP TABLE preferences",
-        "ALTER TABLE projects RENAME COLUMN root TO other",
-        "CREATE VIEW future AS SELECT name FROM projects",
-        "CREATE TABLE sqliteXfuture(value TEXT)",
-        "ALTER TABLE projects ADD COLUMN generated TEXT GENERATED ALWAYS AS (root) VIRTUAL",
-    ] {
-        let (_temp, path) = fixture(false, false);
-        let store = SqliteStore::open(&path).unwrap();
-        let writer = Connection::open(&path).unwrap();
-        writer.execute_batch(ddl).unwrap();
-        drop(writer);
-        let before = fs::read(&path).unwrap();
-        assert!(matches!(
-            store.schema(),
-            Err(Error::UnsupportedVersion | Error::IncompatibleSchema)
-        ));
-        assert!(store.read_project("alpha").is_err());
-        assert!(SqliteStore::open(&path).is_err());
-        drop(store);
-        assert_eq!(fs::read(&path).unwrap(), before);
+fn missing_empty_legacy_and_m1_profiles_are_never_initialized() {
+    let t = tempfile::tempdir().unwrap();
+    let p = t.path().join("missing");
+    assert!(SqliteStore::open(&p).is_err());
+    assert!(!p.exists());
+    for bytes in [b"".as_slice(), b"invalid"] {
+        fs::write(&p, bytes).unwrap();
+        assert!(SqliteStore::open(&p).is_err());
+        assert_eq!(fs::read(&p).unwrap(), bytes);
     }
+    fs::remove_file(&p).unwrap();
+    let db = Connection::open(&p).unwrap();
+    db.execute_batch("CREATE TABLE projects(name TEXT PRIMARY KEY,root TEXT NOT NULL,created_at TEXT NOT NULL); PRAGMA user_version=1").unwrap();
+    drop(db);
+    let before = fs::read(&p).unwrap();
+    assert!(matches!(
+        SqliteStore::open(&p),
+        Err(Error::IncompatibleSchema)
+    ));
+    assert_eq!(fs::read(&p).unwrap(), before);
+    let db = Connection::open(&p).unwrap();
+    db.pragma_update(None, "user_version", 2).unwrap();
+    drop(db);
+    let before = fs::read(&p).unwrap();
+    assert!(matches!(
+        SqliteStore::open(&p),
+        Err(Error::UnsupportedVersion)
+    ));
+    assert_eq!(fs::read(&p).unwrap(), before);
 }
 #[test]
-fn malformed_records_are_rejected_and_malformed_scopes_are_not_exposed() {
+fn schema_drift_is_refused_before_reads_and_without_repair() {
     for sql in [
-        "UPDATE preferences SET status='invalid' WHERE scope='global'",
-        "UPDATE handoffs SET validation_json='[{\"check\":\"x\",\"status\":\"SUCCESS\"}]' WHERE project='alpha'",
-        "UPDATE handoffs SET validation_json='not-json' WHERE project='alpha'",
-        "UPDATE handoffs SET validation_json='{}' WHERE project='alpha'",
+        "PRAGMA user_version=3",
+        "CREATE TABLE extra(x)",
+        "CREATE INDEX extra ON projects(root)",
+        "CREATE VIEW extra AS SELECT * FROM projects",
+        "CREATE TRIGGER extra AFTER INSERT ON projects BEGIN SELECT 1; END",
+        "ALTER TABLE preferences ADD COLUMN extra TEXT",
+        "DROP INDEX prefs_lookup",
+        "ALTER TABLE projects RENAME COLUMN root TO wrong",
     ] {
-        let (_temp, path) = fixture(false, false);
-        let writer = Connection::open(&path).unwrap();
-        writer
-            .execute_batch("PRAGMA ignore_check_constraints=ON")
-            .unwrap();
-        writer.execute_batch(sql).unwrap();
-        drop(writer);
-        let store = SqliteStore::open(&path).unwrap();
-        if sql.contains("preferences") {
-            assert_eq!(
-                store.read_preferences("alpha").unwrap_err(),
-                Error::InvalidRecord
-            );
-        } else {
-            assert_eq!(
-                store.read_handoff("alpha", "shared").unwrap_err(),
-                Error::InvalidRecord
-            );
-        }
+        let (_t, p) = fresh();
+        let s = SqliteStore::open(&p).unwrap();
+        let db = Connection::open(&p).unwrap();
+        db.execute_batch(sql).unwrap();
+        drop(db);
+        let before = fs::read(&p).unwrap();
+        assert!(s.schema().is_err());
+        assert!(s.read_project("alpha").is_err());
+        assert!(SqliteStore::open(&p).is_err());
+        assert_eq!(fs::read(&p).unwrap(), before);
     }
-    let (_temp, path) = fixture(false, false);
-    let writer = Connection::open(&path).unwrap();
-    writer.execute_batch("PRAGMA ignore_check_constraints=ON; UPDATE preferences SET project='beta' WHERE scope='global'; UPDATE preferences SET scope='invalid' WHERE project='alpha';").unwrap();
-    drop(writer);
-    let result = context(&SqliteStore::open(&path).unwrap(), "alpha").unwrap();
-    assert_eq!(result["preferences"].as_array().unwrap().len(), 0);
 }
 #[test]
-fn independent_concurrent_readers_observe_committed_wal_updates() {
-    let (_temp, path) = fixture(false, false);
-    let mut writer = Connection::open(&path).unwrap();
-    writer
-        .execute_batch("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;")
-        .unwrap();
-    let first = SqliteStore::open(&path).unwrap();
-    let second = SqliteStore::open(&path).unwrap();
-    let tx = writer.transaction().unwrap();
-    tx.execute(
-        "UPDATE preferences SET value='wal-committed' WHERE source='fixture-new'",
-        [],
+fn corrupt_types_domains_metadata_receipts_and_fks_are_rejected() {
+    for sql in [
+        "DELETE FROM acp_profile",
+        "UPDATE acp_profile SET next_preference_id=1.5",
+        "UPDATE acp_profile SET next_preference_id=1",
+        "UPDATE acp_profile SET commit_sequence=0",
+        "UPDATE acp_profile SET profile_id='BAD'",
+        "UPDATE preferences SET revision=2 WHERE id=1",
+        "UPDATE preferences SET status='wrong'",
+        "UPDATE preferences SET project='missing' WHERE scope='project'",
+        "UPDATE handoffs SET validation_json='{}'",
+        "UPDATE handoffs SET worktree_state='verified'",
+        "UPDATE handoffs SET base_sha='bad'",
+        "UPDATE projects SET created_at='2026-02-30T00:00:00Z'",
+        "UPDATE acp_receipts SET request_digest=CAST(request_digest AS TEXT)",
+        "DELETE FROM acp_receipts WHERE commit_sequence=1",
+        "UPDATE acp_receipts SET result_json='{}'",
+        "UPDATE acp_receipts SET generation='22222222222222222222222222222222'",
+    ] {
+        let (_t, p) = fresh();
+        let db = Connection::open(&p).unwrap();
+        db.execute_batch("PRAGMA ignore_check_constraints=ON; PRAGMA foreign_keys=OFF;")
+            .unwrap();
+        db.execute_batch(sql).unwrap();
+        drop(db);
+        let before = fs::read(&p).unwrap();
+        assert!(
+            SqliteStore::open(&p).is_err(),
+            "corrupt fixture was accepted"
+        );
+        assert_eq!(fs::read(&p).unwrap(), before);
+    }
+}
+#[test]
+fn empty_current_schema_is_valid_but_orphaned_domain_data_is_not() {
+    let t = tempfile::tempdir().unwrap();
+    let p = t.path().join("fresh");
+    let db = Connection::open(&p).unwrap();
+    for ddl in profile::DDL {
+        db.execute_batch(ddl).unwrap()
+    }
+    db.execute_batch("PRAGMA user_version=1; INSERT INTO acp_profile VALUES(1,'00000000000000000000000000000000','11111111111111111111111111111111',0,1,0)").unwrap();
+    drop(db);
+    assert!(SqliteStore::open(&p).is_ok());
+    let db = Connection::open(&p).unwrap();
+    db.execute(
+        "INSERT INTO projects VALUES('alpha',?1,1,'2026-01-01T00:00:00Z')",
+        [t.path().canonicalize().unwrap().to_str().unwrap()],
     )
     .unwrap();
-    assert_eq!(
-        context(&first, "alpha").unwrap()["preferences"][0]["value"],
-        "newest"
-    );
-    tx.commit().unwrap();
-    assert!(path.with_file_name("context.sqlite3-wal").is_file());
-    for reader in [&first, &second] {
-        assert_eq!(
-            context(reader, "alpha").unwrap()["preferences"][0]["value"],
-            "wal-committed"
-        );
-    }
-    std::thread::scope(|scope| {
-        let threads: Vec<_> = (0..4)
-            .map(|_| {
-                scope.spawn(|| {
-                    let reader = SqliteStore::open(&path).unwrap();
-                    assert_eq!(
-                        context(&reader, "alpha").unwrap()["preferences"][0]["value"],
-                        "wal-committed"
-                    );
-                })
-            })
-            .collect();
-        for t in threads {
-            t.join().unwrap();
-        }
-    });
-    drop(first);
-    drop(second);
-    drop(writer);
+    drop(db);
+    assert!(SqliteStore::open(&p).is_err());
 }
-
 #[test]
-fn v1_requires_fingerprint_but_open_never_performs_migration() {
-    for legacy in [true, false] {
-        let (_temp, path) = fixture(legacy, false);
-        let writer = Connection::open(&path).unwrap();
-        writer.pragma_update(None, "user_version", 1).unwrap();
-        drop(writer);
-        let before = fs::read(&path).unwrap();
-        if legacy {
-            assert!(matches!(
-                SqliteStore::open(&path),
-                Err(Error::IncompatibleSchema)
-            ));
-        } else {
-            assert_eq!(
-                SqliteStore::open(&path).unwrap().schema().unwrap(),
-                Schema::Version1
-            );
-        }
-        assert_eq!(fs::read(path).unwrap(), before);
-    }
+fn frozen_ddl_matches_implementation() {
+    let text = include_str!("../../../docs/p1/profile-v1-runtime-contract.md");
+    let ddl = text
+        .split("```sql\n")
+        .nth(1)
+        .unwrap()
+        .split("```")
+        .next()
+        .unwrap();
+    let parts: Vec<_> = ddl
+        .split(';')
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && !s.starts_with("PRAGMA"))
+        .collect();
+    assert_eq!(parts, profile::DDL);
+}
+#[test]
+fn input_paths_are_explicit() {
+    assert!(SqliteStore::open(Path::new("relative.sqlite3")).is_err());
 }

@@ -1,4 +1,4 @@
-//! Synthetic parity harness. Explicit DB path; no default profile discovery.
+//! Current Profile v1 read-only harness. Explicit path; no profile discovery.
 use acp_core::{ContextResolver, Project, Worktree, WorktreeInspector, documents};
 use acp_store::SqliteStore;
 use serde::Deserialize;
