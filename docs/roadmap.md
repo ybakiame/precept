@@ -130,13 +130,21 @@ old validation profiles may be deleted during a deliberate ACP development reset
 no backward-compatibility or retention guarantee is required. Production writes are
 not activated.
 
-Issue #43 Stage 1 now has a locally validated Draft candidate: exact fresh v1 DDL,
-explicit no-overwrite creation, strict read-only store and seven private typed
-transactions, with M1 migration/rehearsal paths removed. The
-[Stage 1 evidence](evaluation/p1-m2-s1-storage.md) records exact native Windows and
-Linux/WSL sources and results. This does not complete parent Issue #40: daemon
-bootstrap, grants/leases, epoch advancement, IPC/CLI/NSH integration and complete
-Python retirement remain later slices. No production writer is wired or activated.
+[P1-M2/S1 Issue #43](https://github.com/ybakiame/agent-control-plane/issues/43)
+is complete: [PR #42](https://github.com/ybakiame/agent-control-plane/pull/42)
+merged at `1976d6f4d373db737b3be27d2781c191253a467a`. The fresh
+Profile v1 DDL, explicit no-overwrite creation, strict read-only Store and private
+seven-command transactional Writer are implemented; M1 migration/rehearsal paths
+are retired. The [Stage 1 evidence](evaluation/p1-m2-s1-storage.md) records full
+Workspace tests at `c6c9052`: 87 Linux/WSL and 88 native Windows PASS; hosted
+Actions NOT_RUN (`[skip ci]`). The merged HEAD after that test was evidence-only.
+
+[P1-M2/S2 Issue #44](https://github.com/ybakiame/agent-control-plane/issues/44)
+is now the active next slice: daemon profile bootstrap/select and opened-file
+identity, exclusive writer lease, epoch binding, distinct operator write grants,
+revocation and typed write IPC. No production writer was activated in S1. Parent
+Issue #40 still requires native CLI/NSH integration, Python retirement and
+integrated acceptance after S2.
 
 P1-M3 remains conditional. Open it only if M2 reveals a concrete Profile v1 lifecycle
 or recovery need; do not assume backup/restore/retention work in advance. It has no
