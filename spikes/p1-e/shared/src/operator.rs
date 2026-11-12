@@ -250,6 +250,7 @@ impl Model {
         }
         self.operator.busy = true;
         if review.mutation.is_some() {
+            self.operator.receipt = None;
             self.operator.pending = Some(review.clone());
         }
         Some(review)
@@ -585,5 +586,30 @@ mod tests {
         m.operator.page.as_mut().unwrap().records[0].status = "confirmed".into();
         assert!(!m.operator_review("confirm", "once"));
         assert!(!m.operator_review("reject", "once"));
+    }
+}
+
+#[cfg(all(test, feature = "native", not(target_arch = "wasm32")))]
+mod native_boundary_tests {
+    use super::*;
+    #[test]
+    fn wsl_and_offline_never_attempt_operator_ipc_even_with_a_prepared_request() {
+        let mut m = Model::fixture();
+        m.connection.target = Target::Local;
+        m.connection.runtime = std::env::temp_dir().to_str().unwrap().into();
+        m.connection.endpoint = "synthetic".into();
+        m.operator.open = true;
+        let request = m.operator_read("profile.info").unwrap();
+        assert_eq!(
+            crate::native::Inputs::default().operator_call(&request),
+            Err("Unauthorized")
+        );
+        let inputs = crate::native::Inputs {
+            runtime_dir: Some(std::env::temp_dir()),
+            endpoint: Some("synthetic".into()),
+            wsl_distribution: Some("synthetic".into()),
+            ..Default::default()
+        };
+        assert_eq!(inputs.operator_call(&request), Err("Unauthorized"));
     }
 }

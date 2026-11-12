@@ -406,12 +406,29 @@ pub(super) fn shell(
                                         .gap_1()
                                         .child(
                                             text(move || {
-                                                format!(
-                                                    "{} · {} · {}",
-                                                    model.get().source_label(),
-                                                    model.get().target_label(),
-                                                    model.get().read_label()
-                                                )
+                                                let m = model.get();
+                                                if m.operator.open {
+                                                    format!(
+                                                        "{} · {}",
+                                                        m.target_label(),
+                                                        m.word(if m.operator.busy {
+                                                            Msg::OperatorBusy
+                                                        } else if m.operator.error.is_some() {
+                                                            Msg::OperatorFailed
+                                                        } else if m.operator.info.is_some() {
+                                                            Msg::OperatorObserved
+                                                        } else {
+                                                            Msg::OperatorUnobserved
+                                                        })
+                                                    )
+                                                } else {
+                                                    format!(
+                                                        "{} · {} · {}",
+                                                        m.source_label(),
+                                                        m.target_label(),
+                                                        m.read_label()
+                                                    )
+                                                }
                                             })
                                             .text_color(move || match model.get().phase {
                                                 Phase::Error | Phase::Unavailable => {
@@ -423,6 +440,10 @@ pub(super) fn shell(
                                         )
                                         .child(
                                             text(move || model.get().read_time())
+                                                .style_when(
+                                                    move || model.get().operator.open,
+                                                    |s| s.hidden(),
+                                                )
                                                 .text_size(px(12.0))
                                                 .text_color(move || palette(model).muted),
                                         ),

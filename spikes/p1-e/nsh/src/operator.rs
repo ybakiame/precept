@@ -337,8 +337,10 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
             }
             if let Some(r) = o.receipt {
                 lines.push(format!(
-                    "Receipt {} · commit {}",
-                    r.operation_id, r.commit_sequence
+                    "{} {} · commit {}",
+                    m.word(Msg::OperatorLastReceipt),
+                    r.operation_id,
+                    r.commit_sequence
                 ));
             }
             if let Some(p) = o.pending.and_then(|r| r.mutation) {
@@ -356,6 +358,7 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                     move || {
                         model.get().operator.pane != Pane::Profile
                             || model.get().operator.review.is_some()
+                            || model.get().operator.outcome_unknown
                     },
                     |s| s.hidden(),
                 )
@@ -420,6 +423,7 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                     move || {
                         model.get().operator.pane != Pane::Preferences
                             || model.get().operator.review.is_some()
+                            || model.get().operator.outcome_unknown
                     },
                     |s| s.hidden(),
                 )
@@ -645,6 +649,7 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                     move || {
                         model.get().operator.pane != Pane::Handoff
                             || model.get().operator.review.is_some()
+                            || model.get().operator.outcome_unknown
                     },
                     |s| s.hidden(),
                 )
