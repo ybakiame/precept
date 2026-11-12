@@ -2,14 +2,16 @@
 
 The [charter](product.md) and [domain/trust ADR](adr/0004-product-domain-trust.md)
 define the target. Checkmarks below refer to scoped historical evidence, not
-production readiness. Latest product baseline: main `5559255` (P1-K merged in PR #33; ADR-0004 accepted by owner).
+production readiness. Latest product baseline: main `2a5949120aacd0523cd7fa5e417548e1e648bc81`
+(P1-L merged in PR #35; ADR-0004 accepted by owner). P1-M0 / Issue #36 is the active
+design-only gate; ADR-0005 remains Proposed.
 P1-K interoperability evidence is scoped separately below.
 
 ## Stage 1 — established engineering baseline (P0 through P1-I)
 
 | Capability | Implemented / evidenced | Outstanding |
 | --- | --- | --- |
-| Context and personal preferences | Python local SQLite registry/review/writes, Rust confirmed-only project/global resolver, bounded live sources | Structured contracts/selectors/conflicts and complete review UI |
+| Context and personal preferences | Python local SQLite registry/review/writes, legacy Rust resolver, bounded live sources; P1-L pure typed selectors/conflicts | Live structured-contract adapters, persisted generalized model and complete review UI |
 | Continuity | Exact project/task Handoff, historical checks, revision/worktree/fingerprint warnings | Frozen constraint snapshots, portable bundle format and independent cross-client acceptance |
 | Rust ownership and storage | Read-only core/store, parity and synthetic backup/migration/process recovery | Production Rust writes, real-data migration/recovery, backup/export/import and retention design |
 | Local service and MCP | Unix sockets/named pipes, operator/project capabilities, two-tool read-only stdio | Full MCP conformance and broader versioned client matrix |
@@ -65,14 +67,17 @@ IPC/MCP checks. The [follow-up evidence](evaluation/p1-k-cross-agent-interop.md#
 retains original trial provenance. K is complete at its stated scope; OpenCode/Pi and
 additional model/platform modes remain explicitly unverified, not silently passed.
 
-## Stage 4 — sequenced implementation briefs (P1-L active)
+## Stage 4 — sequenced implementation briefs (P1-L merged; P1-M0 design active)
 
 ADR-0004 was accepted by the owner on 2026-11-11 without changing its domain/trust
 decisions. [P1-L / Issue #34](https://github.com/ybakiame/agent-control-plane/issues/34)
-is the only active Stage 4 implementation task. Its L0–L2 candidate is implemented
-and locally validated, pending Draft PR review and owner merge. M–R remain gated
-briefs, not opened implementation issues or authorization to begin code. Dependencies
-are explicit to avoid premature storage migration, onboarding, review UI or snapshots.
+is complete at its stated L0–L2 scope and merged in
+[PR #35](https://github.com/ybakiame/agent-control-plane/pull/35) at
+`2a5949120aacd0523cd7fa5e417548e1e648bc81`; Issue #34 is closed.
+[P1-M0 / Issue #36](https://github.com/ybakiame/agent-control-plane/issues/36)
+is now the active design-only task. Later M implementation/rollout and N–R remain
+gated briefs, not authorization to begin code. Dependencies avoid premature storage
+migration, onboarding, review UI or snapshots.
 
 - [x] L0: [v1 domain/selector/conflict contract](p1/typed-context-v1.md) frozen
   before implementation; additive DTO remains separate from the MCP wire contract.
@@ -85,7 +90,7 @@ are explicit to avoid premature storage migration, onboarding, review UI or snap
 
 Legacy responses, schemas, write ownership, dependencies and UI remain unchanged.
 Hosted Actions and new UI/vendor-model acceptance remain NOT_RUN. Local validation
-does not itself mark the candidate reviewed or merged.
+does not imply storage or broader client/platform acceptance.
 
 PR #35 review found that an unresolved authority set could still claim a resolved
 preference mask. Fix `495e197` defers those masks until complete key analysis;
@@ -93,12 +98,34 @@ preference mask. Fix `495e197` defers those masks until complete key analysis;
 comparisons pass on both local hosts. The
 [review follow-up evidence](evaluation/p1-l-typed-context-resolver.md#pr-35-review-follow-up--unresolved-authorities-cannot-resolve-a-mask)
 retains the original full-matrix source and records the narrower correction checks.
-The Draft remains pending re-review and owner merge.
+The review correction was included in the merged PR; its narrower checks do not
+retroactively rerun the earlier full matrix at the merge commit.
+
+M0 delivers [Proposed ADR-0005](adr/0005-local-storage-and-write-ownership.md) and a
+[storage ownership plan](p1/storage-ownership-plan.md): single opted-in daemon
+writer, separate writer library, Python compatibility/fencing, explicit schema
+versions and verified-generation cutover/rollback. It changes documentation only.
+The owner resolved the transition decision in PR #37: reject new
+suggested→deprecated under the future writer, preserve historical records and
+follow ADR-0004. Current Python behavior is unchanged; M1/M2 implementation and
+parity/transition tests remain pending, including the intentional CLI compatibility
+difference and pre-cutover fencing. Rust writes, v2 migration and real-profile
+rollout remain NOT_IMPLEMENTED / NOT_RUN. Completed C2A
+synthetic migration and C2B1 genuine process recovery, including the corrected
+historical Linux/macOS/Windows process matrix, remain prerequisites already proven
+at their recorded scope. M0 neither repeats them nor claims production recovery.
+
+ADR acceptance is separate from PR merge. Later briefs sequence synthetic writer,
+compatibility, synthetic cutover/recovery/privacy, separately authorized per-profile
+rollout, then rollback-window closure/Python direct-writer retirement. No real
+profile access, production Rust writes, new dependencies or MCP/UI changes are
+authorized by M0. Exact gates and NOT_RUN limitations stay in the plan.
 
 | Brief | Depends on | Deliverable / acceptance gate |
 | --- | --- | --- |
-| L — typed context explanation ([Issue #34](https://github.com/ybakiame/agent-control-plane/issues/34), locally validated; review pending) | J merged; ADR-0004 accepted | L0 contract, L1 pure resolver and L2 local compatibility evidence delivered; legacy responses preserved; owner review/merge remains pending |
-| M — local storage and Rust write ownership | J + L semantics | DB/contract format ADR and backup/recovery/privacy design first; synthetic rollback/crash/lock/disk-failure/old-reader acceptance before any production write rollout; no implicit real-profile migration |
+| L — typed context explanation ([Issue #34](https://github.com/ybakiame/agent-control-plane/issues/34), merged PR #35) | J merged; ADR-0004 accepted | L0 contract, L1 pure resolver and L2 scoped local compatibility/review evidence delivered; legacy responses preserved |
+| M0 — local storage design ([Issue #36](https://github.com/ybakiame/agent-control-plane/issues/36), active) | J + merged L; Accepted ADR-0004 | Proposed ADR-0005, ownership/compatibility matrices, migration/restore states and no-go gates; explicit owner acceptance before implementation |
+| Later M — synthetic writer through explicit rollout | Accepted ADR-0005; resolved transition semantics with implementation/tests pending; sequential M1–M5 gates | Separate synthetic writer/reader/owner/recovery/privacy and strict transition/history-preservation compatibility acceptance; real-profile consent only in a later rollout task; no implicit adoption or dual writers |
 | N — project onboarding and contracts | J + L; M for writes | Register/preview explicit roots, optional versioned Markdown/YAML contract format and reviewed diff workflow; no auto-scaffold, symlink escape, private profile export or stale-source activation |
 | O — complete human review | J + L + M | Operator-only versioned proposal/review API and NSH workflow with view/confirm/reject/deprecate/delete/provenance; edits/review revocation/permission changes invalidate approval; no agent-facing mutation |
 | P — snapshot and Handoff continuity | J + L; M for persistence | Versioned immutable constraint/source references, resume comparison and legacy unknowns; checksum wording only; stale worktree/contract/permission and evidence-origin regressions; interoperability acceptance stays K |
