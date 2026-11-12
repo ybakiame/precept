@@ -59,16 +59,21 @@ PR; it must not be imported, packaged, required by CI, or reachable at runtime.
 Historical reports and Git history remain historical records, not supported
 interfaces.
 
-### 2. Profile v2 is the only supported runtime schema
+### 2. One current Profile schema; no legacy compatibility
 
-Profile v2 is the sole schema accepted by the Rust product runtime:
+M1's Profile v2 is the current working baseline, not a permanent compatibility
+commitment. During validation, M2 may replace it wholesale with a simpler current
+schema if the owner/implementation chooses to do so. Select exactly one current
+schema for the Rust runtime and create new profiles directly in that schema. Do not
+build readers or converters for earlier schema versions:
 
-- New profiles are explicitly created in the exact v2 format.
-- Runtime readers and writers validate the complete supported v2 schema and
-  fail closed on malformed, unknown, or unsupported versions.
-- v0 and v1 are not supported runtime formats. There is no Python compatibility
-  reader, legacy runtime reader, automatic migration, in-place upgrade, downgrade
-  projection, or v2-to-v1 rollback owner.
+- New profiles are explicitly created in the selected current format.
+- Runtime readers and writers validate the complete selected schema and fail
+  closed on malformed or unsupported profiles.
+- There is no Python compatibility reader, legacy runtime reader, automatic
+  migration, in-place upgrade, cross-version projection, or downgrade owner.
+  During validation the schema version may be replaced wholesale; this is a clean
+  replacement, not a data migration or a compatibility promise.
 - Existing Python/v0/v1 prototype files are disposable validation artifacts.
   They may be deleted as part of a deliberate local development reset; no backup,
   import, migration, rollback, or preservation guarantee is required.
@@ -79,7 +84,8 @@ Profile v2 is the sole schema accepted by the Rust product runtime:
   of P1-M2.
 
 M1's v0/v1-to-v2 synthetic migration work and its evidence remain valid historical
-engineering evidence for that merged revision. P1-M2 must remove legacy migration
+engineering evidence for that merged revision only; they do not constrain the
+schema selected for the validation-stage Rust product. P1-M2 must remove legacy migration
 from production-reachable crates and either remove or isolate any remaining legacy
 fixture/rehearsal code so it cannot be shipped or invoked as a product migration.
 The M1 report must not be rewritten to imply its historical tests did not run.
@@ -135,17 +141,17 @@ Handoffs; suggestions require explicit human review; technical receipts/revision
 are not human ReviewDecision or independent evidence; agents and MCP cannot confirm
 or mutate profile state.
 
-There is no Python rollback owner and no schema downgrade to v1. Recovery, when
-implemented, restores a verified v2 profile generation only, with explicit
+There is no Python rollback owner or cross-schema downgrade path. Recovery, when
+implemented, restores a verified generation of the selected current schema only, with explicit
 operator selection and disclosure of any lost commit interval. It must never
 silently discard newer state or treat a historical backup as current authority.
 
 ADR-0005's proposed multi-generation cutover catalog and migration-stage machinery
-must not be implemented merely to support a Python handoff or v2-to-v1 projection.
+must not be implemented merely to support a Python handoff or cross-schema projection.
 P1-M2 implements only the minimal per-profile identity, exclusive writer lease,
 epoch fencing, and process-death behavior needed for one Rust writer. Backup,
 restore, and any additional durable catalog/manifest design are re-evaluated as
-Rust-to-Rust v2 lifecycle work in P1-M3, with a separate contract and synthetic
+Rust-to-Rust current-schema lifecycle work in P1-M3, with a separate contract and synthetic
 acceptance. Reuse a catalog only where that new lifecycle design demonstrates a
 concrete need.
 
@@ -173,11 +179,11 @@ Validation-phase compatibility policy:
 | Phase | Scope | Gate |
 | --- | --- | --- |
 | P1-M2 — Rust-only runtime cutover / Issue #40 | Native current-schema profile create/read/write; operator-only daemon write IPC; `acp-query` and NSH integration; single writer lease; remove Python runtime, tests, dependencies, and active legacy-schema paths | Native Windows and Linux/WSL synthetic acceptance; core authorization/domain boundaries hold; no Python runtime or legacy migration path remains |
-| P1-M3 — v2 profile lifecycle | Explicit v2 backup, restore, retention, and genuine process-recovery behavior | Rust-only synthetic recovery and privacy/ACL acceptance; no schema migration or Python downgrade |
+| P1-M3 — current Profile lifecycle | Explicit current-schema backup, restore, retention, and genuine process-recovery behavior if required | Rust-only synthetic recovery and privacy/ACL acceptance; no legacy migration or cross-schema downgrade |
 | P1-M4 — product review and profile workflows | Complete operator review/provenance workflow and explicit profile lifecycle UX | ADR-0004 human-review semantics, permission boundaries, and end-to-end acceptance |
 | P1-M5 — release hardening | Packaging, clean-machine installation, accessibility, platform support, security and performance | Explicit release criteria and verified platform evidence |
 
-M2 implementation and tests use fresh disposable fixtures of the selected current
+M2 implementation and tests use fresh disposable fixtures of the single selected current
 schema. Local Python prototype files and disposable validation profiles may be
 deleted during a deliberate reset; no real user data is expected or protected by a
 compatibility process. This does not authorize touching unrelated files, credentials,
