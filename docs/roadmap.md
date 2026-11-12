@@ -5,7 +5,7 @@ define the target. Checkmarks below refer to scoped historical evidence, not
 production readiness. Current completed engineering baseline: PR #37 merged at
 `d6168e0ca5bff150942711b8f398516e03769703` (P1-M0); PR #39 merged at
 `3083c407d02c34bbbfef402f7ae57bb7eda248d1` (P1-M1 synthetic-only Rust writer);
-ADR-0004 and ADR-0005 are Accepted. [P1-M2 / Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40)
+ADR-0004, ADR-0005 and ADR-0006 are Accepted. [P1-M2 / Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40)
 is active for Rust-only runtime cutover and Python prototype retirement under
 [ADR-0006](adr/0006-rust-only-runtime.md). M2 remains synthetic-only; no existing
 profile access or production write activation is authorized.
@@ -71,7 +71,7 @@ IPC/MCP checks. The [follow-up evidence](evaluation/p1-k-cross-agent-interop.md#
 retains original trial provenance. K is complete at its stated scope; OpenCode/Pi and
 additional model/platform modes remain explicitly unverified, not silently passed.
 
-## Stage 4 — P1-L / M0 / M1 complete; P1-M2 compatibility and exclusive-owner integration active
+## Stage 4 — P1-L / M0 / M1 complete; P1-M2 Rust-only runtime cutover active
 
 ADR-0004 was accepted by the owner on 2026-11-11 without changing its domain/trust
 decisions. [P1-L / Issue #34](https://github.com/ybakiame/agent-control-plane/issues/34)
@@ -142,7 +142,9 @@ Any real-profile operation or release requires a separate explicit owner decisio
 | M0 — local storage design ([Issue #36](https://github.com/ybakiame/agent-control-plane/issues/36), merged PR #37) | J + merged L; Accepted ADR-0004 | ADR-0005 and ownership/compatibility/recovery matrices delivered and explicitly accepted; no code or real-data authorization |
 | M1 — synthetic Rust writer and exact v2 schema ([Issue #38](https://github.com/ybakiame/agent-control-plane/issues/38), merged PR #39) | Accepted ADR-0005; resolved transition semantics | Exact v2 contract, isolated `acp-write`, transaction/CAS/receipt/strict-transition/history-preservation evidence; merged at `3083c407`; synthetic-only, no production entrypoint |
 | M2 — Rust-only runtime cutover and Python prototype retirement ([Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40), active) | M1 merged; Accepted ADR-0006 | Explicit v2 profile creation, strict v2 reads, daemon-only `acp-write`, versioned operator write grant/IPC, native `acp-query` and NSH integration, removal of Python runtime/tests/dependencies and active v0/v1 paths; synthetic v2 only |
-| M3 — v2 profile lifecycle and recovery (unopened) | M2 accepted | Rust-only v2 backup/restore, retention, locking and process recovery; no schema migration, Python owner or downgrade |\n| M4 — operator review and profile workflows (unopened) | M2/M3 accepted; ADR-0004 | Human review/provenance, explicit profile lifecycle UX and permission-safe end-to-end acceptance |\n| M5 — release hardening (unopened) | M2–M4 accepted | Clean-machine packaging, accessibility, supported-platform evidence, security and performance gates |
+| M3 — v2 profile lifecycle and recovery (unopened) | M2 accepted | Rust-only v2 backup/restore, retention, locking and process recovery; no schema migration, Python owner or downgrade |
+| M4 — operator review and profile workflows (unopened) | M2/M3 accepted; ADR-0004 | Human review/provenance, explicit profile lifecycle UX and permission-safe end-to-end acceptance |
+| M5 — release hardening (unopened) | M2–M4 accepted | Clean-machine packaging, accessibility, supported-platform evidence, security and performance gates |
 | N — project onboarding and contracts | J + L; M for writes | Register/preview explicit roots, optional versioned Markdown/YAML contract format and reviewed diff workflow; no auto-scaffold, symlink escape, private profile export or stale-source activation |
 | O — complete human review | J + L + M | Operator-only versioned proposal/review API and NSH workflow with view/confirm/reject/deprecate/delete/provenance; edits/review revocation/permission changes invalidate approval; no agent-facing mutation |
 | P — snapshot and Handoff continuity | J + L; M for persistence | Versioned immutable constraint/source references, resume comparison and legacy unknowns; checksum wording only; stale worktree/contract/permission and evidence-origin regressions; interoperability acceptance stays K |
