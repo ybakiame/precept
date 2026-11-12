@@ -178,7 +178,7 @@ fn corrupt_allocation_watermarks_refuse_all_source_shapes_before_copying() {
 }
 // sqlite_sequence has no affinity or uniqueness constraints: inspect every row
 // and its stored SQLite type, including corrupt rows unrelated to preferences.
-const INVALID_ALLOCATION: [&str; 14] = [
+const INVALID_ALLOCATION: [&str; 15] = [
     "DELETE FROM preferences; UPDATE sqlite_sequence SET seq=0",
     "DELETE FROM preferences; UPDATE sqlite_sequence SET seq=1; INSERT INTO sqlite_sequence VALUES('preferences',1000)",
     "INSERT INTO sqlite_sequence VALUES('preferences',2000)",
@@ -193,36 +193,46 @@ const INVALID_ALLOCATION: [&str; 14] = [
     "UPDATE sqlite_sequence SET name=1",
     "DELETE FROM sqlite_sequence",
     "UPDATE sqlite_sequence SET seq=1",
+    "DELETE FROM preferences; DELETE FROM sqlite_sequence",
 ];
 #[test]
-fn empty_allocation_history_preserves_absence_or_positive_watermark() {
+fn empty_previously_allocated_tables_preserve_positive_watermarks() {
     for shape in SHAPES {
-        for allocated in [false, true] {
-            let mut w = SyntheticWorkspace::new(shape).unwrap();
-            let db = workspace::connect(&w.path(Role::Source), false).unwrap();
-            db.execute_batch("DELETE FROM preferences").unwrap();
-            if !allocated {
-                db.execute_batch("DELETE FROM sqlite_sequence").unwrap();
-            }
-            let before = schema::records(&db).unwrap();
-            drop(db);
-            let source_bytes = std::fs::read(w.path(Role::Source)).unwrap();
-            w.prepare().unwrap();
-            let backup_bytes = std::fs::read(w.path(Role::Backup)).unwrap();
-            let mut writer = w.writer().unwrap();
-            assert_eq!(schema::records(&writer.db).unwrap(), before);
-            let receipt = writer
-                .execute(&request(&w, "empty-allocate", suggest(Scope::Global)))
-                .unwrap();
-            assert_eq!(
-                receipt.affected[0].record_id,
-                if allocated { "1001" } else { "1" }
-            );
-            writer::verify(&writer.db, &w.binding()).unwrap();
-            w.verify_prior().unwrap();
-            assert_eq!(std::fs::read(w.path(Role::Source)).unwrap(), source_bytes);
-            assert_eq!(std::fs::read(w.path(Role::Backup)).unwrap(), backup_bytes);
-        }
+        let mut w = SyntheticWorkspace::new(shape).unwrap();
+        let db = workspace::connect(&w.path(Role::Source), false).unwrap();
+        db.execute_batch("DELETE FROM preferences").unwrap();
+        let before = schema::records(&db).unwrap();
+        drop(db);
+        let source_bytes = std::fs::read(w.path(Role::Source)).unwrap();
+        w.prepare().unwrap();
+        let backup_bytes = std::fs::read(w.path(Role::Backup)).unwrap();
+        let mut writer = w.writer().unwrap();
+        assert_eq!(schema::records(&writer.db).unwrap(), before);
+        let receipt = writer
+            .execute(&request(&w, "empty-allocate", suggest(Scope::Global)))
+            .unwrap();
+        assert_eq!(receipt.affected[0].record_id, "1001");
+        writer::verify(&writer.db, &w.binding()).unwrap();
+        w.verify_prior().unwrap();
+        assert_eq!(std::fs::read(w.path(Role::Source)).unwrap(), source_bytes);
+        assert_eq!(std::fs::read(w.path(Role::Backup)).unwrap(), backup_bytes);
+    }
+}
+#[test]
+fn genuinely_never_allocated_tables_need_provenance_not_available_in_m1() {
+    for shape in [Shape::Legacy, Shape::Fingerprinted, Shape::V1] {
+        // Construct the schema without ever inserting preferences or erasing
+        // sequence history. This is distinct from deleting a populated fixture.
+        let db = Connection::open_in_memory().unwrap();
+        schema::create_source(&db, shape).unwrap();
+        assert_eq!(db.total_changes(), 0);
+        let before = schema::records(&db).unwrap();
+        assert!(before[1].is_empty());
+        assert!(before[3].is_empty());
+        // M1 deliberately has no trusted never-allocated admission capability.
+        assert_eq!(schema::validate_records(&db), Err(Error::InvalidRecord));
+        assert_eq!(schema::records(&db).unwrap(), before);
+        assert_eq!(db.total_changes(), 0);
     }
 }
 #[test]
@@ -252,10 +262,10 @@ fn corrupt_v2_allocation_refuses_reopen_execution_and_candidate_verification() {
     }
 }
 #[test]
-fn empty_v2_with_tombstones_still_requires_the_allocated_watermark() {
+fn empty_v2_history_cannot_be_reset_even_after_tombstones_are_erased() {
     for shape in SHAPES {
-        for seq in [None, Some(1)] {
-            let w = ready(shape);
+        for (seq, erase_history) in [(None, false), (Some(1), false), (None, true)] {
+            let mut w = ready(shape);
             let mut writer = w.writer().unwrap();
             for id in 1..=10 {
                 let scope = match id {
@@ -291,13 +301,24 @@ fn empty_v2_with_tombstones_still_requires_the_allocated_watermark() {
                     .execute_batch("DELETE FROM sqlite_sequence")
                     .unwrap();
             }
+            if erase_history {
+                // Remove all in-database allocation evidence, including the
+                // receipts referring to deleted IDs, to isolate the missing
+                // watermark rule from independent metadata consistency checks.
+                writer.db.execute_batch("DELETE FROM acp_revisions WHERE kind='preference'; DELETE FROM acp_receipts; UPDATE acp_profile SET commit_sequence=0").unwrap();
+            }
             let before = dump(&writer.db);
+            let bytes = std::fs::read(w.path(Role::Candidate)).unwrap();
             assert_eq!(w.writer().unwrap_err(), Error::InvalidRecord);
             assert_eq!(
                 writer.execute(&request(&w, "reuse-deleted-id", suggest(Scope::Global))),
                 Err(Error::InvalidRecord)
             );
             assert_eq!(dump(&writer.db), before);
+            assert_eq!(std::fs::read(w.path(Role::Candidate)).unwrap(), bytes);
+            drop(writer);
+            assert_eq!(w.verify_candidate(), Err(Error::InvalidRecord));
+            assert_eq!(std::fs::read(w.path(Role::Candidate)).unwrap(), bytes);
             w.verify_prior().unwrap();
         }
     }

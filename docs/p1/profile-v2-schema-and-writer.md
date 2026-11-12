@@ -98,8 +98,11 @@ Preference IDs are positive signed-64-bit SQLite integers, never reused after de
 `sqlite_sequence` is preserved and must cover live and tombstoned allocated IDs.
 Validate its complete contents: only one row named `preferences` is permitted,
 with a stored SQLite INTEGER `seq > 0` and `seq >= max(live preference ID)`.
-No sequence row is permitted only for an empty, never-allocated table; v2 also
-requires no preference tombstones in that case. Duplicate rows, unexpected names,
+Missing sequence history is always refused in M1, including for an empty table
+with no tombstones. Database emptiness cannot distinguish never-allocated history
+from erased history, and M1 has no independent trusted admission proof for that
+exception. A genuinely never-inserted table is therefore also unsupported; do not
+invent/reset a watermark to admit it. Duplicate rows, unexpected names,
 NULL/non-integer values and zero/negative watermarks are invalid records, refused
 before backup/candidate creation or any writer command. An empty table with a
 positive retained watermark remains valid and its next ID must exceed that watermark.

@@ -268,8 +268,9 @@ pub(crate) fn validate_records(db: &Connection) -> Result<i64> {
         .map_err(|_| Error::InvalidRecord)?;
     // sqlite_sequence has neither column affinity nor a unique name constraint.
     // A scalar/coerced lookup can hide duplicate rows or a reset allocation ID.
+    // Empty rows do not prove a never-allocated table: erased allocation history
+    // looks identical. M1 has no independent provenance to admit that exception.
     match rows[3].as_slice() {
-        [] if max == 0 => Ok(0),
         [row] => match (&row[0], &row[1]) {
             (Value::Text(name), Value::Integer(seq))
                 if name == "preferences" && *seq > 0 && *seq >= max =>
