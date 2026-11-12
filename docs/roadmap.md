@@ -84,9 +84,9 @@ merged at `d6168e0ca5bff150942711b8f398516e03769703` and the owner separately
 accepted ADR-0005 on 2026-11-12. [P1-M1 / Issue #38](https://github.com/ybakiame/agent-control-plane/issues/38)
 is complete: [PR #39](https://github.com/ybakiame/agent-control-plane/pull/39)
 merged at `3083c407d02c34bbbfef402f7ae57bb7eda248d1`. [P1-M2 / Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40)
-is now the active Stage 4 implementation task, restricted to disposable synthetic
-profiles. M3–M5 and N–R remain gated briefs; no real-profile access, production
-write activation, catalog cutover or rollout is authorized. Dependencies avoid
+is now the active Stage 4 implementation task, restricted to disposable validation
+profiles. Local prototype state may be deleted; production write activation is not
+authorized. M3–M5 and N–R remain gated briefs. Dependencies avoid
 premature migration, onboarding, review UI or snapshots.
 
 - [x] L0: [v1 domain/selector/conflict contract](p1/typed-context-v1.md) frozen
@@ -127,7 +127,7 @@ commitment. See the [M1 evidence report](evaluation/p1-m1-synthetic-writer.md).
 [P1-M2 / Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40)
 is re-scoped to Rust-only runtime cutover: explicit v2 profile creation, strict
 v2 reader adoption, daemon-owned operator write IPC, native CLI/NSH integration,
-and removal of Python runtime/tests/dependencies plus active v0/v1 paths. M2 uses disposable validation fixtures. Existing local Python-prototype files and
+and removal of Python runtime/tests/dependencies plus active legacy paths. M2 uses disposable validation fixtures. Existing local Python-prototype files and
 old validation profiles may be deleted during a deliberate ACP development reset;
 no backward-compatibility or retention guarantee is required. Production writes are
 not activated.
