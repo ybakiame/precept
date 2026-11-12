@@ -7,8 +7,8 @@ production readiness. Current completed engineering baseline: PR #37 merged at
 `3083c407d02c34bbbfef402f7ae57bb7eda248d1` (P1-M1 synthetic-only Rust writer);
 ADR-0004, ADR-0005 and ADR-0006 are Accepted. [P1-M2 / Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40)
 is active for Rust-only runtime cutover and Python prototype retirement under
-[ADR-0006](adr/0006-rust-only-runtime.md). M2 remains synthetic-only; no existing
-profile access or production write activation is authorized.
+[ADR-0006](adr/0006-rust-only-runtime.md). M2 remains validation-only; local prototype state may be deleted, and no production
+write activation is authorized.
 P1-K interoperability evidence is scoped separately below.
 
 ## Stage 1 — established engineering baseline (P0 through P1-I)
@@ -127,9 +127,10 @@ commitment. See the [M1 evidence report](evaluation/p1-m1-synthetic-writer.md).
 [P1-M2 / Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40)
 is re-scoped to Rust-only runtime cutover: explicit v2 profile creation, strict
 v2 reader adoption, daemon-owned operator write IPC, native CLI/NSH integration,
-and removal of Python runtime/tests/dependencies plus active v0/v1 paths. M2 uses
-fresh synthetic v2 fixtures only. It does not access existing local profiles or
-activate production writes.
+and removal of Python runtime/tests/dependencies plus active v0/v1 paths. M2 uses disposable validation fixtures. Existing local Python-prototype files and
+old validation profiles may be deleted during a deliberate ACP development reset;
+no backward-compatibility or retention guarantee is required. Production writes are
+not activated.
 
 P1-M3 becomes Rust-to-Rust v2 profile lifecycle and recovery; it has no Python
 owner handoff, v2-to-v1 projection, or schema migration. P1-M4 completes the
