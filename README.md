@@ -2,7 +2,7 @@
 
 **A local-first, developer-centric control plane for engineering context, project rules and continuity across coding agents and harnesses.** Make the right context available to the right agent, explain why it applies, preserve it across Handoffs, and distinguish reported work from observed or independently verified evidence. See the [product charter](docs/product.md).
 
-> Implementation maturity: `0.1.0a0` engineering prototype. The product charter and architecture decisions are documented under [P1-J / Issue #30](https://github.com/ybakiame/agent-control-plane/issues/30). Rust is the domain/core and daemon foundation; [NSH Rust is the accepted single Desktop/TUI UI direction](docs/adr/0003-ui-framework-selection.md). Python 3.11+ remains the **stdlib-only** persistent profile/Handoff write path. Formalizing the product does not implement structured contracts, generalized suggestions/review UI, frozen constraints or an evidence chain. No production readiness, OS sandbox or universal vendor compatibility is claimed.
+> Implementation maturity: `0.1.0a0` engineering prototype. [ADR-0006](docs/adr/0006-rust-only-runtime.md) is accepted: Rust is the only target product runtime, Profile v2 is the only supported target schema, and the Python P0 prototype is scheduled for removal in [P1-M2 / Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40). The current main tree has not completed that cutover; do not treat the remaining Python commands or v0/v1 readers as supported product interfaces. [NSH Rust is the accepted single Desktop/TUI UI direction](docs/adr/0003-ui-framework-selection.md). No production readiness, OS sandbox or universal vendor compatibility is claimed.
 
 ## Implementation and support status
 
@@ -30,86 +30,48 @@ after product formalization. See [source-specific evidence](docs/evaluation/p1-i
 - A task can change harness without losing objective, revision, next action, and *which checks actually ran*.
 - MCP provides scoped, inspectable context; it cannot silently change profile data in P0.
 
-## Quickstart
+## Runtime status
 
-```bash
-# Python >= 3.11; no third-party runtime dependencies
-python -m pip install --no-deps -e .
-
-# Register an existing checked-out project
-acpctl project add lanpath /absolute/path/to/lanpath
-
-# Explicitly suggest, review, then confirm a preference
-acpctl preference suggest --key interaction.language --value zh-CN --source 'user-confirmed-request'
-acpctl preference list --all
-acpctl preference confirm 1
-
-# Inspect effective context (no project document content by default)
-acpctl context lanpath
-acpctl context lanpath --include-documents
-
-# Create handoff from the CURRENT project HEAD/branch; statuses must be honest
-acpctl handoff put --project lanpath --task-id fix-001 \
-  --objective 'Investigate startup issue' --next-action 'Run selected tests on target platform' \
-  --validation-json '[{"check":"Android device","status":"NOT_RUN"}]'
-acpctl handoff get --project lanpath --task-id fix-001
-
-# Run a project-scoped read-only MCP stdio process (e.g. as a harness subprocess)
-acpctl mcp --project lanpath
-```
-
-### Run without installation
-
-```bash
-PYTHONPATH=src python -m agent_control_plane.cli project list
-PYTHONPATH=src python -m unittest discover -s tests -v
-```
-
-### MCP client configuration (illustrative)
-
-Point a compatible coding agent's MCP **stdio** server configuration to:
-
-```json
-{
-  "command": "acpctl",
-  "args": ["mcp", "--project", "lanpath"]
-}
-```
-
-The actual configuration file and syntax are harness-specific. The server reads newline-delimited JSON-RPC on standard input and writes only JSON-RPC on standard output. Use a **separate configured process for each project**: an agent attached to `lanpath` cannot request another project's context through this server. This is a cooperative local process boundary; it does not sandbox an agent that already has direct disk access.
-
-**Implemented tools**: `get_effective_context(include_documents?: boolean)`, `get_handoff(task_id: string)`. There are no MCP mutation tools, background scanning, web APIs, or automatic habit-learning hooks.
-
-The proof-of-concept supports MCP 2025-11-25 legacy initialization and basic 2026-07-28 stateless metadata on stdio. It does **not** claim complete MCP conformance, HTTP transport, authentication, sampling, resources, prompts, task augmentation, or ACP agent control through MCP. See [protocol limitations](docs/interfaces.md).
+There is no supported end-user installation or quickstart until the Rust-only
+runtime cutover is complete. The Python CLI/MCP examples from the P0 prototype are
+intentionally no longer documented as product entrypoints. P1-M2 will deliver
+explicit Profile v2 creation, native operator commands, daemon-owned writes, and
+the Rust MCP/NSH integration. See [ADR-0006](docs/adr/0006-rust-only-runtime.md)
+and [Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40).
 
 ## Data / trust rules
 
-- SQLite data directory defaults to `AGENT_CP_HOME`, otherwise platform-local user state (`XDG_STATE_HOME` or `~/.local/state/agent-control-plane`; Windows `LOCALAPPDATA`).
-- All preference proposals start as **suggested** and are **not** sent to an agent. `confirm` requires deliberate CLI operator action. Confirmed preferences can be deprecated or deleted.
+- The accepted target uses an explicitly operator-created, user-local Profile v2. Startup does not scan for, adopt, migrate, reset, or overwrite existing databases.
+- All preference proposals start as **suggested**. Confirmation requires a deliberate operator action on the exact record/revision; agents and MCP cannot confirm or mutate profile data.
 - Project-scoped confirmed values mask global confirmed values with the same key. **Neither overrides the project's rules.**
-- Project files are re-read live when requested; default output includes only allowlisted document paths, sizes and hashes. `--include-documents` explicitly includes small allowlisted files. Symlinks escaping the registered checkout are blocked.
-- A handoff is **evidence about past work**, not proof a check passed on the current HEAD. Resuming checks git revision/branch/worktree changes and reports warnings. New handoffs also include a bounded worktree fingerprint to detect uncommitted drift; older snapshots remain readable and explicitly unverified.
+- Project files are re-read live when requested; default output includes only allowlisted document paths, sizes and hashes. Document contents require explicit opt-in. Symlinks escaping the registered checkout are blocked.
+- A Handoff is historical continuity, not proof that a check passed on the current HEAD. Resume compares revision, branch, worktree and bounded fingerprint state.
 - Do not store secrets, credentials, personal device identifiers, raw transcripts, private customer data, or unredacted logs. MCP clients run under the user account and can read exposed data; only attach to trusted local harnesses.
 
 ## Repository structure
 
 ```text
-src/agent_control_plane/
-  store.py       # SQLite, statuses, project-scoped data
-  context.py     # live project facts / git / resolver
-  mcp.py         # read-only MCP stdio
-  cli.py         # operator-controlled writes and inspection
-tests/           # stdlib unittest integration / security checks
-crates/          # Rust domain/store, daemon/IPC/MCP, operator/session and rehearsal
-spikes/p1-e/shared/ # framework-neutral typed Desktop/TUI presentation
-spikes/p1-e/nsh/    # implemented NSH Rust UI; historical comparison paths remain
-docs/            # architecture, interfaces, risks, roadmap, UI ADR
+crates/
+  acp-core/       # domain and typed context resolution
+  acp-store/      # strict read-only Profile v2 access
+  acp-write/      # private transactional writer; daemon-only
+  acp-daemon/     # local service and sole write owner
+  acp-ipc/        # versioned local capabilities and transport
+  acp-query/      # native operator CLI
+  acp-mcp/        # project-bound read-only MCP stdio
+  acp-session/    # optional native ACP session supervisor
+spikes/p1-e/      # shared NSH Desktop/TUI presentation
+docs/             # architecture, ADRs, interfaces, risks and roadmap
 ```
+
+The Python P0 package and its tests remain in the current tree only until P1-M2
+removes them. They are not part of the target repository structure or supported
+runtime.
 
 ## Design and roadmap
 
 - [Product charter and capability boundaries](docs/product.md)
-- [Domain, human review and evidence trust ADR](docs/adr/0004-product-domain-trust.md)
+- [Domain, human review and evidence trust ADR](docs/adr/0004-product-domain-trust.md)\n- [ADR-0006: Rust-only runtime and Python prototype retirement](docs/adr/0006-rust-only-runtime.md)
 - [Product UI information architecture](docs/product-ui.md)
 - [agent-control design-reference assessment](docs/agent-control-assessment.md)
 - [ADR-0003: accepted NSH Rust Desktop/TUI direction and limits](docs/adr/0003-ui-framework-selection.md)
@@ -127,8 +89,14 @@ The standalone [agent-development-protocol](https://github.com/ybakiame/agent-de
 
 ## Test status
 
-`PYTHONPATH=src python -m unittest discover -s tests -v` runs the Python runtime/write/reference/local-runner compatibility checks. Rust core and real IPC/MCP process tests cover the migrated negative boundaries; see the [migration matrix](docs/p1/rust-test-migration.md). [P1-I evidence](docs/evaluation/p1-i-context-bridge.md) records later local Windows/WSLg checks and exact source provenance. These checks establish their documented scope, not every harness/version, complete MCP conformance, production security or universal platform support. J changes documentation only and makes no new client/device test claim.
-
+M1's [synthetic Rust writer evidence](docs/evaluation/p1-m1-synthetic-writer.md)
+records the exact v2 transaction, CAS/receipt, strict-transition and historical
+preservation checks for PR #39. Rust core and real IPC/MCP process tests cover the
+current Rust boundaries. The [Python-to-Rust migration matrix](docs/p1/rust-test-migration.md)
+is a historical report, not a commitment to retain Python. P1-M2 removes the Python
+runtime/tests and establishes the Rust-only v2 acceptance matrix. Local evidence
+does not imply every harness/version, complete MCP conformance, production security
+or universal platform support.
 
 ## Optional native agent session prototype
 
@@ -137,8 +105,7 @@ through the NSH Desktop/TUI Sessions panel. Start requires operator confirmation
 prompts, single-request permission decisions, cancel and stop are separate actions.
 Closing a UI does not stop the daemon-owned child. Default execution is disabled;
 no shell, automatic startup, persistent resume or Windows→WSL execution bridge.
-The agent runs with your user privileges, without an OS sandbox. Python profile
-writes and the two-tool read-only MCP stay unchanged. See
+The agent runs with your user privileges, without an OS sandbox. Profile write IPC is not yet enabled; P1-M2 delivers the Rust-only operator write path. The two-tool read-only MCP remains unchanged. See
 [configuration and boundaries](docs/p1/agent-session-runtime.md) and
 [local evidence / interoperability limits](docs/evaluation/p1-g-local-agent-session.md).
 
