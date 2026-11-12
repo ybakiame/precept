@@ -1,5 +1,10 @@
 # P1-M1 — synthetic profile v2 writer evidence
 
+> Historical M1 evidence, not Profile v1 acceptance. ADR-0006 retires the v2
+> migration/rehearsal implementation. Source links in this report refer to the
+> [preserved M1 tree](https://github.com/ybakiame/agent-control-plane/tree/8eaef4d39169736284c1784d7b6b7f76620b0273)
+> where files removed by M2 remain available. Original results below are unchanged.
+
 Authority: [Issue #38](https://github.com/ybakiame/agent-control-plane/issues/38),
 Accepted [ADR-0005](../adr/0005-local-storage-and-write-ownership.md) and
 [ADR-0004](../adr/0004-product-domain-trust.md). Base latest main

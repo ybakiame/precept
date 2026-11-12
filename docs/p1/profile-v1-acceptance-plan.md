@@ -1,6 +1,6 @@
 # P1-M2 — Profile v1 runtime acceptance plan
 
-- Status: Stage 1 storage plan confirmed by owner 2026-11-12; implementation/results pending. Later M2 boundaries remain separately gated.
+- Status: Stage 1 storage plan confirmed by owner 2026-11-12; implemented candidate awaits human review. [Exact-source local results](../evaluation/p1-m2-s1-storage.md) record what ran. Later M2 boundaries remain separately gated.
 - Contract: [Rust-native Profile v1 and runtime contract](profile-v1-runtime-contract.md).
 - Issue: [#40](https://github.com/ybakiame/agent-control-plane/issues/40).
 - First implementation slice: [#43 — Profile v1 storage foundation](https://github.com/ybakiame/agent-control-plane/issues/43).

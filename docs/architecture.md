@@ -31,11 +31,11 @@ disposable validation-era implementation details scheduled for removal by [Issue
 | Legacy Python P0 | Historical prototype currently present before M2; scheduled for removal under ADR-0006 | Any new product feature, compatibility path, or release dependency |
 | `crates/acp-core` | Legacy confirmed preference/Handoff resolver plus P1-L pure typed selector/conflict explanation; bounded document/fingerprint semantics through adapters | SQLite connections, UI, process execution, protocol transport or authorization grants |
 | `crates/acp-store` | Target: explicit-path, strict read-only adapter for the fresh Rust-native Profile v1 | Writes, schema migration, legacy-format compatibility |
-| `crates/acp-rehearsal` | Synthetic migration/recovery experiments | Real-profile migration rollout |
 | `crates/acp-ipc`, `acp-daemon` | Local capability/peer checks, scoped reads, live repository adapter, lease authority | TCP listener or caller-selected wider scope |
 | `crates/acp-session` | Optional configured native ACP child lifecycle and bounded observations | OS sandbox, arbitrary shell execution or credential login |
 | `crates/acp-mcp` | Read-only stdio bridge to project-bound IPC | Profile/task/session mutation |
-| `crates/acp-write` | M1 historical synthetic v2 writer; M2 implements the daemon-only Rust-native v1 writer | Public arbitrary-path opens, direct UI/CLI writes, generic SQL |\n| `crates/acp-query` | Native operator reads/session controls; M2 adds typed write requests through daemon IPC | Direct database access or a second writer |
+| `crates/acp-write` | Stage 1 private fresh-v1 creation and typed transactions; no production caller yet | Existing-profile adoption, direct UI/CLI writes, generic SQL |
+| `crates/acp-query` | Native operator reads/session controls; later M2 adds typed write requests through daemon IPC | Direct database access or a second writer |
 | `spikes/p1-e/shared`, `spikes/p1-e/nsh` | Shared typed presentation and NSH Desktop/TUI surfaces | Direct database access, duplicate resolution logic or autonomous daemon startup |
 
 The paths remain as implemented; accepting NSH does not move crates or remove
@@ -97,6 +97,14 @@ or M1 synthetic v2; no conversion is required. It remains validation-only: dispo
 
 Initial technical revisions/receipts are not the full human ReviewDecision history,
 which remains P1-O work.
+
+Issue #43 implements only the [frozen Profile v1 storage contract](p1/profile-v1-runtime-contract.md):
+fresh creation, strict read-only access, seven private commands and current-schema
+tests. `acp-rehearsal` and M1 migration APIs are removed from the workspace; their
+evidence remains historical. No daemon write entrypoint, ownership lease, grant,
+epoch advancement, IPC/UI change or Python retirement is added by Stage 1.
+The [local evidence](evaluation/p1-m2-s1-storage.md) distinguishes this slice from
+completion of the full Rust-only runtime.
 
 ## Context resolution
 

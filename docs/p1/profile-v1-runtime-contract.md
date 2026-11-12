@@ -313,8 +313,9 @@ These points must be resolved before the corresponding implementation, not guess
 
 The current workspace already uses `windows-sys` 0.61 for current-user security
 and filesystem APIs and `libc` on Unix. Reusing those existing dependency families
-is a review proposal, not a new dependency or proof that the profile-file ACL and
-publication requirements are implemented. No platform primitive is accepted solely
+is the confirmed Stage 1 implementation choice; package versions are unchanged.
+Their presence alone is not proof that profile-file ACL and publication checks
+passed. No platform primitive is accepted solely
 because the historical fixture helper or IPC transport used it.
 
 - Keep any newly discovered product fields or workflows out of v1 until their source, owner and acceptance need are demonstrated.
