@@ -1,4 +1,5 @@
-//! Private fresh Profile v1 storage. No production caller, owner lease or IPC.
+//! Private Profile v1 storage. The daemon alone enables guarded existing-v1
+//! attachment through the native lease owner; clients never receive a Writer.
 mod command;
 mod files;
 #[cfg(feature = "daemon-owner")]

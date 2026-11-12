@@ -10,6 +10,22 @@ use std::{
 };
 use subtle::ConstantTimeEq;
 
+pub(crate) fn binding_valid(access: &Access) -> bool {
+    match access {
+        Access::OperatorWrite {
+            profile_id,
+            generation,
+            owner_epoch,
+        } => {
+            [profile_id, generation].iter().all(|v| {
+                v.len() == 32
+                    && v.bytes()
+                        .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+            }) && *owner_epoch > 0
+        }
+        _ => false,
+    }
+}
 pub struct Grant {
     credential: Credential,
     active: AtomicBool,
@@ -36,6 +52,9 @@ impl Registry {
     }
     /// Only caller holding the process RuntimeLease may clean a stale token.
     pub fn cleanup_stale(&self, location: &Location) -> Result<()> {
+        if self.0.lock().unwrap().is_some() {
+            return Err(Error::Busy);
+        }
         let path = location.root()?.join("operator-write.cap");
         if fs::symlink_metadata(&path).is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound) {
             return Ok(());
@@ -51,7 +70,7 @@ impl Registry {
         if current.is_some() {
             return Err(Error::Busy);
         }
-        if !matches!(access, Access::OperatorWrite { .. }) {
+        if !binding_valid(&access) {
             return Err(Error::Unauthorized);
         }
         let path = location.root()?.join("operator-write.cap");
@@ -106,5 +125,77 @@ impl Registry {
             .ok_or(Error::Unauthorized)?;
         g.check()?;
         Ok(g.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    fn access() -> Access {
+        Access::OperatorWrite {
+            profile_id: "0".repeat(32),
+            generation: "1".repeat(32),
+            owner_epoch: 1,
+        }
+    }
+    #[test]
+    fn write_envelope_cannot_be_control_agent_or_session_and_cleanup_is_matching_only() {
+        let t = tempfile::tempdir().unwrap();
+        let loc = Location {
+            runtime_dir: t.path().join("run"),
+            endpoint: "unused".into(),
+        };
+        let _runtime = crate::RuntimeLease::acquire(&loc).unwrap();
+        let registry = Registry::default();
+        assert!(matches!(
+            registry.issue(&loc, Access::Operator),
+            Err(Error::Unauthorized)
+        ));
+        let grant = registry.issue(&loc, access()).unwrap();
+        assert_eq!(registry.cleanup_stale(&loc), Err(Error::Busy));
+        let path = loc.runtime_dir.join("operator-write.cap");
+        let c = crate::load_credential(&loc, &path).unwrap();
+        let raw = serde_json::to_value(&c).unwrap();
+        for change in [
+            json!({"format":1}),
+            json!({"format":2,"binding":{"session":"s","agent":"a"}}),
+            json!({"access":{"role":"agent","project":"alpha"}}),
+            json!({"access":{"role":"operator"}}),
+            json!({"access":{"role":"operator_write","profile_id":"bad","generation":"1".repeat(32),"owner_epoch":1}}),
+            json!({"access":{"role":"operator_write","profile_id":"0".repeat(32),"generation":"1".repeat(32),"owner_epoch":0}}),
+        ] {
+            let mut invalid = raw.clone();
+            for (k, v) in change.as_object().unwrap() {
+                invalid[k] = v.clone();
+            }
+            let p = loc.runtime_dir.join("malformed.cap");
+            let mut file = transport::new_private(&p).unwrap();
+            file.write_all(invalid.to_string().as_bytes()).unwrap();
+            drop(file);
+            assert!(matches!(
+                crate::load_credential(&loc, &p),
+                Err(Error::Unauthorized)
+            ));
+            fs::remove_file(p).unwrap();
+        }
+        registry.close();
+        assert_eq!(grant.check(), Err(Error::Unauthorized));
+        let other = loc.runtime_dir.join("different.cap");
+        let mut file = transport::new_private(&other).unwrap();
+        let mut changed = raw;
+        changed["token"] = json!(vec![9; 32]);
+        file.write_all(changed.to_string().as_bytes()).unwrap();
+        drop(file);
+        fs::remove_file(&path).unwrap();
+        fs::rename(&other, &path).unwrap();
+        let bytes = fs::read(&path).unwrap();
+        assert_eq!(registry.finish_revoke(&loc), Err(Error::UnsafeRuntime));
+        assert!(
+            fs::read(&path).unwrap() == bytes,
+            "unrelated credential must remain unchanged"
+        );
+        Registry::default().cleanup_stale(&loc).unwrap();
+        assert!(!path.exists());
     }
 }

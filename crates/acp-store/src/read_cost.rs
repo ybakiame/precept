@@ -1,5 +1,6 @@
-//! Measurement only; follows Service::query's existing storage call sequence.
-//! Does not change the daemon, IPC, reader snapshots or verification policy.
+//! S1 storage/resolver baseline measurement, not S2 daemon latency.
+//! S2 adds selection/binding and root admission outside this sequence. This
+//! fixture does not bypass or change those product checks or cache verification.
 use super::*;
 use acp_core::{ContextResolver, Worktree, WorktreeInspector, documents::FileDocuments};
 use std::time::Instant;
@@ -40,7 +41,7 @@ fn context_query(path: &Path, session_bound: bool) -> serde_json::Value {
 }
 
 #[test]
-fn context_query_storage_sequence_counts_full_verification() {
+fn s1_context_storage_sequence_counts_full_verification() {
     let t = tempfile::tempdir().unwrap();
     let path = support::fixture(&t.path().join("fixture"));
     for (session, expected) in [(false, 5), (true, 6)] {

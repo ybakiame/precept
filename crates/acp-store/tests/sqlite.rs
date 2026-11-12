@@ -8,6 +8,29 @@ fn fresh() -> (tempfile::TempDir, std::path::PathBuf) {
     (t, p)
 }
 #[test]
+fn sqlite_opened_file_matches_native_guard_not_an_identical_copy() {
+    let (_t, p) = fresh();
+    let copy = p.with_extension("copy");
+    fs::copy(&p, &copy).unwrap();
+    let original = SqliteStore::open(&p).unwrap();
+    let same = fs::File::open(&p).unwrap();
+    let different = fs::File::open(&copy).unwrap();
+    assert_eq!(
+        original.metadata().unwrap().binding,
+        SqliteStore::open(&copy)
+            .unwrap()
+            .metadata()
+            .unwrap()
+            .binding
+    );
+    original.check_open_file(&same).unwrap();
+    assert_eq!(original.check_open_file(&different), Err(Error::OpenFailed));
+    assert_eq!(
+        SqliteStore::open(&copy).unwrap().check_open_file(&same),
+        Err(Error::OpenFailed)
+    );
+}
+#[test]
 fn exact_v1_reads_are_scoped_readonly_and_expose_separate_revisions() {
     let (_t, p) = fresh();
     let before = fs::read(&p).unwrap();

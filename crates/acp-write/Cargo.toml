@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.99"
 license = "Apache-2.0"
-description = "Private fresh Rust-native Profile v1 transactions; no runtime caller yet"
+description = "Private Profile v1 transactions and daemon-owned native writer lease"
 
 [features]
 daemon-owner = []

@@ -249,21 +249,7 @@ pub fn load_credential(location: &Location, path: &Path) -> Result<Credential> {
     let c: Credential = serde_json::from_slice(&raw).map_err(|_| Error::Unauthorized)?;
     let valid_format = match (&c.access, c.format, &c.binding) {
         (Access::Operator | Access::Agent { .. }, 1, None) => true,
-        (
-            Access::OperatorWrite {
-                profile_id,
-                generation,
-                owner_epoch,
-            },
-            3,
-            None,
-        ) => {
-            [profile_id, generation].iter().all(|v| {
-                v.len() == 32
-                    && v.bytes()
-                        .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
-            }) && *owner_epoch > 0
-        }
+        (access, 3, None) => write_grant::binding_valid(access),
         (Access::Agent { .. }, 2, Some(b)) => valid_project(&b.session) && valid_project(&b.agent),
         _ => false,
     };

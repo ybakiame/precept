@@ -83,6 +83,9 @@ impl Selected {
         self.reader()?;
         let mut db = connect(&self.profile.path, false)?;
         acp_store::native::check(&db, &self.guard)?;
+        if files::check_file(&lock_path)? != lock_identity {
+            return Err(Error::UnsafeWorkspace);
+        }
         let tx = db
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(crate::sql_error)?;

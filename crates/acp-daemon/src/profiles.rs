@@ -290,7 +290,12 @@ impl Profiles {
                 if s.selected.is_some() {
                     return Err(Error::RestartRequired);
                 }
-                if !p.path.is_absolute() || p.path.to_str().is_none() {
+                if !p.path.is_absolute()
+                    || !p
+                        .path
+                        .to_str()
+                        .is_some_and(|v| v.len() <= 32768 && !v.contains('\0'))
+                {
                     return Err(Error::InvalidRequest);
                 }
                 // Validate controls before the creator can publish anything.

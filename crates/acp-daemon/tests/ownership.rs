@@ -54,6 +54,16 @@ fn unselected_bootstrap_strict_selection_and_no_implicit_grant() {
         f.daemon.control("project.list", json!({})),
         Err(Error::Unavailable)
     );
+    let agent = f.daemon.credential("agent-alpha.cap");
+    assert_eq!(
+        f.daemon.call(&agent, "context.get", json!({})),
+        Err(Error::Unavailable)
+    );
+    assert_eq!(
+        f.daemon
+            .call(&agent, "profile.create", json!({"path":f.db})),
+        Err(Error::Unauthorized)
+    );
     assert_eq!(
         f.daemon.control(
             "session.list",
@@ -343,6 +353,28 @@ fn distinct_write_role_revokes_established_peers_and_stale_binding() {
     let mut forged = agent.clone();
     forged.access = write.access.clone();
     assert!(matches!(f.daemon.client(&forged), Err(Error::Unauthorized)));
+    let mut bridge = std::process::Command::new(exe("acp-mcp"))
+        .arg("--runtime-dir")
+        .arg(&f.daemon.location.runtime_dir)
+        .arg("--endpoint")
+        .arg(&f.daemon.location.endpoint)
+        .args(["--project", "alpha", "--capability-file"])
+        .arg(f.daemon.location.runtime_dir.join("operator-write.cap"))
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let status = loop {
+        if let Some(status) = bridge.try_wait().unwrap() {
+            break status;
+        }
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(10));
+    };
+    assert!(!status.success());
+    assert_eq!(logical(&f.db), before);
     f.daemon
         .control("profile.write.disable", json!({}))
         .unwrap();
@@ -386,11 +418,14 @@ fn independent_daemons_lease_contention_process_kill_and_restart() {
     let b = f.daemon.enable();
     f.register(&b, "alpha");
     let old = f.daemon.credential("operator-write.cap");
-    let alias =
-        f.db.parent()
-            .unwrap()
-            .join("")
-            .join(f.db.file_name().unwrap());
+    #[cfg(unix)]
+    let alias = std::path::PathBuf::from(format!(
+        "{}/./profile.sqlite3",
+        f.db.parent().unwrap().to_str().unwrap()
+    ));
+    #[cfg(windows)]
+    let alias = f.db.canonicalize().unwrap();
+    assert_ne!(alias.as_os_str(), f.db.as_os_str());
     let mut other = Daemon::launch(f.temp.path(), "run-b", Some(&alias), false);
     other.ready();
     let before = logical(&f.db);
@@ -453,7 +488,14 @@ fn selected_file_and_lease_substitution_refuse_valid_private_replacements() {
                 .unwrap()
         };
         let copied = f.db.parent().unwrap().join("replacement");
-        private_bytes(&copied, &fs::read(&original).unwrap());
+        // Windows byte-range locking refuses reading the held empty lease.
+        // Its replacement is deliberately empty; only DB copies need contents.
+        let bytes = if replace_db {
+            fs::read(&original).unwrap()
+        } else {
+            Vec::new()
+        };
+        private_bytes(&copied, &bytes);
         if replace_db {
             let copy = acp_store::SqliteStore::open(&copied)
                 .unwrap()
@@ -508,7 +550,10 @@ fn missing_legacy_and_unsafe_startup_never_create_or_repair() {
             thread::sleep(Duration::from_millis(10));
         }
         assert!(!d.location.runtime_dir.join("operator.cap").exists());
-        assert_eq!(fs::read(path).ok(), before);
+        assert!(
+            fs::read(path).ok() == before,
+            "refused profile must remain unchanged"
+        );
     }
     // Removing only our hardlink restores the original file's safe link count.
     fs::remove_file(parent.join("hardlink")).unwrap();
@@ -722,4 +767,150 @@ fn real_fake_session_mcp_v2_read_only_and_established_peer_revocation() {
     assert!(!cap.exists());
     // Operator write authority is independent of the revoked session context.
     f.daemon.mutate(&b, "still-authorized", suggest()).unwrap();
+}
+
+#[test]
+fn failed_grant_publication_and_epoch_overflow_never_activate_a_writer() {
+    let f = Fixture::created(false);
+    let path = f.daemon.location.runtime_dir.join("operator-write.cap");
+    private_bytes(&path, b"synthetic collision");
+    let info = f.daemon.control("profile.info", json!({})).unwrap();
+    let params = json!({"profile_id":info["binding"]["profile_id"],"generation":info["binding"]["generation"],"confirm":true});
+    assert_eq!(
+        f.daemon.control("profile.write.enable", params),
+        Err(Error::UnsafeRuntime)
+    );
+    assert_eq!(fs::read(&path).unwrap(), b"synthetic collision");
+    let info = f.daemon.control("profile.info", json!({})).unwrap();
+    assert_eq!(info["write_enabled"], false);
+    assert_eq!(info["binding"]["owner_epoch"], 1);
+    assert_eq!(
+        acp_store::SqliteStore::open(&f.db)
+            .unwrap()
+            .metadata()
+            .unwrap()
+            .commit_sequence,
+        0
+    );
+    fs::remove_file(path).unwrap();
+    assert_eq!(f.daemon.enable().owner_epoch, 2);
+    f.daemon
+        .control("profile.write.disable", json!({}))
+        .unwrap();
+    let db = rusqlite::Connection::open(&f.db).unwrap();
+    db.execute("UPDATE acp_profile SET owner_epoch=?1", [i64::MAX])
+        .unwrap();
+    drop(db);
+    let before = logical(&f.db);
+    let info = f.daemon.control("profile.info", json!({})).unwrap();
+    assert_eq!(f.daemon.control("profile.write.enable",json!({"profile_id":info["binding"]["profile_id"],"generation":info["binding"]["generation"],"confirm":true})),Err(Error::Capacity));
+    assert_eq!(logical(&f.db), before);
+    assert!(
+        !f.daemon
+            .location
+            .runtime_dir
+            .join("operator-write.cap")
+            .exists()
+    );
+}
+
+#[test]
+fn all_read_roles_keep_the_independent_registered_root_binding() {
+    let f = Fixture::created(false);
+    let b = f.daemon.enable();
+    f.register(&b, "alpha");
+    let agent = f.daemon.credential("agent-alpha.cap");
+    let db = rusqlite::Connection::open(&f.db).unwrap();
+    db.execute(
+        "UPDATE projects SET root=?1 WHERE name='alpha'",
+        [f.temp
+            .path()
+            .join("beta")
+            .canonicalize()
+            .unwrap()
+            .to_str()
+            .unwrap()],
+    )
+    .unwrap();
+    drop(db);
+    acp_store::SqliteStore::open(&f.db).unwrap(); // Structurally valid, but root differs.
+    let before = logical(&f.db);
+    assert_eq!(
+        f.daemon.control("context.get", json!({"project":"alpha"})),
+        Err(Error::UnsafeRuntime)
+    );
+    assert_eq!(
+        f.daemon.call(&agent, "context.get", json!({})),
+        Err(Error::UnsafeRuntime)
+    );
+    assert_eq!(logical(&f.db), before);
+}
+
+#[test]
+fn unsafe_existing_lease_files_fail_before_epoch_admission() {
+    let f = Fixture::created(false);
+    f.daemon.enable();
+    f.daemon
+        .control("profile.write.disable", json!({}))
+        .unwrap();
+    let lock = fs::read_dir(f.db.parent().unwrap())
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| {
+            p.file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with(".acp-writer-")
+        })
+        .unwrap();
+    let before = logical(&f.db);
+    let info = f.daemon.control("profile.info", json!({})).unwrap();
+    let params = json!({"profile_id":info["binding"]["profile_id"],"generation":info["binding"]["generation"],"confirm":true});
+    let linked = lock.with_extension("linked");
+    fs::hard_link(&lock, &linked).unwrap();
+    assert_eq!(
+        f.daemon.control("profile.write.enable", params.clone()),
+        Err(Error::UnsafeRuntime)
+    );
+    assert_eq!(logical(&f.db), before);
+    fs::remove_file(linked).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        fs::set_permissions(&lock, fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(
+            f.daemon.control("profile.write.enable", params.clone()),
+            Err(Error::UnsafeRuntime)
+        );
+        assert_eq!(logical(&f.db), before);
+        fs::set_permissions(&lock, fs::Permissions::from_mode(0o600)).unwrap();
+        let saved = lock.with_extension("saved");
+        fs::rename(&lock, &saved).unwrap();
+        symlink(&saved, &lock).unwrap();
+        assert_eq!(
+            f.daemon.control("profile.write.enable", params.clone()),
+            Err(Error::UnsafeRuntime)
+        );
+        assert_eq!(logical(&f.db), before);
+        fs::remove_file(&lock).unwrap();
+        fs::rename(saved, &lock).unwrap();
+    }
+    #[cfg(windows)]
+    {
+        fs::remove_file(&lock).unwrap();
+        fs::write(&lock, b"").unwrap();
+        assert_eq!(
+            f.daemon.control("profile.write.enable", params.clone()),
+            Err(Error::UnsafeRuntime)
+        );
+        assert_eq!(logical(&f.db), before);
+    }
+    assert!(
+        !f.daemon
+            .location
+            .runtime_dir
+            .join("operator-write.cap")
+            .exists()
+    );
 }
