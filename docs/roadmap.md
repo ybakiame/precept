@@ -15,7 +15,7 @@ P1-K interoperability evidence is scoped separately below.
 
 | Capability | Implemented / evidenced | Outstanding |
 | --- | --- | --- |
-| Context and personal preferences | Legacy Python P0 registry/review/writes remain temporarily in the tree; Rust typed resolver and bounded live sources are implemented | Rust Profile v2 persistence and complete operator review workflow (P1-M2/M4) |
+| Context and personal preferences | Legacy Python P0 registry/review/writes remain temporarily in the tree; Rust typed resolver and bounded live sources are implemented | Rust-native Profile v1 persistence and complete operator review workflow (P1-M2/M4) |
 | Continuity | Exact project/task Handoff, historical checks, revision/worktree/fingerprint warnings | Frozen constraint snapshots, portable bundle format and independent cross-client acceptance |
 | Rust ownership and storage | Read-only core/store, parity and synthetic backup/migration/process recovery; M1 isolated v2 writer/transaction candidate locally validated | Production Rust writes, live reader/owner integration, real-data migration/recovery and backup/export/import/retention workflows |
 | Local service and MCP | Unix sockets/named pipes, operator/project capabilities, two-tool read-only stdio | Full MCP conformance and broader versioned client matrix |
