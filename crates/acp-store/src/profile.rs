@@ -526,3 +526,28 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
         commit_sequence: seq,
     })
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn rust_utc_calendar_vectors_and_invalid_dates() {
+        for (seconds, expected) in [
+            (0, "1970-01-01T00:00:00Z"),
+            (951782400, "2000-02-29T00:00:00Z"),
+            (1709251199, "2024-02-29T23:59:59Z"),
+        ] {
+            assert_eq!(format_utc(seconds).as_deref(), Some(expected));
+            assert!(timestamp_valid(expected));
+        }
+        for invalid in [
+            "2026-02-30T00:00:00Z",
+            "2100-02-29T00:00:00Z",
+            "2026-01-01T24:00:00Z",
+            "2026-01-01T00:00:00+00:00",
+            "2026-01-01T00:00:60Z",
+        ] {
+            assert!(!timestamp_valid(invalid));
+        }
+        assert!(format_utc(u64::MAX).is_none());
+    }
+}

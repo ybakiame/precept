@@ -1,4 +1,4 @@
-use crate::{Binding, Error, Result, Writer, files};
+use crate::{Binding, Error, Fault, Result, Writer, files};
 use acp_store::{SqliteStore, profile};
 use rusqlite::{Connection, OpenFlags};
 use std::{
@@ -20,9 +20,9 @@ impl std::fmt::Debug for Profile {
 impl Profile {
     /// Explicit fresh creation only. No existing-profile writer adoption API.
     pub fn create(destination: &Path) -> Result<Self> {
-        Self::create_inner(destination, false)
+        Self::create_inner(destination, Fault::None)
     }
-    pub(crate) fn create_inner(destination: &Path, _after_publish: bool) -> Result<Self> {
+    pub(crate) fn create_inner(destination: &Path, _fault: Fault) -> Result<Self> {
         let (path, parent_identity) = files::destination(destination)?;
         let parent = path.parent().ok_or(Error::UnsafeWorkspace)?;
         let stage = parent.join(format!(".acp-create-{}", random_id()?));
@@ -48,6 +48,10 @@ impl Profile {
             )
             .map_err(crate::sql_error)?;
             profile::verify(&db)?;
+            #[cfg(test)]
+            if _fault == Fault::BeforeCommit {
+                return Err(Error::BeforeCommit);
+            }
             db.execute_batch("COMMIT").map_err(crate::sql_error)?;
             db.close().map_err(|_| Error::IoFailure)?;
             let reader = SqliteStore::open(&stage)?;
@@ -73,7 +77,7 @@ impl Profile {
             // Publication is the irreversible boundary: never remove the target.
             let finish = (|| {
                 #[cfg(test)]
-                if _after_publish {
+                if _fault == Fault::AfterCommit {
                     return Err(Error::Verification);
                 }
                 files::flush_parent(parent)?;

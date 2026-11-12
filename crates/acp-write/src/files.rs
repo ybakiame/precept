@@ -27,8 +27,14 @@ pub(crate) fn live_sidecars(path: &Path) -> Result<()> {
     for suffix in ["-wal", "-shm", "-journal"] {
         let mut n = path.as_os_str().to_owned();
         n.push(suffix);
-        if exists(Path::new(&n))? {
-            check(Path::new(&n), false, false)?;
+        if exists(Path::new(&n))?
+            && let Err(error) = check(Path::new(&n), false, false)
+        {
+            // Another SQLite connection may normally remove its journal
+            // between these observations. Existing unsafe objects still fail.
+            if exists(Path::new(&n))? {
+                return Err(error);
+            }
         }
     }
     Ok(())

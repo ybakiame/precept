@@ -206,7 +206,7 @@ fn publication_unknown_preserves_valid_published_file() {
     files::private_test_parent(t.path());
     let target = t.path().join("published");
     assert!(matches!(
-        Profile::create_inner(&target, true),
+        Profile::create_inner(&target, Fault::AfterCommit),
         Err(Error::OutcomeUnknown)
     ));
     let before = fs::read(&target).unwrap();
@@ -712,7 +712,18 @@ fn replaced_identity_hardlinks_and_bad_permissions_are_refused() {
     assert!(p.writer().is_err());
     fs::remove_file(alias).unwrap();
     let replacement = t.path().join("replacement");
-    fs::copy(&p.path, &replacement).unwrap();
+    let file = files::create_private(&replacement).unwrap();
+    drop(file);
+    fs::write(&replacement, fs::read(&p.path).unwrap()).unwrap();
+    files::check_file(&replacement).unwrap();
+    assert_eq!(
+        SqliteStore::open(&replacement)
+            .unwrap()
+            .metadata()
+            .unwrap()
+            .binding,
+        p.binding()
+    );
     fs::remove_file(&p.path).unwrap();
     fs::rename(replacement, &p.path).unwrap();
     assert!(p.writer().is_err());
@@ -936,4 +947,21 @@ fn registration_replay_survives_directory_unavailability() {
     changed.operation_id = "register-new".into();
     assert_eq!(w.execute(&changed), Err(Error::InvalidCommand));
     assert_eq!(dump(&w.db), before);
+}
+#[test]
+fn prepublication_failure_removes_only_its_owned_staging_artifacts() {
+    let t = tempfile::tempdir().unwrap();
+    files::private_test_parent(t.path());
+    let neighbor = t.path().join("unrelated");
+    fs::write(&neighbor, b"preserve").unwrap();
+    let target = t.path().join("fresh.sqlite3");
+    assert!(matches!(
+        Profile::create_inner(&target, Fault::BeforeCommit),
+        Err(Error::BeforeCommit)
+    ));
+    assert!(!target.exists());
+    assert_eq!(fs::read(&neighbor).unwrap(), b"preserve");
+    assert_eq!(fs::read_dir(t.path()).unwrap().count(), 1);
+    let p = Profile::create(&target).unwrap();
+    validated(&p);
 }
