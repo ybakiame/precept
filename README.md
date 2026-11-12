@@ -2,7 +2,7 @@
 
 **A local-first, developer-centric control plane for engineering context, project rules and continuity across coding agents and harnesses.** Make the right context available to the right agent, explain why it applies, preserve it across Handoffs, and distinguish reported work from observed or independently verified evidence. See the [product charter](docs/product.md).
 
-> Implementation maturity: `0.1.0a0` engineering prototype. [ADR-0006](docs/adr/0006-rust-only-runtime.md) is accepted: Rust is the only target product runtime, Profile v2 is the only supported target schema, and the Python P0 prototype is scheduled for removal in [P1-M2 / Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40). The current main tree has not completed that cutover; do not treat the remaining Python commands or v0/v1 readers as supported product interfaces. [NSH Rust is the accepted single Desktop/TUI UI direction](docs/adr/0003-ui-framework-selection.md). No production readiness, OS sandbox or universal vendor compatibility is claimed.
+> Implementation maturity: `0.1.0a0` engineering prototype. [ADR-0006](docs/adr/0006-rust-only-runtime.md) is accepted: Rust is the only target product runtime; the current Profile v2 schema is the working baseline, not a promise of backward compatibility, and the Python P0 prototype is scheduled for removal in [P1-M2 / Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40). The current main tree has not completed that cutover. Breaking changes are expected during validation; do not preserve old Python commands, local prototype data, legacy schemas, or obsolete wire interfaces for compatibility. [NSH Rust is the accepted single Desktop/TUI UI direction](docs/adr/0003-ui-framework-selection.md). No production readiness, OS sandbox or universal vendor compatibility is claimed.
 
 ## Implementation and support status
 
@@ -64,9 +64,7 @@ spikes/p1-e/      # shared NSH Desktop/TUI presentation
 docs/             # architecture, ADRs, interfaces, risks and roadmap
 ```
 
-The Python P0 package and its tests remain in the current tree only until P1-M2
-removes them. They are not part of the target repository structure or supported
-runtime.
+The Python P0 package, tests and local prototype state are disposable validation artifacts. P1-M2 removes the product paths; no backward-compatibility or data-retention guarantee is made.
 
 ## Design and roadmap
 
@@ -94,8 +92,9 @@ M1's [synthetic Rust writer evidence](docs/evaluation/p1-m1-synthetic-writer.md)
 records the exact v2 transaction, CAS/receipt, strict-transition and historical
 preservation checks for PR #39. Rust core and real IPC/MCP process tests cover the
 current Rust boundaries. The [Python-to-Rust migration matrix](docs/p1/rust-test-migration.md)
-is a historical report, not a commitment to retain Python. P1-M2 removes the Python
-runtime/tests and establishes the Rust-only v2 acceptance matrix. Local evidence
+is historical evidence, not a commitment to retain Python. P1-M2 removes the Python
+runtime/tests and establishes the Rust-only current-schema acceptance matrix. Old
+local prototype databases may be deleted during an explicit development reset. Local evidence
 does not imply every harness/version, complete MCP conformance, production security
 or universal platform support.
 
@@ -106,7 +105,7 @@ through the NSH Desktop/TUI Sessions panel. Start requires operator confirmation
 prompts, single-request permission decisions, cancel and stop are separate actions.
 Closing a UI does not stop the daemon-owned child. Default execution is disabled;
 no shell, automatic startup, persistent resume or Windows→WSL execution bridge.
-The agent runs with your user privileges, without an OS sandbox. Profile write IPC is not yet enabled; P1-M2 delivers the Rust-only operator write path. The two-tool read-only MCP remains unchanged. See
+The agent runs with your user privileges, without an OS sandbox. Profile write IPC is not yet enabled; P1-M2 delivers the Rust-only operator write path. MCP remains project-bound and read-only, but its wire schema may evolve in lockstep during validation. See
 [configuration and boundaries](docs/p1/agent-session-runtime.md) and
 [local evidence / interoperability limits](docs/evaluation/p1-g-local-agent-session.md).
 
