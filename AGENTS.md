@@ -18,8 +18,7 @@ Read these before changing architecture or persisted behavior:
 - Rust is the only supported product runtime. The Python P0 implementation is
   legacy and scheduled for removal by P1-M2. Do not add Python features, runtime
   dependencies, compatibility shims, new Python tests, or Python release paths.
-- Profile v2 is the only supported runtime schema. Do not add v0/v1 runtime
-  readers, automatic migration, downgrade, or compatibility fallback.
+- Use exactly one current Profile schema. M1 v2 is a working baseline, not a permanent constraint; it may be replaced wholesale during validation. Do not add legacy readers, automatic migration, cross-schema downgrade, or compatibility fallback.
 - The native daemon is the only production write owner. Only the daemon may invoke
   the private `acp-write` implementation.
 - `acp-store` remains read-only. UI, `acp-query`, MCP and agents never receive
@@ -33,15 +32,18 @@ Read these before changing architecture or persisted behavior:
 - No Python rollback owner, Python read-only adapter, v2-to-v1 downgrade, or
   daemon-unavailable direct-write fallback.
 
-Until P1-M2 removes the Python prototype from the tree, treat it as frozen legacy
-code only. Existing baseline checks may still run when needed to establish an
+Until P1-M2 removes the Python prototype from the tree, treat it as disposable legacy
+code only. Local prototype files and old validation profiles may be deleted during
+an explicit ACP development reset; no compatibility or data-retention guarantee exists. Existing baseline checks may still run when needed to establish an
 unmodified comparison, but do not extend its behavior or treat it as the target.
 
 ## Engineering and validation
 
 Use Rust workspace conventions and the repository CI as the source of truth.
 For Rust changes, run formatting, Clippy with warnings denied, workspace/package
-tests, and targeted real-process IPC/daemon/MCP tests appropriate to the change.
+tests, and targeted real-process IPC/daemon/MCP tests appropriate to the change. During
+validation, coordinated IPC/session/MCP and Profile schema breaking changes are
+acceptable; do not add old/new version support or migration layers.
 For UI changes, run the affected NSH and shared presentation checks. Run native
 Windows and Linux/WSL acceptance when the changed boundary is platform-sensitive.
 Do not claim hosted CI, macOS, device, model, or clean-machine results unless they
