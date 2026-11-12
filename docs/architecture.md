@@ -80,7 +80,7 @@ ADR-0005 selected the native daemon as the single ordinary write owner and
 established operator-only versioned IPC, explicit grants, typed transactions,
 CAS/receipts and strict preference transitions. [ADR-0006](adr/0006-rust-only-runtime.md)
 now supersedes its Python compatibility, legacy schema support, migration handoff
-and v2-to-v1 rollback decisions. The accepted target is a single Rust runtime with one current profile schema
+and cross-schema downgrade decisions. The accepted target is a single Rust runtime with one current profile schema
 (fresh Rust-native Profile v1): explicit creation, strict reads,
 daemon-owned writes, and no Python runtime or legacy migration. Breaking changes
 are acceptable during validation; old local prototype files may be deleted. The [historical storage ownership plan](p1/storage-ownership-plan.md)
