@@ -4,6 +4,12 @@ use rusqlite::{Connection, types::Value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+// Thread-local and test-only: no runtime metric, cache or validation bypass.
+#[cfg(test)]
+thread_local! {
+    pub(crate) static VERIFY_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 pub const PROFILE: &str = r#"CREATE TABLE acp_profile (
     singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
     profile_id TEXT NOT NULL
@@ -370,6 +376,8 @@ fn str_valid(v: &Value, max: usize, required: bool) -> Result<&str> {
 }
 /// Caller holds a pinned read transaction or BEGIN IMMEDIATE. No database writes.
 pub fn verify(db: &Connection) -> Result<Metadata> {
+    #[cfg(test)]
+    VERIFY_CALLS.with(|n| n.set(n.get() + 1));
     inspect(db)?;
     valid(rows(db, "PRAGMA integrity_check")? == vec![vec![Value::Text("ok".into())]])?;
     valid(rows(db, "PRAGMA foreign_key_check")?.is_empty())?;

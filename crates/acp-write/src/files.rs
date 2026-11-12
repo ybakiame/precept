@@ -79,17 +79,25 @@ pub(crate) fn destination(path: &Path) -> Result<(PathBuf, Identity)> {
     }
     let name = path.file_name().ok_or(Error::UnsafeWorkspace)?;
     let name_str = name.to_str().ok_or(Error::UnsafeWorkspace)?;
+    // All reserved spellings are ASCII. Windows resolves their mixed-case
+    // aliases too; use one comparison spelling for every lexical reservation.
+    #[cfg(windows)]
+    let folded = name_str.to_ascii_lowercase();
+    #[cfg(windows)]
+    let reserved_name = folded.as_str();
+    #[cfg(not(windows))]
+    let reserved_name = name_str;
     if [
         "daemon.lock",
         "daemon.sock",
         "operator.cap",
         "operator-write.cap",
     ]
-    .contains(&name_str)
-        || name_str.starts_with(".acp-create-")
-        || name_str.ends_with("-wal")
-        || name_str.ends_with("-shm")
-        || name_str.ends_with("-journal")
+    .contains(&reserved_name)
+        || reserved_name.starts_with(".acp-create-")
+        || reserved_name.ends_with("-wal")
+        || reserved_name.ends_with("-shm")
+        || reserved_name.ends_with("-journal")
     {
         return Err(Error::Collision);
     }

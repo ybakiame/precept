@@ -170,6 +170,11 @@ Profile management is an operator IPC operation, not a database API in `acp-quer
 
 Stage 1 creates only beneath an existing private selected parent, never chmods
 unrelated directories, and rejects destination DB/sidecar/control-file collisions.
+On Windows, reserved basenames (`daemon.lock`, `daemon.sock`, `operator.cap`,
+`operator-write.cap`), the `.acp-create-` staging prefix and the SQLite `-wal`,
+`-shm`, `-journal` suffixes are all compared ASCII case-insensitively. Existing
+mixed-case aliases must be refused without modifying their contents. Valid
+destination spelling is preserved; Unix comparisons retain their case semantics.
 It initializes with DELETE journaling and FULL synchronization, independently
 reopens the temporary DB, closes all SQLite handles, and publishes on the same
 filesystem without replacing a target that appeared concurrently. Linux uses
@@ -184,6 +189,29 @@ artifacts may be removed. After publication, verification/I/O failure is
 `OutcomeUnknown`: preserve the published file and never delete/recreate it as a
 retry. Concurrent creators have at most one winner. File/directory flushes are
 best-effort durability mechanisms, not hardware/power-loss certification.
+
+### 3.1 Later daemon selection: path identity acceptance gate
+
+The path/file binding above applies to **both** explicit existing-profile selection
+and startup `--database`, not just fresh creation. The later daemon slice must
+validate an explicit absolute existing regular file, canonical parent/path and
+all path components; refuse symlinks/reparse points, database hardlinks, unsafe
+owner/permissions/ACLs and unknown file identity. Use the same native identity
+requirements as creation (Unix device/inode, Windows volume/file identity), and
+bind the opened database to that identity plus its verified profile ID/generation.
+Recheck that the selected path still names that opened identity before exposing
+the selection; replacement or ambiguity fails closed. A copied database with the
+same metadata is not proof of the same filesystem identity. Later writer lease
+admission must independently revalidate identity as required by section 4.1.
+
+The later slice's native Windows and Linux tests must include a safe unchanged
+selection, missing file without creation, symlink/reparse/hardlink and permission
+refusals, and replacement by an otherwise valid copy with identical profile
+metadata. No failed selection may repair/adopt the file or create a write grant.
+This is an explicit restatement of the existing selection boundary, not a new
+schema, catalog, lock abstraction or Stage 1 daemon implementation.
+`SqliteStore::open` is a strict read-only schema/content reader; its absolute-path
+check alone does **not** implement these daemon selection filesystem checks.
 
 ## 4. Single-writer lease and write grant
 

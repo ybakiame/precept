@@ -173,6 +173,54 @@ fn explicit_creation_never_overwrites_existing_objects_or_sidecars() {
     }
 }
 #[test]
+#[cfg(windows)]
+fn windows_mixed_case_reservations_and_collisions_preserve_neighbors() {
+    let t = tempfile::tempdir().unwrap();
+    files::private_test_parent(t.path());
+    // Absent targets must fail lexical checks, independently of filesystem
+    // existence; checking only existing aliases would miss these cases.
+    for name in [
+        "Daemon.Lock",
+        "DAEMON.SOCK",
+        "Operator.Cap",
+        "OPERATOR-Write.CAP",
+        ".ACP-Create-synthetic",
+        "profile-WaL",
+        "profile-ShM",
+        "profile-JoUrNaL",
+    ] {
+        let target = t.path().join(name);
+        assert!(matches!(Profile::create(&target), Err(Error::Collision)));
+        assert!(!target.exists());
+    }
+    for name in [
+        "Daemon.Lock",
+        "DAEMON.SOCK",
+        "Operator.Cap",
+        "OPERATOR-Write.CAP",
+        "target-WaL",
+        "target-ShM",
+        "target-JoUrNaL",
+        "TaRgEt",
+    ] {
+        let neighbor = t.path().join(name);
+        fs::write(&neighbor, b"synthetic sentinel").unwrap();
+        assert!(matches!(
+            Profile::create(&t.path().join("target")),
+            Err(Error::Collision)
+        ));
+        assert_eq!(fs::read(&neighbor).unwrap(), b"synthetic sentinel");
+        fs::remove_file(neighbor).unwrap();
+    }
+    // Folding reservations must neither rename a valid target nor overmatch
+    // names containing a reserved word away from the reserved boundary.
+    let target = t.path().join("Profile-WaL.sqlite3");
+    let p = Profile::create(&target).unwrap();
+    validated(&p);
+    assert_eq!(p.path.file_name(), target.file_name());
+    assert_eq!(fs::read_dir(t.path()).unwrap().count(), 1);
+}
+#[test]
 fn concurrent_creators_have_one_no_replace_winner() {
     let t = tempfile::tempdir().unwrap();
     files::private_test_parent(t.path());

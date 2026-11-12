@@ -250,6 +250,10 @@ fn project_record(db: &Connection, name: &str) -> Result<()> {
         .ok_or(Error::UnknownProject)
 }
 #[cfg(test)]
+extern crate self as acp_store;
+#[cfg(test)]
+mod read_cost;
+#[cfg(test)]
 mod tests {
     use super::*;
     #[test]
