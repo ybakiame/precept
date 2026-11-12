@@ -79,16 +79,19 @@ reject unsupported versions without silent conversion. Records lacking provenanc
 or snapshots remain readable as historical/unknown, never retroactively verified
 or confirmed.
 
-P1-M0 / [Issue #36](https://github.com/ybakiame/agent-control-plane/issues/36) is the
-active design gate. [Proposed ADR-0005](adr/0005-local-storage-and-write-ownership.md)
+P1-M0 / [Issue #36](https://github.com/ybakiame/agent-control-plane/issues/36)
+is completed and [PR #37](https://github.com/ybakiame/agent-control-plane/pull/37)
+merged. [Accepted ADR-0005](adr/0005-local-storage-and-write-ownership.md)
 selects an explicitly opted-in native daemon writer, separate writer library,
 genuine Python read-only compatibility, offline exclusive maintenance and verified
 database generations with a private SQLite control catalog. Profile v2 and catalog
 versions, operator write IPC, fencing, cutover and rollback are proposals only.
 The [ownership/compatibility and recovery plan](p1/storage-ownership-plan.md) retains
 completed C2A/C2B1 synthetic evidence and sequences later implementation and
-separately authorized per-profile rollout. ADR-0005 remains Proposed; ADR-0004 is
-unchanged. No real profile may be opened or adopted by this design task.
+separately authorized per-profile rollout. [P1-M1 / Issue #38](https://github.com/ybakiame/agent-control-plane/issues/38)
+is now active for **synthetic-only** writer and exact v2 schema work. ADR-0005
+acceptance is architectural, not production write or real-profile authorization;
+ADR-0004 is unchanged.
 
 The owner resolved the transition difference in PR #37: future writes reject
 suggested→deprecated and preserve historical deprecated records, following
