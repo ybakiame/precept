@@ -24,7 +24,7 @@ trusted agent ─ two-tool MCP stdio ─ acp-mcp ─ project capability ─┘
 
 This is the accepted target after P1-M2, not a claim that the current main tree
 already has production writes. The current Python P0 path and v0/v1 reader are
-legacy implementation details scheduled for removal by [Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40).
+disposable validation-era implementation details scheduled for removal by [Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40).
 
 | Component | Current responsibility | Must not own |
 | --- | --- | --- |
@@ -41,7 +41,7 @@ legacy implementation details scheduled for removal by [Issue #40](https://githu
 The paths remain as implemented; accepting NSH does not move crates or remove
 historical comparison workspaces. Windows→WSL owner queries remain read-only.
 
-The current main tree still contains the legacy Python P0 implementation.
+The current main tree still contains the disposable Python P0 prototype.
 Its CLI and MCP launch path share an initializing read/write `Store`; this is a
 historical implementation defect, not an accepted target. ADR-0006 retires that
 runtime rather than building a second Python read-only adapter. P1-M2 replaces the
@@ -80,9 +80,10 @@ ADR-0005 selected the native daemon as the single ordinary write owner and
 established operator-only versioned IPC, explicit grants, typed transactions,
 CAS/receipts and strict preference transitions. [ADR-0006](adr/0006-rust-only-runtime.md)
 now supersedes its Python compatibility, legacy schema support, migration handoff
-and v2-to-v1 rollback decisions. The accepted target is a single Rust runtime with
-Profile v2 only: explicit v2 creation, strict v2 reads, daemon-owned writes, and
-no Python runtime or legacy migration. The [historical storage ownership plan](p1/storage-ownership-plan.md)
+and v2-to-v1 rollback decisions. The accepted target is a single Rust runtime with one current profile schema
+(M1's v2 schema is the working baseline): explicit creation, strict reads,
+daemon-owned writes, and no Python runtime or legacy migration. Breaking changes
+are acceptable during validation; old local prototype files may be deleted. The [historical storage ownership plan](p1/storage-ownership-plan.md)
 retains original M0/M1 evidence but is superseded as an execution plan.
 
 [P1-M1 / Issue #38](https://github.com/ybakiame/agent-control-plane/issues/38)
@@ -92,8 +93,7 @@ and historical-field preservation were validated against synthetic fixtures.
 Its v0/v1 migration tests remain historical evidence for that revision; they do
 not create a product migration commitment. [P1-M2 / Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40)
 is re-scoped by ADR-0006 to native v2 runtime integration and Python prototype
-retirement. It remains synthetic-only: no existing local profile, default state
-directory or production write activation is authorized.
+retirement. It remains validation-only: disposable old ACP prototype state may be deleted; no production write activation is authorized.
 
 Initial technical revisions/receipts are not the full human ReviewDecision history,
 which remains P1-O work.
