@@ -1,11 +1,13 @@
 # ADR-0005: local storage and write ownership
 
-- Status: **Accepted** — owner approved 2026-11-12 after PR #37 merged; implementation and any real-profile operation require separate authorization
+- Status: **Accepted, partially superseded by [ADR-0006](0006-rust-only-runtime.md)** — the daemon single-writer and security decisions remain; Python compatibility and legacy-schema migration decisions are superseded
 - Date: 2026-11-12
 - Authority: [P1-M0 / Issue #36](https://github.com/ybakiame/agent-control-plane/issues/36)
 - Source baseline: main `2a5949120aacd0523cd7fa5e417548e1e648bc81` (PR #35 merged)
 - Governing decisions: [Accepted ADR-0004](0004-product-domain-trust.md),
   [local IPC ADR](0002-local-ipc-capabilities.md) and [AGENTS.md](../../AGENTS.md)
+
+> **Current authority:** Read [ADR-0006](0006-rust-only-runtime.md) for the accepted Rust-only product runtime. ADR-0006 supersedes this ADR's Python thin-frontend, Python read-only adapter, Python rollback-owner, v0/v1 runtime-compatibility, compatibility-release, and v2-to-v1 downgrade decisions. The daemon as single writer, separately versioned operator-only write IPC, explicit profile-scoped grants, strict transactions/receipts, no agent/MCP writes, and safe v2 recovery principles remain. The detailed sections below preserve the original M0 decision record and are historical wherever ADR-0006 differs.
 
 ## Context and authorization
 
