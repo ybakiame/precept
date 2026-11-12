@@ -1,5 +1,5 @@
 # P1-M1 — Profile v2 schema and synthetic writer contract
-> **M1 historical contract/evidence.** [ADR-0006](../adr/0006-rust-only-runtime.md) now selects Profile v2 as the sole supported product runtime schema and rejects v0/v1 compatibility, migration, and downgrade. The v0/v1 fixture migration described below records what M1 implemented and tested; it is not a product migration commitment. P1-M2 must create fresh v2 profiles and ensure legacy migration code is not production-reachable.
+> **M1 historical contract/evidence only.** This document records the synthetic Profile v2 schema (`PRAGMA user_version=2`) and the migration experiments completed in PR #39. [ADR-0006](../adr/0006-rust-only-runtime.md) selects a fresh Rust-native Profile v1 (`PRAGMA user_version=1`) for the product. That new v1 is not compatible with the retired Python prototype's legacy v1 despite the shared version number. Neither this M1 v2 schema nor the old Python v1 schema is migrated or adopted; disposable local files may be deleted. Do not treat this historical DDL as the M2 product schema.
 
 
 Status: frozen M1-A contract before implementation, under [Issue #38](https://github.com/ybakiame/agent-control-plane/issues/38)
