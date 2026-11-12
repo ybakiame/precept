@@ -111,7 +111,7 @@ may not, except the already specified absent-fingerprint→NULL mapping.
 | M1 current-state race / retry — PASS in merged PR #39 | Competing commands recheck pre-command state and expected revision inside the transaction; a stale request cannot act on a formerly suggested row; lost-response same-ID retry returns only its original receipt |
 | M1 migration history preservation — PASS in merged PR #39 | Both v0 shapes and v1 contain synthetic historical deprecated rows, including permissive-edge examples; after v2 migration every original ID/status/timestamp/scope/source/unknown provenance and opaque JSON byte is preserved |
 | M2 CLI and fencing compatibility — NOT_RUN; Issue #40 | Exercise documented deprecate-on-suggested difference through future frontend/owner paths, positive flows and denied logical-state/revision invariance; legacy Python phase remains clearly distinguished; direct/version-blind paths fenced/retired before cutover and never used as fallback |
-| M2 post-cutover and rollback-owner reads/writes — NOT_RUN; Issue #40 | Historical deprecated rows remain readable and excluded from agent context; guarded Python rollback owner also rejects new suggested→deprecated; native Windows and Linux/WSL compatibility tests preserve existing IPC/MCP/lease boundaries |
+| M2 guarded compatibility and rollback-owner reads/writes — NOT_RUN; Issue #40 | Historical deprecated rows remain readable and excluded from agent context; guarded Python rollback owner also rejects new suggested→deprecated; native Windows and Linux/WSL compatibility tests preserve existing IPC/MCP/lease boundaries |
 
 Initial v2 command receipts/revisions are concurrency/commit bookkeeping, not
 ADR-0004's complete human `ReviewDecision` or verified operator attribution. Role
