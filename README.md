@@ -71,7 +71,8 @@ runtime.
 ## Design and roadmap
 
 - [Product charter and capability boundaries](docs/product.md)
-- [Domain, human review and evidence trust ADR](docs/adr/0004-product-domain-trust.md)\n- [ADR-0006: Rust-only runtime and Python prototype retirement](docs/adr/0006-rust-only-runtime.md)
+- [Domain, human review and evidence trust ADR](docs/adr/0004-product-domain-trust.md)
+- [ADR-0006: Rust-only runtime and Python prototype retirement](docs/adr/0006-rust-only-runtime.md)
 - [Product UI information architecture](docs/product-ui.md)
 - [agent-control design-reference assessment](docs/agent-control-assessment.md)
 - [ADR-0003: accepted NSH Rust Desktop/TUI direction and limits](docs/adr/0003-ui-framework-selection.md)
