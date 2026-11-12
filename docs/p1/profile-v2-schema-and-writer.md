@@ -1,4 +1,6 @@
 # P1-M1 — Profile v2 schema and synthetic writer contract
+> **M1 historical contract/evidence.** [ADR-0006](../adr/0006-rust-only-runtime.md) now selects Profile v2 as the sole supported product runtime schema and rejects v0/v1 compatibility, migration, and downgrade. The v0/v1 fixture migration described below records what M1 implemented and tested; it is not a product migration commitment. P1-M2 must create fresh v2 profiles and ensure legacy migration code is not production-reachable.
+
 
 Status: frozen M1-A contract before implementation, under [Issue #38](https://github.com/ybakiame/agent-control-plane/issues/38)
 and Accepted [ADR-0005](../adr/0005-local-storage-and-write-ownership.md) /
