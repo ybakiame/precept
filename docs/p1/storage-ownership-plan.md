@@ -1,6 +1,6 @@
 # P1-M0 storage ownership and acceptance plan
 
-> **Historical design record — execution plan superseded by [ADR-0006](../adr/0006-rust-only-runtime.md).** This document preserves the original M0 analysis, M1 contract and historical evidence. Its Python read-only adapter, Python rollback owner, v0/v1 runtime compatibility, compatibility-release, v2-to-v1 downgrade, and multi-generation cutover steps are no longer current requirements. Follow [ADR-0006](../adr/0006-rust-only-runtime.md) and [Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40) for current work. Do not implement the superseded Python compatibility or schema rollback plan.
+> **Historical design record — execution plan superseded by [ADR-0006](../adr/0006-rust-only-runtime.md).** This document preserves the original M0 analysis, M1 contract and historical evidence only. Its Python read-only adapter, Python rollback owner, legacy-schema compatibility, compatibility-release, schema downgrade, and multi-generation cutover steps are no longer current requirements. The product target is a fresh Rust-native Profile v1; it is not compatible with the old Python v1 or M1 synthetic v2. Neither format is migrated or preserved. Follow [ADR-0006](../adr/0006-rust-only-runtime.md) and [Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40) for current work.
 
 
 Design-only companion to [Accepted ADR-0005](../adr/0005-local-storage-and-write-ownership.md).
