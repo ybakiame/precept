@@ -1,5 +1,5 @@
 # E4 Python → Rust authority migration
-> **Historical evidence only — Python runtime retirement accepted by [ADR-0006](../adr/0006-rust-only-runtime.md).** This matrix records the original E4 migration decision and test provenance at its stated revision. It is no longer a requirement to retain Python runtime, Python tests, Python/Rust parity, or v0/v1 compatibility. P1-M2 removes the Python product/test paths and active legacy-schema support; use [Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40) and ADR-0006 for current acceptance.
+> **Historical evidence only — Python runtime retirement accepted by [ADR-0006](../adr/0006-rust-only-runtime.md).** This matrix records the original E4 migration decision and test provenance at its stated revision. It is no longer a requirement to retain Python runtime, Python tests, Python/Rust parity, or legacy Python schema compatibility. P1-M2 removes the Python product/test paths and establishes a fresh Rust-native Profile v1; the legacy Python v1 and M1 synthetic v2 are separate historical formats, not migration sources. Use [Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40) and ADR-0006 for current acceptance.
 
 
 The baseline is main `80fdbc57e4ec47557e9130808b401a22ad6b913f`.
