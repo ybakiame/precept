@@ -29,7 +29,7 @@ a general policy that mature products should discard user data or compatibility.
 
 ### 1. Rust is the only supported product runtime
 
-All shipped product capabilities are implemented and executed in Rust:
+The supported product runtime after the P1-M2 cutover is entirely Rust:
 
 - `acp-core`: domain behavior and typed context resolution.
 - `acp-store`: strict read-only access to the supported profile schema.
