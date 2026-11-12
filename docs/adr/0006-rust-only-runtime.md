@@ -135,9 +135,11 @@ The initial typed operator command set remains narrow:
 
 No generic SQL, arbitrary path, caller-supplied SQLite connection, transaction
 callback, agent-facing mutation, MCP mutation, automatic preference approval, or
-unreviewed content/scope edit is introduced. Preserve the accepted CAS, idempotency
-receipt, bounded transaction, strict transition, atomic peer-deprecation, and
-only the M1 transaction/domain invariants that remain necessary for the fresh Rust-native v1 design; M1's exact v2 DDL and migration-preservation rules are not binding.
+unreviewed content/scope edit is introduced. Retain CAS, idempotency receipts,
+bounded transactions, strict transitions, and atomic peer deprecation where they
+remain necessary for the fresh Rust-native v1 design. Re-evaluate M1-specific
+metadata tables and sequence/fingerprint machinery against concrete product needs;
+M1's exact v2 DDL and migration-preservation rules are not binding.
 
 ### 4. Keep domain and trust boundaries; simplify migration ownership
 
@@ -184,7 +186,7 @@ Validation-phase compatibility policy:
 | Phase | Scope | Gate |
 | --- | --- | --- |
 | P1-M2 — Rust-only runtime cutover / Issue #40 | Fresh Rust-native Profile v1 create/read/write; operator-only daemon write IPC; `acp-query` and NSH integration; single writer lease; remove Python runtime, tests, dependencies, and M1/legacy migration paths | Native Windows and Linux/WSL synthetic acceptance; exact v1 schema and core authorization/domain boundaries hold; no Python runtime or migration path remains |
-| P1-M3 — Profile v1 lifecycle | Explicit v1 backup, restore, retention, and genuine process-recovery behavior if required | Rust-only synthetic recovery and privacy/ACL acceptance; no legacy migration or schema downgrade |
+| P1-M3 — Profile v1 lifecycle (conditional) | Only concrete v1 lifecycle/recovery features demonstrated necessary after M2; do not pre-build backup, restore, or retention systems | Scoped Rust-only acceptance if opened; no legacy migration or schema downgrade |
 | P1-M4 — product review and profile workflows | Complete operator review/provenance workflow and explicit profile lifecycle UX | ADR-0004 human-review semantics, permission boundaries, and end-to-end acceptance |
 | P1-M5 — release hardening | Packaging, clean-machine installation, accessibility, platform support, security and performance | Explicit release criteria and verified platform evidence |
 
