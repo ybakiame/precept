@@ -67,11 +67,14 @@ commands. Source commits remain in this PR for reproduction:
   admission and regression; Windows full matrix, Linux focused writer/required
   Python checks. Both hosts passed 27 M1 cases at this source, before the stricter
   incomplete-backup assertion below.
-- `39de165109b148595168f3879d94f36919527c29`: final one-page backup-interruption
+- `39de165109b148595168f3879d94f36919527c29`: initial PR one-page backup-interruption
   proof and reservation I/O classification. Both hosts pass the complete **27
-  final M1 cases**, writer Clippy, format, 29 Python tests and diff checks on this
+  pre-review M1 cases**, writer Clippy, format, 29 Python tests and diff checks on this
   clean source. Earlier full matrices are not relabeled as this follow-up run.
-- Subsequent changes are documentation only, not new runtime validation.
+- `2c49cbb2a5886e06a34218c68b97cc25387d102b`: pre-review head; only documentation
+  differs from the preceding tested runtime.
+- `27ce3644818a86ccc0529e8586326838ab5d0768`: review correction to complete
+  allocation-watermark validation; exact-source focused results are recorded below.
 
 Cargo used `CARGO_NET_OFFLINE=true`, `--locked` and existing caches. `PYTHONPATH`
 contains the checkout's `src` and `tools`; `ACP_TEST_PYTHON` names the selected test
@@ -127,7 +130,7 @@ workspace/parity/rehearsal/recovery matrix:
 | `python -m unittest discover -s tests -v` | PASS, 29 tests |
 | `git diff origin/main --check` | PASS |
 
-Final focused follow-up at clean **39de165 on both hosts** uses the same five
+Pre-review focused follow-up at clean **39de165 on both hosts** uses the same five
 commands as the preceding Linux follow-up table: fmt, writer Clippy, writer tests
 (27 PASS each), Python (29 PASS each), diff check. The backup fault now uses one
 page and requires SQLite More before interruption; independent reopen must reject
@@ -135,6 +138,51 @@ the incomplete copy. That assertion first failed against e27cd73's old 16-page
 fault point, which could finish a small fixture. Reservation errors now distinguish
 actual collisions from generic I/O failure without raw diagnostics. No unaffected
 full compatibility/recovery matrix was repeated for this refinement.
+
+## PR #39 review correction: complete allocation history
+
+The [blocking review](https://github.com/ybakiame/agent-control-plane/pull/39#discussion_r4548806661)
+identified identity reuse from an empty table retaining `seq=0`, and duplicate
+sequence rows hidden by scalar queries. Two new regressions first failed against
+the pre-review implementation: source migration incorrectly succeeded and v2
+writer reopen incorrectly succeeded for the zero-watermark case. Those failures
+are retained privately, not counted as passing evidence.
+
+At clean **27ce3644818a86ccc0529e8586326838ab5d0768**, validation inspects every
+`sqlite_sequence` row and its stored SQLite type. Only a single `preferences`
+row with positive INTEGER watermark covering all live IDs is accepted. An absent
+row is accepted only for an empty table, with v2 separately checking tombstones
+against that same validated watermark. The writer no longer performs an independent
+scalar sequence lookup. No damaged history is reset or repaired.
+
+Four added tests cover:
+
+- Three source shapes × 14 corrupt allocations: zero retained after all deletes,
+  low-first/high-second duplicate, duplicate with live rows, negative, TEXT/REAL/
+  BLOB/NULL sequence, unexpected/NULL/BLOB/integer name, missing sequence with live
+  IDs and a watermark below live IDs. Every source refuses before backup or
+  candidate creation; source bytes stay identical and no writer is admitted.
+- The same 42 cases on v2 refuse writer reopen, command execution and explicit
+  candidate verification. Denied commands leave all logical tables unchanged;
+  reopening/verification leave candidate bytes intact, and prior copies verify.
+- Three shapes × empty/no-sequence and empty/positive-watermark cases preserve
+  source/backup bytes and allocation history. The next inserted ID is respectively
+  1 or 1001; the existing nonempty high-watermark/gap regression remains enabled.
+- Three shapes × missing/too-low sequence after ten ordinary synthetic
+  deletes: the resulting empty table still has tombstones, so writer reopening
+  and new allocation refuse without logical changes.
+
+The focused commands are the five listed above: fmt, writer Clippy, the complete
+writer package tests, required Python unittest suite and diff whitespace check.
+
+| Gate at clean 27ce364 | Linux/WSL | Native Windows |
+| --- | --- | --- |
+| Format / writer Clippy / diff | PASS | PASS |
+| `cargo test --locked -p acp-write --lib` | PASS, 31 tests | PASS, 31 tests |
+| `python -m unittest discover -s tests -v` | PASS, 29 tests | PASS, 29 tests |
+
+The unaffected full workspace/parity/rehearsal/recovery matrices retain their
+original source SHAs; they are not repeated or relabeled for this localized fix.
 
 Each M1 suite reports one intentionally ignored **private worker entrypoint**.
 The parent process test invokes that helper explicitly six times with `--ignored`;
@@ -144,7 +192,7 @@ existing 11-test C2B1 process target.
 
 ## Adversarial M1 evidence
 
-[`tests.rs`](../../crates/acp-write/src/tests.rs) runs 27 acceptance tests per host,
+[`tests.rs`](../../crates/acp-write/src/tests.rs) now runs 31 acceptance tests per host,
 with table-driven subcases rather than inflating the top-level count:
 
 | Boundary | Actual assertions |
@@ -155,7 +203,7 @@ with table-driven subcases rather than inflating the top-level count:
 | Scope and atomicity | Confirm deprecates only same-key/scope/project confirmed peers and advances all revisions together; global/foreign-project peers remain untouched; partial data/revision/precommit faults roll back the entire operation |
 | CAS and fencing labels | Stale/missing/occupied expectations, scope, generation and epoch negatives; simultaneous independent SQLite connections produce one CAS winner and one conflict, never two commits |
 | Idempotency | Lost-response fault after commit, connection close/reopen and exact receipt replay; same-ID changed canonical content conflicts; raw opaque JSON string bytes matter; replay still works at receipt capacity; no pruning |
-| Allocation/capacity | Revision overflow, actual SQLite AUTOINCREMENT exhaustion and oversized peer/receipt sets refuse atomically; injected StorageFull is a simulation, not physical disk-full |
+| Allocation/capacity | Complete allocation row/type/cardinality validation, empty-table/retained-history cases and tombstone coverage; revision overflow, actual SQLite AUTOINCREMENT exhaustion and oversized peer/receipt sets refuse atomically; injected StorageFull is a simulation, not physical disk-full |
 | WAL and busy | Live-source committed WAL included/uncommitted changes excluded by backup; v2 RO snapshot sees no partial data/revision/receipt; real writer lock contention returns bounded Busy, then succeeds after release |
 | Migration outcome | Before-commit schema/version rollback, proven nonterminal one-page backup interruption at 39de165, full injection and committed-before-response OutcomeUnknown; candidate remains ineligible until independent explicit verification; original/verified backup intact |
 | New metadata regression | Changed imported revision or initial receipt limit is rejected despite otherwise valid v2 data; the test failed against c9c7cd9's verifier and passed after the correction at e27cd73 |
@@ -207,13 +255,14 @@ not identity attestation, authenticated operator attribution or proof of model b
 Private ignored artifacts: `artifacts/local-p1-m1/wsl-1/`, `wsl-final/`,
 `windows-1/` (failed build-order attempt), `windows-final/`, `wsl-last/`,
 `windows-focused/`, `development/` and
-private runner/tool metadata; native output was copied locally for inspection.
-Raw diagnostics/private checkout paths are not committed or uploaded. Final
-runtime evidence is pinned to 39de165; later report/catalog-document edits are
-document-only and do not renew the runtime results.
-Final documentation checks passed for three documents and 32 relative
+`review-development/`, `review-wsl-1/`, `windows-review-1/` plus private
+runner/tool metadata; native output was copied locally for inspection.
+Raw diagnostics/private checkout paths are not committed or uploaded. Current
+runtime evidence is pinned to 27ce364; later report-only edits do not renew those
+runtime results. Pre-review evidence retains the exact earlier SHAs above.
+Review follow-up documentation checks passed for three documents and 32 relative
 links/anchors, balanced fences, the exact 14-file scope, private-path/credential
 patterns and whitespace. Protected application/workflow paths and third-party
-lock entries are unchanged; only documentation differs from the final tested code.
+lock entries are unchanged; only the evidence report differs from current tested code.
 The candidate is ready for Draft PR review, not automatic merge or permission
 for M2–M5. Production writes and every real-profile operation remain separately gated.
