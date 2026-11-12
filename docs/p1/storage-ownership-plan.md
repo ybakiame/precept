@@ -1,6 +1,8 @@
 # P1-M0 storage ownership and acceptance plan
 
-Design-only companion to [Proposed ADR-0005](../adr/0005-local-storage-and-write-ownership.md).
+Design-only companion to [Accepted ADR-0005](../adr/0005-local-storage-and-write-ownership.md).
+The owner accepted ADR-0005 on 2026-11-12 after PR #37 merged; this did not
+approve a real-profile operation or production writer.
 Authority: [Issue #36](https://github.com/ybakiame/agent-control-plane/issues/36).
 Reviewed source baseline: main `2a5949120aacd0523cd7fa5e417548e1e648bc81`.
 Every proposed mechanism below is **NOT_IMPLEMENTED / NOT_RUN** unless explicitly
@@ -61,7 +63,8 @@ retired, not retroactively made safe by `user_version`, ACLs or cooperative lock
 The [owner's review](https://github.com/ybakiame/agent-control-plane/pull/37#pullrequestreview-5867130588)
 resolved the decision on 2026-11-12: new Rust writes follow Accepted ADR-0004 and
 reject `suggested → deprecated`. This is a chosen future contract, not current
-Python behavior or acceptance of ADR-0005. No new Withdraw state/synonym is added.
+Python behavior; the ADR was separately accepted after the M0 PR merged. No new
+Withdraw state/synonym is added.
 
 The table applies to a **fresh** operation ID after authorization, owner/revision
 checks and reading the current row within the writer transaction. Repeating an
@@ -234,13 +237,15 @@ macOS/Windows/WSLg/TUI/UI acceptance claim.
 
 ## Phased follow-up briefs
 
-These are proposed issue briefs only: **not opened, implemented or authorized by
-M0**. ADR acceptance precedes code; the owner has resolved transition semantics,
-while M1/M2 implementation and compatibility/transition tests remain pending.
+The owner separately accepted ADR-0005 after merging M0. **M1 is now opened as
+[Issue #38](https://github.com/ybakiame/agent-control-plane/issues/38), authorizing
+only synthetic-fixture writer and schema-contract implementation.** M2–M5 are
+unopened follow-up briefs. Real-profile access, production write activation and
+cutover remain unauthorized; transition implementation and tests are pending.
 
 | Brief / phase | Scope | Required acceptance before progressing |
 | --- | --- | --- |
-| M1 — synthetic writer and schema contract | Freeze profile-v2/control-catalog exact DDL; separate writer library; fresh synthetic roots only; typed command/revision/receipt semantics | Resolved transition matrix: positive/current-state/race/retry and denied-state invariance gates above; historical deprecated/legacy-row/opaque-JSON preservation across both v0 shapes and v1→v2; unknown-version/schema refusal; atomic confirm/deprecate; competing revisions; duplicate/reused operation IDs; lost commit response; sanitized errors; no writable reader/core/MCP handle; no profile-path API |
+| M1 — synthetic writer and schema contract ([Issue #38](https://github.com/ybakiame/agent-control-plane/issues/38), active) | Freeze profile-v2/control-catalog exact DDL; separate writer library; fresh synthetic roots only; typed command/revision/receipt semantics | Resolved transition matrix: positive/current-state/race/retry and denied-state invariance gates above; historical deprecated/legacy-row/opaque-JSON preservation across both v0 shapes and v1→v2; unknown-version/schema refusal; atomic confirm/deprecate; competing revisions; duplicate/reused operation IDs; lost commit response; sanitized errors; no writable reader/core/MCP handle; no profile-path API |
 | M2 — compatibility and exclusive-owner integration | Genuine Python RO adapter; guard every old CLI/MCP path; authenticated native daemon command opt-in; intentional CLI transition difference; shared connection gates and writer lease | Local Windows and Linux/WSL tests of legacy/v2 reads and strict transition/compatibility gates above (including rollback owner); authorization negatives before DB access, idle MCP shutdown/drain, simultaneous processes/aliases, bounded Busy, lease death/restart, read/write grant separation and unchanged IPC/MCP/session revocation; fence/retire version-blind/direct-write Python before cutover, no fallback |
 | M3 — synthetic cutover/rollback/restore and privacy | Private SQLite control manifests, generations, explicit consent; latest-state v2→v1 rollback and separately consented older restore | Reproduce every failure-table boundary with genuine killed/restarted processes, including control/profile commit gap and post-write downgrade; full Python/Rust logical parity and reader reopen; no sidecar orphan/overwrite; catalog/version/backup corruption refusal; Unix permissions and actual Windows ACL policy; bounded space/error injection and honest untested limits |
 | M4 — per-profile operator rollout opt-in | Separately authorized real profile, exact source/control/backup identities and retention window; no bulk/default discovery | Owner approves exact operation/locations/data-loss implications after M1–M3 review; stop all old clients, verified backup and independent reader checks, explicit selection then activation; rollback rehearsal accepted; supported local filesystem/durability policy and sanitized local report |
@@ -271,8 +276,8 @@ Future N/O/P/Q/R tasks retain their separate domain and acceptance boundaries.
 
 ## M0 review record
 
-The deliverable consists only of this plan, Proposed ADR-0005, architecture and
-roadmap updates. Source/PR review did not instantiate Store, inspect a profile,
+The M0 deliverable consisted only of this plan, then-Proposed ADR-0005,
+architecture and roadmap updates. Source/PR review did not instantiate Store, inspect a profile,
 read default state locations, access credentials or change system settings.
 Initial documentation checks at `47ee409` passed: 58 relative links/anchors across the four
 changed documents; balanced Markdown fences; exact four-document scope; no
@@ -280,8 +285,8 @@ private-path/credential patterns; `git diff --check` for whitespace. Eight uniqu
 external references were checked against fetched repository issue/PR evidence,
 without rerunning the historical Actions jobs. These checks are not application
 tests or storage/runtime evidence.
-No owner acceptance, code implementation, real-data authorization or automatic
-merge is inferred from submitting the Draft PR.
+At the time of M0 PR submission, no owner acceptance, code implementation,
+real-data authorization or automatic merge was inferred.
 
 PR #37 owner-review follow-up (2026-11-12): recorded the strict future transition
 decision, preserved historical states, documented the intentional CLI difference,
@@ -291,5 +296,6 @@ balanced fences, the exact four-document scope, private-path/credential patterns
 absence of stale owner-decision blockers and unchanged Accepted ADR-0004; all passed,
 as did `git diff --check`. The ninth unique external reference is the fetched owner
 review; prior historical evidence remains scoped as above. No application tests,
-database access or GitHub Actions were run; future gates remain NOT_RUN and ADR-0005
-remains Proposed, independently of the resolved transition choice.
+database access or GitHub Actions were run; future implementation gates remain
+NOT_RUN. After PR #37 merged, the owner separately accepted ADR-0005 and opened
+M1 Issue #38 for synthetic-only implementation, with no real-profile authority.
