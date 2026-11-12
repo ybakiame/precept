@@ -14,7 +14,7 @@ operator ─ NSH Desktop/TUI / native acp-query ─ operator IPC ─ Rust daemon
                                                           │
                                                 acp-store (read-only)
                                                           │
-                                              explicit local Profile v2
+                                              explicit local Rust-native Profile v1
 trusted agent ─ two-tool MCP stdio ─ acp-mcp ─ project capability ─┘
                                                 │
                               optional native ACP session supervisor
@@ -30,12 +30,12 @@ disposable validation-era implementation details scheduled for removal by [Issue
 | --- | --- | --- |
 | Legacy Python P0 | Historical prototype currently present before M2; scheduled for removal under ADR-0006 | Any new product feature, compatibility path, or release dependency |
 | `crates/acp-core` | Legacy confirmed preference/Handoff resolver plus P1-L pure typed selector/conflict explanation; bounded document/fingerprint semantics through adapters | SQLite connections, UI, process execution, protocol transport or authorization grants |
-| `crates/acp-store` | Target: explicit-path, strict read-only adapter for one selected current Profile schema; M1 v2 is a replaceable baseline | Writes, schema migration, legacy-format compatibility |
+| `crates/acp-store` | Target: explicit-path, strict read-only adapter for one selected current Profile schema; M1 v2 is historical only; the product target is a fresh Rust-native v1 | Writes, schema migration, legacy-format compatibility |
 | `crates/acp-rehearsal` | Synthetic migration/recovery experiments | Real-profile migration rollout |
 | `crates/acp-ipc`, `acp-daemon` | Local capability/peer checks, scoped reads, live repository adapter, lease authority | TCP listener or caller-selected wider scope |
 | `crates/acp-session` | Optional configured native ACP child lifecycle and bounded observations | OS sandbox, arbitrary shell execution or credential login |
 | `crates/acp-mcp` | Read-only stdio bridge to project-bound IPC | Profile/task/session mutation |
-| `crates/acp-write` | M1 synthetic v2 transaction writer; M2 makes it daemon-only for explicitly created v2 profiles | Public arbitrary-path opens, direct UI/CLI writes, generic SQL |\n| `crates/acp-query` | Native operator reads/session controls; M2 adds typed write requests through daemon IPC | Direct database access or a second writer |
+| `crates/acp-write` | M1 historical synthetic v2 writer; M2 implements the daemon-only Rust-native v1 writer | Public arbitrary-path opens, direct UI/CLI writes, generic SQL |\n| `crates/acp-query` | Native operator reads/session controls; M2 adds typed write requests through daemon IPC | Direct database access or a second writer |
 | `spikes/p1-e/shared`, `spikes/p1-e/nsh` | Shared typed presentation and NSH Desktop/TUI surfaces | Direct database access, duplicate resolution logic or autonomous daemon startup |
 
 The paths remain as implemented; accepting NSH does not move crates or remove
@@ -81,19 +81,19 @@ established operator-only versioned IPC, explicit grants, typed transactions,
 CAS/receipts and strict preference transitions. [ADR-0006](adr/0006-rust-only-runtime.md)
 now supersedes its Python compatibility, legacy schema support, migration handoff
 and v2-to-v1 rollback decisions. The accepted target is a single Rust runtime with one current profile schema
-(M1's v2 schema is a replaceable working baseline): explicit creation, strict reads,
+(fresh Rust-native Profile v1): explicit creation, strict reads,
 daemon-owned writes, and no Python runtime or legacy migration. Breaking changes
 are acceptable during validation; old local prototype files may be deleted. The [historical storage ownership plan](p1/storage-ownership-plan.md)
 retains original M0/M1 evidence but is superseded as an execution plan.
 
 [P1-M1 / Issue #38](https://github.com/ybakiame/agent-control-plane/issues/38)
 completed in [PR #39](https://github.com/ybakiame/agent-control-plane/pull/39):
-the isolated v2 transaction writer, exact schema, CAS/receipts, strict transitions
-and historical-field preservation were validated against synthetic fixtures.
-Its v0/v1 migration tests remain historical evidence for that revision; they do
-not create a product migration commitment. [P1-M2 / Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40)
-is re-scoped by ADR-0006 to native v2 runtime integration and Python prototype
-retirement. It remains validation-only: disposable old ACP prototype state may be deleted; no production write activation is authorized.
+the isolated synthetic v2 transaction writer, exact schema, CAS/receipts and strict
+transitions were validated against disposable fixtures. This is historical evidence,
+not the product data schema. [P1-M2 / Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40)
+is re-scoped by ADR-0006 to a fresh Rust-native Profile v1 runtime and Python
+prototype retirement. The new v1 is not compatible with either legacy Python v1
+or M1 synthetic v2; no conversion is required. It remains validation-only: disposable old ACP prototype state may be deleted; no production write activation is authorized.
 
 Initial technical revisions/receipts are not the full human ReviewDecision history,
 which remains P1-O work.
