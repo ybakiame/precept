@@ -250,39 +250,39 @@ M2–M5 proposal below. The current sequence is:
 | Phase | Scope | Acceptance |
 | --- | --- | --- |
 | M1 — synthetic v2 writer (complete) | Merged PR #39; exact v2 schema, transaction/CAS/receipt and strict-transition evidence | Historical PASS remains scoped to the merged synthetic implementation; it is not production activation |
-| M2 — Rust-only runtime cutover ([Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40)) | Explicit v2 profile creation, strict v2 reader, daemon-only writer and operator IPC, native CLI/NSH integration, Python runtime/test/dependency retirement, removal of active v0/v1 paths | Fresh synthetic v2 fixtures on native Windows and Linux/WSL; existing IPC v1, session API v2 and two-tool MCP boundaries preserved; no Python product path remains |
-| M3 — v2 profile lifecycle | Rust-only backup, restore, retention, lock and process-recovery design | Synthetic v2 recovery, privacy and platform-specific filesystem acceptance; no Python rollback or schema downgrade |
+| M2 — Rust-only runtime cutover ([Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40)) | Fresh Rust-native Profile v1 creation/read, daemon-only writer and operator IPC, native CLI/NSH integration, Python runtime/test/dependency retirement, removal of legacy migration paths | Fresh disposable v1 fixtures on native Windows and Linux/WSL; current authorization/session/MCP security semantics verified; no Python product path remains |
+| M3 — Profile v1 lifecycle (if needed) | Rust-only backup, restore, retention, lock and process-recovery design for the new schema | Synthetic v1 recovery, privacy and platform-specific filesystem acceptance; no legacy migration or schema downgrade |
 | M4 — operator review and profile workflows | ADR-0004 review/provenance semantics and explicit profile lifecycle UX | Exact-record human approval, permission revocation and end-to-end tests |
 | M5 — release hardening | Packaging, clean-machine setup, accessibility, security, performance and platform support | Explicit release criteria with source-specific platform evidence |
 
-M2 is still synthetic-only. It must not open or modify any existing user-local profile,
-default state directory, credential, or external checkout. It does not authorize
-production write activation, real-profile migration, or release. Existing v0/v1
-files are refused and left untouched; a future explicit import requires a separate
-decision. Recovery in M3 is v2-to-v2 only.
+M2 uses disposable synthetic fixtures of the fresh Rust-native Profile v1 schema.
+The local Python prototype and M1 v2 validation profiles may be deleted during an
+explicit ACP development reset; no migration, import or preservation is required.
+Do not touch credentials or unrelated files. M2 does not authorize production write
+activation or release. Any later backup/restore is v1-to-v1 lifecycle work only if
+the product demonstrates a need; there is no legacy conversion.
 
 ## Historical phased follow-up briefs (superseded by ADR-0006)
 
 The owner separately accepted ADR-0005 after merging M0. **M1 completed in
 [PR #39](https://github.com/ybakiame/agent-control-plane/pull/39), merged at
-`3083c407d02c34bbbfef402f7ae57bb7eda248d1`; Issue #38 is closed.** M2 is now
-opened as [Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40)
-for synthetic-only Python compatibility and daemon-exclusive owner integration.
-M3–M5 remain unopened. Real-profile access, production write activation and cutover
-remain unauthorized.
+`3083c407d02c34bbbfef402f7ae57bb7eda248d1`; Issue #38 is closed.** The old M2–M5
+briefs below are superseded by ADR-0006 and are retained only as historical planning
+evidence. The active implementation scope is [Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40).
 
 | Brief / phase | Scope | Required acceptance before progressing |
 | --- | --- | --- |
 | M1 — synthetic writer and schema contract ([Issue #38](https://github.com/ybakiame/agent-control-plane/issues/38), complete in merged PR #39) | Freeze profile-v2/control-catalog exact DDL; separate writer library; fresh synthetic roots only; typed command/revision/receipt semantics | PASS at merged synthetic-only scope: resolved transition matrix, CAS/retry, denied-state invariance, v0/v1→v2 history preservation, schema refusal, atomic confirm/deprecate and no production entrypoint; exact evidence in [M1 report](../evaluation/p1-m1-synthetic-writer.md) |
-| M2 — compatibility and exclusive-owner integration ([Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40), active) | M1 merged; Accepted ADR-0005 | Genuine Python RO adapter; guard every old CLI/MCP path; authenticated native daemon command opt-in; intentional CLI transition difference; shared connection gates and writer lease. Local Windows and Linux/WSL synthetic tests for legacy/v2 reads, rollback-owner strict transitions, authorization-before-DB, idle MCP drain, simultaneous processes/aliases, bounded Busy, lease death/restart, read/write grant separation and unchanged IPC/MCP/session revocation. Fence version-blind/direct-write Python before cutover; no fallback |
-| M3 — synthetic cutover/rollback/restore and privacy (unopened) | M2 accepted; M3 control catalog design | Private SQLite control manifests, generations, explicit consent; latest-state v2→v1 rollback and separately consented older restore; genuine process-kill recovery and privacy/ACL gates |
+| M2 — compatibility and exclusive-owner integration (superseded) | Historical M0/M1 plan; superseded by ADR-0006 and revised Issue #40 | Do not implement the Python RO adapter, rollback owner, legacy/v2 readers, compatibility gates or version-preserving cutover described in this row |
+| M3 — synthetic cutover/rollback/restore and privacy (superseded) | Historical M2 plan; superseded by ADR-0006 | No Python handoff, cross-schema rollback, migration catalog or multi-generation cutover. Any current-schema lifecycle work is separately scoped only if needed |
 | M4 — per-profile operator rollout opt-in (unopened) | M1–M3 accepted; separate owner consent | Exact source/control/backup identities, individually consented real-profile operation, verified backup, supported filesystem/durability policy and rollback rehearsal |
 | M5 — close rollback window and retire Python direct writes (unopened) | Stable M4 operation; explicit owner decision | Verify no remaining legacy writers; retire direct-write fallback; define inactive-artifact/receipt retention while preserving a verified recovery point |
 
 
 The matrix is local-only; no GitHub Actions run is required or authorized by M0.
-Later code changes must run AGENTS-required Python tests and targeted meaningful
-Rust/security/compatibility tests. Reuse prior evidence with exact scope; run broad
+Later code changes must run the current AGENTS-required Rust tests and targeted
+security/authorization/process-concurrency tests; Python compatibility and parity
+tests are not current requirements. Reuse prior evidence with exact scope; run broad
 matrices only when affected boundaries justify them. New provider/model turns are
 irrelevant to storage acceptance and not implicitly authorized.
 
