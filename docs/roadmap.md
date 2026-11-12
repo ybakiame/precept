@@ -5,7 +5,8 @@ define the target. Checkmarks below refer to scoped historical evidence, not
 production readiness. Current completed engineering baseline: PR #37 merged at
 `d6168e0ca5bff150942711b8f398516e03769703` (P1-M0); ADR-0004 and ADR-0005
 are Accepted. [P1-M1 / Issue #38](https://github.com/ybakiame/agent-control-plane/issues/38)
-is active for synthetic-only Rust writer work. No real-profile migration or
+has a locally validated synthetic-only Rust writer candidate awaiting Draft PR
+review. No real-profile migration or
 production write ownership is authorized.
 P1-K interoperability evidence is scoped separately below.
 
@@ -15,7 +16,7 @@ P1-K interoperability evidence is scoped separately below.
 | --- | --- | --- |
 | Context and personal preferences | Python local SQLite registry/review/writes, legacy Rust resolver, bounded live sources; P1-L pure typed selectors/conflicts | Live structured-contract adapters, persisted generalized model and complete review UI |
 | Continuity | Exact project/task Handoff, historical checks, revision/worktree/fingerprint warnings | Frozen constraint snapshots, portable bundle format and independent cross-client acceptance |
-| Rust ownership and storage | Read-only core/store, parity and synthetic backup/migration/process recovery | Production Rust writes, real-data migration/recovery, backup/export/import and retention design |
+| Rust ownership and storage | Read-only core/store, parity and synthetic backup/migration/process recovery; M1 isolated v2 writer/transaction candidate locally validated | Production Rust writes, live reader/owner integration, real-data migration/recovery and backup/export/import/retention workflows |
 | Local service and MCP | Unix sockets/named pipes, operator/project capabilities, two-tool read-only stdio | Full MCP conformance and broader versioned client matrix |
 | NSH Desktop/TUI | Shared model, five pages, Sessions panel, connections/settings, themes/locales and bounded 10k display | Product IA realization, clean-machine release/accessibility and current macOS verification |
 | Optional ACP sessions | Explicit native lifecycle/auth observations; P1-I opt-in lease, expiry and revocation | Persistent resume, vendor parity and sandboxing are not delivered or promised |
@@ -113,10 +114,10 @@ writer, separate writer library, Python compatibility/fencing, explicit schema
 versions and verified-generation cutover/rollback. It changes documentation only.
 The owner resolved the transition decision in PR #37: reject new
 suggested→deprecated under the future writer, preserve historical records and
-follow ADR-0004. Current Python behavior is unchanged; M1/M2 implementation and
-parity/transition tests remain pending, including the intentional CLI compatibility
-difference and pre-cutover fencing. New Rust writes, v2 migration and real-profile
-rollout remain NOT_IMPLEMENTED / NOT_RUN at this milestone. Completed C2A
+follow ADR-0004. Current Python behavior is unchanged; the M1 candidate below
+implements/tests the synthetic transaction and history-preservation contract.
+Live CLI compatibility and pre-cutover fencing remain M2 work. Production Rust
+writes and real-profile rollout remain NOT_IMPLEMENTED / NOT_RUN. Completed C2A
 synthetic migration and C2B1 genuine process recovery, including the corrected
 historical Linux/macOS/Windows process matrix, remain prerequisites already proven
 at their recorded scope. M0 neither repeats them nor claims production recovery.
@@ -128,11 +129,26 @@ per-profile rollout and M5 rollback closure/direct-writer retirement are not yet
 opened. No real profile access, production Rust writes, or daemon/IPC/MCP/UI
 mutations are authorized by M1. Exact gates and NOT_RUN limitations stay in the plan.
 
+M1 freezes the [exact profile-v2/writer and planned catalog contract](p1/profile-v2-schema-and-writer.md)
+before implementation and adds `acp-write` with fresh owned fixtures only. New-copy
+v0/v1→v2 migration, independent verification, transactional CAS/receipts, strict
+transitions and historical preservation are locally validated on Windows and
+Linux/WSL. The pre-review baseline at clean `39de165` passed 27 M1 tests per host.
+After both allocation-history review fixes, the current second-review result at
+clean `1538938` is 32 M1 tests and 29 Python tests per host, with format, writer
+Clippy and diff checks passing. The
+[M1 evidence report](evaluation/p1-m1-synthetic-writer.md) retains exact sources:
+the earlier Linux/Windows full matrices and narrower metadata/backup/allocation-history
+correction checks on their exact sources. Genuine v2 child kill boundaries are
+separate from the existing C2B1 recovery target. No public path-adoption API,
+production dependency/entrypoint, runtime v2 reader adoption or usable catalog is
+added. This is a Draft PR candidate, not merged completion or M2 authorization.
+
 | Brief | Depends on | Deliverable / acceptance gate |
 | --- | --- | --- |
 | L — typed context explanation ([Issue #34](https://github.com/ybakiame/agent-control-plane/issues/34), merged PR #35) | J merged; ADR-0004 accepted | L0 contract, L1 pure resolver and L2 scoped local compatibility/review evidence delivered; legacy responses preserved |
 | M0 — local storage design ([Issue #36](https://github.com/ybakiame/agent-control-plane/issues/36), merged PR #37) | J + merged L; Accepted ADR-0004 | ADR-0005 and ownership/compatibility/recovery matrices delivered and explicitly accepted; no code or real-data authorization |
-| M1 — synthetic Rust writer and exact v2 schema ([Issue #38](https://github.com/ybakiame/agent-control-plane/issues/38), active) | Accepted ADR-0005; resolved transition semantics | Frozen exact v2/catalog contract; isolated synthetic-only Rust write crate, transaction/CAS/receipt and strict transition/legacy-preservation regressions, no production entrypoint |
+| M1 — synthetic Rust writer and exact v2 schema ([Issue #38](https://github.com/ybakiame/agent-control-plane/issues/38), locally validated; Draft review pending) | Accepted ADR-0005; resolved transition semantics | Exact profile-v2/planned-catalog contract, isolated crate and transaction/CAS/receipt/strict-transition/history-preservation evidence delivered; no production entrypoint; owner review/merge pending |
 | M2–M5 — compatibility through explicit rollout (unopened) | M1 accepted; sequential gates from storage plan | Separately reviewed Python read-only/daemon owner fencing, synthetic cutover/recovery/privacy, per-profile consent and writer retirement; no implicit adoption or dual writers |
 | N — project onboarding and contracts | J + L; M for writes | Register/preview explicit roots, optional versioned Markdown/YAML contract format and reviewed diff workflow; no auto-scaffold, symlink escape, private profile export or stale-source activation |
 | O — complete human review | J + L + M | Operator-only versioned proposal/review API and NSH workflow with view/confirm/reject/deprecate/delete/provenance; edits/review revocation/permission changes invalidate approval; no agent-facing mutation |
