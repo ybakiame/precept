@@ -123,7 +123,7 @@ freeze obsolete permissions or hide new repository rules.
 
 ## Trust and compatibility
 
-MCP retains exactly `get_effective_context` and `get_handoff`. Local IPC separates
+MCP is project-bound and read-only (`get_effective_context` and `get_handoff` are the current tools). Local IPC separates
 operator capability from project-bound agent capability; OS user identity alone
 does not grant operator role. Unix sockets/Windows named pipes stay local, without
 a browser gateway. Optional ACP Start, context sharing and individual permission
