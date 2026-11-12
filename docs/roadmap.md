@@ -17,7 +17,7 @@ P1-K interoperability evidence is scoped separately below.
 | --- | --- | --- |
 | Context and personal preferences | Legacy Python P0 registry/review/writes remain temporarily in the tree; Rust typed resolver and bounded live sources are implemented | Rust-native Profile v1 persistence and complete operator review workflow (P1-M2/M4) |
 | Continuity | Exact project/task Handoff, historical checks, revision/worktree/fingerprint warnings | Frozen constraint snapshots, portable bundle format and independent cross-client acceptance |
-| Rust ownership and storage | Read-only core/store, parity and synthetic backup/migration/process recovery; M1 isolated v2 writer/transaction candidate locally validated | Production Rust writes, live reader/owner integration, real-data migration/recovery and backup/export/import/retention workflows |
+| Rust ownership and storage | Read-only core/store and M1's disposable synthetic v2 writer/transaction evidence | Rust-native Profile v1 writes and live reader/owner integration; any later data-lifecycle feature must be justified by actual product use |
 | Local service and MCP | Unix sockets/named pipes, operator/project capabilities, two-tool read-only stdio | Full MCP conformance and broader versioned client matrix |
 | NSH Desktop/TUI | Shared model, five pages, Sessions panel, connections/settings, themes/locales and bounded 10k display | Product IA realization, clean-machine release/accessibility and current macOS verification |
 | Optional ACP sessions | Explicit native lifecycle/auth observations; P1-I opt-in lease, expiry and revocation | Persistent resume, vendor parity and sandboxing are not delivered or promised |
@@ -130,8 +130,9 @@ old validation profiles may be deleted during a deliberate ACP development reset
 no backward-compatibility or retention guarantee is required. Production writes are
 not activated.
 
-P1-M3, if needed, handles Rust-to-Rust lifecycle and recovery for the selected current
-Profile schema; it has no Python owner handoff or legacy-schema migration. P1-M4 completes the
+P1-M3 remains conditional. Open it only if M2 reveals a concrete Profile v1 lifecycle
+or recovery need; do not assume backup/restore/retention work in advance. It has no
+Python owner handoff or legacy-schema migration. P1-M4 completes the
 operator review/profile workflows under ADR-0004. P1-M5 handles release hardening.
 Any real-profile operation or release requires a separate explicit owner decision.
 
@@ -141,7 +142,7 @@ Any real-profile operation or release requires a separate explicit owner decisio
 | M0 — local storage design ([Issue #36](https://github.com/ybakiame/agent-control-plane/issues/36), merged PR #37) | J + merged L; Accepted ADR-0004 | ADR-0005 and ownership/compatibility/recovery matrices delivered and explicitly accepted; no code or real-data authorization |
 | M1 — synthetic Rust writer and exact v2 schema ([Issue #38](https://github.com/ybakiame/agent-control-plane/issues/38), merged PR #39) | Accepted ADR-0005; resolved transition semantics | Historical exact v2 contract, isolated `acp-write`, transaction/CAS/receipt/strict-transition evidence; merged at `3083c407`; disposable synthetic-only, not the product schema |
 | M2 — Rust-only runtime cutover and Python prototype retirement ([Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40), active) | M1 merged; Accepted ADR-0006 | Fresh Rust-native Profile v1 creation/reads, daemon-only `acp-write`, operator write grant/IPC, native `acp-query` and NSH integration, removal of Python runtime/tests/dependencies and legacy migration paths; disposable validation fixtures only |
-| M3 — Profile v1 lifecycle and recovery (unopened) | M2 accepted | Rust-only lifecycle/recovery for the new v1 schema, only if needed; no legacy migration, Python owner or downgrade |
+| M3 — Profile v1 lifecycle and recovery (conditional/unopened) | M2 accepted plus a demonstrated product need | Only the minimum Rust-native v1 lifecycle/recovery behavior actually required; no assumed backup/restore/retention system, legacy migration, Python owner or downgrade |
 | M4 — operator review and profile workflows (unopened) | M2/M3 accepted; ADR-0004 | Human review/provenance, explicit profile lifecycle UX and permission-safe end-to-end acceptance |
 | M5 — release hardening (unopened) | M2–M4 accepted | Clean-machine packaging, accessibility, supported-platform evidence, security and performance gates |
 | N — project onboarding and contracts | J + L; M for writes | Register/preview explicit roots, optional versioned Markdown/YAML contract format and reviewed diff workflow; no auto-scaffold, symlink escape, private profile export or stale-source activation |
