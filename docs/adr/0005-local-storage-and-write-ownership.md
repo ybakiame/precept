@@ -1,6 +1,6 @@
 # ADR-0005: local storage and write ownership
 
-- Status: **Proposed** — requires explicit owner acceptance; merge is not acceptance
+- Status: **Accepted** — owner approved 2026-11-12 after PR #37 merged; implementation and any real-profile operation require separate authorization
 - Date: 2026-11-12
 - Authority: [P1-M0 / Issue #36](https://github.com/ybakiame/agent-control-plane/issues/36)
 - Source baseline: main `2a5949120aacd0523cd7fa5e417548e1e648bc81` (PR #35 merged)
@@ -9,7 +9,9 @@
 
 ## Context and authorization
 
-This is a design gate, not permission to implement a writer or access a profile.
+This accepted architecture establishes future boundaries, not permission to open a
+real profile, perform migration, or activate a production Rust writer. M1 authorizes
+only synthetic fixture work under a separately scoped Issue and reviewed PR.
 Python `Store` currently owns writes. Its constructor creates directories, opens
 read-write, enables WAL and initializes/extends schema, even for CLI reads and the
 Python MCP launch path. It does not check `user_version`. Rust `acp-store` and the
@@ -166,8 +168,9 @@ page layout. New-command validation reads the current row in the writer transact
 denied transitions change no records, revisions, commit sequence or receipts.
 Previously committed identical operation retries still return the existing receipt,
 rather than attempting a fresh transition. The owner resolved semantics only:
-ADR-0005 stays Proposed; implementation and synthetic compatibility tests remain
-NOT_IMPLEMENTED / NOT_RUN, with no code or real-profile authorization.
+ADR-0005 was separately accepted by the owner after PR #37 merged; implementation
+and synthetic compatibility tests remain NOT_IMPLEMENTED / NOT_RUN, with no code
+or real-profile authorization from acceptance.
 
 ## Decision: schema and source ownership
 
