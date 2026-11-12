@@ -20,10 +20,13 @@ dependencies = [
  "acp-ipc",
  "acp-session",
  "acp-store",
+ "acp-write",
  "clap",
  "libc",
+ "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "tokio",
  "windows-sys",
@@ -87,10 +90,12 @@ name = "acp-store"
 version = "0.1.0"
 dependencies = [
  "acp-core",
+ "acp-ipc",
  "rusqlite",
  "serde",
  "serde_json",
  "tempfile",
+ "windows-sys",
 ]
 
 [[package]]

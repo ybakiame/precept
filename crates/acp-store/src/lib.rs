@@ -5,6 +5,8 @@ use acp_core::{
 };
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 #[doc(hidden)]
+pub mod native;
+#[doc(hidden)]
 pub mod profile;
 use std::{
     path::{Path, PathBuf},
@@ -47,6 +49,10 @@ pub struct SqliteStore {
     db: Connection,
 }
 impl SqliteStore {
+    /// Verify the actual SQLite file against a daemon-owned native guard.
+    pub fn check_open_file(&self, guard: &std::fs::File) -> Result<()> {
+        native::check(&self.db, guard)
+    }
     pub fn open(path: &Path) -> Result<Self> {
         if !path.is_absolute() || !path.is_file() {
             return Err(Error::OpenFailed);

@@ -67,6 +67,14 @@ impl Writer<'_> {
         self.execute_inner(request, Fault::None)
     }
     pub(crate) fn execute_inner(&mut self, request: &Request, _fault: Fault) -> Result<Receipt> {
+        self.execute_checked(request, _fault, &|| Ok(()))
+    }
+    pub(crate) fn execute_checked(
+        &mut self,
+        request: &Request,
+        _fault: Fault,
+        admit: &dyn Fn() -> Result<()>,
+    ) -> Result<Receipt> {
         request.validate()?;
         self.profile.check()?;
         // All filesystem work is outside the write transaction. Registration is
@@ -78,6 +86,7 @@ impl Writer<'_> {
             true
         };
         binding(&self.profile.binding, &request.binding)?;
+        admit()?;
         let tx = self
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)

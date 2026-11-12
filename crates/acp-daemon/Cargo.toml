@@ -13,6 +13,7 @@ acp-ipc = { path = "../acp-ipc" }
 clap = { version = "4", features = ["derive"] }
 acp-core = { path = "../acp-core" }
 acp-store = { path = "../acp-store" }
+acp-write = { path = "../acp-write", features = ["daemon-owner"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -20,6 +21,8 @@ libc = "0.2"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
 [dev-dependencies]
 tempfile = "3"
+rusqlite = { version = "=0.41.1", features = ["bundled"] }
+sha2 = "0.10"
 
 [dependencies.acp-session]
 path = "../acp-session"

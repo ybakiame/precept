@@ -37,12 +37,16 @@ impl Entry {
     }
 }
 #[derive(Clone, Default)]
-pub struct Registry(Arc<Mutex<Option<Arc<Entry>>>>);
+pub struct Registry(
+    Arc<Mutex<Option<Arc<Entry>>>>,
+    pub crate::write_grant::Registry,
+);
 /// No secret is copied into the connection handle; validity is checked per request.
 #[derive(Clone)]
 pub struct Peer {
     access: Access,
     lease: Option<Arc<Entry>>,
+    write: Option<Arc<crate::write_grant::Grant>>,
 }
 impl Peer {
     pub fn is_session(&self) -> bool {
@@ -52,7 +56,8 @@ impl Peer {
         self.access.clone()
     }
     pub fn check(&self) -> Result<()> {
-        self.lease.as_ref().map_or(Ok(()), |e| e.check())
+        self.lease.as_ref().map_or(Ok(()), |e| e.check())?;
+        self.write.as_ref().map_or(Ok(()), |g| g.check())
     }
     pub fn record(&self, method: &str) {
         if let Some(e) = &self.lease {
@@ -198,7 +203,7 @@ impl Registry {
     pub async fn accept(&self, stream: &mut Stream, credentials: &[Credential]) -> Result<Peer> {
         let hello: crate::Hello = serde_json::from_value(crate::read_frame(stream).await?)
             .map_err(|_| Error::Unauthorized)?;
-        if hello.api_version != 1 {
+        if hello.api_version != crate::API_VERSION {
             return Err(Error::Version);
         }
         let peer = if let Some(c) = credentials
@@ -208,23 +213,33 @@ impl Registry {
             Peer {
                 access: c.access.clone(),
                 lease: None,
+                write: None,
             }
         } else {
-            let current = self.0.lock().unwrap();
-            let e = current
-                .as_ref()
-                .filter(|e| bool::from(e.credential.token.ct_eq(&hello.credential)))
-                .ok_or(Error::Unauthorized)?;
-            e.check()?;
-            Peer {
-                access: e.credential.access.clone(),
-                lease: Some(e.clone()),
+            if let Ok(g) = self.1.authenticate(&hello.credential) {
+                Peer {
+                    access: g.access(),
+                    lease: None,
+                    write: Some(g),
+                }
+            } else {
+                let current = self.0.lock().unwrap();
+                let e = current
+                    .as_ref()
+                    .filter(|e| bool::from(e.credential.token.ct_eq(&hello.credential)))
+                    .ok_or(Error::Unauthorized)?;
+                e.check()?;
+                Peer {
+                    access: e.credential.access.clone(),
+                    lease: Some(e.clone()),
+                    write: None,
+                }
             }
         };
         peer.check()?;
         crate::write_frame(
             stream,
-            &json!({"api_version":1,"ready":true,"access":peer.access}),
+            &json!({"api_version":crate::API_VERSION,"ready":true,"access":peer.access}),
         )
         .await?;
         Ok(peer)
@@ -251,7 +266,7 @@ mod tests {
             crate::write_frame(
                 &mut b,
                 &crate::Hello {
-                    api_version: 1,
+                    api_version: crate::API_VERSION,
                     credential: c.token,
                 },
             )

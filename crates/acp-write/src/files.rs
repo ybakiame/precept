@@ -73,7 +73,29 @@ pub(crate) fn check_file(path: &Path) -> Result<Identity> {
     no_links(path)?;
     check(path, false, true)
 }
-pub(crate) fn destination(path: &Path) -> Result<(PathBuf, Identity)> {
+#[cfg(feature = "daemon-owner")]
+pub(crate) fn open_guard(path: &Path, write: bool) -> Result<File> {
+    let expected = check_file(path)?;
+    let mut options = fs::OpenOptions::new();
+    options.read(true).write(write);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
+    }
+    let file = options.open(path).map_err(|_| Error::UnsafeWorkspace)?;
+    let actual = acp_store::native::identity(&file)?;
+    if actual != (expected.0, expected.1) || check_file(path)? != expected {
+        return Err(Error::UnsafeWorkspace);
+    }
+    Ok(file)
+}
+pub(crate) fn validate_name(path: &Path) -> Result<()> {
     if !path.is_absolute() {
         return Err(Error::UnsafeWorkspace);
     }
@@ -105,6 +127,11 @@ pub(crate) fn destination(path: &Path) -> Result<(PathBuf, Identity)> {
     if name_str.contains(':') || name_str.ends_with(['.', ' ']) {
         return Err(Error::UnsafeWorkspace);
     }
+    Ok(())
+}
+pub(crate) fn destination(path: &Path) -> Result<(PathBuf, Identity)> {
+    validate_name(path)?;
+    let name = path.file_name().ok_or(Error::UnsafeWorkspace)?;
     let parent = path.parent().ok_or(Error::UnsafeWorkspace)?;
     let identity = check_parent(parent)?;
     for control in [

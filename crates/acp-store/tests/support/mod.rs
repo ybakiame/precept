@@ -8,9 +8,10 @@ use std::{
 pub fn fixture(base: &Path) -> PathBuf {
     assert!(!base.exists());
     fs::create_dir(base).unwrap();
-    fs::create_dir(base.join("state")).unwrap();
+    acp_ipc::transport::private_dir(&base.join("state"), true).unwrap();
     let path = base.join("state/context.sqlite3");
     assert!(!path.exists());
+    drop(acp_ipc::transport::new_private(&path).unwrap());
     let db = Connection::open(&path).unwrap();
     for ddl in acp_store::profile::DDL {
         db.execute_batch(ddl).unwrap();

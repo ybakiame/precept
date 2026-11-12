@@ -11,9 +11,13 @@ operator-controlled native Agent Client Protocol (ACP) session are implemented.
 P1-I adds separately opted-in, revocable session context.
 P1-M2 Stage 1 now supplies the fresh Profile v1 storage library: explicit
 no-overwrite creation, strict read-only validation and private typed transactions.
-The daemon has no write caller yet. Profile bootstrap, grants/leases, operator
-IPC/CLI/NSH integration and complete Python retirement remain later M2 slices.
+Stage 2 now has a Draft candidate for explicit daemon Profile selection, native
+writer lease/epoch, separately enabled write grants and typed IPC v2. It is
+validated only on disposable profiles; no real-profile activation is authorized.
+Native CLI/NSH write workflows and complete Python retirement remain later slices.
 See the [Stage 1 evidence](docs/evaluation/p1-m2-s1-storage.md).
+The [Stage 2 evidence](docs/evaluation/p1-m2-s2-ownership.md) records current native
+Windows/Linux results and the remaining boundaries.
 [Architecture](docs/architecture.md) separates this baseline
 from the target domain; the [roadmap](docs/roadmap.md) gates later implementation.
 

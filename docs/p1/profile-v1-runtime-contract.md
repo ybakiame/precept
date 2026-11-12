@@ -1,6 +1,6 @@
 # P1-M2 — Rust-native Profile v1 and runtime contract
 
-- Status: owner-confirmed Stage 1 storage contract, 2026-11-12; implementation authorized under Issue #43. PR remains Draft for implementation review; no merge or production activation is implied.
+- Status: owner-confirmed Stage 1 storage contract, merged in PR #42 at `1976d6f`. S2 has a [contract-first plan](daemon-profile-ownership.md) and [native evidence](../evaluation/p1-m2-s2-ownership.md), remaining Draft for review. No real-profile activation is implied; CLI/NSH workflows below remain later targets.
 - Authority: accepted [ADR-0006](../adr/0006-rust-only-runtime.md), [ADR-0004](../adr/0004-product-domain-trust.md), and the non-superseded parts of [ADR-0005](../adr/0005-local-storage-and-write-ownership.md).
 - Implementation issue: [#40](https://github.com/ybakiame/agent-control-plane/issues/40).
 - First implementation slice: [#43 — Profile v1 storage foundation](https://github.com/ybakiame/agent-control-plane/issues/43). Owner confirmed the Phase 1 recommendations and authorized continuing on this branch after this contract freeze, without automatically merging the PR.

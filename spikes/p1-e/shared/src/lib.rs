@@ -72,7 +72,7 @@ pub struct Snapshot {
 impl Snapshot {
     pub fn validate(&self) -> Result<(), &'static str> {
         let mut seen = std::collections::HashSet::new();
-        if self.health.api_version != 1
+        if self.health.api_version != 2
             || !self.health.ready
             || self.projects.len() > 64
             || serde_json::to_vec(self).map_or(true, |v| v.len() > 4 * 1024 * 1024)

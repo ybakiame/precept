@@ -140,9 +140,11 @@ Workspace tests at `c6c9052`: 87 Linux/WSL and 88 native Windows PASS; hosted
 Actions NOT_RUN (`[skip ci]`). The merged HEAD after that test was evidence-only.
 
 [P1-M2/S2 Issue #44](https://github.com/ybakiame/agent-control-plane/issues/44)
-is now the active next slice: daemon profile bootstrap/select and opened-file
+has a [locally validated Draft candidate](evaluation/p1-m2-s2-ownership.md): daemon profile bootstrap/select and opened-file
 identity, exclusive writer lease, epoch binding, distinct operator write grants,
-revocation and typed write IPC. No production writer was activated in S1. Parent
+revocation and typed write IPC v2. Native Workspace results at `371e577` are 103
+Linux/WSL and 104 Windows PASS, plus shared-model 25 on each. No real Profile is
+activated. No production writer was activated in S1. Parent
 Issue #40 still requires native CLI/NSH integration, Python retirement and
 integrated acceptance after S2.
 
