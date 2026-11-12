@@ -3,11 +3,11 @@
 The [charter](product.md) and [domain/trust ADR](adr/0004-product-domain-trust.md)
 define the target. Checkmarks below refer to scoped historical evidence, not
 production readiness. Current completed engineering baseline: PR #37 merged at
-`d6168e0ca5bff150942711b8f398516e03769703` (P1-M0); ADR-0004 and ADR-0005
-are Accepted. [P1-M1 / Issue #38](https://github.com/ybakiame/agent-control-plane/issues/38)
-has a locally validated synthetic-only Rust writer candidate awaiting Draft PR
-review. No real-profile migration or
-production write ownership is authorized.
+`d6168e0ca5bff150942711b8f398516e03769703` (P1-M0); PR #39 merged at
+`3083c407d02c34bbbfef402f7ae57bb7eda248d1` (P1-M1 synthetic-only Rust writer);
+ADR-0004 and ADR-0005 are Accepted. [P1-M2 / Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40)
+is active for synthetic-only Python compatibility and daemon ownership integration.
+No real-profile migration or production write activation is authorized.
 P1-K interoperability evidence is scoped separately below.
 
 ## Stage 1 — established engineering baseline (P0 through P1-I)
@@ -70,7 +70,7 @@ IPC/MCP checks. The [follow-up evidence](evaluation/p1-k-cross-agent-interop.md#
 retains original trial provenance. K is complete at its stated scope; OpenCode/Pi and
 additional model/platform modes remain explicitly unverified, not silently passed.
 
-## Stage 4 — P1-L / M0 complete; P1-M1 synthetic-only implementation active
+## Stage 4 — P1-L / M0 / M1 complete; P1-M2 compatibility and exclusive-owner integration active
 
 ADR-0004 was accepted by the owner on 2026-11-11 without changing its domain/trust
 decisions. [P1-L / Issue #34](https://github.com/ybakiame/agent-control-plane/issues/34)
@@ -81,10 +81,12 @@ is complete at its stated L0–L2 scope and merged in
 is complete; [PR #37](https://github.com/ybakiame/agent-control-plane/pull/37)
 merged at `d6168e0ca5bff150942711b8f398516e03769703` and the owner separately
 accepted ADR-0005 on 2026-11-12. [P1-M1 / Issue #38](https://github.com/ybakiame/agent-control-plane/issues/38)
-is the only active Stage 4 implementation task, restricted to disposable synthetic
-databases. M2–M5 and N–R remain gated briefs; no real-profile access or production
-write activation is authorized. Dependencies avoid premature storage migration,
-onboarding, review UI or snapshots.
+is complete: [PR #39](https://github.com/ybakiame/agent-control-plane/pull/39)
+merged at `3083c407d02c34bbbfef402f7ae57bb7eda248d1`. [P1-M2 / Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40)
+is now the active Stage 4 implementation task, restricted to disposable synthetic
+profiles. M3–M5 and N–R remain gated briefs; no real-profile access, production
+write activation, catalog cutover or rollout is authorized. Dependencies avoid
+premature migration, onboarding, review UI or snapshots.
 
 - [x] L0: [v1 domain/selector/conflict contract](p1/typed-context-v1.md) frozen
   before implementation; additive DTO remains separate from the MCP wire contract.
@@ -114,42 +116,44 @@ writer, separate writer library, Python compatibility/fencing, explicit schema
 versions and verified-generation cutover/rollback. It changes documentation only.
 The owner resolved the transition decision in PR #37: reject new
 suggested→deprecated under the future writer, preserve historical records and
-follow ADR-0004. Current Python behavior is unchanged; the M1 candidate below
-implements/tests the synthetic transaction and history-preservation contract.
-Live CLI compatibility and pre-cutover fencing remain M2 work. Production Rust
+follow ADR-0004. M1 is complete: [PR #39](https://github.com/ybakiame/agent-control-plane/pull/39)
+merged the synthetic-only Rust writer, exact v2 schema and transaction/history-
+preservation tests. Current Python behavior remains unchanged. Live CLI compatibility,
+Python read-only access and daemon ownership fencing are the active M2 work in Issue #40. Production Rust
 writes and real-profile rollout remain NOT_IMPLEMENTED / NOT_RUN. Completed C2A
 synthetic migration and C2B1 genuine process recovery, including the corrected
 historical Linux/macOS/Windows process matrix, remain prerequisites already proven
 at their recorded scope. M0 neither repeats them nor claims production recovery.
 
 ADR-0005 acceptance was a separate explicit owner decision after PR merge.
-Issue #38 now authorizes only synthetic M1 writer/schema/transaction work. M2
-compatibility, M3 synthetic cutover/recovery/privacy, M4 independently consented
-per-profile rollout and M5 rollback closure/direct-writer retirement are not yet
-opened. No real profile access, production Rust writes, or daemon/IPC/MCP/UI
-mutations are authorized by M1. Exact gates and NOT_RUN limitations stay in the plan.
+Issue #38 is closed after PR #39 merged. Issue #40 now authorizes only synthetic
+M2 compatibility and daemon-owner integration. M3 synthetic cutover/recovery/privacy,
+M4 independently consented per-profile rollout and M5 rollback closure/direct-writer
+retirement remain unopened. No real profile access, production Rust writes, catalog
+cutover or daemon/IPC/MCP/UI write activation is authorized. Exact gates and NOT_RUN
+limitations stay in the plan.
 
-M1 freezes the [exact profile-v2/writer and planned catalog contract](p1/profile-v2-schema-and-writer.md)
-before implementation and adds `acp-write` with fresh owned fixtures only. New-copy
-v0/v1→v2 migration, independent verification, transactional CAS/receipts, strict
-transitions and historical preservation are locally validated on Windows and
-Linux/WSL. The pre-review baseline at clean `39de165` passed 27 M1 tests per host.
-After both allocation-history review fixes, the current second-review result at
-clean `1538938` is 32 M1 tests and 29 Python tests per host, with format, writer
-Clippy and diff checks passing. The
-[M1 evidence report](evaluation/p1-m1-synthetic-writer.md) retains exact sources:
-the earlier Linux/Windows full matrices and narrower metadata/backup/allocation-history
-correction checks on their exact sources. Genuine v2 child kill boundaries are
-separate from the existing C2B1 recovery target. No public path-adoption API,
-production dependency/entrypoint, runtime v2 reader adoption or usable catalog is
-added. This is a Draft PR candidate, not merged completion or M2 authorization.
+M1 froze the [exact profile-v2/writer and planned catalog contract](p1/profile-v2-schema-and-writer.md)
+and added `acp-write` with fresh owned fixtures only. New-copy v0/v1→v2
+migration, independent verification, transactional CAS/receipts, strict transitions
+and historical preservation were validated on Windows and Linux/WSL. The pre-review
+baseline at clean `39de165` passed 27 M1 tests per host; after both allocation-history
+review fixes, clean `1538938` passed 32 M1 tests and 29 Python tests per host, with
+format, writer Clippy and diff checks passing. [PR #39](https://github.com/ybakiame/agent-control-plane/pull/39)
+merged this synthetic-only implementation at `3083c407d02c34bbbfef402f7ae57bb7eda248d1`;
+[the M1 evidence report](evaluation/p1-m1-synthetic-writer.md) retains exact sources
+and limitations. Genuine v2 child-kill boundaries are separate from C2B1 recovery.
+No public path-adoption API, production dependency/entrypoint, runtime v2 reader
+adoption or usable catalog was added. M1 completion does not authorize real-profile
+access or production writes; M2 is separately scoped by Issue #40.
 
 | Brief | Depends on | Deliverable / acceptance gate |
 | --- | --- | --- |
 | L — typed context explanation ([Issue #34](https://github.com/ybakiame/agent-control-plane/issues/34), merged PR #35) | J merged; ADR-0004 accepted | L0 contract, L1 pure resolver and L2 scoped local compatibility/review evidence delivered; legacy responses preserved |
 | M0 — local storage design ([Issue #36](https://github.com/ybakiame/agent-control-plane/issues/36), merged PR #37) | J + merged L; Accepted ADR-0004 | ADR-0005 and ownership/compatibility/recovery matrices delivered and explicitly accepted; no code or real-data authorization |
-| M1 — synthetic Rust writer and exact v2 schema ([Issue #38](https://github.com/ybakiame/agent-control-plane/issues/38), locally validated; Draft review pending) | Accepted ADR-0005; resolved transition semantics | Exact profile-v2/planned-catalog contract, isolated crate and transaction/CAS/receipt/strict-transition/history-preservation evidence delivered; no production entrypoint; owner review/merge pending |
-| M2–M5 — compatibility through explicit rollout (unopened) | M1 accepted; sequential gates from storage plan | Separately reviewed Python read-only/daemon owner fencing, synthetic cutover/recovery/privacy, per-profile consent and writer retirement; no implicit adoption or dual writers |
+| M1 — synthetic Rust writer and exact v2 schema ([Issue #38](https://github.com/ybakiame/agent-control-plane/issues/38), merged PR #39) | Accepted ADR-0005; resolved transition semantics | Exact v2 contract, isolated `acp-write`, transaction/CAS/receipt/strict-transition/history-preservation evidence; merged at `3083c407`; synthetic-only, no production entrypoint |
+| M2 — Python RO compatibility and daemon-exclusive owner integration ([Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40), active) | M1 merged; Accepted ADR-0005 | Versioned operator-only write IPC, distinct write grant, Python RO/guarded compatibility, shared profile gate and writer lease; synthetic-only, no real-profile cutover |
+| M3–M5 — synthetic cutover through explicit rollout (unopened) | M2 accepted; sequential gates from storage plan | Synthetic cutover/recovery/privacy, independently consented per-profile rollout, then rollback closure/Python direct-writer retirement; no implicit adoption or dual writers |
 | N — project onboarding and contracts | J + L; M for writes | Register/preview explicit roots, optional versioned Markdown/YAML contract format and reviewed diff workflow; no auto-scaffold, symlink escape, private profile export or stale-source activation |
 | O — complete human review | J + L + M | Operator-only versioned proposal/review API and NSH workflow with view/confirm/reject/deprecate/delete/provenance; edits/review revocation/permission changes invalidate approval; no agent-facing mutation |
 | P — snapshot and Handoff continuity | J + L; M for persistence | Versioned immutable constraint/source references, resume comparison and legacy unknowns; checksum wording only; stale worktree/contract/permission and evidence-origin regressions; interoperability acceptance stays K |
