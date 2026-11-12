@@ -115,8 +115,8 @@ M0 delivered [Accepted ADR-0005](adr/0005-local-storage-and-write-ownership.md)
 and the original [storage ownership plan](p1/storage-ownership-plan.md). The owner
 accepted [ADR-0006](adr/0006-rust-only-runtime.md) on 2026-11-12, superseding the
 Python frontend/read-only/rollback-owner decisions, v0/v1 runtime compatibility,
-and v2-to-v1 downgrade. The retained architecture is a Rust-only runtime, exact
-Profile v2, and one daemon write owner.
+and v2-to-v1 downgrade. The retained architecture is a Rust-only runtime, one selected current Profile
+schema (M1 v2 is a replaceable working baseline), and one daemon write owner.
 
 M1 is complete: [PR #39](https://github.com/ybakiame/agent-control-plane/pull/39)
 merged the isolated synthetic v2 writer, exact schema, CAS/receipts, strict
@@ -132,8 +132,8 @@ old validation profiles may be deleted during a deliberate ACP development reset
 no backward-compatibility or retention guarantee is required. Production writes are
 not activated.
 
-P1-M3 becomes Rust-to-Rust v2 profile lifecycle and recovery; it has no Python
-owner handoff, v2-to-v1 projection, or schema migration. P1-M4 completes the
+P1-M3, if needed, handles Rust-to-Rust lifecycle and recovery for the selected current
+Profile schema; it has no Python owner handoff or legacy-schema migration. P1-M4 completes the
 operator review/profile workflows under ADR-0004. P1-M5 handles release hardening.
 Any real-profile operation or release requires a separate explicit owner decision.
 
@@ -142,8 +142,8 @@ Any real-profile operation or release requires a separate explicit owner decisio
 | L — typed context explanation ([Issue #34](https://github.com/ybakiame/agent-control-plane/issues/34), merged PR #35) | J merged; ADR-0004 accepted | L0 contract, L1 pure resolver and L2 scoped local compatibility/review evidence delivered; legacy responses preserved |
 | M0 — local storage design ([Issue #36](https://github.com/ybakiame/agent-control-plane/issues/36), merged PR #37) | J + merged L; Accepted ADR-0004 | ADR-0005 and ownership/compatibility/recovery matrices delivered and explicitly accepted; no code or real-data authorization |
 | M1 — synthetic Rust writer and exact v2 schema ([Issue #38](https://github.com/ybakiame/agent-control-plane/issues/38), merged PR #39) | Accepted ADR-0005; resolved transition semantics | Exact v2 contract, isolated `acp-write`, transaction/CAS/receipt/strict-transition/history-preservation evidence; merged at `3083c407`; synthetic-only, no production entrypoint |
-| M2 — Rust-only runtime cutover and Python prototype retirement ([Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40), active) | M1 merged; Accepted ADR-0006 | Explicit v2 profile creation, strict v2 reads, daemon-only `acp-write`, versioned operator write grant/IPC, native `acp-query` and NSH integration, removal of Python runtime/tests/dependencies and active v0/v1 paths; synthetic v2 only |
-| M3 — v2 profile lifecycle and recovery (unopened) | M2 accepted | Rust-only v2 backup/restore, retention, locking and process recovery; no schema migration, Python owner or downgrade |
+| M2 — Rust-only runtime cutover and Python prototype retirement ([Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40), active) | M1 merged; Accepted ADR-0006 | One selected current Profile schema (M1 v2 is replaceable), strict reads, daemon-only `acp-write`, operator write grant/IPC, native `acp-query` and NSH integration, removal of Python runtime/tests/dependencies and legacy paths; disposable validation fixtures only |
+| M3 — current Profile lifecycle and recovery (unopened) | M2 accepted | Rust-only lifecycle/recovery for the selected schema, only if needed; no legacy migration, Python owner or downgrade |
 | M4 — operator review and profile workflows (unopened) | M2/M3 accepted; ADR-0004 | Human review/provenance, explicit profile lifecycle UX and permission-safe end-to-end acceptance |
 | M5 — release hardening (unopened) | M2–M4 accepted | Clean-machine packaging, accessibility, supported-platform evidence, security and performance gates |
 | N — project onboarding and contracts | J + L; M for writes | Register/preview explicit roots, optional versioned Markdown/YAML contract format and reviewed diff workflow; no auto-scaffold, symlink escape, private profile export or stale-source activation |
