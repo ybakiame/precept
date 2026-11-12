@@ -251,7 +251,7 @@ M2–M5 proposal below. The current sequence is:
 | --- | --- | --- |
 | M1 — synthetic v2 writer (complete) | Merged PR #39; exact v2 schema, transaction/CAS/receipt and strict-transition evidence | Historical PASS remains scoped to the merged synthetic implementation; it is not production activation |
 | M2 — Rust-only runtime cutover ([Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40)) | Fresh Rust-native Profile v1 creation/read, daemon-only writer and operator IPC, native CLI/NSH integration, Python runtime/test/dependency retirement, removal of legacy migration paths | Fresh disposable v1 fixtures on native Windows and Linux/WSL; current authorization/session/MCP security semantics verified; no Python product path remains |
-| M3 — Profile v1 lifecycle (if needed) | Rust-only backup, restore, retention, lock and process-recovery design for the new schema | Synthetic v1 recovery, privacy and platform-specific filesystem acceptance; no legacy migration or schema downgrade |
+| M3 — Profile v1 lifecycle (conditional) | Only concrete lifecycle/recovery work shown necessary after M2 | Scope the minimum v1 behavior and acceptance; no assumed backup/restore/retention system, legacy migration or schema downgrade |
 | M4 — operator review and profile workflows | ADR-0004 review/provenance semantics and explicit profile lifecycle UX | Exact-record human approval, permission revocation and end-to-end tests |
 | M5 — release hardening | Packaging, clean-machine setup, accessibility, security, performance and platform support | Explicit release criteria with source-specific platform evidence |
 
