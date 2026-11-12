@@ -1299,3 +1299,27 @@ fn genuine_child_kill_before_and_after_commit_keeps_v2_transaction_atomic() {
         }
     }
 }
+#[test]
+fn initial_candidate_verification_rejects_changed_technical_import_metadata() {
+    for shape in SHAPES {
+        for sql in [
+            "UPDATE acp_revisions SET revision=2 WHERE kind='preference' AND record_id='1'",
+            "UPDATE acp_profile SET receipt_limit=2",
+        ] {
+            let mut w = SyntheticWorkspace::new(shape).unwrap();
+            assert_eq!(
+                w.prepare_inner(Fault::AfterCommit),
+                Err(Error::OutcomeUnknown)
+            );
+            let db = workspace::connect(&w.path(Role::Candidate), false).unwrap();
+            db.execute_batch(sql).unwrap();
+            let before = dump(&db);
+            drop(db);
+            assert_eq!(w.verify_candidate(), Err(Error::Verification));
+            assert_eq!(w.writer().unwrap_err(), Error::Verification);
+            let db = workspace::connect(&w.path(Role::Candidate), true).unwrap();
+            assert_eq!(dump(&db), before);
+            w.verify_prior().unwrap();
+        }
+    }
+}

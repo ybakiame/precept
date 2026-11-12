@@ -375,7 +375,15 @@ impl SyntheticWorkspace {
         }
         self.verify_prior()?;
         let candidate = connect(&self.path(Role::Candidate), true)?;
+        candidate.execute_batch("BEGIN").map_err(crate::sql_error)?;
         crate::writer::verify(&candidate, &self.binding)?;
+        let (sequence,limit,changed):(i64,i64,i64)=candidate.query_row(
+            "SELECT commit_sequence,receipt_limit,(SELECT count(*) FROM acp_revisions WHERE revision<>1 OR deleted<>0) FROM acp_profile WHERE singleton=1",
+            [],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?))
+        ).map_err(|_|Error::Verification)?;
+        if sequence != 0 || limit != 4096 || changed != 0 {
+            return Err(Error::Verification);
+        }
         self.check_roots(&candidate)?;
         if Some(&schema::records(&candidate)?) != self.original.as_ref() {
             return Err(Error::Verification);

@@ -270,7 +270,11 @@ fingerprint if absent, create only frozen metadata, initialize revisions, set
 user_version=2 and commit. Independently reopen candidate RO and compare all original
 logical fields plus raw JSON bytes against the pinned source/verified backup;
 legacy absent fingerprint alone normalizes to NULL. Verify v2 metadata/revisions
-before enabling its synthetic writer. Failed/partial candidates are ineligible;
+before enabling its synthetic writer. Initial acceptance pins one RO snapshot and
+requires commit sequence/receipt count zero, every imported live revision exactly
+1 with no tombstones, and the original default receipt limit 4096. General validity
+of a later writable profile is insufficient to accept a newly migrated candidate.
+Failed/partial candidates are ineligible;
 no existing source/backup/candidate is overwritten or automatically adopted.
 
 Before-commit injected failure rolls back schema/version/revisions. A committed but
