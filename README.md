@@ -2,7 +2,7 @@
 
 **A local-first, developer-centric control plane for engineering context, project rules and continuity across coding agents and harnesses.** Make the right context available to the right agent, explain why it applies, preserve it across Handoffs, and distinguish reported work from observed or independently verified evidence. See the [product charter](docs/product.md).
 
-> Implementation maturity: `0.1.0a0` engineering prototype. [ADR-0006](docs/adr/0006-rust-only-runtime.md) is accepted: Rust is the only target product runtime; the current Profile v2 schema is the working baseline, not a promise of backward compatibility, and the Python P0 prototype is scheduled for removal in [P1-M2 / Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40). The current main tree has not completed that cutover. Breaking changes are expected during validation; do not preserve old Python commands, local prototype data, legacy schemas, or obsolete wire interfaces for compatibility. [NSH Rust is the accepted single Desktop/TUI UI direction](docs/adr/0003-ui-framework-selection.md). No production readiness, OS sandbox or universal vendor compatibility is claimed.
+> Implementation maturity: `0.1.0a0` engineering prototype. [ADR-0006](docs/adr/0006-rust-only-runtime.md) is accepted: Rust is the only target product runtime; M1's Profile v2 schema is only a working baseline and may be replaced wholesale during validation, with no backward-compatibility promise, and the Python P0 prototype is scheduled for removal in [P1-M2 / Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40). The current main tree has not completed that cutover. Breaking changes are expected during validation; do not preserve old Python commands, local prototype data, legacy schemas, or obsolete wire interfaces for compatibility. [NSH Rust is the accepted single Desktop/TUI UI direction](docs/adr/0003-ui-framework-selection.md). No production readiness, OS sandbox or universal vendor compatibility is claimed.
 
 ## Implementation and support status
 
@@ -115,7 +115,7 @@ The agent runs with your user privileges, without an OS sandbox. Profile write I
 P1-H adds bounded auth/capability observations and an explicit auth-required recovery
 path. Prepare private agent authentication outside the app, then review Start again;
 there is no login/credential widget or automatic retry. The optional local session
-extension uses API v2; existing IPC v1 and read-only two-tool MCP are unchanged.
+extension currently uses API v2; IPC, session and MCP interfaces may change together during validation, with no old-version compatibility promise.
 The default authenticated turn keeps Context MCP off; P1-I adds the separate opt-in below. See the
 [authentication contract](docs/p1/agent-authentication.md) and
 [real-agent evidence](docs/evaluation/p1-h-real-agent-e2e.md) for verified results,
@@ -136,7 +136,7 @@ run operator `session-start <project> <agent> --confirm-start --share-context` t
 `acp-query`. Existing UI Start remains unshared by default; no layout/control changes.
 `session-context` reports content-free counts and lease activity; `session-stop`
 requires the exact generation. Stop, prompt Cancel, expiry, failure and restart revoke
-access even on an established peer. Static non-session credentials stay compatible.
+access even on an established peer. These are current security semantics, not a promise to preserve old credential or wire formats.
 
 The local Windows/ConPTY and native WSLg regressions pass with explicit per-gate
 provenance. Deterministic ACP-to-MCP calls and negative revocation tests pass;
