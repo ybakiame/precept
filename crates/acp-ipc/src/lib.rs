@@ -12,7 +12,8 @@ use subtle::ConstantTimeEq;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 pub mod session_lease;
 pub mod transport;
-pub const API_VERSION: u32 = 1;
+pub mod write_grant;
+pub const API_VERSION: u32 = 2;
 pub const MAX_FRAME: usize = 1024 * 1024;
 pub const MAX_PEERS: usize = 16;
 pub const MAX_REQUESTS: usize = 32;
@@ -30,6 +31,16 @@ pub enum Error {
     Busy,
     UnsafeRuntime,
     EndpointCollision,
+    RestartRequired,
+    Conflict,
+    InvalidTransition,
+    IdempotencyConflict,
+    ScopeMismatch,
+    OwnerMismatch,
+    StaleGeneration,
+    Capacity,
+    StorageFull,
+    OutcomeUnknown,
 }
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -95,7 +106,15 @@ pub fn valid_project(p: &str) -> bool {
 #[serde(tag = "role", rename_all = "lowercase", deny_unknown_fields)]
 pub enum Access {
     Operator,
-    Agent { project: String },
+    #[serde(rename = "operator_write")]
+    OperatorWrite {
+        profile_id: String,
+        generation: String,
+        owner_epoch: i64,
+    },
+    Agent {
+        project: String,
+    },
 }
 // Deliberately no Debug: never log a token-bearing DTO.
 #[derive(Clone, Serialize, Deserialize)]
@@ -132,7 +151,7 @@ pub struct Response {
 impl Response {
     pub fn ok(id: String, result: Value) -> Self {
         Self {
-            api_version: 1,
+            api_version: API_VERSION,
             id: Some(id),
             result: Some(result),
             error: None,
@@ -140,7 +159,7 @@ impl Response {
     }
     pub fn error(id: Option<String>, error: Error) -> Self {
         Self {
-            api_version: 1,
+            api_version: API_VERSION,
             id,
             result: None,
             error: Some(error),
@@ -197,7 +216,7 @@ pub async fn write_frame<S: AsyncWrite + Unpin, T: Serialize>(
 pub async fn accept_handshake(stream: &mut Stream, credentials: &[Credential]) -> Result<Access> {
     let hello: Hello =
         serde_json::from_value(read_frame(stream).await?).map_err(|_| Error::Unauthorized)?;
-    if hello.api_version != 1 {
+    if hello.api_version != API_VERSION {
         return Err(Error::Version);
     }
     let access = credentials
@@ -207,7 +226,7 @@ pub async fn accept_handshake(stream: &mut Stream, credentials: &[Credential]) -
         .ok_or(Error::Unauthorized)?;
     write_frame(
         stream,
-        &json!({"api_version":1,"ready":true,"access":access}),
+        &json!({"api_version":API_VERSION,"ready":true,"access":access}),
     )
     .await?;
     Ok(access)
@@ -229,7 +248,22 @@ pub fn load_credential(location: &Location, path: &Path) -> Result<Credential> {
         .map_err(|_| Error::Unauthorized)?;
     let c: Credential = serde_json::from_slice(&raw).map_err(|_| Error::Unauthorized)?;
     let valid_format = match (&c.access, c.format, &c.binding) {
-        (_, 1, None) => true,
+        (Access::Operator | Access::Agent { .. }, 1, None) => true,
+        (
+            Access::OperatorWrite {
+                profile_id,
+                generation,
+                owner_epoch,
+            },
+            3,
+            None,
+        ) => {
+            [profile_id, generation].iter().all(|v| {
+                v.len() == 32
+                    && v.bytes()
+                        .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+            }) && *owner_epoch > 0
+        }
         (Access::Agent { .. }, 2, Some(b)) => valid_project(&b.session) && valid_project(&b.agent),
         _ => false,
     };
@@ -274,6 +308,7 @@ impl RuntimeLease {
             let path = self.location.credential_path(match &access {
                 Access::Operator => None,
                 Access::Agent { project } => Some(project),
+                Access::OperatorWrite { .. } => return Err(Error::Unauthorized),
             })?;
             if path.exists() {
                 let _ = load_credential(&self.location, &path)?;
@@ -323,13 +358,15 @@ impl Client {
         write_frame(
             &mut stream,
             &Hello {
-                api_version: 1,
+                api_version: API_VERSION,
                 credential: c.token,
             },
         )
         .await?;
         let ack = read_frame(&mut stream).await?;
-        if ack.get("api_version") != Some(&json!(1)) || ack.get("ready") != Some(&json!(true)) {
+        if ack.get("api_version") != Some(&json!(API_VERSION))
+            || ack.get("ready") != Some(&json!(true))
+        {
             return Err(Error::Unauthorized);
         }
         let access: Access =
@@ -350,7 +387,7 @@ impl Client {
         write_frame(
             &mut self.stream,
             &Request {
-                api_version: 1,
+                api_version: API_VERSION,
                 id: id.clone(),
                 method: method.into(),
                 params,
@@ -361,7 +398,7 @@ impl Client {
         let value = read_with_deadline(&mut self.stream, Duration::from_secs(7)).await?;
         let response: Response =
             serde_json::from_value(value).map_err(|_| Error::InvalidRequest)?;
-        if response.api_version != 1 || response.id != Some(id) {
+        if response.api_version != API_VERSION || response.id != Some(id) {
             return Err(Error::InvalidRequest);
         }
         if let Some(e) = response.error {

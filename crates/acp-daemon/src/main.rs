@@ -3,21 +3,23 @@ use acp_ipc::{
     Access, Error, Location, MAX_PEERS, MAX_REQUESTS, Request, Response, RuntimeLease, Stream,
     read_frame, write_frame,
 };
-use acp_store::SqliteStore;
 use clap::Parser;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{collections::HashSet, path::PathBuf, sync::Arc, time::Duration};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+mod profiles;
 mod worktree;
 #[derive(Parser)]
 struct Args {
     #[command(flatten)]
     location: Location,
     #[arg(long)]
-    database: PathBuf,
-    #[arg(long = "allow-project", required = true)]
+    database: Option<PathBuf>,
+    #[arg(long = "allow-project")]
     projects: Vec<String>,
+    #[arg(long = "allow-root")]
+    roots: Vec<String>,
     /// Explicit private operator configuration; absent disables execution.
     #[arg(long)]
     agent_config: Option<PathBuf>,
@@ -29,9 +31,11 @@ struct Args {
 }
 #[derive(Clone)]
 struct Service {
-    database: PathBuf,
+    profiles: Arc<profiles::Profiles>,
     projects: Vec<String>,
-    roots: std::collections::BTreeMap<String, PathBuf>,
+    agent_config: Option<PathBuf>,
+    context_mcp: Option<PathBuf>,
+    context_lease_seconds: u64,
     sessions: acp_session::runtime::Supervisor,
     grants: acp_ipc::session_lease::Registry,
 }
@@ -71,23 +75,19 @@ impl Service {
         project: &str,
         permit: Arc<OwnedSemaphorePermit>,
     ) -> acp_ipc::Result<PathBuf> {
-        let database = self.database.clone();
+        let profiles = self.profiles.clone();
         let project = project.to_owned();
-        let expected = self
-            .roots
-            .get(&project)
-            .cloned()
-            .ok_or(Error::Unauthorized)?;
         let job = tokio::task::spawn_blocking(move || {
             let _held = permit;
-            let store = SqliteStore::open(&database).map_err(|_| Error::Unavailable)?;
+            let (store, roots) = profiles.read()?;
+            let expected = roots.get(&project).ok_or(Error::Unauthorized)?;
             let root = store
                 .read_project(&project)
                 .map_err(|_| Error::NotFound)?
                 .root
                 .canonicalize()
                 .map_err(|_| Error::UnsafeRuntime)?;
-            if root != expected {
+            if &root != expected {
                 return Err(Error::UnsafeRuntime);
             }
             Ok(root)
@@ -106,6 +106,9 @@ impl Service {
         // Deny before parsing params, opening storage or disclosing session/config.
         if access != Access::Operator {
             return Err(Error::Unauthorized);
+        }
+        if !self.profiles.selected() {
+            return Err(Error::Unavailable);
         }
         let p: acp_session::runtime::Params = decode(request.params)?;
         if p.session_api_version != acp_session::SESSION_API {
@@ -153,20 +156,58 @@ impl Service {
             _ => Err(Error::Unsupported),
         }
     }
+    fn validate_roots(&self, roots: &[PathBuf]) -> acp_ipc::Result<()> {
+        acp_session::runtime::Supervisor::configured(self.agent_config.as_deref(), roots)?
+            .with_context_bridge(
+                self.context_mcp.as_deref(),
+                self.profiles.location.clone(),
+                self.grants.clone(),
+                Duration::from_secs(self.context_lease_seconds),
+                roots,
+            )?;
+        Ok(())
+    }
     fn query(
         &self,
-        access: Access,
+        authority: &acp_ipc::session_lease::Peer,
         request: Request,
-        session_bound: bool,
     ) -> acp_ipc::Result<Value> {
+        let access = authority.access();
+        let session_bound = authority.is_session();
         let params = request.params;
-        let store = SqliteStore::open(&self.database).map_err(|_| Error::Unavailable)?;
+        if request.method.starts_with("profile.") {
+            return self
+                .profiles
+                .handle(authority, &request.method, params, &|roots| {
+                    self.validate_roots(roots)
+                });
+        }
+        if matches!(access, Access::OperatorWrite { .. }) {
+            return Err(Error::Unauthorized);
+        }
         if request.method == "daemon.health" {
             let _: Empty = decode(params)?;
+            let selected = self.profiles.selected();
+            if !selected && access != Access::Operator {
+                return Err(Error::Unauthorized);
+            }
+            let schema = if selected {
+                format!(
+                    "{:?}",
+                    self.profiles
+                        .read()?
+                        .0
+                        .schema()
+                        .map_err(|_| Error::Unavailable)?
+                )
+            } else {
+                "Unselected".into()
+            };
             return Ok(
-                json!({"api_version":1,"service":"acp-daemon","version":env!("CARGO_PKG_VERSION"),"schema":format!("{:?}",store.schema().map_err(|_|Error::Unavailable)?),"ready":true,"worktree_fingerprint":"on-demand-acp-worktree-v1"}),
+                json!({"api_version":acp_ipc::API_VERSION,"service":"acp-daemon","version":env!("CARGO_PKG_VERSION"),"schema":schema,"ready":true,"profile_selected":selected,"worktree_fingerprint":"on-demand-acp-worktree-v1"}),
             );
         }
+        let (store, roots) = self.profiles.read()?;
         if request.method == "project.list" {
             let _: Empty = decode(params)?;
             if access != Access::Operator {
@@ -204,15 +245,15 @@ impl Service {
         if task.as_ref().is_some_and(|s| s.chars().count() > 120) {
             return Err(Error::InvalidRequest);
         }
-        if session_bound {
-            let root = store
-                .read_project(&project)
-                .ok()
-                .and_then(|p| p.root.canonicalize().ok());
-            if root.as_ref() != self.roots.get(&project) {
+        let root = store
+            .read_project(&project)
+            .ok()
+            .and_then(|p| p.root.canonicalize().ok());
+        if root.as_ref() != roots.get(&project) {
+            if session_bound {
                 self.sessions.invalidate_context(&project);
-                return Err(Error::UnsafeRuntime);
             }
+            return Err(Error::UnsafeRuntime);
         }
         let resolver = ContextResolver::new(
             &project,
@@ -266,7 +307,7 @@ async fn peer(
             }
         };
         let id = request.id.clone();
-        let error = if request.api_version != 1 {
+        let error = if request.api_version != acp_ipc::API_VERSION {
             Some(Error::Version)
         } else if id.is_empty() || id.len() > 64 || !ids.insert(id.clone()) {
             Some(Error::InvalidRequest)
@@ -288,26 +329,35 @@ async fn peer(
                 .await
         } else {
             let service = service.clone();
-            let access = access.clone();
             let held = permit.clone();
             let auth = authority.clone();
             // A timed-out blocking job retains its admission slot.
             let job = tokio::task::spawn_blocking(move || {
                 let _held = held;
                 auth.check()?;
-                service.query(access, request, auth.is_session())
+                service.query(&auth, request)
             });
             match tokio::time::timeout(Duration::from_secs(5), job).await {
                 Ok(Ok(r)) => r,
                 Ok(Err(_)) => Err(Error::Unavailable),
-                Err(_) => Err(Error::Timeout),
+                Err(_) => Err(if method == "profile.mutate" {
+                    Error::OutcomeUnknown
+                } else {
+                    Error::Timeout
+                }),
             }
         };
-        let result = authority.check().and(result);
+        // Mutation dispatch itself establishes admission. A later revocation
+        // cannot turn an admitted committed write into an authorization error.
+        let result = if method == "profile.mutate" {
+            result
+        } else {
+            authority.check().and(result)
+        };
         if result.is_ok() {
             authority.record(&method);
         }
-        let close = result == Err(Error::Timeout);
+        let close = matches!(result, Err(Error::Timeout | Error::OutcomeUnknown));
         let response = match result {
             Ok(v) => Response::ok(id.clone(), v),
             Err(e) => Response::error(Some(id.clone()), e),
@@ -342,8 +392,7 @@ async fn stop() {
     }
 }
 async fn run(args: Args) -> acp_ipc::Result<()> {
-    if args.projects.is_empty()
-        || args.projects.len() > 64
+    if args.projects.len() > 64
         || args.projects.iter().any(|p| !acp_ipc::valid_project(p))
         || args
             .projects
@@ -355,71 +404,35 @@ async fn run(args: Args) -> acp_ipc::Result<()> {
     {
         return Err(Error::InvalidRequest);
     }
-    let store = SqliteStore::open(&args.database).map_err(|_| Error::Unavailable)?;
-    // Control-file names must never alias storage, even under an explicit but
-    // mistaken operator configuration (for example a database named daemon.lock).
-    let runtime = if args.location.runtime_dir.exists() {
-        args.location
-            .runtime_dir
-            .canonicalize()
-            .map_err(|_| Error::UnsafeRuntime)?
-    } else {
-        args.location
-            .runtime_dir
-            .parent()
-            .ok_or(Error::UnsafeRuntime)?
-            .canonicalize()
-            .map_err(|_| Error::UnsafeRuntime)?
-            .join(
-                args.location
-                    .runtime_dir
-                    .file_name()
-                    .ok_or(Error::UnsafeRuntime)?,
-            )
-    };
-    if args
-        .database
-        .canonicalize()
-        .map_err(|_| Error::Unavailable)?
-        .starts_with(&runtime)
-    {
-        return Err(Error::UnsafeRuntime);
-    }
-    // Registered projects need not have Git metadata. Resolve both sides before
-    // any control files are created, including existing symlink components.
-    let mut roots = std::collections::BTreeMap::new();
-    for project in &args.projects {
-        let project = store.read_project(project).map_err(|_| Error::NotFound)?;
-        let root = project
-            .root
-            .canonicalize()
-            .map_err(|_| Error::UnsafeRuntime)?;
-        roots.insert(project.name.clone(), root.clone());
-        if runtime.starts_with(&root) || root.starts_with(&runtime) {
-            return Err(Error::UnsafeRuntime);
-        }
-    }
-    let sessions = acp_session::runtime::Supervisor::configured(
-        args.agent_config.as_deref(),
-        &roots.values().cloned().collect::<Vec<_>>(),
-    )?;
-    drop(store);
-    let mut lease = RuntimeLease::acquire(&args.location)?;
     let grants = acp_ipc::session_lease::Registry::default();
+    let profiles = Arc::new(profiles::Profiles::new(
+        args.location.clone(),
+        args.projects.clone(),
+        &args.roots,
+        args.database.as_deref(),
+        grants.1.clone(),
+    )?);
+    let roots = profiles.configured_roots();
+    let sessions =
+        acp_session::runtime::Supervisor::configured(args.agent_config.as_deref(), &roots)?;
+    let mut lease = RuntimeLease::acquire(&args.location)?;
     grants.cleanup_stale(&args.location)?;
+    grants.1.cleanup_stale(&args.location)?;
     let sessions = sessions.with_context_bridge(
         args.context_mcp.as_deref(),
         args.location.clone(),
         grants.clone(),
         Duration::from_secs(args.context_lease_seconds),
-        &roots.values().cloned().collect::<Vec<_>>(),
+        &roots,
     )?;
     let mut listener = acp_ipc::transport::Listener::bind(&args.location).await?;
     let credentials = Arc::new(lease.credentials(&args.projects)?);
     let service = Service {
-        database: args.database,
+        profiles,
+        agent_config: args.agent_config,
+        context_mcp: args.context_mcp,
+        context_lease_seconds: args.context_lease_seconds,
         projects: args.projects,
-        roots,
         sessions,
         grants,
     };
@@ -443,6 +456,9 @@ async fn run(args: Args) -> acp_ipc::Result<()> {
     }
     tasks.abort_all();
     while tasks.join_next().await.is_some() {}
+    service.grants.1.close();
+    let profiles = service.profiles.clone();
+    let _ = tokio::task::spawn_blocking(move || profiles.disable()).await;
     service.sessions.shutdown().await;
     drop(listener);
     drop(lease);
@@ -474,7 +490,8 @@ mod tests {
                 runtime_dir: PathBuf::new(),
                 endpoint: String::new(),
             },
-            database: PathBuf::new(),
+            database: None,
+            roots: Vec::new(),
             projects: vec!["alpha".into(), "ALPHA".into()],
             agent_config: None,
             context_mcp: None,

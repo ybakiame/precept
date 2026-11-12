@@ -1,6 +1,8 @@
 //! Private fresh Profile v1 storage. No production caller, owner lease or IPC.
 mod command;
 mod files;
+#[cfg(feature = "daemon-owner")]
+pub mod owner;
 mod profile;
 mod writer;
 pub use command::{Binding, Command, Expected, Receipt, RecordVersion, Request, Scope, Snapshot};
@@ -9,6 +11,7 @@ pub use writer::Writer;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
+    Unauthorized,
     InvalidCommand,
     InvalidTransition,
     IdempotencyConflict,

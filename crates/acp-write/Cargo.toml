@@ -6,6 +6,9 @@ rust-version = "1.99"
 license = "Apache-2.0"
 description = "Private fresh Rust-native Profile v1 transactions; no runtime caller yet"
 
+[features]
+daemon-owner = []
+
 [dependencies]
 rusqlite = { version = "=0.41.1", features = ["bundled", "limits"] }
 serde = { version = "1", features = ["derive"] }
