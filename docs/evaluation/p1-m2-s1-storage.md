@@ -19,9 +19,11 @@ and authorized this same-PR implementation after the contract-first commit.
 | `089ff0368f4311e28fbee80480e27d84e3d59630` | Initial current-v1 reader, private writer, creation and Rust fixtures; native Windows compilation/Clippy passed but writer tests exposed extended-prefix refusal |
 | `e274c3d80bef92e65019d23961f7cad981fabc75` | Windows prefix correction, allocation-history negatives and registration replay; clean full matrices passed 84 tests on each host |
 | `dc791761966750fc919aec9092ebd23082844f50` | Final runtime: sidecar disappearance handling, isolated identity replacement test, pre-publication fault and UTC vectors. Clean full matrices pass 86 tests on each host |
+| `1751c5bbeefab3d33659db798dbf0821aa3c91de` | Evidence/documentation update after the original full matrices |
+| `5e47349586b750ded4e8aaeb95a919e8fba05c06` | Review revision: Windows reserved spelling fix, test-only verification counts/measurement and explicit later selection identity gate. Clean targeted storage gates and release measurements pass on both native hosts |
 
-Later changes are documentation only. Runtime results are not relabeled as tests
-of a later documentation SHA. Historical M1/C2A/C2B1 outcomes retain their original
+The latest evidence update after `5e47349` is documentation only. Runtime results
+are not relabeled as tests of a later documentation SHA. Historical M1/C2A/C2B1 outcomes retain their original
 sources; no legacy parity/migration/recovery result is presented as v1 acceptance.
 
 ## Delivered boundary
@@ -133,6 +135,146 @@ successful explicit rollback now establishes Busy. An overflow test initially
 modified an otherwise pristine profile counter inconsistently and was corrected
 to test overflow after a valid committed allocation. Routine compile/format/lint
 iterations were resolved; final gates above pass without disabling assertions.
+
+## PR #42 small review revision
+
+Tested source: **5e47349586b750ded4e8aaeb95a919e8fba05c06**, clean on each
+native host. This revision changes only Windows creation-name reservations,
+test-only instrumentation/fixtures and documentation. Every existing integrity
+check and negative assertion remains; there is no new runtime verification cache.
+The test counter is thread-local under `cfg(test)` and absent from product builds.
+
+### Windows filename checks and later selection
+
+All ASCII reservations use one Windows case-folded comparison: the four control
+basenames, `.acp-create-` prefix and SQLite `-wal`, `-shm`, `-journal` suffixes.
+The new Windows regression checks absent mixed-case reserved targets, existing
+mixed-case control/sidecar/database aliases with preserved sentinel contents,
+and a permitted mixed-case name whose spelling must be preserved. Unix naming
+semantics and permission/identity checks are unchanged.
+
+[Contract section 3.1](../p1/profile-v1-runtime-contract.md#31-later-daemon-selection-path-identity-acceptance-gate)
+now makes the existing selection boundary explicit for later startup/select:
+validate canonical path and actual opened native file identity, owner/private
+permissions, links/reparse points and profile ID/generation; reject replacement
+by a valid copy even with identical metadata. Record positive and negative native
+tests for that later slice. `SqliteStore::open` alone is not that daemon filesystem
+selection boundary. No selection code, grant or lease is implemented here.
+
+### Complete context.get verification call graph
+
+For a successful ordinary request, `peer` dispatches to `Service::query`, which
+opens one store and constructs the existing `ContextResolver`:
+
+| Step | Full Profile verifications |
+| --- | --- |
+| `SqliteStore::open` -> `metadata` -> `snapshot` | 1 |
+| `ContextResolver::new` -> `bound_project` -> `read_project` | 1 |
+| `context` -> `bound_project` -> `read_project` | 1 |
+| `resolve_preferences` -> `bound_project` -> `read_project` | 1 |
+| `resolve_preferences` -> `read_preferences` | 1 |
+| **Ordinary operator/project-agent context.get total** | **5** |
+| Session credential: additional `Service::query` root-binding `read_project` | **+1, total 6** |
+
+Each call checks the complete schema, `integrity_check`, foreign keys, actual
+stored types/domains, metadata, every receipt and historical/live revision/counter
+consistency in its own pinned snapshot. `read_preferences` uses the private
+`project_record` query internally; that query does not add a full verification.
+`bound_root` belongs to session control, not this request. Startup validation,
+health and separate MCP calls are not counted as part of one context request.
+Document inclusion and Git inspection do not open the Profile.
+
+The new normal unit regression invokes the actual store and resolver with the
+same storage sequence as `Service::query`, asserting 5/6 using a thread-local
+counter at `profile::verify`. The daemon call graph is source-audited; the test
+does not instrument or execute the daemon service/IPC. Git is explicitly
+unavailable in this fixture, not represented as clean evidence.
+
+### Synthetic near-capacity release measurements
+
+Command on both native hosts:
+
+```text
+cargo test -p acp-store --release --locked --lib synthetic_profile_read_cost -- --ignored --nocapture
+```
+
+The measurement is deliberately opt-in, with no timing PASS threshold. Normal
+storage regression skips only this manual performance test; it was then explicitly
+executed and passed on both hosts. No acceptance/security test is skipped.
+
+Each mode discards two warmups and records 21 serial samples, median and nearest-rank
+p95. A fresh owned test-only fixture has two projects, eight preferences and four
+Handoffs, initially 14 receipts / 49152 bytes. Test-only direct SQL extends coherent
+history on `alpha/shared` to 4095 and 4096 receipts, with one corresponding live
+revision; full validation succeeds before measurement. Both near-capacity files
+are 1490944 bytes on each host. Digests in this read-only fixture are shape-valid
+synthetic zero blobs, not writer replay evidence. Setup is excluded from timing.
+No real Profile, agent, authentication or external project is used.
+
+`verify` measures `metadata` on an already open store, including its read snapshot;
+`open` measures fresh RO connection setup plus full verification. `context` and
+`session-context` measure open, the actual resolver, allowlisted synthetic document
+reads and JSON construction, with the storage root check for the session variant.
+They exclude IPC/authentication/transport and real Git process cost, so these are
+**storage/resolver costs, not end-to-end daemon latency**. Every sample also asserts
+the exact 1/1/5/6 verification count. OS cache/scheduling and other local work are
+not controlled; the 4095/4096 difference is not evidence of a scaling improvement.
+This small fixture is not a worst-case bound for maximum-sized receipts/affected sets.
+
+Values below are **median / p95 milliseconds** at the exact source above:
+
+| Receipts | Mode (full checks) | Linux/WSL | Native Windows |
+| --- | --- | --- | --- |
+| 14 | verify (1) | 0.175 / 0.303 | 0.204 / 0.247 |
+| 14 | open (1) | 0.287 / 0.389 | 0.482 / 0.619 |
+| 14 | context (5) | 0.921 / 1.153 | 1.524 / 2.351 |
+| 14 | session-context (6) | 1.033 / 1.428 | 1.734 / 1.892 |
+| 4095 | verify (1) | 8.152 / 17.556 | 7.784 / 8.636 |
+| 4095 | open (1) | 8.297 / 10.862 | 9.109 / 10.878 |
+| 4095 | context (5) | 29.380 / 67.277 | 39.777 / 42.813 |
+| 4095 | session-context (6) | 31.164 / 39.974 | 46.140 / 49.238 |
+| 4096 | verify (1) | 4.882 / 5.417 | 6.812 / 7.465 |
+| 4096 | open (1) | 5.560 / 6.916 | 7.674 / 8.921 |
+| 4096 | context (5) | 25.305 / 27.419 | 33.703 / 35.134 |
+| 4096 | session-context (6) | 31.250 / 35.158 | 41.076 / 42.970 |
+
+There is measurable repeated validation overhead: at 4096, the ordinary read path
+is about five times a single verification, with a sixth scan for session context.
+This does not establish an end-to-end timeout or a product latency budget failure.
+
+**Minimal optimization proposal, not implemented; requires owner review:** load
+all Profile records needed for one context request inside one RO snapshot after
+one unchanged full `verify`, then resolve immutable captured records and release
+that transaction before Git/document work. Preserve project/session root checks,
+permission and selection/file identity admission separately. Revalidate fully on
+every new request; do not trust mtime, size, `commit_sequence`, `data_version` or
+cached success as an integrity proof. No schema, receipt pruning, reduced checks,
+background repair or cross-request cache is proposed. A future scoped storage/caller
+change would need concurrent-writer snapshot tests, malformed-next-request refusal,
+per-request verification counts and the existing negative suite unchanged. This
+revision does not implement the new snapshot integration or change daemon/IPC.
+
+### Targeted revision gates
+
+The native hosts/toolchains are the ones recorded above. At clean `5e47349`:
+
+| Command | Linux/WSL | Native Windows |
+| --- | --- | --- |
+| `cargo fmt --all -- --check` | PASS | PASS |
+| `cargo clippy -p acp-store -p acp-write --all-targets --locked -- -D warnings` | PASS | PASS |
+| `cargo test -p acp-store -p acp-write --locked` | PASS, 37 | PASS, 39 |
+| Opt-in release measurement command above | PASS, 1 | PASS, 1 |
+| `git diff origin/main --check` | PASS | PASS |
+
+Counts: store 10 per host; writer 27 Linux / 29 Windows (extended-path and new
+mixed-case cases). The manually run performance case is reported separately,
+not added to normal regression totals. The unchanged Python baseline passes 29
+on Linux, separately scoped. The original 86-test full workspace and seven real
+process results remain evidence of `dc79176`, not relabeled as this revision.
+No full workspace/UI/IPC/model matrix was rerun for this localized change.
+
+PR #42 remains Draft for re-review. No IPC, daemon write authorization, CLI, NSH,
+Python retirement or schema/DDL implementation scope is added by this revision.
 
 ## Scope and remaining work
 
