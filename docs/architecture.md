@@ -1,6 +1,7 @@
 # Architecture — implemented baseline and product target
 
-P1-J baseline: main `14798f2809b557a16bda16729f2cdeed7f24bbb0` (PR #29).
+Current baseline: main `2a5949120aacd0523cd7fa5e417548e1e648bc81` (P1-L, PR #35 merged).
+P1-J's original product baseline remains recorded in its charter and ADR.
 The [product charter](product.md) defines purpose; [ADR-0004](adr/0004-product-domain-trust.md)
 defines target domain semantics. Target concepts below are not new APIs or tables.
 
@@ -24,7 +25,7 @@ trusted agent ─ two-tool MCP stdio ─ acp-mcp ─ project capability ──�
 | Component | Current responsibility | Must not own |
 | --- | --- | --- |
 | `src/agent_control_plane` | P0 schema, operator CLI writes, reference resolver/MCP | Automatic preference approval or repository rewriting |
-| `crates/acp-core` | Rust domain types, confirmed preference precedence, Handoff freshness, bounded document/fingerprint semantics through adapters | SQLite connections, UI, process execution, protocol transport |
+| `crates/acp-core` | Legacy confirmed preference/Handoff resolver plus P1-L pure typed selector/conflict explanation; bounded document/fingerprint semantics through adapters | SQLite connections, UI, process execution, protocol transport or authorization grants |
 | `crates/acp-store` | Explicit-path read-only SQLite adapter and known-schema validation | Production migration or profile writes |
 | `crates/acp-rehearsal` | Synthetic migration/recovery experiments | Real-profile migration rollout |
 | `crates/acp-ipc`, `acp-daemon` | Local capability/peer checks, scoped reads, live repository adapter, lease authority | TCP listener or caller-selected wider scope |
@@ -35,6 +36,12 @@ trusted agent ─ two-tool MCP stdio ─ acp-mcp ─ project capability ──�
 
 The paths remain as implemented; accepting NSH does not move crates or remove
 historical comparison workspaces. Windows→WSL owner queries remain read-only.
+
+Python CLI read commands and the Python MCP launch path currently construct
+`Store`, which opens read-write, enables WAL and initializes/extends schema. Their
+read-only tool surface is not a guarantee of write-free initialization. Rust
+`SqliteStore` remains an explicit-path read-only adapter. No M0 documentation
+change fixes these entrypoints or transfers Python's write ownership.
 
 ## Target domain and data ownership
 
@@ -63,12 +70,25 @@ not scaffold, migrate, rewrite AGENTS.md or activate examples automatically.
 SQLite may index contract metadata/source digests; it must not become a hidden
 authoritative copy. Dirty source versions need a content digest as well as HEAD.
 
-No schema changes occur in J. Rust write ownership remains gated on versioned
+No schema change occurred in J or L. Rust write ownership remains gated on versioned
 migration, consistent backup, recovery and reader compatibility as documented in
-[SQLite boundaries](p1/sqlite-readonly.md). Future structured contract formats and
-DB schemas have independent versions; unknown versions fail closed without silent
-conversion. Existing records lacking provenance/snapshots remain readable as
-historical/unknown, never retroactively verified or confirmed.
+[SQLite boundaries](p1/sqlite-readonly.md). The Rust reader rejects unknown versions;
+current Python Store has no version fence. Future structured contract formats and
+DB schemas have independent versions, with future readers/writers required to
+reject unsupported versions without silent conversion. Records lacking provenance
+or snapshots remain readable as historical/unknown, never retroactively verified
+or confirmed.
+
+P1-M0 / [Issue #36](https://github.com/ybakiame/agent-control-plane/issues/36) is the
+active design gate. [Proposed ADR-0005](adr/0005-local-storage-and-write-ownership.md)
+selects an explicitly opted-in native daemon writer, separate writer library,
+genuine Python read-only compatibility, offline exclusive maintenance and verified
+database generations with a private SQLite control catalog. Profile v2 and catalog
+versions, operator write IPC, fencing, cutover and rollback are proposals only.
+The [ownership/compatibility and recovery plan](p1/storage-ownership-plan.md) retains
+completed C2A/C2B1 synthetic evidence and sequences later implementation and
+separately authorized per-profile rollout. ADR-0005 remains Proposed; ADR-0004 is
+unchanged. No real profile may be opened or adopted by this design task.
 
 ## Context resolution
 
@@ -80,8 +100,12 @@ explicit opt-in. Handoff lookup is exact project/task and compares current
 HEAD/branch/worktree/fingerprint with historical state. Current source labels and
 validation JSON are not a complete structured provenance/conflict engine.
 
-The target resolver additionally explains selectors, source versions, masked rules,
-conflicts and unknown applicability using [ADR-0004](adr/0004-product-domain-trust.md).
+Merged P1-L additionally implements an isolated, pure Rust typed resolver for
+selectors, source versions, masked rules, conflicts and unknown applicability using
+[ADR-0004](adr/0004-product-domain-trust.md) and its
+[v1 contract](p1/typed-context-v1.md). Callers supply already-bound values; this
+additive API has not replaced legacy MCP/IPC responses or persisted domain state.
+Future adapters must supply fresh authorized sources before presenting its output.
 Authorization/security gates apply first. Current repository facts and accepted
 contracts outrank stored preferences or Handoff; facts describe what exists while
 contracts describe what is required. Code/ADR disagreement is surfaced for human
