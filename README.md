@@ -2,7 +2,7 @@
 
 **A local-first, developer-centric control plane for engineering context, project rules and continuity across coding agents and harnesses.** Make the right context available to the right agent, explain why it applies, preserve it across Handoffs, and distinguish reported work from observed or independently verified evidence. See the [product charter](docs/product.md).
 
-> Implementation maturity: `0.1.0a0` engineering prototype. [ADR-0006](docs/adr/0006-rust-only-runtime.md) is accepted: Rust is the only target product runtime; M1's Profile v2 schema is only a working baseline and may be replaced wholesale during validation, with no backward-compatibility promise, and the Python P0 prototype is scheduled for removal in [P1-M2 / Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40). The current main tree has not completed that cutover. Breaking changes are expected during validation; do not preserve old Python commands, local prototype data, legacy schemas, or obsolete wire interfaces for compatibility. [NSH Rust is the accepted single Desktop/TUI UI direction](docs/adr/0003-ui-framework-selection.md). No production readiness, OS sandbox or universal vendor compatibility is claimed.
+> Implementation maturity: `0.0.x-rc` engineering prototype. [ADR-0006](docs/adr/0006-rust-only-runtime.md) is accepted: Rust is the only target product runtime; the first Rust-native Profile schema is v1 (`PRAGMA user_version=1`). This is a fresh schema, not compatible with the retired Python prototype's legacy v1 or M1's synthetic v2. Both are disposable validation artifacts; no migration or backward-compatibility promise is made. The Python P0 prototype is scheduled for removal in [P1-M2 / Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40). The current main tree has not completed that cutover. Breaking changes are expected during validation; do not preserve old Python commands, local prototype data, legacy schemas, or obsolete wire interfaces for compatibility. [NSH Rust is the accepted single Desktop/TUI UI direction](docs/adr/0003-ui-framework-selection.md). No production readiness, OS sandbox or universal vendor compatibility is claimed.
 
 ## Implementation and support status
 
@@ -35,13 +35,13 @@ after product formalization. See [source-specific evidence](docs/evaluation/p1-i
 There is no supported end-user installation or quickstart until the Rust-only
 runtime cutover is complete. The Python CLI/MCP examples from the P0 prototype are
 intentionally no longer documented as product entrypoints. P1-M2 will deliver
-explicit Profile v2 creation, native operator commands, daemon-owned writes, and
+explicit Rust-native Profile v1 creation, native operator commands, daemon-owned writes, and
 the Rust MCP/NSH integration. See [ADR-0006](docs/adr/0006-rust-only-runtime.md)
 and [Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40).
 
 ## Data / trust rules
 
-- The accepted target uses an explicitly operator-created, user-local Profile v2. Startup does not scan for, adopt, migrate, reset, or overwrite existing databases.
+- The accepted target uses an explicitly operator-created, user-local Rust-native Profile v1. It is not compatible with the old Python v1 schema or M1's synthetic v2. Startup does not scan for, adopt, or migrate existing databases; an explicit development reset may delete disposable ACP prototype data.
 - All preference proposals start as **suggested**. Confirmation requires a deliberate operator action on the exact record/revision; agents and MCP cannot confirm or mutate profile data.
 - Project-scoped confirmed values mask global confirmed values with the same key. **Neither overrides the project's rules.**
 - Project files are re-read live when requested; default output includes only allowlisted document paths, sizes and hashes. Document contents require explicit opt-in. Symlinks escaping the registered checkout are blocked.
@@ -53,7 +53,7 @@ and [Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40).
 ```text
 crates/
   acp-core/       # domain and typed context resolution
-  acp-store/      # strict read-only Profile v2 access
+  acp-store/      # strict read-only Rust-native Profile v1 access
   acp-write/      # private transactional writer; daemon-only
   acp-daemon/     # local service and sole write owner
   acp-ipc/        # versioned local capabilities and transport
@@ -64,7 +64,7 @@ spikes/p1-e/      # shared NSH Desktop/TUI presentation
 docs/             # architecture, ADRs, interfaces, risks and roadmap
 ```
 
-The Python P0 package, tests and local prototype state are disposable validation artifacts. P1-M2 removes the product paths; no backward-compatibility or data-retention guarantee is made.
+The Python P0 package, tests, legacy Python v1 profiles and M1 synthetic v2 profiles are disposable validation artifacts. P1-M2 removes the product paths and establishes a fresh Rust-native Profile v1; no migration, backward-compatibility or data-retention guarantee is made.
 
 ## Design and roadmap
 
@@ -89,8 +89,8 @@ The standalone [agent-development-protocol](https://github.com/ybakiame/agent-de
 ## Test status
 
 M1's [synthetic Rust writer evidence](docs/evaluation/p1-m1-synthetic-writer.md)
-records the exact v2 transaction, CAS/receipt, strict-transition and historical
-preservation checks for PR #39. Rust core and real IPC/MCP process tests cover the
+records the historical synthetic v2 transaction, CAS/receipt and strict-transition
+checks for PR #39. That schema is not the product schema. Rust core and real IPC/MCP process tests cover the
 current Rust boundaries. The [Python-to-Rust migration matrix](docs/p1/rust-test-migration.md)
 is historical evidence, not a commitment to retain Python. P1-M2 removes the Python
 runtime/tests and establishes the Rust-only current-schema acceptance matrix. Old
