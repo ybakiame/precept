@@ -86,8 +86,9 @@ CREATE TABLE acp_receipts (
 
 `acp_profile` has exactly one row. The private workspace creates random 128-bit
 lowercase-hex profile/generation identities, epoch 1, commit sequence 0, default
-receipt limit 4096. Synthetic tests may choose a smaller positive limit to exercise
-exhaustion; it never increases beyond 4096. Generation/epoch are fencing labels,
+receipt limit 4096. After initial candidate acceptance, synthetic tests may choose
+a smaller positive limit to exercise exhaustion; it never increases beyond 4096.
+Generation/epoch are fencing labels,
 not credentials or evidence. Imported live records start technical revision 1.
 Revision keys: project `('project','',name)`; preference `('preference','',decimal-id)`;
 Handoff `('handoff',project,task-id)`. Only deleted preferences have tombstones,
@@ -122,7 +123,10 @@ any repository-contract format. All identifiers/digests/roles stay private.
 CREATE TABLE catalog_profile (
     singleton INTEGER PRIMARY KEY CHECK (singleton=1),
     profile_id TEXT NOT NULL,
+    root_identity BLOB NOT NULL CHECK (length(root_identity)=32),
+    lock_identity BLOB NOT NULL CHECK (length(lock_identity)=32),
     active_generation TEXT NOT NULL,
+    active_identity BLOB NOT NULL CHECK (length(active_identity)=32),
     owner TEXT NOT NULL CHECK (owner IN ('python','rust')),
     owner_epoch INTEGER NOT NULL CHECK (owner_epoch>0),
     admission TEXT NOT NULL CHECK (admission IN ('closed','enabled')),
@@ -137,6 +141,9 @@ CREATE TABLE catalog_manifests (
     verified_state TEXT NOT NULL,
     source_generation TEXT NOT NULL,
     target_generation TEXT NOT NULL,
+    source_identity BLOB NOT NULL CHECK (length(source_identity)=32),
+    backup_identity BLOB CHECK (backup_identity IS NULL OR length(backup_identity)=32),
+    candidate_identity BLOB CHECK (candidate_identity IS NULL OR length(candidate_identity)=32),
     source_version INTEGER NOT NULL CHECK (source_version IN (0,1,2)),
     target_version INTEGER NOT NULL CHECK (target_version IN (0,1,2)),
     owner_epoch INTEGER NOT NULL CHECK (owner_epoch>0),
@@ -160,6 +167,19 @@ profile commit is separate and must reconcile before selection. Source/backup
 outside the fixed profile control root require operator reselection on restart.
 M3 must implement strict DDL/enum/identity validation, locking, durable manifests
 and recovery before any usable catalog. M1 creates **no catalog/manifest files**.
+The identity blobs bind the opened canonical root, stable lock file and selected
+DB/backup/candidate by platform file identity. Encoding is SHA-256 over the bytes
+`acp-catalog-file-v1\0`, 32 ASCII profile-ID bytes, one platform byte (1 Unix,
+2 Windows), then two little-endian u64 values (device/inode on Unix,
+volume/file-index on Windows). Fixed manifest columns bind each artifact role;
+PublishSelection copies the verified candidate identity to active_identity in its
+catalog transaction, rather than silently recomputing identity for a replaced file.
+These are private recovery bindings,
+not credentials, authenticated origin or a hardware inventory; never publish their
+values or substitute content hashes for physical identity. Selection must match
+the candidate identity already independently verified in its manifest. Replaced
+files or a different control-root/lock identity require refusal and new explicit
+operator reconciliation; copied content alone cannot establish the old ownership.
 
 ## Typed synthetic command and result boundary
 

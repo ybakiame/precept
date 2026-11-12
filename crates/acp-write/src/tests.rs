@@ -480,6 +480,13 @@ fn interrupted_backup_and_injected_full_never_enable_candidate_or_mutate_source(
             assert_eq!(w.writer().unwrap_err(), Error::Verification);
             assert_eq!(std::fs::read(w.path(Role::Source)).unwrap(), before);
             assert!(!w.path(Role::Candidate).exists());
+            if fault == Fault::BackupPartial {
+                let interrupted = workspace::connect(&w.path(Role::Backup), true).unwrap();
+                assert!(
+                    schema::inspect(&interrupted).is_err(),
+                    "interrupted copy must not be a complete backup"
+                );
+            }
         }
     }
 }

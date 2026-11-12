@@ -445,7 +445,13 @@ fn reserve_file(path: &Path) -> Result<()> {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    options.open(path).map_err(|_| Error::Collision)?;
+    options.open(path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::AlreadyExists {
+            Error::Collision
+        } else {
+            Error::IoFailure
+        }
+    })?;
     Ok(())
 }
 fn identity(path: &Path, directory: bool) -> Result<Identity> {
@@ -548,10 +554,20 @@ fn backup(source: &Connection, path: &Path, _fault: Fault) -> Result<()> {
     {
         let copy = Backup::new(source, &mut destination).map_err(crate::sql_error)?;
         let mut done = false;
+        let pages = 16;
+        #[cfg(test)]
+        let pages = if _fault == Fault::BackupPartial {
+            1
+        } else {
+            pages
+        };
         for _ in 0..1024 {
-            let result = copy.step(16).map_err(crate::sql_error)?;
+            let result = copy.step(pages).map_err(crate::sql_error)?;
             #[cfg(test)]
             if _fault == Fault::BackupPartial {
+                if !matches!(result, StepResult::More) {
+                    return Err(Error::Verification);
+                }
                 return Err(Error::BeforeCommit);
             }
             match result {
