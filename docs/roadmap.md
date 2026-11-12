@@ -132,10 +132,13 @@ mutations are authorized by M1. Exact gates and NOT_RUN limitations stay in the 
 M1 freezes the [exact profile-v2/writer and planned catalog contract](p1/profile-v2-schema-and-writer.md)
 before implementation and adds `acp-write` with fresh owned fixtures only. New-copy
 v0/v1→v2 migration, independent verification, transactional CAS/receipts, strict
-transitions, historical preservation and 27 final M1 cases pass on both local
-Windows and Linux/WSL at clean `39de165`. The
+transitions and historical preservation are locally validated on Windows and
+Linux/WSL. The pre-review baseline at clean `39de165` passed 27 M1 tests per host.
+After both allocation-history review fixes, the current second-review result at
+clean `1538938` is 32 M1 tests and 29 Python tests per host, with format, writer
+Clippy and diff checks passing. The
 [M1 evidence report](evaluation/p1-m1-synthetic-writer.md) retains exact sources:
-the earlier Linux/Windows full matrices and narrower metadata/backup-fault
+the earlier Linux/Windows full matrices and narrower metadata/backup/allocation-history
 correction checks on their exact sources. Genuine v2 child kill boundaries are
 separate from the existing C2B1 recovery target. No public path-adoption API,
 production dependency/entrypoint, runtime v2 reader adoption or usable catalog is

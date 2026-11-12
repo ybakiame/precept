@@ -316,11 +316,11 @@ Private ignored artifacts: `artifacts/local-p1-m1/wsl-1/`, `wsl-final/`,
 `review2-development/`, `review2-wsl-1/`, `windows-review2-1/` and private
 runner/tool metadata; native output was copied locally for inspection.
 Raw diagnostics/private checkout paths are not committed or uploaded. Current
-runtime evidence is pinned to 1538938; later report-only edits do not renew those
+runtime evidence is pinned to 1538938; later documentation edits do not renew those
 runtime results. Pre-review evidence retains the exact earlier SHAs above.
 Review follow-up documentation checks passed for three documents and 32 relative
 links/anchors, balanced fences, the exact 14-file scope, private-path/credential
 patterns and whitespace. Protected application/workflow paths and third-party
-lock entries are unchanged; only the evidence report differs from current tested code.
+lock entries are unchanged; only documentation differs from current tested code.
 The candidate is ready for Draft PR review, not automatic merge or permission
 for M2–M5. Production writes and every real-profile operation remain separately gated.
