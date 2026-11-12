@@ -1,11 +1,11 @@
 # Architecture — implemented baseline and accepted Rust-only target
 
-Current baseline: main `2a5949120aacd0523cd7fa5e417548e1e648bc81` (P1-L, PR #35 merged).
+Documented implementation baseline: main `10bad176381668aa2dcbe516edde2c17dc6ff3bb` (pre-M2; M1 PR #39 and M0 follow-up merged).
 P1-J's original product baseline remains recorded in its charter and ADR.
 The [product charter](product.md) defines purpose; [ADR-0004](adr/0004-product-domain-trust.md)
 defines target domain semantics; [ADR-0006](adr/0006-rust-only-runtime.md) selects the Rust-only runtime and retires the Python prototype. Target concepts below are not new APIs or tables.
 
-## Implemented topology and ownership
+## Accepted topology after P1-M2
 
 ```text
 operator ─ NSH Desktop/TUI / native acp-query ─ operator IPC ─ Rust daemon
