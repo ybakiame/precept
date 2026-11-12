@@ -1,4 +1,4 @@
-# NSH read-only console architecture (E4)
+# NSH console architecture (E4 / S3 operator extension)
 
 The implemented NSH Rust console remains outside the P0 Python package and root
 Rust workspace. [ADR-0003](../adr/0003-ui-framework-selection.md) now **accepts NSH**
@@ -45,8 +45,10 @@ it does not claim a continuously healthy connection.
 Blocking IPC and Windows `wsl.exe --exec` work runs through NSH's blocking worker,
 never the UI thread. Existing bounded response size, helper deadline, operator
 capability, UID/Named Pipe checks and project-bound two-tool MCP remain unchanged.
-UI closure never starts/stops the standalone daemon. Only the explicit Python
-operator CLI writes disposable fixtures. No default user DB is opened.
+UI closure never starts/stops the standalone daemon. S3 adds the separate native
+operator workflow below; normal context snapshots and the Windows→WSL helper stay
+read-only. No default user DB is opened, and clients never use Python/SQLite as a
+fallback.
 
 ## Keyboard and layout
 
@@ -90,3 +92,40 @@ explicit operator controls. It requires a native local target; the WSL helper st
 read-only. Session reads/actions use independent scoped completions, ephemeral events
 and explicit start review. See [runtime contract](agent-session-runtime.md). Context
 copy excludes session prompts/events. Full IME/screen-reader behavior remains unverified.
+
+
+## P1-M2/S3 operator panel
+
+Connections → Profile operator, or Alt+O, opens one shared auxiliary panel on
+Desktop/TUI. Profile, Preference records and Saved Handoff tabs preserve the five
+context pages. The panel reads Profile state independently of context loading:
+an unregistered project/context failure does not falsely imply daemon disconnection.
+Last operator response, current observed grant, waiting acknowledgement, failure,
+last acknowledged receipt and uncertain operation identity are separate states.
+
+`shared::operator` owns exact scoped records/revisions, binding, prepared review,
+immutable pending mutation and request guards. `nsh::operator` supplies retained
+inputs, ordinary semantic buttons, escaped full review content and keyboard entry
+points. Target/project/task/request/scope changes and changed exact records invalidate
+review/completions. Loading and uncertain outcome prevent duplicate/new submissions;
+uncertainty retains one exact same-epoch request for an explicit retry. Scope changes
+never rebind that retry. Ending retry clears client blocking state without claiming
+that the original operation failed or rolling it back.
+
+Explicit Profile create/select and grant enable/disable, suggestion and exact
+suggested-record confirm/reject use authenticated native IPC. Confirmation displays
+ID, scope, key/value/source/status/revision and warns about atomic peer deprecation.
+Disable is acknowledged only after daemon drain. Registration, deprecate/delete and
+Handoff put are documented CLI-only gates; exact task/revision history is inspectable
+without pretending it is current Git or verification evidence. No fake pending queue,
+automatic approval, full ReviewDecision engine, repository editing or startup grant.
+
+Alt+Shift U/M/R/E/X select create/select/inspect/enable/disable; L/I/Y/N/S select
+records/record/confirm/reject/suggest; V applies the exact prepared review and Z
+retries the retained uncertain request. Alt P/K/W/F/T focus Profile path/key/value/
+source/exact task. Existing page and Sessions shortcuts remain unchanged. Escape
+cancels review and returns to ordinary navigation; hidden inputs blur. The connection
+panel keeps an explicit entry point without expanding the existing compact sidebar.
+
+See the [S3 contract and CLI usage](native-operator-workflows.md) and
+[platform-specific evidence](../evaluation/p1-m2-s3-native-operator.md).

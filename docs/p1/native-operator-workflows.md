@@ -111,3 +111,99 @@ Record exact clean code SHA, commands and PASS/FAIL/BLOCKED/NOT_RUN per host.
 Headless interaction tests do not imply native GUI/Wayland/TTY PASS. Raw private logs
 stay ignored; no real data, credentials, vendor calls, niri/mobile/macOS or Actions.
 Use [skip ci] commits and one Draft PR, Closes #46 / Refs #40. Never merge or close #40.
+
+## Local validation usage
+
+Build native workspace binaries first; NSH is a separate manifest:
+
+```text
+cargo build --workspace --bins --locked
+cargo build --manifest-path spikes/p1-e/nsh/Cargo.toml --features native,tui --bins --locked
+```
+
+Use a fresh owned synthetic checkout and an existing private Profile parent (0700
+on Unix; protected current-user owner/DACL on Windows). Do not substitute a real
+ACP DB. The CLI never creates a default parent or repairs permissions. Start the
+daemon explicitly with the selected private runtime/endpoint, `--allow-project
+alpha` and independently configured `--allow-root alpha=ABSOLUTE_ROOT`. Endpoint is
+an absolute socket inside the runtime on Unix, a simple pipe label on Windows.
+
+Every following command also takes the same explicit `--runtime-dir RUNTIME
+--endpoint ENDPOINT` global arguments. Uppercase tokens below are placeholders:
+
+```text
+acp-query profile create ABSOLUTE_FRESH_PROFILE_PATH
+acp-query profile info
+acp-query profile write enable --profile-id PROFILE_ID --generation GENERATION --confirm
+acp-query profile info
+acp-query preferences list --scope project --project alpha --after-id 0
+acp-query preferences get ID --scope project --project alpha
+acp-query handoff-record alpha EXACT_TASK
+acp-query profile write disable
+```
+
+Read the binding again **after** enable to obtain its new owner epoch. Each mutation
+also requires `--profile-id PROFILE_ID --generation GENERATION --owner-epoch EPOCH
+--operation-id UNIQUE_ID`; these flags are omitted in the next block for readability:
+
+```text
+acp-query project-register alpha CANONICAL_ROOT
+acp-query preference-suggest --scope project --project alpha --key editor --value synthetic --source operator
+acp-query preference-confirm ID --scope project --project alpha --expected-revision REVISION --confirm
+acp-query preference-reject ID --scope project --project alpha --expected-revision REVISION --confirm
+acp-query preference-deprecate ID --scope project --project alpha --expected-revision REVISION --confirm
+acp-query preference-delete ID --scope project --project alpha --expected-revision REVISION --confirm
+acp-query handoff-put alpha EXACT_TASK --expected-absent --input OWNED_INPUT_FILE
+acp-query handoff-put alpha EXACT_TASK --expected-revision REVISION --input OWNED_INPUT_FILE
+```
+
+Registration sends the **exact native canonical root** matching the independent
+launch policy, not a guessed alias. In the Windows validation fixture this uses
+Rust's extended-length canonical spelling (`\\?\C:\…`); normal and extended
+spellings are not silently equated in mutation admission. No client silently
+changes the daemon allowlist. Preserve the original root bytes for receipt retry,
+including when the registered directory later becomes unavailable.
+
+`--scope global` forbids `--project`. Inspect the exact current suggested record
+before confirm/reject; only confirmed records can be deprecated and only rejected/
+deprecated records deleted. An edited proposal is a new suggestion, not an in-place
+value change. Refresh exact revisions after any intervening write.
+
+The Handoff file is one strict bounded object, not an arbitrary mutation envelope:
+
+```json
+{
+  "objective": "Synthetic objective",
+  "completed": "",
+  "next_action": "Inspect current repository facts",
+  "validation_json": "[]",
+  "snapshot": {
+    "base_sha": "",
+    "branch": "",
+    "state": "unknown",
+    "fingerprint": null
+  }
+}
+```
+
+Do not turn unknown historical state into clean or invent PASS. Replacement needs
+the exact saved revision. Preserve `validation_json` bytes and the complete input
+file for a deliberate retry. A response error includes the retained operation ID
+and an `outcome_unknown` boolean. An unknown result is not a failed transaction;
+retry only the unchanged command/inputs and binding/ID in the same epoch. Inspect
+fresh state after revocation/restart rather than changing the old request's epoch.
+
+Start either NSH binary with the same explicit native target and `--operator`, or
+open Connections → Profile operator / Alt+O. Profile, Preference records and Saved
+Handoff tabs share the same model. Keyboard commands use Alt+Shift U/M/R/E/X for
+create/select/inspect/enable/disable, L/I/Y/N/S for list/select/confirm/reject/suggest,
+V to apply the exact reviewed operation and Z to retry an uncertain request. Alt
+P/K/W/F/T focuses the path/key/value/source/task input. Existing Sessions shortcuts
+are preserved. The pane shows errors and last acknowledged receipt separately from
+the pending operation; an old context read is not daemon write-health evidence.
+
+For an uncertain UI result, retain the displayed operation ID and use the explicit
+identical-request retry while that target/scope/epoch is current. Closing the client
+loses its in-memory request: there is no durable client journal or cross-epoch replay
+promise. A CLI retry requires having independently retained the exact original
+inputs and operation ID. Never infer the request contents from a receipt alone.

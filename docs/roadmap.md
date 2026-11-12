@@ -15,9 +15,9 @@ P1-K interoperability evidence is scoped separately below.
 
 | Capability | Implemented / evidenced | Outstanding |
 | --- | --- | --- |
-| Context and personal preferences | Legacy Python P0 registry/review/writes remain temporarily in the tree; Rust typed resolver and bounded live sources are implemented | Rust-native Profile v1 persistence and complete operator review workflow (P1-M2/M4) |
+| Context and personal preferences | Rust typed resolver, fresh Profile v1 persistence and S3 minimum native operator workflows; legacy Python P0 remains temporarily in the tree | Python retirement (P1-M2) and full operator review/provenance workflow (P1-M4) |
 | Continuity | Exact project/task Handoff, historical checks, revision/worktree/fingerprint warnings | Frozen constraint snapshots, portable bundle format and independent cross-client acceptance |
-| Rust ownership and storage | Read-only core/store and M1's disposable synthetic v2 writer/transaction evidence | Rust-native Profile v1 writes and live reader/owner integration; any later data-lifecycle feature must be justified by actual product use |
+| Rust ownership and storage | Fresh Profile v1, read-only store and daemon-exclusive lease/epoch/grant writer validated on disposable native Windows/Linux profiles | Final M2 integrated acceptance and Python retirement; any later data-lifecycle feature requires actual product use |
 | Local service and MCP | Unix sockets/named pipes, operator/project capabilities, two-tool read-only stdio | Full MCP conformance and broader versioned client matrix |
 | NSH Desktop/TUI | Shared model, five pages, Sessions panel, connections/settings, themes/locales and bounded 10k display | Product IA realization, clean-machine release/accessibility and current macOS verification |
 | Optional ACP sessions | Explicit native lifecycle/auth observations; P1-I opt-in lease, expiry and revocation | Persistent resume, vendor parity and sandboxing are not delivered or promised |
@@ -140,13 +140,20 @@ Workspace tests at `c6c9052`: 87 Linux/WSL and 88 native Windows PASS; hosted
 Actions NOT_RUN (`[skip ci]`). The merged HEAD after that test was evidence-only.
 
 [P1-M2/S2 Issue #44](https://github.com/ybakiame/agent-control-plane/issues/44)
-has a [locally validated Draft candidate](evaluation/p1-m2-s2-ownership.md): daemon profile bootstrap/select and opened-file
+merged in [PR #45](https://github.com/ybakiame/agent-control-plane/pull/45),
+with [native evidence](evaluation/p1-m2-s2-ownership.md): daemon profile bootstrap/select and opened-file
 identity, exclusive writer lease, epoch binding, distinct operator write grants,
 revocation and typed write IPC v2. Native Workspace results at `371e577` are 103
 Linux/WSL and 104 Windows PASS, plus shared-model 25 on each. No real Profile is
 activated. No production writer was activated in S1. Parent
-Issue #40 still requires native CLI/NSH integration, Python retirement and
-integrated acceptance after S2.
+[P1-M2/S3 Issue #46](https://github.com/ybakiame/agent-control-plane/issues/46)
+has a [native operator contract](p1/native-operator-workflows.md) and
+[local evidence](evaluation/p1-m2-s3-native-operator.md): all seven typed CLI commands,
+operator-only scoped revision previews and shared NSH Profile/grant/suggestion/
+confirm/reject workflows. Higher-risk registration, deprecate/delete and Handoff
+put remain CLI-only in this minimum UI. This remains Draft for human review.
+Issue #40 still requires Python retirement and final integrated M2 acceptance as
+separate tasks; S3 does not close it or activate production writes.
 
 P1-M3 remains conditional. Open it only if M2 reveals a concrete Profile v1 lifecycle
 or recovery need; do not assume backup/restore/retention work in advance. It has no

@@ -1,5 +1,10 @@
 # Local read-only NSH console (P1-E2 / E3)
 
+For the current fresh Profile v1 native operator workflow use the
+[S3 contract/CLI guide](native-operator-workflows.md) and [S3 evidence](../evaluation/p1-m2-s3-native-operator.md).
+The E2/E3 fixture/bootstrap instructions below describe their historical read-only
+validation setup; do not run a legacy Python writer against a Rust-native Profile v1.
+
 E3 adds [native Wayland acceptance](wslg-wayland-troubleshooting.md),
 [shared page/request architecture](ui-console-architecture.md) and
 [local E3 evidence](../evaluation/p1-e3-local-validation.md). For E3, use

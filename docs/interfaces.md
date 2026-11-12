@@ -1,6 +1,16 @@
 # Interfaces and current conformance boundary
 
-## CLI
+## Native operator CLI and IPC (P1-M2/S3)
+
+`acp-query` uses native local authenticated IPC v2 for explicit Profile create/select/
+info, separate write enable/disable, exact operator-only preference/Handoff previews
+and all seven typed mutations. Operator control/read authority is not OperatorWrite;
+only the daemon links the ordinary writer. See [syntax, DTOs, retry and UI gates](p1/native-operator-workflows.md).
+Agents/MCP/session/write-role credentials cannot access administrative previews;
+MCP still exposes exactly the two project-bound read-only tools. No default Profile,
+automatic grant, SQL/JSON patch, remote WSL write or unavailable-daemon fallback.
+
+## Legacy Python P0 CLI (historical; pending retirement)
 
 `acpctl project add/list`, `preference suggest/confirm/reject/deprecate/delete/list`, `context`, `handoff put/get`, and `mcp --project <registered-project>`.
 
