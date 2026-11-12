@@ -18,7 +18,7 @@ Read these before changing architecture or persisted behavior:
 - Rust is the only supported product runtime. The Python P0 implementation is
   legacy and scheduled for removal by P1-M2. Do not add Python features, runtime
   dependencies, compatibility shims, new Python tests, or Python release paths.
-- Use exactly one current Profile schema. M1 v2 is a working baseline, not a permanent constraint; it may be replaced wholesale during validation. Do not add legacy readers, automatic migration, cross-schema downgrade, or compatibility fallback.
+- The first Rust-native product Profile schema is v1 (`PRAGMA user_version=1`). It is a fresh schema, not compatible with the retired Python prototype's legacy v1 or M1's synthetic v2. M1 v2 is historical only; do not add legacy readers, migration, downgrade, or compatibility fallback.
 - The native daemon is the only production write owner. Only the daemon may invoke
   the private `acp-write` implementation.
 - `acp-store` remains read-only. UI, `acp-query`, MCP and agents never receive
@@ -29,7 +29,7 @@ Read these before changing architecture or persisted behavior:
   Handoffs and session context cannot confirm or mutate profile state.
 - Profile creation is an explicit operator action. Never scan for, adopt, migrate,
   reset, delete or overwrite an existing profile automatically.
-- No Python rollback owner, Python read-only adapter, v2-to-v1 downgrade, or
+- No Python rollback owner, Python read-only adapter, schema downgrade, or
   daemon-unavailable direct-write fallback.
 
 Until P1-M2 removes the Python prototype from the tree, treat it as disposable legacy
