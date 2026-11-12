@@ -17,7 +17,7 @@ why a compatibility/fencing release must precede cutover.
 
 | Component / data | Implemented now | Proposed owner / restriction |
 | --- | --- | --- |
-| [Python Store](../../src/agent_control_plane/store.py) | Constructor opens RW, enables WAL, creates schema and may add fingerprint; owns all P0 mutations; no version check | Legacy direct writes only while explicitly Python-owned and guarded; retire after rollout |
+| [Python Store](../../src/agent_control_plane/store.py) | Constructor opens RW, enables WAL, creates schema and may add fingerprint; owns all P0 mutations; no version check; allows suggested→deprecated | Legacy behavior may remain during explicitly Python-owned phase; M2 fencing/strict compatibility required before cutover; current direct path unsafe afterward |
 | [Python CLI](../../src/agent_control_plane/cli.py) | Uses Store for reads, writes and MCP | Thin authenticated frontend; reads avoid Store; no fallback writer |
 | [Python MCP](../../src/agent_control_plane/mcp.py) | Two read tools, but launched by CLI with initialized Store | Genuinely RO adapter or read IPC; no initialization writes, operator credentials or mutations |
 | [acp-store](../../crates/acp-store/src/lib.rs) | Explicit existing-path RO connection; structural/version inspection before reads | Remains RO; add reviewed v2 reader support before activation |
@@ -56,10 +56,61 @@ v1” is not permission to leave it on a retired path. Python compatibility read
 remain supported after cutover with the new RO adapter/read IPC. Old binaries are
 retired, not retroactively made safe by `user_version`, ACLs or cooperative locks.
 
-The current `suggested → deprecated` Python edge is outside ADR-0004's described
-graph. Existing rows/states are preserved; no approval is inferred. Full new-writer
-transition compatibility is blocked until the owner resolves the discrepancy
-recorded in ADR-0005. No M0 code or Accepted ADR text is changed to choose for them.
+### Preference transition contract and compatibility gates
+
+The [owner's review](https://github.com/ybakiame/agent-control-plane/pull/37#pullrequestreview-5867130588)
+resolved the decision on 2026-11-12: new Rust writes follow Accepted ADR-0004 and
+reject `suggested → deprecated`. This is a chosen future contract, not current
+Python behavior or acceptance of ADR-0005. No new Withdraw state/synonym is added.
+
+The table applies to a **fresh** operation ID after authorization, owner/revision
+checks and reading the current row within the writer transaction. Repeating an
+already committed identical operation ID returns its receipt without reapplying
+the transition. A fresh same-state request is not that retry.
+
+| Current persisted state | ConfirmPreference | RejectPreference | DeprecatePreference |
+| --- | --- | --- | --- |
+| suggested | confirmed | rejected | InvalidTransition |
+| confirmed | InvalidTransition | InvalidTransition | deprecated |
+| rejected | InvalidTransition | InvalidTransition | InvalidTransition |
+| deprecated | InvalidTransition | InvalidTransition | InvalidTransition |
+
+`SuggestPreference` creates a new suggested row; clients cannot choose confirmed
+as its initial status. `DeletePreference` remains a separate explicit operator
+command with scope/revision checks, not a transition to a new state. Confirming a
+suggestion still atomically deprecates existing confirmed same-scope/key peers.
+Neither a model nor a receipt can confirm anything: explicit operator approval
+of the exact record/revision is required.
+
+The intentional CLI compatibility difference is that a fresh
+`preference deprecate <suggested-id>` will fail under the future Rust owner (and
+guarded compatibility owner), while current Python accepts it. It must not be
+translated to reject/delete or silently sent to Python. Current Python may remain
+unchanged in its explicitly Python-owned phase. Before Rust cutover M2 must fence
+or retire all version-blind/direct-write launch paths; post-cutover frontend and
+rollback-owner behavior must enforce the strict contract without fallback.
+
+Migration is not a replay of historical commands: both v0 shapes and v1 may contain
+deprecated rows with unknown transition history. Preserve those rows' IDs, scopes,
+status, timestamps, source and unknown provenance, plus all Handoff/opaque validation
+JSON bytes, through v0/v1→v2. Do not reinterpret, repair or retroactively reject
+them. Schema/page bytes may change; legacy logical fields and opaque payload bytes
+may not, except the already specified absent-fingerprint→NULL mapping.
+
+| Future synthetic gate (NOT_RUN) | Required assertion |
+| --- | --- |
+| M1 positive transitions | suggested→confirmed, suggested→rejected and confirmed→deprecated succeed; confirmation's peer deprecation is atomic; suggestion cannot start confirmed |
+| M1 transition negatives | Fresh suggested→deprecated and every other InvalidTransition cell refuse; compare full logical DB state, technical revisions, commit sequence and receipts before/after; all unchanged |
+| M1 current-state race / retry | Competing commands recheck pre-command state and expected revision inside the transaction; a stale request cannot act on a formerly suggested row; lost-response same-ID retry returns only its original receipt |
+| M1 migration history preservation | Both v0 shapes and v1 contain synthetic historical deprecated rows, including permissive-edge examples; after v2 migration every original ID/status/timestamp/scope/source/unknown provenance and opaque JSON byte is preserved |
+| M2 CLI and fencing compatibility | Exercise documented deprecate-on-suggested difference through future frontend/owner paths, positive flows and denied logical-state/revision invariance; legacy Python phase remains clearly distinguished; direct/version-blind paths fenced/retired before cutover and never used as fallback |
+| M2 post-cutover and rollback-owner reads/writes | Historical deprecated rows remain readable and excluded from agent context; guarded Python rollback owner also rejects new suggested→deprecated; native Windows and Linux/WSL compatibility tests preserve existing IPC/MCP/lease boundaries |
+
+Initial v2 command receipts/revisions are concurrency/commit bookkeeping, not
+ADR-0004's complete human `ReviewDecision` or verified operator attribution. Role
+labels/digests are not independent identity/evidence. Operator confirmation remains
+explicit; full rationale/time/attributed-actor decision history belongs to P1-O
+unless separately accepted. None of these gates is implemented or run by M0.
 
 ## Coordination and durable stage model
 
@@ -184,12 +235,13 @@ macOS/Windows/WSLg/TUI/UI acceptance claim.
 ## Phased follow-up briefs
 
 These are proposed issue briefs only: **not opened, implemented or authorized by
-M0**. ADR acceptance and resolution of the transition discrepancy precede code.
+M0**. ADR acceptance precedes code; the owner has resolved transition semantics,
+while M1/M2 implementation and compatibility/transition tests remain pending.
 
 | Brief / phase | Scope | Required acceptance before progressing |
 | --- | --- | --- |
-| M1 — synthetic writer and schema contract | Freeze profile-v2/control-catalog exact DDL; separate writer library; fresh synthetic roots only; typed command/revision/receipt semantics | Owner-reviewed transition matrix; complete legacy-row/JSON preservation; unknown-version/schema refusal; atomic confirm/deprecate; competing revisions; duplicate/reused operation IDs; lost commit response; sanitized errors; no writable reader/core/MCP handle; no profile-path API |
-| M2 — compatibility and exclusive-owner integration | Genuine Python RO adapter; guard every old CLI/MCP path; authenticated native daemon command opt-in; CLI compatibility; shared connection gates and writer lease | Local Windows and Linux/WSL tests of legacy reads and new v2 readers, authorization negatives before DB access, idle MCP shutdown/drain, simultaneous processes/aliases, bounded Busy, lease death/restart, read/write grant separation and unchanged IPC/MCP/session revocation; retire version-blind Python before rollout |
+| M1 — synthetic writer and schema contract | Freeze profile-v2/control-catalog exact DDL; separate writer library; fresh synthetic roots only; typed command/revision/receipt semantics | Resolved transition matrix: positive/current-state/race/retry and denied-state invariance gates above; historical deprecated/legacy-row/opaque-JSON preservation across both v0 shapes and v1→v2; unknown-version/schema refusal; atomic confirm/deprecate; competing revisions; duplicate/reused operation IDs; lost commit response; sanitized errors; no writable reader/core/MCP handle; no profile-path API |
+| M2 — compatibility and exclusive-owner integration | Genuine Python RO adapter; guard every old CLI/MCP path; authenticated native daemon command opt-in; intentional CLI transition difference; shared connection gates and writer lease | Local Windows and Linux/WSL tests of legacy/v2 reads and strict transition/compatibility gates above (including rollback owner); authorization negatives before DB access, idle MCP shutdown/drain, simultaneous processes/aliases, bounded Busy, lease death/restart, read/write grant separation and unchanged IPC/MCP/session revocation; fence/retire version-blind/direct-write Python before cutover, no fallback |
 | M3 — synthetic cutover/rollback/restore and privacy | Private SQLite control manifests, generations, explicit consent; latest-state v2→v1 rollback and separately consented older restore | Reproduce every failure-table boundary with genuine killed/restarted processes, including control/profile commit gap and post-write downgrade; full Python/Rust logical parity and reader reopen; no sidecar orphan/overwrite; catalog/version/backup corruption refusal; Unix permissions and actual Windows ACL policy; bounded space/error injection and honest untested limits |
 | M4 — per-profile operator rollout opt-in | Separately authorized real profile, exact source/control/backup identities and retention window; no bulk/default discovery | Owner approves exact operation/locations/data-loss implications after M1–M3 review; stop all old clients, verified backup and independent reader checks, explicit selection then activation; rollback rehearsal accepted; supported local filesystem/durability policy and sanitized local report |
 | M5 — close rollback window and retire Python direct writes | Explicit operator decision after stable use; keep Python compatibility reads/frontend | Verify no remaining legacy writers; selected inactive-artifact deletion and receipt-retention policy; preserve required verified recovery point; no hidden deleted-content history; removal of direct-write fallback after explicit reviewed release |
@@ -202,7 +254,8 @@ irrelevant to storage acceptance and not implicitly authorized.
 
 ### No-go and separate authorization
 
-No production adoption until: ADR accepted; transition discrepancy resolved;
+No production adoption until: ADR accepted; resolved transition contract implemented
+and positive/negative/preservation/compatibility tests accepted;
 synthetic writer/compatibility/recovery gates reviewed; all clients fenced; exact
 source, profile/control root and backup destination selected; permissions/lock/
 durability policy supported; independently verified backup retained; lossless
@@ -221,7 +274,7 @@ Future N/O/P/Q/R tasks retain their separate domain and acceptance boundaries.
 The deliverable consists only of this plan, Proposed ADR-0005, architecture and
 roadmap updates. Source/PR review did not instantiate Store, inspect a profile,
 read default state locations, access credentials or change system settings.
-Local documentation checks passed: 58 relative links/anchors across the four
+Initial documentation checks at `47ee409` passed: 58 relative links/anchors across the four
 changed documents; balanced Markdown fences; exact four-document scope; no
 private-path/credential patterns; `git diff --check` for whitespace. Eight unique
 external references were checked against fetched repository issue/PR evidence,
@@ -229,3 +282,14 @@ without rerunning the historical Actions jobs. These checks are not application
 tests or storage/runtime evidence.
 No owner acceptance, code implementation, real-data authorization or automatic
 merge is inferred from submitting the Draft PR.
+
+PR #37 owner-review follow-up (2026-11-12): recorded the strict future transition
+decision, preserved historical states, documented the intentional CLI difference,
+added M1/M2 transition/preservation/denial-invariance gates, and separated technical
+receipts from P1-O human ReviewDecision history. Rechecked 59 relative links/anchors,
+balanced fences, the exact four-document scope, private-path/credential patterns,
+absence of stale owner-decision blockers and unchanged Accepted ADR-0004; all passed,
+as did `git diff --check`. The ninth unique external reference is the fetched owner
+review; prior historical evidence remains scoped as above. No application tests,
+database access or GitHub Actions were run; future gates remain NOT_RUN and ADR-0005
+remains Proposed, independently of the resolved transition choice.

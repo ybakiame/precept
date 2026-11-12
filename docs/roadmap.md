@@ -105,8 +105,12 @@ M0 delivers [Proposed ADR-0005](adr/0005-local-storage-and-write-ownership.md) a
 [storage ownership plan](p1/storage-ownership-plan.md): single opted-in daemon
 writer, separate writer library, Python compatibility/fencing, explicit schema
 versions and verified-generation cutover/rollback. It changes documentation only.
-The observed Python suggested→deprecated transition needs owner clarification
-against ADR-0004 before full writer compatibility can be frozen. Completed C2A
+The owner resolved the transition decision in PR #37: reject new
+suggested→deprecated under the future writer, preserve historical records and
+follow ADR-0004. Current Python behavior is unchanged; M1/M2 implementation and
+parity/transition tests remain pending, including the intentional CLI compatibility
+difference and pre-cutover fencing. Rust writes, v2 migration and real-profile
+rollout remain NOT_IMPLEMENTED / NOT_RUN. Completed C2A
 synthetic migration and C2B1 genuine process recovery, including the corrected
 historical Linux/macOS/Windows process matrix, remain prerequisites already proven
 at their recorded scope. M0 neither repeats them nor claims production recovery.
@@ -121,7 +125,7 @@ authorized by M0. Exact gates and NOT_RUN limitations stay in the plan.
 | --- | --- | --- |
 | L — typed context explanation ([Issue #34](https://github.com/ybakiame/agent-control-plane/issues/34), merged PR #35) | J merged; ADR-0004 accepted | L0 contract, L1 pure resolver and L2 scoped local compatibility/review evidence delivered; legacy responses preserved |
 | M0 — local storage design ([Issue #36](https://github.com/ybakiame/agent-control-plane/issues/36), active) | J + merged L; Accepted ADR-0004 | Proposed ADR-0005, ownership/compatibility matrices, migration/restore states and no-go gates; explicit owner acceptance before implementation |
-| Later M — synthetic writer through explicit rollout | Accepted ADR-0005, resolved transition compatibility; sequential M1–M5 gates | Separate synthetic writer/reader/owner/recovery/privacy acceptance; real-profile consent only in a later rollout task; no implicit adoption or dual writers |
+| Later M — synthetic writer through explicit rollout | Accepted ADR-0005; resolved transition semantics with implementation/tests pending; sequential M1–M5 gates | Separate synthetic writer/reader/owner/recovery/privacy and strict transition/history-preservation compatibility acceptance; real-profile consent only in a later rollout task; no implicit adoption or dual writers |
 | N — project onboarding and contracts | J + L; M for writes | Register/preview explicit roots, optional versioned Markdown/YAML contract format and reviewed diff workflow; no auto-scaffold, symlink escape, private profile export or stale-source activation |
 | O — complete human review | J + L + M | Operator-only versioned proposal/review API and NSH workflow with view/confirm/reject/deprecate/delete/provenance; edits/review revocation/permission changes invalidate approval; no agent-facing mutation |
 | P — snapshot and Handoff continuity | J + L; M for persistence | Versioned immutable constraint/source references, resume comparison and legacy unknowns; checksum wording only; stale worktree/contract/permission and evidence-origin regressions; interoperability acceptance stays K |

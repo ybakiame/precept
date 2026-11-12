@@ -90,6 +90,13 @@ completed C2A/C2B1 synthetic evidence and sequences later implementation and
 separately authorized per-profile rollout. ADR-0005 remains Proposed; ADR-0004 is
 unchanged. No real profile may be opened or adopted by this design task.
 
+The owner resolved the transition difference in PR #37: future writes reject
+suggested→deprecated and preserve historical deprecated records, following
+ADR-0004. Current Python still allows that edge; M1/M2 implementation and
+parity/transition tests are pending. Rust writes, v2 migration and real-profile
+rollout remain NOT_IMPLEMENTED / NOT_RUN. Initial technical revisions/receipts
+are not the full human ReviewDecision history, which remains P1-O work.
+
 ## Context resolution
 
 Today the resolver binds one registered project, rechecks its registration, reads

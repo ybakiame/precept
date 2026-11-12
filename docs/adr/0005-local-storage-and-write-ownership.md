@@ -92,8 +92,10 @@ registered root and captures live Git/fingerprint state through existing trusted
 adapters; an agent-supplied “verified” flag is never accepted.
 
 Validate transport shape/unknown fields/bounds before admission; validate current
-registration, exact scope, state transition, revision and owner epoch inside
-`BEGIN IMMEDIATE`. A confirmation changes its target and deprecates same-scope/key
+registration, exact scope, transition from the row's **current pre-command state**,
+revision and owner epoch inside `BEGIN IMMEDIATE`. A stored terminal status alone
+cannot establish which historical transition occurred or authorize a new one.
+A confirmation changes its target and deprecates same-scope/key
 confirmed peers atomically, advancing all affected revisions. Suggestion always
 starts suggested; changing confirmed content/scope requires a new suggestion and
 review. Delete removes content, not a shadow history of that content. Imported
@@ -118,6 +120,15 @@ new commands rather than silently evicting replay protection. An operation ID
 includes its generation; an old/unknown generation is always refused. Later receipt
 compaction needs a reviewed expiry protocol, not transparent replay.
 
+These receipts/revisions are technical concurrency and commit bookkeeping, not
+ADR-0004's domain-level human `ReviewDecision` with rationale, decision time and
+attributed actor. A confirmation still requires the authenticated operator's
+explicit action on the exact record/revision and scope; a receipt, request digest
+or operator role label cannot supply that approval or independently verified actor
+identity/evidence. Existing status/timestamp fields remain meaningful but do not
+constitute a complete review/audit history. Full decision history and its provenance
+remain P1-O work unless separately accepted; initial v2 does not claim to deliver it.
+
 Typed results contain IDs/revisions/commit sequence, with content fetched through
 authorized reads. Errors include `Unauthorized`, `ReadOnly`, `UnsupportedVersion`,
 `IncompatibleSchema`, `InvalidCommand`, `InvalidTransition`, `Conflict`,
@@ -128,17 +139,35 @@ Timeout after possible commit is `OutcomeUnknown`; query/retry that same operati
 ID, never automatically submit a new mutation. SQLite wait is at most five seconds
 per command, with bounded queue/size and no background retry loop.
 
-### Observed transition discrepancy requiring owner review
+### Resolved owner decision: strict future transitions, preserved history
 
-The current Python SQL also allows `suggested → deprecated`, while ADR-0004
-describes `suggested → confirmed | rejected`, then confirmed deprecation. Migration
-preserves all stored states, including already-deprecated suggestions. M0 does
-**not** amend Accepted ADR-0004 or silently remove/add a transition. Before the
-synthetic writer contract is frozen, the owner must resolve this compatibility
-edge explicitly: retain it as withdrawal of an unconfirmed suggestion, or approve
-its rejection as a compatibility change. Until then, that edge and a claim of full
-write-CLI compatibility are blocked; the shared accepted transitions above remain
-the target. This is a documented decision gate, not authorization to alter data.
+The [owner's PR #37 review](https://github.com/ybakiame/agent-control-plane/pull/37#pullrequestreview-5867130588)
+on 2026-11-12 resolves the compatibility difference: future Rust writes must reject
+`suggested → deprecated` with `InvalidTransition`. The allowed new transitions
+are exactly `suggested → confirmed | rejected` and `confirmed → deprecated`, in
+accordance with Accepted ADR-0004. Deletion remains a separately authorized existing
+command, not a state transition. No new Withdraw state or synonym is introduced.
+See the [transition matrix and synthetic gates](../p1/storage-ownership-plan.md#preference-transition-contract-and-compatibility-gates).
+
+The current Python SQL still permits `suggested → deprecated`; M0 does not change
+that code or claim a guard already exists. The legacy CLI may remain as-is only
+during its explicitly Python-owned phase; its permissive/version-blind direct path
+is temporary and unsafe for post-cutover use. M2 must fence/retire those entrypoints,
+with no direct-write fallback, and enforce the chosen semantics in the compatibility
+frontend and any guarded Python owner used for rollback. Rejecting that old CLI
+edge is an intentional compatibility change, not exact write-behavior parity.
+
+Migration preserves every historical `deprecated` row, including one possibly
+created through the permissive Python edge, with its original ID, scope, review
+status, timestamps, opaque JSON bytes and unknown provenance. Do not reconstruct
+its prior state, reclassify it as rejected, repair it or retroactively judge the
+transition. Preservation compares legacy logical fields/opaque bytes, not SQLite
+page layout. New-command validation reads the current row in the writer transaction;
+denied transitions change no records, revisions, commit sequence or receipts.
+Previously committed identical operation retries still return the existing receipt,
+rather than attempting a fresh transition. The owner resolved semantics only:
+ADR-0005 stays Proposed; implementation and synthetic compatibility tests remain
+NOT_IMPLEMENTED / NOT_RUN, with no code or real-profile authorization.
 
 ## Decision: schema and source ownership
 
@@ -328,7 +357,7 @@ Accepting this ADR does not open a real DB or authorize rollout. Follow the
 [phased briefs and no-go gates](../p1/storage-ownership-plan.md#phased-follow-up-briefs).
 No N–R domain persistence, generalized review UI, parser/scaffold/export, MCP writes,
 new UI, model call, telemetry, network listener, package dependency or code is added
-by M0. ADR-0004 remains unchanged. The transition discrepancy requires explicit
-owner review before full writer compatibility can be claimed. Power loss, physical
-disk-full, network filesystems, cross-account ACL attacks and hostile same-user
+by M0. ADR-0004 remains unchanged. The owner resolved future transitions; M1/M2
+implementation, transition tests and the intentional CLI difference remain pending.
+Power loss, physical disk-full, network filesystems, cross-account ACL attacks and hostile same-user
 guarantees remain unverified, not inferred from synthetic or document checks.
