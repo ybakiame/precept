@@ -40,6 +40,11 @@ fn no_links(path: &Path) -> Result<()> {
             return Err(Error::UnsafeWorkspace);
         }
         p.push(c);
+        // A Windows prefix alone (especially \\?\C:) is not an absolute
+        // filesystem object. Inspect it only after the root component is added.
+        if matches!(c, Component::Prefix(_)) {
+            continue;
+        }
         let m = fs::symlink_metadata(&p).map_err(|_| Error::UnsafeWorkspace)?;
         if m.file_type().is_symlink() {
             return Err(Error::UnsafeWorkspace);

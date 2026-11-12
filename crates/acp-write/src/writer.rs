@@ -71,17 +71,12 @@ impl Writer<'_> {
         self.profile.check()?;
         // All filesystem work is outside the write transaction. Registration is
         // storage data, not the later daemon's independent sharing allowlist.
-        if let Command::RegisterProject { root, .. } = &request.command {
+        let registration_valid = if let Command::RegisterProject { root, .. } = &request.command {
             let p = std::path::Path::new(root);
-            if !p.is_dir()
-                || p.canonicalize()
-                    .map_err(|_| Error::InvalidCommand)?
-                    .to_str()
-                    != Some(root)
-            {
-                return Err(Error::InvalidCommand);
-            }
-        }
+            p.is_dir() && p.canonicalize().ok().as_deref() == Some(p)
+        } else {
+            true
+        };
         binding(&self.profile.binding, &request.binding)?;
         let tx = self
             .db
@@ -107,6 +102,11 @@ impl Writer<'_> {
         }
         if metadata.commit_sequence >= 4096 {
             return Err(Error::Capacity);
+        }
+        // Current directory availability must not invalidate a committed replay.
+        // The observation was made before BEGIN; no filesystem work occurs here.
+        if !registration_valid {
+            return Err(Error::InvalidCommand);
         }
         let sequence = next_revision(metadata.commit_sequence)?;
         let now = profile::timestamp()?;

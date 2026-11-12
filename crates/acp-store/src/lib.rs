@@ -72,24 +72,24 @@ impl SqliteStore {
         store.metadata()?;
         Ok(store)
     }
-    fn snapshot<T>(&self, read: impl FnOnce() -> Result<T>) -> Result<T> {
+    fn snapshot<T>(&self, read: impl FnOnce(profile::Metadata) -> Result<T>) -> Result<T> {
         let tx = self
             .db
             .unchecked_transaction()
             .map_err(|_| Error::ReadFailed)?;
-        profile::verify(&tx)?;
-        let result = read();
+        let metadata = profile::verify(&tx)?;
+        let result = read(metadata);
         drop(tx);
         result
     }
     pub fn metadata(&self) -> Result<profile::Metadata> {
-        self.snapshot(|| profile::verify(&self.db))
+        self.snapshot(Ok)
     }
     pub fn schema(&self) -> Result<Schema> {
-        self.snapshot(|| Ok(Schema::Version1))
+        self.snapshot(|_| Ok(Schema::Version1))
     }
     pub fn project_revision(&self, name: &str) -> Result<i64> {
-        self.snapshot(|| {
+        self.snapshot(|_| {
             self.db
                 .query_row("SELECT revision FROM projects WHERE name=?1", [name], |r| {
                     r.get(0)
@@ -100,7 +100,7 @@ impl SqliteStore {
         })
     }
     pub fn preference_revision(&self, id: i64) -> Result<i64> {
-        self.snapshot(|| {
+        self.snapshot(|_| {
             self.db
                 .query_row("SELECT revision FROM preferences WHERE id=?1", [id], |r| {
                     r.get(0)
@@ -111,7 +111,7 @@ impl SqliteStore {
         })
     }
     pub fn handoff_revision(&self, project: &str, task: &str) -> Result<i64> {
-        self.snapshot(|| {
+        self.snapshot(|_| {
             self.db
                 .query_row(
                     "SELECT revision FROM handoffs WHERE project=?1 AND task_id=?2",
@@ -124,7 +124,7 @@ impl SqliteStore {
         })
     }
     pub fn read_project(&self, name: &str) -> Result<Project> {
-        self.snapshot(|| {
+        self.snapshot(|_| {
             let record = self
                 .db
                 .query_row(
@@ -149,7 +149,7 @@ impl SqliteStore {
     /// Returns only structurally scoped records; the core applies confirmed-only
     /// filtering, precedence and ID ordering. Invalid review states fail closed.
     pub fn read_preferences(&self, project: &str) -> Result<Vec<Preference>> {
-        self.snapshot(|| {
+        self.snapshot(|_| {
         project_record(&self.db, project)?;
         let mut stmt = self.db.prepare("SELECT id,scope,project,pref_key,value,status,source FROM preferences WHERE (scope='global' AND project IS NULL) OR (scope='project' AND project=?1) ORDER BY pref_key,CASE scope WHEN 'project' THEN 0 ELSE 1 END,id DESC")
             .map_err(|_| Error::ReadFailed)?;
@@ -198,7 +198,7 @@ impl SqliteStore {
         })
     }
     pub fn read_handoff(&self, project: &str, task: &str) -> Result<Handoff> {
-        self.snapshot(|| {
+        self.snapshot(|_| {
         project_record(&self.db, project)?;
         let sql = "SELECT project,task_id,objective,base_sha,branch,worktree_state,worktree_fingerprint,completed,next_action,validation_json,updated_at FROM handoffs WHERE project=?1 AND task_id=?2";
         self.db
