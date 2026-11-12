@@ -4,16 +4,15 @@ use acp_core::{
     Status,
 };
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
+#[doc(hidden)]
+pub mod profile;
 use std::{
-    collections::BTreeMap,
     path::{Path, PathBuf},
     time::Duration,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Schema {
-    Legacy,
-    Fingerprinted,
     Version1,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,14 +42,13 @@ fn core_error(e: Error) -> acp_core::Error {
     }
 }
 
-/// Owns a private read-only connection, not the database. Python remains the writer.
-/// Open another adapter per reader/thread; never use immutable mode for live WAL data.
+/// Strict fresh Profile v1 reader. The connection is always SQLite read-only.
 pub struct SqliteStore {
     db: Connection,
 }
 impl SqliteStore {
     pub fn open(path: &Path) -> Result<Self> {
-        if !path.is_file() {
+        if !path.is_absolute() || !path.is_file() {
             return Err(Error::OpenFailed);
         }
         let db = Connection::open_with_flags(
@@ -58,46 +56,101 @@ impl SqliteStore {
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .map_err(|_| Error::OpenFailed)?;
-        db.busy_timeout(Duration::from_secs(5))
+        db.busy_timeout(Duration::from_millis(100))
             .map_err(|_| Error::OpenFailed)?;
-        // Connection-local protections; no journal mode, version, DDL or checkpoint writes.
-        db.pragma_update(None, "query_only", true)
+        db.set_limit(rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH, 256 * 1024)
             .map_err(|_| Error::OpenFailed)?;
-        db.pragma_update(None, "trusted_schema", false)
-            .map_err(|_| Error::OpenFailed)?;
+        for (name, value) in [
+            ("query_only", true),
+            ("foreign_keys", true),
+            ("trusted_schema", false),
+        ] {
+            db.pragma_update(None, name, value)
+                .map_err(|_| Error::OpenFailed)?;
+        }
         let store = Self { db };
-        store.schema()?;
+        store.metadata()?;
         Ok(store)
     }
+    fn snapshot<T>(&self, read: impl FnOnce(profile::Metadata) -> Result<T>) -> Result<T> {
+        let tx = self
+            .db
+            .unchecked_transaction()
+            .map_err(|_| Error::ReadFailed)?;
+        let metadata = profile::verify(&tx)?;
+        let result = read(metadata);
+        drop(tx);
+        result
+    }
+    pub fn metadata(&self) -> Result<profile::Metadata> {
+        self.snapshot(Ok)
+    }
     pub fn schema(&self) -> Result<Schema> {
-        inspect_schema(&self.db)
+        self.snapshot(|_| Ok(Schema::Version1))
+    }
+    pub fn project_revision(&self, name: &str) -> Result<i64> {
+        self.snapshot(|_| {
+            self.db
+                .query_row("SELECT revision FROM projects WHERE name=?1", [name], |r| {
+                    r.get(0)
+                })
+                .optional()
+                .map_err(|_| Error::InvalidRecord)?
+                .ok_or(Error::UnknownProject)
+        })
+    }
+    pub fn preference_revision(&self, id: i64) -> Result<i64> {
+        self.snapshot(|_| {
+            self.db
+                .query_row("SELECT revision FROM preferences WHERE id=?1", [id], |r| {
+                    r.get(0)
+                })
+                .optional()
+                .map_err(|_| Error::InvalidRecord)?
+                .ok_or(Error::InvalidRecord)
+        })
+    }
+    pub fn handoff_revision(&self, project: &str, task: &str) -> Result<i64> {
+        self.snapshot(|_| {
+            self.db
+                .query_row(
+                    "SELECT revision FROM handoffs WHERE project=?1 AND task_id=?2",
+                    (project, task),
+                    |r| r.get(0),
+                )
+                .optional()
+                .map_err(|_| Error::InvalidRecord)?
+                .ok_or(Error::HandoffNotFound)
+        })
     }
     pub fn read_project(&self, name: &str) -> Result<Project> {
-        self.schema()?;
-        let record = self
-            .db
-            .query_row(
-                "SELECT name, root FROM projects WHERE name=?1",
-                [name],
-                |r| {
-                    Ok(Project {
-                        name: r.get(0)?,
-                        root: PathBuf::from(r.get::<_, String>(1)?),
-                    })
-                },
-            )
-            .optional()
-            .map_err(|_| Error::InvalidRecord)?
-            .ok_or(Error::UnknownProject)?;
-        if record.name.is_empty() || !record.root.is_absolute() {
-            return Err(Error::InvalidRecord);
-        }
-        Ok(record)
+        self.snapshot(|_| {
+            let record = self
+                .db
+                .query_row(
+                    "SELECT name, root FROM projects WHERE name=?1",
+                    [name],
+                    |r| {
+                        Ok(Project {
+                            name: r.get(0)?,
+                            root: PathBuf::from(r.get::<_, String>(1)?),
+                        })
+                    },
+                )
+                .optional()
+                .map_err(|_| Error::InvalidRecord)?
+                .ok_or(Error::UnknownProject)?;
+            if record.name.is_empty() || !record.root.is_absolute() {
+                return Err(Error::InvalidRecord);
+            }
+            Ok(record)
+        })
     }
     /// Returns only structurally scoped records; the core applies confirmed-only
     /// filtering, precedence and ID ordering. Invalid review states fail closed.
     pub fn read_preferences(&self, project: &str) -> Result<Vec<Preference>> {
-        self.read_project(project)?;
+        self.snapshot(|_| {
+        project_record(&self.db, project)?;
         let mut stmt = self.db.prepare("SELECT id,scope,project,pref_key,value,status,source FROM preferences WHERE (scope='global' AND project IS NULL) OR (scope='project' AND project=?1) ORDER BY pref_key,CASE scope WHEN 'project' THEN 0 ELSE 1 END,id DESC")
             .map_err(|_| Error::ReadFailed)?;
         let rows = stmt
@@ -141,18 +194,15 @@ impl SqliteStore {
             });
         }
         Ok(result)
+
+        })
     }
     pub fn read_handoff(&self, project: &str, task: &str) -> Result<Handoff> {
-        self.read_project(project)?;
-        let fingerprint = match self.schema()? {
-            Schema::Legacy => "NULL",
-            Schema::Fingerprinted | Schema::Version1 => "worktree_fingerprint",
-        };
-        let sql = format!(
-            "SELECT project,task_id,objective,base_sha,branch,worktree_state,{fingerprint},completed,next_action,validation_json,updated_at FROM handoffs WHERE project=?1 AND task_id=?2"
-        );
+        self.snapshot(|_| {
+        project_record(&self.db, project)?;
+        let sql = "SELECT project,task_id,objective,base_sha,branch,worktree_state,worktree_fingerprint,completed,next_action,validation_json,updated_at FROM handoffs WHERE project=?1 AND task_id=?2";
         self.db
-            .query_row(&sql, [project, task], |r| {
+            .query_row(sql, [project, task], |r| {
                 let validation_json: String = r.get(9)?;
                 let validation = serde_json::from_str(&validation_json)
                     .map_err(|_| rusqlite::Error::InvalidQuery)?;
@@ -173,6 +223,8 @@ impl SqliteStore {
             .optional()
             .map_err(|_| Error::InvalidRecord)?
             .ok_or(Error::HandoffNotFound)
+
+        })
     }
 }
 impl ProjectRegistry for SqliteStore {
@@ -191,144 +243,37 @@ impl HandoffRepository for SqliteStore {
     }
 }
 
-/// Inspect supported schema metadata on a borrowed connection; never mutates it.
-/// V0 has two shapes; v1 requires the nullable fingerprint column.
-pub fn inspect_schema(db: &Connection) -> Result<Schema> {
-    SchemaInspector { db }.schema()
+fn project_record(db: &Connection, name: &str) -> Result<()> {
+    db.query_row("SELECT 1 FROM projects WHERE name=?1", [name], |_| Ok(()))
+        .optional()
+        .map_err(|_| Error::InvalidRecord)?
+        .ok_or(Error::UnknownProject)
 }
-struct SchemaInspector<'a> {
-    db: &'a Connection,
-}
-impl SchemaInspector<'_> {
-    /// Both Python P0 variants are unversioned (user_version=0); v1 is additive. Recheck before
-    /// every read so an external DDL/version change is not silently accepted.
-    pub fn schema(&self) -> Result<Schema> {
-        let version: i64 = self
-            .db
-            .pragma_query_value(None, "user_version", |r| r.get(0))
-            .map_err(|_| Error::IncompatibleSchema)?;
-        if !matches!(version, 0 | 1) {
-            return Err(Error::UnsupportedVersion);
-        }
-        let mut stmt = self.db.prepare("SELECT name, type FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*' AND type != 'index'")
-            .map_err(|_| Error::IncompatibleSchema)?;
-        let objects: BTreeMap<String, String> = stmt
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
-            .map_err(|_| Error::IncompatibleSchema)?
-            .collect::<rusqlite::Result<_>>()
-            .map_err(|_| Error::IncompatibleSchema)?;
-        let expected = ["projects", "preferences", "handoffs"]
-            .into_iter()
-            .map(|n| (n.to_owned(), "table".to_owned()))
-            .collect();
-        if objects != expected {
-            return Err(Error::IncompatibleSchema);
-        }
-        self.check_columns("projects", "name:TEXT:1,root:TEXT:0,created_at:TEXT:0")?;
-        self.check_columns("preferences", "id:INTEGER:1,scope:TEXT:0,project:TEXT:0,pref_key:TEXT:0,value:TEXT:0,status:TEXT:0,source:TEXT:0,created_at:TEXT:0,updated_at:TEXT:0")?;
-        let columns = self.columns("handoffs")?;
-        let schema = if columns.contains_key("worktree_fingerprint") {
-            Schema::Fingerprinted
-        } else {
-            Schema::Legacy
-        };
-        let base = "project:TEXT:1,task_id:TEXT:2,objective:TEXT:0,base_sha:TEXT:0,branch:TEXT:0,worktree_state:TEXT:0,completed:TEXT:0,next_action:TEXT:0,validation_json:TEXT:0,updated_at:TEXT:0";
-        let spec = if schema == Schema::Fingerprinted {
-            format!("{base},worktree_fingerprint:TEXT:0")
-        } else {
-            base.to_owned()
-        };
-        self.check_columns("handoffs", &spec)?;
-        if version == 1 {
-            if schema != Schema::Fingerprinted {
-                return Err(Error::IncompatibleSchema);
-            }
-            return Ok(Schema::Version1);
-        }
-        Ok(schema)
-    }
-    fn columns(&self, table: &str) -> Result<BTreeMap<String, (String, i64)>> {
-        let mut stmt = self
-            .db
-            .prepare("SELECT name, type, pk, hidden FROM pragma_table_xinfo(?1)")
-            .map_err(|_| Error::IncompatibleSchema)?;
-        let rows = stmt
-            .query_map([table], |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, i64>(2)?,
-                    r.get::<_, i64>(3)?,
-                ))
-            })
-            .map_err(|_| Error::IncompatibleSchema)?;
-        let mut result = BTreeMap::new();
-        for row in rows {
-            let (name, ty, pk, hidden) = row.map_err(|_| Error::IncompatibleSchema)?;
-            if hidden != 0 {
-                return Err(Error::IncompatibleSchema);
-            }
-            result.insert(name, (ty.to_ascii_uppercase(), pk));
-        }
-        Ok(result)
-    }
-    fn check_columns(&self, table: &str, spec: &str) -> Result<()> {
-        let expected = spec
-            .split(',')
-            .map(|part| {
-                let mut fields = part.split(':');
-                let name = fields.next().unwrap().to_owned();
-                let ty = fields.next().unwrap().to_owned();
-                let pk = fields.next().unwrap().parse::<i64>().unwrap();
-                (name, (ty, pk))
-            })
-            .collect();
-        if self.columns(table)? != expected {
-            return Err(Error::IncompatibleSchema);
-        }
-        Ok(())
-    }
-}
-
+#[cfg(test)]
+extern crate self as acp_store;
+#[cfg(test)]
+mod read_cost;
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn read_only_flags_deny_writes_even_if_query_only_is_disabled() {
-        let temp = tempfile::tempdir().unwrap();
-        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let output = std::process::Command::new(
-            std::env::var("ACP_TEST_PYTHON").unwrap_or_else(|_| "python".into()),
-        )
-        .arg(repo.join("tools/sqlite_fixture.py"))
-        .arg(temp.path())
-        .env("PYTHONPATH", repo.join("src"))
-        .output()
-        .unwrap();
-        assert!(
-            output.status.success(),
-            "synthetic fixture generation failed"
-        );
-        let store = SqliteStore::open(&temp.path().join("state/context.sqlite3")).unwrap();
-        store.db.pragma_update(None, "query_only", false).unwrap();
-        let error = store
-            .db
-            .execute("UPDATE preferences SET value='after'", [])
-            .unwrap_err();
+    fn read_only_mode_denies_sql_even_when_query_only_is_disabled() {
+        let t = tempfile::tempdir().unwrap();
+        let p = t.path().join("fresh.sqlite3");
+        {
+            let db = Connection::open(&p).unwrap();
+            for ddl in profile::DDL {
+                db.execute_batch(ddl).unwrap()
+            }
+            db.execute_batch("PRAGMA user_version=1;INSERT INTO acp_profile VALUES(1,'00000000000000000000000000000000','11111111111111111111111111111111',0,1,0)").unwrap();
+        }
+        let s = SqliteStore::open(&p).unwrap();
+        s.db.pragma_update(None, "query_only", false).unwrap();
         assert_eq!(
-            error.sqlite_error_code(),
+            s.db.execute("DELETE FROM acp_profile", [])
+                .unwrap_err()
+                .sqlite_error_code(),
             Some(rusqlite::ErrorCode::ReadOnly)
-        );
-        assert_eq!(
-            store
-                .db
-                .query_row(
-                    "SELECT value FROM preferences WHERE source='fixture-new'",
-                    [],
-                    |r| r.get::<_, String>(0)
-                )
-                .unwrap(),
-            "newest"
         );
     }
 }

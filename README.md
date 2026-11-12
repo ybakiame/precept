@@ -9,6 +9,11 @@
 The Rust read-only core/store, local daemon/IPC/MCP, shared NSH console and optional
 operator-controlled native Agent Client Protocol (ACP) session are implemented.
 P1-I adds separately opted-in, revocable session context.
+P1-M2 Stage 1 now supplies the fresh Profile v1 storage library: explicit
+no-overwrite creation, strict read-only validation and private typed transactions.
+The daemon has no write caller yet. Profile bootstrap, grants/leases, operator
+IPC/CLI/NSH integration and complete Python retirement remain later M2 slices.
+See the [Stage 1 evidence](docs/evaluation/p1-m2-s1-storage.md).
 [Architecture](docs/architecture.md) separates this baseline
 from the target domain; the [roadmap](docs/roadmap.md) gates later implementation.
 

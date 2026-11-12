@@ -1,1496 +1,1015 @@
 use super::*;
-use crate::{
-    schema::{self, Shape},
-    workspace::{self, Role},
-};
+use crate::{files, profile::connect};
+use acp_store::{SqliteStore, profile as schema};
 use rusqlite::{Connection, types::Value};
 use std::{
-    sync::{Arc, Barrier},
+    fs,
+    path::Path,
+    sync::Barrier,
     time::{Duration, Instant},
 };
-const SHAPES: [FixtureShape; 3] = [
-    FixtureShape::LegacyV0,
-    FixtureShape::FingerprintedV0,
-    FixtureShape::Version1,
-];
-fn ready(shape: FixtureShape) -> SyntheticWorkspace {
-    let mut w = SyntheticWorkspace::new(shape).unwrap();
-    w.prepare().unwrap();
-    w
+fn fresh() -> (tempfile::TempDir, Profile) {
+    let t = tempfile::tempdir().unwrap();
+    files::private_test_parent(t.path());
+    let p = Profile::create(&t.path().join("profile.sqlite3")).unwrap();
+    (t, p)
 }
-fn request(w: &SyntheticWorkspace, id: &str, command: Command) -> Request {
+fn request(p: &Profile, id: &str, command: Command) -> Request {
     Request {
         version: 1,
-        binding: w.binding(),
+        binding: p.binding(),
         operation_id: id.into(),
         command,
-    }
-}
-fn transition(id: i64, scope: Scope, expected: i64, action: usize) -> Command {
-    match action {
-        0 => Command::ConfirmPreference {
-            id,
-            scope,
-            expected: Expected::Revision(expected),
-        },
-        1 => Command::RejectPreference {
-            id,
-            scope,
-            expected: Expected::Revision(expected),
-        },
-        _ => Command::DeprecatePreference {
-            id,
-            scope,
-            expected: Expected::Revision(expected),
-        },
     }
 }
 fn suggest(scope: Scope) -> Command {
     Command::SuggestPreference {
         scope,
-        key: "new-key".into(),
-        value: "synthetic-payload".into(),
-        source: "synthetic-source".into(),
+        key: "formatter".into(),
+        value: "synthetic".into(),
+        source: "fixture".into(),
         expected: Expected::Absent,
     }
 }
-fn handoff(project: &str, task: &str, expected: Expected) -> Command {
-    Command::PutHandoff{project:project.into(),task_id:task.into(),objective:"synthetic objective".into(),completed:"complete".into(),next_action:"inspect".into(),validation_json:"[ {\"check\":\"unit\",\"status\":\"NOT_RUN\",\"evidence\":{\"id\":\"opaque\",\"unknown\":[1,null]}} ]".into(),snapshot:Snapshot::UnknownFingerprint,expected}
+fn project_scope(name: &str) -> Scope {
+    Scope::Project { name: name.into() }
+}
+fn register(p: &Profile, name: &str) {
+    let root = p.path.parent().unwrap().join(name);
+    fs::create_dir(&root).unwrap();
+    let root = root.canonicalize().unwrap().to_str().unwrap().to_owned();
+    p.writer()
+        .unwrap()
+        .execute(&request(
+            p,
+            &format!("register-{name}"),
+            Command::RegisterProject {
+                name: name.into(),
+                root,
+                expected: Expected::Absent,
+            },
+        ))
+        .unwrap();
+}
+fn ready() -> (tempfile::TempDir, Profile) {
+    let (t, p) = fresh();
+    register(&p, "alpha");
+    register(&p, "beta");
+    (t, p)
+}
+fn inserted(p: &Profile, op: &str, scope: Scope) -> i64 {
+    p.writer()
+        .unwrap()
+        .execute(&request(p, op, suggest(scope)))
+        .unwrap()
+        .affected[0]
+        .record_id
+        .parse()
+        .unwrap()
+}
+fn transition(id: i64, scope: Scope, revision: i64, action: usize) -> Command {
+    match action {
+        0 => Command::ConfirmPreference {
+            id,
+            scope,
+            expected: Expected::Revision(revision),
+        },
+        1 => Command::RejectPreference {
+            id,
+            scope,
+            expected: Expected::Revision(revision),
+        },
+        _ => Command::DeprecatePreference {
+            id,
+            scope,
+            expected: Expected::Revision(revision),
+        },
+    }
+}
+fn handoff(project: &str, revision: Expected) -> Command {
+    Command::PutHandoff{project:project.into(),task_id:"shared".into(),objective:"synthetic objective".into(),completed:"".into(),next_action:"inspect".into(),validation_json:"[ {\"check\":\"unit\",\"status\":\"NOT_RUN\",\"extra\":{\"opaque\":[1,null,\"合成\"]}} ]".into(),snapshot:Snapshot{base_sha:String::new(),branch:String::new(),state:"unknown".into(),fingerprint:None},expected:revision}
 }
 fn dump(db: &Connection) -> Vec<Vec<Vec<Value>>> {
-    let mut rows = schema::records(db).unwrap();
-    for q in [
-        "SELECT * FROM acp_profile ORDER BY singleton",
-        "SELECT * FROM acp_revisions ORDER BY kind,project,record_id",
-        "SELECT * FROM acp_receipts ORDER BY operation_id",
-    ] {
-        let mut stmt = db.prepare(q).unwrap();
-        let n = stmt.column_count();
-        rows.push(
-            stmt.query_map([], |r| {
-                (0..n)
-                    .map(|i| r.get::<_, Value>(i))
-                    .collect::<rusqlite::Result<Vec<_>>>()
-            })
-            .unwrap()
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .unwrap(),
-        );
-    }
-    rows
-}
-fn status(db: &Connection, id: i64) -> String {
-    db.query_row("SELECT status FROM preferences WHERE id=?1", [id], |r| {
-        r.get(0)
-    })
-    .unwrap()
-}
-fn rev(db: &Connection, id: i64) -> (i64, bool) {
-    db.query_row(
-        "SELECT revision,deleted FROM acp_revisions WHERE kind='preference' AND record_id=?1",
-        [id.to_string()],
-        |r| Ok((r.get(0)?, r.get::<_, i64>(1)? != 0)),
-    )
-    .unwrap()
-}
-#[test]
-fn frozen_document_ddl_matches_exact_implementation() {
-    let text = include_str!("../../../docs/p1/profile-v2-schema-and-writer.md");
-    let block = text
-        .split("```sql\n")
-        .nth(1)
+    [
+        "SELECT * FROM acp_profile",
+        "SELECT * FROM projects ORDER BY name",
+        "SELECT * FROM preferences ORDER BY id",
+        "SELECT * FROM handoffs ORDER BY project,task_id",
+        "SELECT * FROM acp_receipts ORDER BY commit_sequence",
+    ]
+    .iter()
+    .map(|q| {
+        let mut s = db.prepare(q).unwrap();
+        let n = s.column_count();
+        s.query_map([], |r| {
+            (0..n)
+                .map(|i| r.get(i))
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
         .unwrap()
-        .split("```")
-        .next()
-        .unwrap();
-    let frozen: Vec<_> = block
-        .split(';')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .collect();
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap()
+    })
+    .collect()
+}
+fn validated(p: &Profile) {
+    SqliteStore::open(&p.path).unwrap();
+}
+#[test]
+fn fresh_identity_schema_counter_and_no_legacy_objects() {
+    let (_t, p) = fresh();
+    let r = SqliteStore::open(&p.path).unwrap();
+    let m = r.metadata().unwrap();
+    assert_eq!(m.binding, p.binding());
+    assert_ne!(m.binding.profile_id, m.binding.generation);
     assert_eq!(
-        frozen,
-        [
-            schema::PROJECTS,
-            schema::PREFERENCES,
-            schema::PREFS_LOOKUP,
-            schema::HANDOFFS,
-            schema::PROFILE,
-            schema::REVISIONS,
-            schema::RECEIPTS
-        ]
-    );
-}
-#[test]
-fn all_source_shapes_migrate_exact_history_and_allocation_without_writes_to_prior_copies() {
-    for shape in SHAPES {
-        let mut w = SyntheticWorkspace::new(shape).unwrap();
-        let source = workspace::connect(&w.path(Role::Source), true).unwrap();
-        let before = schema::records(&source).unwrap();
-        drop(source);
-        let source_bytes = std::fs::read(w.path(Role::Source)).unwrap();
-        w.prepare().unwrap();
-        let writer = w.writer().unwrap();
-        assert_eq!(schema::inspect(&writer.db).unwrap(), Shape::V2);
-        assert_eq!(schema::records(&writer.db).unwrap(), before);
-        for id in [4, 9] {
-            assert_eq!(status(&writer.db, id), "deprecated");
-            assert_eq!(rev(&writer.db, id), (1, false));
-        }
-        assert_eq!(std::fs::read(w.path(Role::Source)).unwrap(), source_bytes);
-        let count: i64 = writer
-            .db
-            .query_row("SELECT count(*) FROM acp_revisions", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(count, 14);
-        let backup_bytes = std::fs::read(w.path(Role::Backup)).unwrap();
-        drop(writer);
-        let mut writer = w.writer().unwrap();
-        let result = writer
-            .execute(&request(&w, "allocate", suggest(Scope::Global)))
-            .unwrap();
-        assert_eq!(result.affected[0].record_id, "1001");
-        w.verify_prior().unwrap();
-        assert_eq!(std::fs::read(w.path(Role::Backup)).unwrap(), backup_bytes);
-        assert_eq!(std::fs::read(w.path(Role::Source)).unwrap(), source_bytes);
-        assert!(matches!(
-            acp_store::SqliteStore::open(&w.path(Role::Candidate)),
-            Err(acp_store::Error::UnsupportedVersion)
-        ));
-    }
-}
-#[test]
-fn corrupt_allocation_watermarks_refuse_all_source_shapes_before_copying() {
-    for shape in SHAPES {
-        for sql in INVALID_ALLOCATION {
-            let mut w = SyntheticWorkspace::new(shape).unwrap();
-            let db = workspace::connect(&w.path(Role::Source), false).unwrap();
-            db.execute_batch(sql).unwrap();
-            drop(db);
-            let before = std::fs::read(w.path(Role::Source)).unwrap();
-            assert_eq!(w.prepare(), Err(Error::InvalidRecord));
-            assert_eq!(std::fs::read(w.path(Role::Source)).unwrap(), before);
-            assert!(!w.path(Role::Backup).exists());
-            assert!(!w.path(Role::Candidate).exists());
-            assert!(w.writer().is_err());
-        }
-    }
-}
-// sqlite_sequence has no affinity or uniqueness constraints: inspect every row
-// and its stored SQLite type, including corrupt rows unrelated to preferences.
-const INVALID_ALLOCATION: [&str; 15] = [
-    "DELETE FROM preferences; UPDATE sqlite_sequence SET seq=0",
-    "DELETE FROM preferences; UPDATE sqlite_sequence SET seq=1; INSERT INTO sqlite_sequence VALUES('preferences',1000)",
-    "INSERT INTO sqlite_sequence VALUES('preferences',2000)",
-    "UPDATE sqlite_sequence SET seq=-1",
-    "UPDATE sqlite_sequence SET seq='1000'",
-    "UPDATE sqlite_sequence SET seq=1000.0",
-    "UPDATE sqlite_sequence SET seq=x'31303030'",
-    "UPDATE sqlite_sequence SET seq=NULL",
-    "INSERT INTO sqlite_sequence VALUES('unexpected',1000)",
-    "INSERT INTO sqlite_sequence VALUES(NULL,1000)",
-    "UPDATE sqlite_sequence SET name=x'707265666572656e636573'",
-    "UPDATE sqlite_sequence SET name=1",
-    "DELETE FROM sqlite_sequence",
-    "UPDATE sqlite_sequence SET seq=1",
-    "DELETE FROM preferences; DELETE FROM sqlite_sequence",
-];
-#[test]
-fn empty_previously_allocated_tables_preserve_positive_watermarks() {
-    for shape in SHAPES {
-        let mut w = SyntheticWorkspace::new(shape).unwrap();
-        let db = workspace::connect(&w.path(Role::Source), false).unwrap();
-        db.execute_batch("DELETE FROM preferences").unwrap();
-        let before = schema::records(&db).unwrap();
-        drop(db);
-        let source_bytes = std::fs::read(w.path(Role::Source)).unwrap();
-        w.prepare().unwrap();
-        let backup_bytes = std::fs::read(w.path(Role::Backup)).unwrap();
-        let mut writer = w.writer().unwrap();
-        assert_eq!(schema::records(&writer.db).unwrap(), before);
-        let receipt = writer
-            .execute(&request(&w, "empty-allocate", suggest(Scope::Global)))
-            .unwrap();
-        assert_eq!(receipt.affected[0].record_id, "1001");
-        writer::verify(&writer.db, &w.binding()).unwrap();
-        w.verify_prior().unwrap();
-        assert_eq!(std::fs::read(w.path(Role::Source)).unwrap(), source_bytes);
-        assert_eq!(std::fs::read(w.path(Role::Backup)).unwrap(), backup_bytes);
-    }
-}
-#[test]
-fn genuinely_never_allocated_tables_need_provenance_not_available_in_m1() {
-    for shape in [Shape::Legacy, Shape::Fingerprinted, Shape::V1] {
-        // Construct the schema without ever inserting preferences or erasing
-        // sequence history. This is distinct from deleting a populated fixture.
-        let db = Connection::open_in_memory().unwrap();
-        schema::create_source(&db, shape).unwrap();
-        assert_eq!(db.total_changes(), 0);
-        let before = schema::records(&db).unwrap();
-        assert!(before[1].is_empty());
-        assert!(before[3].is_empty());
-        // M1 deliberately has no trusted never-allocated admission capability.
-        assert_eq!(schema::validate_records(&db), Err(Error::InvalidRecord));
-        assert_eq!(schema::records(&db).unwrap(), before);
-        assert_eq!(db.total_changes(), 0);
-    }
-}
-#[test]
-fn corrupt_v2_allocation_refuses_reopen_execution_and_candidate_verification() {
-    for shape in SHAPES {
-        for sql in INVALID_ALLOCATION {
-            let mut w = ready(shape);
-            let mut writer = w.writer().unwrap();
-            writer.db.execute_batch(sql).unwrap();
-            // Preserve the independent live-revision invariant in empty cases,
-            // so refusal must come from the corrupted allocation history.
-            writer.db.execute_batch("DELETE FROM acp_revisions WHERE kind='preference' AND NOT EXISTS (SELECT 1 FROM preferences WHERE cast(id AS TEXT)=record_id)").unwrap();
-            let before = dump(&writer.db);
-            let bytes = std::fs::read(w.path(Role::Candidate)).unwrap();
-            assert_eq!(w.writer().unwrap_err(), Error::InvalidRecord);
-            assert_eq!(std::fs::read(w.path(Role::Candidate)).unwrap(), bytes);
-            assert_eq!(
-                writer.execute(&request(&w, "corrupt-allocation", suggest(Scope::Global))),
-                Err(Error::InvalidRecord)
-            );
-            assert_eq!(dump(&writer.db), before);
-            drop(writer);
-            assert_eq!(w.verify_candidate(), Err(Error::InvalidRecord));
-            assert_eq!(std::fs::read(w.path(Role::Candidate)).unwrap(), bytes);
-            w.verify_prior().unwrap();
-        }
-    }
-}
-#[test]
-fn empty_v2_history_cannot_be_reset_even_after_tombstones_are_erased() {
-    for shape in SHAPES {
-        for (seq, erase_history) in [(None, false), (Some(1), false), (None, true)] {
-            let mut w = ready(shape);
-            let mut writer = w.writer().unwrap();
-            for id in 1..=10 {
-                let scope = match id {
-                    1..=4 => Scope::Global,
-                    5..=9 => Scope::Project {
-                        name: "alpha".into(),
-                    },
-                    _ => Scope::Project {
-                        name: "beta".into(),
-                    },
-                };
-                writer
-                    .execute(&request(
-                        &w,
-                        &format!("delete-{id}"),
-                        Command::DeletePreference {
-                            id,
-                            scope,
-                            expected: Expected::Revision(1),
-                        },
-                    ))
-                    .unwrap();
-            }
-            writer::verify(&writer.db, &w.binding()).unwrap();
-            if let Some(seq) = seq {
-                writer
-                    .db
-                    .execute("UPDATE sqlite_sequence SET seq=?1", [seq])
-                    .unwrap();
-            } else {
-                writer
-                    .db
-                    .execute_batch("DELETE FROM sqlite_sequence")
-                    .unwrap();
-            }
-            if erase_history {
-                // Remove all in-database allocation evidence, including the
-                // receipts referring to deleted IDs, to isolate the missing
-                // watermark rule from independent metadata consistency checks.
-                writer.db.execute_batch("DELETE FROM acp_revisions WHERE kind='preference'; DELETE FROM acp_receipts; UPDATE acp_profile SET commit_sequence=0").unwrap();
-            }
-            let before = dump(&writer.db);
-            let bytes = std::fs::read(w.path(Role::Candidate)).unwrap();
-            assert_eq!(w.writer().unwrap_err(), Error::InvalidRecord);
-            assert_eq!(
-                writer.execute(&request(&w, "reuse-deleted-id", suggest(Scope::Global))),
-                Err(Error::InvalidRecord)
-            );
-            assert_eq!(dump(&writer.db), before);
-            assert_eq!(std::fs::read(w.path(Role::Candidate)).unwrap(), bytes);
-            drop(writer);
-            assert_eq!(w.verify_candidate(), Err(Error::InvalidRecord));
-            assert_eq!(std::fs::read(w.path(Role::Candidate)).unwrap(), bytes);
-            w.verify_prior().unwrap();
-        }
-    }
-}
-#[test]
-fn complete_strict_transition_matrix_and_denials_preserve_every_logical_table() {
-    for shape in SHAPES {
-        for (id, old) in [
-            (1, "suggested"),
-            (2, "confirmed"),
-            (3, "rejected"),
-            (4, "deprecated"),
-        ] {
-            for action in 0..3 {
-                let w = ready(shape);
-                let mut writer = w.writer().unwrap();
-                let before = dump(&writer.db);
-                let result = writer.execute(&request(
-                    &w,
-                    "matrix",
-                    transition(id, Scope::Global, 1, action),
-                ));
-                let next = match (old, action) {
-                    ("suggested", 0) => Some("confirmed"),
-                    ("suggested", 1) => Some("rejected"),
-                    ("confirmed", 2) => Some("deprecated"),
-                    _ => None,
-                };
-                if let Some(next) = next {
-                    let receipt = result.unwrap();
-                    assert_eq!(status(&writer.db, id), next);
-                    assert_eq!(receipt.commit_sequence, 1);
-                    assert_eq!(rev(&writer.db, id), (2, false));
-                } else {
-                    assert_eq!(result, Err(Error::InvalidTransition));
-                    assert_eq!(dump(&writer.db), before);
-                }
-                w.verify_prior().unwrap();
-            }
-        }
-    }
-}
-#[test]
-fn confirmation_is_atomic_and_never_deprecates_another_scope_or_project() {
-    for shape in SHAPES {
-        let w = ready(shape);
-        let mut writer = w.writer().unwrap();
-        let receipt = writer
-            .execute(&request(
-                &w,
-                "confirm",
-                transition(
-                    5,
-                    Scope::Project {
-                        name: "alpha".into(),
-                    },
-                    1,
-                    0,
-                ),
-            ))
-            .unwrap();
-        assert_eq!(receipt.affected.len(), 3);
-        for id in [5, 6, 7] {
-            assert_eq!(rev(&writer.db, id), (2, false));
-        }
-        assert_eq!(status(&writer.db, 5), "confirmed");
-        for id in [6, 7] {
-            assert_eq!(status(&writer.db, id), "deprecated");
-        }
-        for id in [2, 10] {
-            assert_eq!(status(&writer.db, id), "confirmed");
-            assert_eq!(rev(&writer.db, id), (1, false));
-        }
-        crate::writer::verify(&writer.db, &w.binding()).unwrap();
-    }
-}
-#[test]
-fn cas_scope_generation_epoch_and_occupied_absence_refuse_without_changes() {
-    let w = ready(FixtureShape::Version1);
-    let mut writer = w.writer().unwrap();
-    let base = request(&w, "cas", transition(1, Scope::Global, 1, 0));
-    let mut cases = Vec::new();
-    let mut r = base.clone();
-    r.command = transition(1, Scope::Global, 2, 0);
-    cases.push((r, Error::Conflict));
-    let mut r = base.clone();
-    r.command = transition(
-        1,
-        Scope::Project {
-            name: "alpha".into(),
-        },
-        1,
-        0,
-    );
-    cases.push((r, Error::ScopeMismatch));
-    let mut r = base.clone();
-    r.command = transition(900, Scope::Global, 1, 0);
-    cases.push((r, Error::Conflict));
-    let mut r = base.clone();
-    r.binding.generation = "0".repeat(32);
-    cases.push((r, Error::StaleGeneration));
-    let mut r = base.clone();
-    r.binding.owner_epoch = 2;
-    cases.push((r, Error::OwnerMismatch));
-    let mut r = base.clone();
-    r.binding.profile_id = "0".repeat(32);
-    cases.push((r, Error::OwnerMismatch));
-    cases.push((
-        request(&w, "occupied", handoff("alpha", "shared", Expected::Absent)),
-        Error::Conflict,
-    ));
-    cases.push((
-        request(
-            &w,
-            "missing",
-            handoff("alpha", "missing", Expected::Revision(1)),
+        (
+            m.next_preference_id,
+            m.commit_sequence,
+            m.binding.owner_epoch
         ),
-        Error::Conflict,
-    ));
-    for (r, error) in cases {
-        let before = dump(&writer.db);
-        assert_eq!(writer.execute(&r), Err(error));
-        assert_eq!(dump(&writer.db), before);
+        (1, 0, 0)
+    );
+    assert!(r.read_project("missing").is_err());
+    let db = connect(&p.path, true).unwrap();
+    let n: i64 = db
+        .query_row(
+            "SELECT count(*) FROM sqlite_schema WHERE name IN ('sqlite_sequence','acp_revisions')",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(n, 0);
+}
+#[test]
+fn explicit_creation_never_overwrites_existing_objects_or_sidecars() {
+    let t = tempfile::tempdir().unwrap();
+    files::private_test_parent(t.path());
+    let p = t.path().join("target");
+    fs::write(&p, b"sentinel").unwrap();
+    assert!(matches!(Profile::create(&p), Err(Error::Collision)));
+    assert_eq!(fs::read(&p).unwrap(), b"sentinel");
+    let dir = t.path().join("existing-dir");
+    fs::create_dir(&dir).unwrap();
+    assert!(matches!(Profile::create(&dir), Err(Error::Collision)));
+    for suffix in ["-wal", "-shm", "-journal"] {
+        let target = t.path().join(format!("db{suffix}"));
+        fs::write(&target, b"sidecar sentinel").unwrap();
+        assert!(matches!(
+            Profile::create(&t.path().join("db")),
+            Err(Error::Collision)
+        ));
+        assert_eq!(fs::read(&target).unwrap(), b"sidecar sentinel");
+        fs::remove_file(target).unwrap();
     }
-    writer.execute(&base).unwrap();
-    let before = dump(&writer.db);
+    assert!(Profile::create(Path::new("relative")).is_err());
+    for name in [
+        "daemon.lock",
+        "operator.cap",
+        "operator-write.cap",
+        "daemon.sock",
+    ] {
+        assert!(Profile::create(&t.path().join(name)).is_err());
+    }
+}
+#[test]
+#[cfg(windows)]
+fn windows_mixed_case_reservations_and_collisions_preserve_neighbors() {
+    let t = tempfile::tempdir().unwrap();
+    files::private_test_parent(t.path());
+    // Absent targets must fail lexical checks, independently of filesystem
+    // existence; checking only existing aliases would miss these cases.
+    for name in [
+        "Daemon.Lock",
+        "DAEMON.SOCK",
+        "Operator.Cap",
+        "OPERATOR-Write.CAP",
+        ".ACP-Create-synthetic",
+        "profile-WaL",
+        "profile-ShM",
+        "profile-JoUrNaL",
+    ] {
+        let target = t.path().join(name);
+        assert!(matches!(Profile::create(&target), Err(Error::Collision)));
+        assert!(!target.exists());
+    }
+    for name in [
+        "Daemon.Lock",
+        "DAEMON.SOCK",
+        "Operator.Cap",
+        "OPERATOR-Write.CAP",
+        "target-WaL",
+        "target-ShM",
+        "target-JoUrNaL",
+        "TaRgEt",
+    ] {
+        let neighbor = t.path().join(name);
+        fs::write(&neighbor, b"synthetic sentinel").unwrap();
+        assert!(matches!(
+            Profile::create(&t.path().join("target")),
+            Err(Error::Collision)
+        ));
+        assert_eq!(fs::read(&neighbor).unwrap(), b"synthetic sentinel");
+        fs::remove_file(neighbor).unwrap();
+    }
+    // Folding reservations must neither rename a valid target nor overmatch
+    // names containing a reserved word away from the reserved boundary.
+    let target = t.path().join("Profile-WaL.sqlite3");
+    let p = Profile::create(&target).unwrap();
+    validated(&p);
+    assert_eq!(p.path.file_name(), target.file_name());
+    assert_eq!(fs::read_dir(t.path()).unwrap().count(), 1);
+}
+#[test]
+fn concurrent_creators_have_one_no_replace_winner() {
+    let t = tempfile::tempdir().unwrap();
+    files::private_test_parent(t.path());
+    let target = t.path().join("race");
+    let barrier = Barrier::new(2);
+    let result = std::thread::scope(|s| {
+        let a = s.spawn(|| {
+            barrier.wait();
+            Profile::create(&target)
+        });
+        let b = s.spawn(|| {
+            barrier.wait();
+            Profile::create(&target)
+        });
+        [a.join().unwrap(), b.join().unwrap()]
+    });
+    assert_eq!(result.iter().filter(|r| r.is_ok()).count(), 1);
     assert_eq!(
-        writer.execute(&request(&w, "stale", transition(1, Scope::Global, 1, 1))),
+        result
+            .iter()
+            .filter(|r| matches!(r, Err(Error::Collision)))
+            .count(),
+        1
+    );
+    let p = result.into_iter().find_map(Result::ok).unwrap();
+    validated(&p);
+}
+#[test]
+fn publication_unknown_preserves_valid_published_file() {
+    let t = tempfile::tempdir().unwrap();
+    files::private_test_parent(t.path());
+    let target = t.path().join("published");
+    assert!(matches!(
+        Profile::create_inner(&target, Fault::AfterCommit),
+        Err(Error::OutcomeUnknown)
+    ));
+    let before = fs::read(&target).unwrap();
+    SqliteStore::open(&target).unwrap();
+    assert!(matches!(Profile::create(&target), Err(Error::Collision)));
+    assert_eq!(fs::read(&target).unwrap(), before);
+    assert_eq!(fs::read_dir(t.path()).unwrap().count(), 1);
+}
+#[test]
+fn registration_uniqueness_and_expected_absence_are_atomic() {
+    let (_t, p) = ready();
+    let mut w = p.writer().unwrap();
+    let before = dump(&w.db);
+    let root = p
+        .path
+        .parent()
+        .unwrap()
+        .join("alpha")
+        .canonicalize()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    for name in ["alpha", "other"] {
+        assert_eq!(
+            w.execute(&request(
+                &p,
+                &format!("duplicate-{name}"),
+                Command::RegisterProject {
+                    name: name.into(),
+                    root: root.clone(),
+                    expected: Expected::Absent
+                }
+            )),
+            Err(Error::Conflict)
+        );
+        assert_eq!(dump(&w.db), before);
+    }
+    assert_eq!(
+        w.execute(&request(
+            &p,
+            "unknown-project",
+            suggest(project_scope("unknown"))
+        )),
         Err(Error::Conflict)
     );
-    assert_eq!(dump(&writer.db), before);
-    assert_eq!(
-        writer.execute(&request(
-            &w,
-            "fresh-state",
-            transition(1, Scope::Global, 2, 1)
-        )),
-        Err(Error::InvalidTransition)
-    );
-    assert_eq!(dump(&writer.db), before);
+    assert_eq!(dump(&w.db), before);
 }
 #[test]
-fn independent_connection_race_has_one_cas_winner() {
-    let w = ready(FixtureShape::Version1);
-    let barrier = Arc::new(Barrier::new(2));
-    let results = std::thread::scope(|s| {
-        let handles: Vec<_> = (0..2)
-            .map(|i| {
-                let barrier = barrier.clone();
-                let w = &w;
-                s.spawn(move || {
-                    let mut writer = w.writer().unwrap();
-                    let r = request(w, &format!("race-{i}"), transition(1, Scope::Global, 1, i));
-                    barrier.wait();
-                    writer.execute(&r)
-                })
-            })
-            .collect();
-        handles
-            .into_iter()
-            .map(|h| h.join().unwrap())
-            .collect::<Vec<_>>()
-    });
-    assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1);
-    assert!(
-        results
-            .iter()
-            .filter_map(|r| r.as_ref().err())
-            .all(|e| *e == Error::Conflict)
-    );
-    let writer = w.writer().unwrap();
-    assert_eq!(rev(&writer.db, 1), (2, false));
-    let seq: i64 = writer
-        .db
-        .query_row("SELECT commit_sequence FROM acp_profile", [], |r| r.get(0))
-        .unwrap();
-    assert_eq!(seq, 1);
-}
-#[test]
-fn receipt_replay_after_lost_response_and_reopen_precedes_cas_and_capacity() {
-    for shape in SHAPES {
-        let w = ready(shape);
-        let r = request(&w, "lost-response", transition(1, Scope::Global, 1, 0));
-        let mut writer = w.writer().unwrap();
-        assert_eq!(
-            writer.execute_inner(&r, Fault::AfterCommit),
-            Err(Error::OutcomeUnknown)
-        );
-        let before = dump(&writer.db);
-        drop(writer);
-        let mut writer = w.writer().unwrap();
-        let first = writer.execute(&r).unwrap();
-        assert_eq!(first.commit_sequence, 1);
-        assert_eq!(writer.execute(&r).unwrap(), first);
-        assert_eq!(dump(&writer.db), before);
-        let mut changed = r.clone();
-        changed.command = transition(1, Scope::Global, 2, 2);
-        assert_eq!(writer.execute(&changed), Err(Error::IdempotencyConflict));
-        assert_eq!(dump(&writer.db), before);
-        let mut stale = r.clone();
-        stale.binding.generation = "0".repeat(32);
-        assert_eq!(writer.execute(&stale), Err(Error::StaleGeneration));
-        writer
-            .db
-            .execute("UPDATE acp_profile SET receipt_limit=1", [])
-            .unwrap();
-        let full = dump(&writer.db);
-        assert_eq!(writer.execute(&r).unwrap(), first);
-        assert_eq!(
-            writer.execute(&request(&w, "full", suggest(Scope::Global))),
-            Err(Error::Capacity)
-        );
-        assert_eq!(dump(&writer.db), full);
+fn full_strict_transition_matrix_and_denial_invariance() {
+    for state in 0..4 {
+        for action in 0..3 {
+            let (_t, p) = fresh();
+            let id = inserted(&p, "suggest", Scope::Global);
+            let revision = match state {
+                0 => 1,
+                1 | 2 => {
+                    p.writer()
+                        .unwrap()
+                        .execute(&request(
+                            &p,
+                            "prepare",
+                            transition(id, Scope::Global, 1, state - 1),
+                        ))
+                        .unwrap();
+                    2
+                }
+                _ => {
+                    p.writer()
+                        .unwrap()
+                        .execute(&request(
+                            &p,
+                            "prepare-confirm",
+                            transition(id, Scope::Global, 1, 0),
+                        ))
+                        .unwrap();
+                    p.writer()
+                        .unwrap()
+                        .execute(&request(
+                            &p,
+                            "prepare-deprecate",
+                            transition(id, Scope::Global, 2, 2),
+                        ))
+                        .unwrap();
+                    3
+                }
+            };
+            let mut w = p.writer().unwrap();
+            let before = dump(&w.db);
+            let result = w.execute(&request(
+                &p,
+                "edge",
+                transition(id, Scope::Global, revision, action),
+            ));
+            if matches!((state, action), (0, 0) | (0, 1) | (1, 2)) {
+                result.unwrap();
+                schema::verify(&w.db).unwrap();
+            } else {
+                assert_eq!(result, Err(Error::InvalidTransition));
+                assert_eq!(dump(&w.db), before);
+            }
+        }
     }
 }
 #[test]
-fn canonical_requests_ignore_outer_json_order_but_preserve_opaque_string_bytes() {
-    let w = ready(FixtureShape::Version1);
-    let r = request(
-        &w,
-        "canonical",
-        handoff("alpha", "new-task", Expected::Absent),
+fn confirming_peers_is_atomic_and_scope_exact() {
+    let (_t, p) = ready();
+    let mut keep = Vec::new();
+    for (name, scope) in [
+        ("global", Scope::Global),
+        ("beta", project_scope("beta")),
+        ("alpha", project_scope("alpha")),
+    ] {
+        let id = inserted(&p, &format!("suggest-{name}"), scope.clone());
+        p.writer()
+            .unwrap()
+            .execute(&request(
+                &p,
+                &format!("confirm-{name}"),
+                transition(id, scope, 1, 0),
+            ))
+            .unwrap();
+        keep.push(id);
+    }
+    let id = inserted(&p, "replacement", project_scope("alpha"));
+    let mut w = p.writer().unwrap();
+    let before = dump(&w.db);
+    let req = request(&p, "replace", transition(id, project_scope("alpha"), 1, 0));
+    assert_eq!(
+        w.execute_inner(&req, Fault::BeforeCommit),
+        Err(Error::BeforeCommit)
     );
-    let json = serde_json::to_value(&r).unwrap();
-    let parsed = Request::from_json(&serde_json::to_vec_pretty(&json).unwrap()).unwrap();
-    assert_eq!(parsed, r);
-    let mut writer = w.writer().unwrap();
-    let first = writer.execute(&r).unwrap();
-    assert_eq!(writer.execute(&parsed).unwrap(), first);
-    let mut changed = r.clone();
+    assert_eq!(dump(&w.db), before);
+    let receipt = w.execute(&req).unwrap();
+    assert_eq!(receipt.affected.len(), 2);
+    for (i, id) in keep.iter().enumerate() {
+        let value: (String, i64) =
+            w.db.query_row(
+                "SELECT status,revision FROM preferences WHERE id=?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            value,
+            if i == 2 {
+                ("deprecated".into(), 3)
+            } else {
+                ("confirmed".into(), 2)
+            }
+        );
+    }
+    validated(&p);
+}
+#[test]
+fn scopes_cas_and_binding_denials_do_not_change_any_logical_row() {
+    let (_t, p) = ready();
+    let id = inserted(&p, "suggest", project_scope("alpha"));
+    let mut w = p.writer().unwrap();
+    for (command, error) in [
+        (
+            transition(id, project_scope("beta"), 1, 0),
+            Error::ScopeMismatch,
+        ),
+        (transition(id, Scope::Global, 1, 0), Error::ScopeMismatch),
+        (
+            transition(id, project_scope("alpha"), 2, 0),
+            Error::Conflict,
+        ),
+        (transition(999, Scope::Global, 1, 0), Error::Conflict),
+    ] {
+        let before = dump(&w.db);
+        assert_eq!(w.execute(&request(&p, "denied", command)), Err(error));
+        assert_eq!(dump(&w.db), before);
+    }
+    for field in 0..3 {
+        let mut req = request(&p, "wrong-binding", suggest(Scope::Global));
+        match field {
+            0 => req.binding.profile_id = "0".repeat(32),
+            1 => req.binding.generation = "0".repeat(32),
+            _ => req.binding.owner_epoch = 1,
+        }
+        let before = dump(&w.db);
+        assert_eq!(
+            w.execute(&req),
+            Err(if field == 1 {
+                Error::StaleGeneration
+            } else {
+                Error::OwnerMismatch
+            })
+        );
+        assert_eq!(dump(&w.db), before);
+    }
+}
+#[test]
+fn independently_connected_cas_race_has_one_winner() {
+    let (_t, p) = fresh();
+    let id = inserted(&p, "suggest", Scope::Global);
+    let a = p.writer().unwrap();
+    let b = p.writer().unwrap();
+    let barrier = Barrier::new(2);
+    let results = std::thread::scope(|s| {
+        let ba = &barrier;
+        let p = &p;
+        let one = s.spawn(move || {
+            let mut w = a;
+            ba.wait();
+            w.execute(&request(p, "race-a", transition(id, Scope::Global, 1, 0)))
+        });
+        let two = s.spawn(move || {
+            let mut w = b;
+            ba.wait();
+            w.execute(&request(p, "race-b", transition(id, Scope::Global, 1, 1)))
+        });
+        [one.join().unwrap(), two.join().unwrap()]
+    });
+    assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1);
+    assert_eq!(
+        results
+            .iter()
+            .filter(|r| matches!(r, Err(Error::Conflict)))
+            .count(),
+        1
+    );
+    validated(&p);
+}
+#[test]
+fn deletion_preserves_receipts_and_never_reuses_ids() {
+    let (_t, p) = fresh();
+    let id = inserted(&p, "first", Scope::Global);
+    let deletion = request(
+        &p,
+        "delete",
+        Command::DeletePreference {
+            id,
+            scope: Scope::Global,
+            expected: Expected::Revision(1),
+        },
+    );
+    let mut w = p.writer().unwrap();
+    let receipt = w.execute(&deletion).unwrap();
+    assert!(receipt.affected[0].deleted);
+    assert_eq!(receipt.affected[0].revision, 2);
+    drop(w);
+    validated(&p);
+    assert_eq!(p.writer().unwrap().execute(&deletion).unwrap(), receipt);
+    assert_eq!(inserted(&p, "second", Scope::Global), id + 1);
+    let db = connect(&p.path, false).unwrap();
+    db.execute("UPDATE acp_profile SET next_preference_id=?1", [id])
+        .unwrap();
+    drop(db);
+    assert!(p.writer().is_err());
+    assert!(SqliteStore::open(&p.path).is_err());
+}
+#[test]
+fn raw_handoff_json_project_binding_and_revision_are_preserved() {
+    let (_t, p) = ready();
+    let a = request(&p, "handoff-a", handoff("alpha", Expected::Absent));
+    let b = request(&p, "handoff-b", handoff("beta", Expected::Absent));
+    let mut w = p.writer().unwrap();
+    w.execute(&a).unwrap();
+    w.execute(&b).unwrap();
+    let before = dump(&w.db);
+    assert_eq!(
+        w.execute(&request(
+            &p,
+            "stale",
+            handoff("alpha", Expected::Revision(2))
+        )),
+        Err(Error::Conflict)
+    );
+    assert_eq!(dump(&w.db), before);
+    let r = w
+        .execute(&request(
+            &p,
+            "update",
+            handoff("alpha", Expected::Revision(1)),
+        ))
+        .unwrap();
+    assert_eq!(r.affected[0].revision, 2);
+    let raw: String =
+        w.db.query_row(
+            "SELECT validation_json FROM handoffs WHERE project='alpha'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    if let Command::PutHandoff {
+        validation_json, ..
+    } = &a.command
+    {
+        assert_eq!(&raw, validation_json)
+    }
+    assert_eq!(
+        SqliteStore::open(&p.path)
+            .unwrap()
+            .handoff_revision("beta", "shared")
+            .unwrap(),
+        1
+    );
+}
+#[test]
+fn lost_response_and_canonical_replay_precede_cas() {
+    let (_t, p) = fresh();
+    let req = request(&p, "once", suggest(Scope::Global));
+    let mut w = p.writer().unwrap();
+    assert_eq!(
+        w.execute_inner(&req, Fault::AfterCommit),
+        Err(Error::OutcomeUnknown)
+    );
+    let before = dump(&w.db);
+    drop(w);
+    let mut w = p.writer().unwrap();
+    let receipt = w.execute(&req).unwrap();
+    assert_eq!(receipt.commit_sequence, 1);
+    assert_eq!(dump(&w.db), before);
+    let json: serde_json::Value =
+        serde_json::from_slice(&serde_json::to_vec(&req).unwrap()).unwrap();
+    let parsed =
+        Request::from_json(serde_json::to_string_pretty(&json).unwrap().as_bytes()).unwrap();
+    assert_eq!(w.execute(&parsed).unwrap(), receipt);
+    assert_eq!(dump(&w.db), before);
+    let mut changed = req.clone();
+    if let Command::SuggestPreference { value, .. } = &mut changed.command {
+        *value = "changed".into()
+    }
+    assert_eq!(w.execute(&changed), Err(Error::IdempotencyConflict));
+    assert_eq!(dump(&w.db), before);
+}
+#[test]
+fn raw_json_byte_change_is_an_idempotency_conflict() {
+    let (_t, p) = ready();
+    let req = request(&p, "raw", handoff("alpha", Expected::Absent));
+    let mut w = p.writer().unwrap();
+    w.execute(&req).unwrap();
+    let before = dump(&w.db);
+    let mut changed = req.clone();
     if let Command::PutHandoff {
         validation_json, ..
     } = &mut changed.command
     {
-        validation_json.push(' ');
+        *validation_json = serde_json::from_str::<serde_json::Value>(validation_json)
+            .unwrap()
+            .to_string();
     }
-    let before = dump(&writer.db);
-    assert_eq!(writer.execute(&changed), Err(Error::IdempotencyConflict));
-    assert_eq!(dump(&writer.db), before);
+    assert_eq!(w.execute(&changed), Err(Error::IdempotencyConflict));
+    assert_eq!(dump(&w.db), before);
 }
 #[test]
-fn partial_command_faults_rollback_data_revisions_sequence_receipt_and_allocator() {
-    for shape in SHAPES {
-        for fault in [
-            Fault::AfterData,
-            Fault::AfterRevisions,
-            Fault::BeforeCommit,
-            Fault::StorageFull,
-        ] {
-            for command in [
-                suggest(Scope::Global),
-                transition(
-                    5,
-                    Scope::Project {
-                        name: "alpha".into(),
-                    },
-                    1,
-                    0,
-                ),
-            ] {
-                let w = ready(shape);
-                let mut writer = w.writer().unwrap();
-                let before = dump(&writer.db);
-                assert_eq!(
-                    writer.execute_inner(&request(&w, "fault", command), fault),
-                    Err(if fault == Fault::StorageFull {
-                        Error::StorageFull
-                    } else {
-                        Error::BeforeCommit
-                    })
-                );
-                assert_eq!(dump(&writer.db), before);
-                w.verify_prior().unwrap();
-            }
-        }
-    }
-}
-#[test]
-fn migration_precommit_rollback_and_committed_unknown_require_explicit_verification() {
-    for shape in SHAPES {
-        let mut w = SyntheticWorkspace::new(shape).unwrap();
+fn injected_precommit_failures_rollback_data_counter_revisions_and_receipts() {
+    for fault in [
+        Fault::BeforeCommit,
+        Fault::AfterData,
+        Fault::AfterRevisions,
+        Fault::StorageFull,
+    ] {
+        let (_t, p) = fresh();
+        let mut w = p.writer().unwrap();
+        let before = dump(&w.db);
+        let req = request(&p, "fault", suggest(Scope::Global));
         assert_eq!(
-            w.prepare_inner(Fault::BeforeCommit),
-            Err(Error::BeforeCommit)
+            w.execute_inner(&req, fault),
+            Err(if fault == Fault::StorageFull {
+                Error::StorageFull
+            } else {
+                Error::BeforeCommit
+            })
         );
-        assert_eq!(w.writer().unwrap_err(), Error::Verification);
-        let db = workspace::connect(&w.path(Role::Candidate), true).unwrap();
-        assert_ne!(schema::inspect(&db).unwrap(), Shape::V2);
-        let original = workspace::connect(&w.path(Role::Source), true).unwrap();
-        assert_eq!(
-            schema::records(&db).unwrap(),
-            schema::records(&original).unwrap()
-        );
-        w.verify_prior().unwrap();
-        drop(original);
-        drop(db);
-        assert_eq!(w.prepare(), Err(Error::Collision));
-        let mut w = SyntheticWorkspace::new(shape).unwrap();
-        assert_eq!(
-            w.prepare_inner(Fault::AfterCommit),
-            Err(Error::OutcomeUnknown)
-        );
-        assert_eq!(w.writer().unwrap_err(), Error::Verification);
-        w.verify_candidate().unwrap();
-        assert!(w.writer().is_ok());
-        w.verify_prior().unwrap();
+        assert_eq!(dump(&w.db), before);
+        assert_eq!(w.execute(&req).unwrap().affected[0].record_id, "1");
+        validated(&p);
     }
 }
 #[test]
-fn interrupted_backup_and_injected_full_never_enable_candidate_or_mutate_source() {
-    for shape in SHAPES {
-        for fault in [Fault::BackupPartial, Fault::StorageFull] {
-            let mut w = SyntheticWorkspace::new(shape).unwrap();
-            let before = std::fs::read(w.path(Role::Source)).unwrap();
-            assert_eq!(
-                w.prepare_inner(fault),
-                Err(if fault == Fault::StorageFull {
-                    Error::StorageFull
-                } else {
-                    Error::BeforeCommit
-                })
-            );
-            assert_eq!(w.writer().unwrap_err(), Error::Verification);
-            assert_eq!(std::fs::read(w.path(Role::Source)).unwrap(), before);
-            assert!(!w.path(Role::Candidate).exists());
-            if fault == Fault::BackupPartial {
-                let interrupted = workspace::connect(&w.path(Role::Backup), true).unwrap();
-                assert!(
-                    schema::inspect(&interrupted).is_err(),
-                    "interrupted copy must not be a complete backup"
-                );
-            }
-        }
-    }
-}
-#[test]
-fn delete_keeps_minimal_tombstone_and_never_reuses_allocated_identity() {
-    for shape in SHAPES {
-        for id in [1, 2, 3, 4] {
-            let w = ready(shape);
-            let mut writer = w.writer().unwrap();
-            writer
-                .execute(&request(
-                    &w,
-                    "delete",
-                    Command::DeletePreference {
-                        id,
-                        scope: Scope::Global,
-                        expected: Expected::Revision(1),
-                    },
-                ))
-                .unwrap();
-            assert_eq!(rev(&writer.db, id), (2, true));
-            let count: i64 = writer
-                .db
-                .query_row("SELECT count(*) FROM preferences WHERE id=?1", [id], |r| {
-                    r.get(0)
-                })
-                .unwrap();
-            assert_eq!(count, 0);
-            let before = dump(&writer.db);
-            assert_eq!(
-                writer.execute(&request(&w, "deleted", transition(id, Scope::Global, 2, 0))),
-                Err(Error::Conflict)
-            );
-            assert_eq!(dump(&writer.db), before);
-            let receipt = writer
-                .execute(&request(&w, "new", suggest(Scope::Global)))
-                .unwrap();
-            assert_eq!(receipt.affected[0].record_id, "1001");
-            let serialized = serde_json::to_string(&receipt).unwrap();
-            assert!(!serialized.contains("synthetic-payload"));
-            assert!(!serialized.contains("synthetic-source"));
-        }
-    }
-}
-#[test]
-fn handoff_and_registration_preserve_scope_raw_json_and_revision_contract() {
-    for shape in SHAPES {
-        let w = ready(shape);
-        let mut writer = w.writer().unwrap();
-        let command = Command::RegisterProject {
-            name: "gamma".into(),
-            root: FixtureRoot::Gamma,
-            expected: Expected::Absent,
-        };
-        let receipt = writer
-            .execute(&request(&w, "register", command.clone()))
-            .unwrap();
-        assert_eq!(receipt.affected[0].revision, 1);
-        let before = dump(&writer.db);
-        assert_eq!(
-            writer.execute(&request(&w, "again", command)),
-            Err(Error::Conflict)
-        );
-        assert_eq!(dump(&writer.db), before);
-        let beta: String = writer
-            .db
-            .query_row(
-                "SELECT validation_json FROM handoffs WHERE project='beta' AND task_id='shared'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        let r = request(
-            &w,
-            "handoff",
-            handoff("alpha", "shared", Expected::Revision(1)),
-        );
-        let receipt = writer.execute(&r).unwrap();
-        assert_eq!(receipt.affected[0].revision, 2);
-        let (raw,fp):(String,Option<String>)=writer.db.query_row("SELECT validation_json,worktree_fingerprint FROM handoffs WHERE project='alpha' AND task_id='shared'",[],|r|Ok((r.get(0)?,r.get(1)?))).unwrap();
-        if let Command::PutHandoff {
-            validation_json, ..
-        } = &r.command
-        {
-            assert_eq!(&raw, validation_json);
-        }
-        assert!(fp.is_none());
-        assert_eq!(writer.db.query_row("SELECT validation_json FROM handoffs WHERE project='beta' AND task_id='shared'",[],|r|r.get::<_,String>(0)).unwrap(),beta);
-        writer
-            .execute(&request(
-                &w,
-                "new-handoff",
-                handoff("gamma", "shared", Expected::Absent),
-            ))
-            .unwrap();
-        let before = dump(&writer.db);
-        assert_eq!(
-            writer.execute(&request(
-                &w,
-                "unknown",
-                handoff("unknown", "shared", Expected::Absent)
-            )),
-            Err(Error::Conflict)
-        );
-        assert_eq!(dump(&writer.db), before);
-    }
-}
-#[test]
-fn independent_writer_contention_is_bounded_busy_then_retryable() {
-    let w = ready(FixtureShape::Version1);
-    let mut writer = w.writer().unwrap();
-    let lock = workspace::connect(&w.path(Role::Candidate), false).unwrap();
-    lock.execute_batch("BEGIN IMMEDIATE").unwrap();
-    let r = request(&w, "busy", suggest(Scope::Global));
+fn real_sqlite_lock_contention_is_bounded_and_retry_is_explicit() {
+    let (_t, p) = fresh();
+    let mut w = p.writer().unwrap();
+    let db = connect(&p.path, false).unwrap();
+    db.execute_batch("BEGIN IMMEDIATE").unwrap();
     let start = Instant::now();
-    assert_eq!(writer.execute(&r), Err(Error::Busy));
+    assert_eq!(
+        w.execute(&request(&p, "busy", suggest(Scope::Global))),
+        Err(Error::Busy)
+    );
     assert!(start.elapsed() < Duration::from_secs(3));
-    lock.execute_batch("ROLLBACK").unwrap();
-    drop(lock);
-    assert!(writer.execute(&r).is_ok());
-}
-#[test]
-fn live_wal_backup_includes_committed_and_excludes_uncommitted_source_changes() {
-    for shape in SHAPES {
-        let mut w = SyntheticWorkspace::new(shape).unwrap();
-        let source = workspace::connect(&w.path(Role::Source), false).unwrap();
-        source.execute_batch("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; UPDATE preferences SET value='committed-wal' WHERE id=1; BEGIN IMMEDIATE; UPDATE preferences SET value='uncommitted-wal' WHERE id=1;").unwrap();
-        assert!(
-            w.path(Role::Source)
-                .with_file_name("profile.sqlite3-wal")
-                .exists()
-        );
-        w.prepare().unwrap();
-        let writer = w.writer().unwrap();
-        assert_eq!(
-            writer
-                .db
-                .query_row("SELECT value FROM preferences WHERE id=1", [], |r| r
-                    .get::<_, String>(0))
-                .unwrap(),
-            "committed-wal"
-        );
-        source.execute_batch("ROLLBACK").unwrap();
-        drop(source);
-        w.verify_prior().unwrap();
-    }
-}
-#[test]
-fn malformed_requests_and_bounds_are_sanitized_noops() {
-    let w = ready(FixtureShape::Version1);
-    let mut writer = w.writer().unwrap();
-    let base = request(&w, "good", suggest(Scope::Global));
-    let mut invalid = Vec::new();
-    let mut r = base.clone();
-    r.version = 99;
-    invalid.push(r);
-    let mut r = base.clone();
-    r.operation_id = "/private/synthetic-path".into();
-    invalid.push(r);
-    let mut r = base.clone();
-    r.binding.generation = "invalid".into();
-    invalid.push(r);
-    let mut r = base.clone();
-    r.command = transition(1, Scope::Global, 0, 0);
-    invalid.push(r);
-    for value in [
-        "".to_owned(),
-        " ".to_owned(),
-        "x".repeat(4097),
-        "nul\0value".into(),
-    ] {
-        let mut r = base.clone();
-        if let Command::SuggestPreference { value: v, .. } = &mut r.command {
-            *v = value;
-        }
-        invalid.push(r);
-    }
-    for raw in [
-        "{}",
-        "[1]",
-        "[{\"check\":1,\"status\":\"PASS\"}]",
-        "[{\"check\":\"x\",\"status\":\"BLOCKED\"}]",
-    ] {
-        let mut r = request(&w, "bad-json", handoff("alpha", "task", Expected::Absent));
-        if let Command::PutHandoff {
-            validation_json, ..
-        } = &mut r.command
-        {
-            *validation_json = raw.into();
-        }
-        invalid.push(r);
-    }
-    for r in invalid {
-        let before = dump(&writer.db);
-        assert_eq!(writer.execute(&r), Err(Error::InvalidCommand));
-        assert_eq!(dump(&writer.db), before);
-    }
-    let mut value = serde_json::to_value(&base).unwrap();
-    value["extra"] = serde_json::json!("synthetic-private-value");
+    db.execute_batch("ROLLBACK").unwrap();
     assert_eq!(
-        Request::from_json(&serde_json::to_vec(&value).unwrap()),
-        Err(Error::InvalidCommand)
+        w.execute(&request(&p, "busy", suggest(Scope::Global)))
+            .unwrap()
+            .commit_sequence,
+        1
     );
-    assert_eq!(
-        Request::from_json(&vec![b' '; 128 * 1024 + 1]),
-        Err(Error::InvalidCommand)
-    );
-    assert_eq!(format!("{base:?}"), "Request(redacted)");
-    for e in [
-        Error::InvalidCommand,
-        Error::InvalidTransition,
-        Error::IdempotencyConflict,
-        Error::IoFailure,
-        Error::OutcomeUnknown,
-    ] {
-        assert!(!format!("{e} {e:?}").contains("synthetic"));
-    }
 }
 #[test]
-fn malformed_legacy_and_v2_schema_objects_are_rejected_without_mutation() {
-    let cases = [
-        ("PRAGMA user_version=99", Error::UnsupportedVersion),
-        (
-            "ALTER TABLE projects ADD COLUMN extra TEXT",
-            Error::IncompatibleSchema,
-        ),
-        ("DROP INDEX prefs_lookup", Error::IncompatibleSchema),
-        (
-            "DROP INDEX prefs_lookup; CREATE INDEX prefs_lookup ON preferences(status)",
-            Error::IncompatibleSchema,
-        ),
-        (
-            "CREATE INDEX unexpected ON preferences(value)",
-            Error::IncompatibleSchema,
-        ),
-        (
-            "CREATE VIEW unexpected AS SELECT * FROM preferences",
-            Error::IncompatibleSchema,
-        ),
-        (
-            "CREATE TRIGGER unexpected AFTER UPDATE ON preferences BEGIN SELECT 1; END",
-            Error::IncompatibleSchema,
-        ),
-        ("CREATE TABLE extra(x TEXT)", Error::IncompatibleSchema),
-        (
-            "PRAGMA writable_schema=ON; UPDATE sqlite_schema SET sql=replace(sql,'value TEXT','value BLOB') WHERE name='preferences'; PRAGMA writable_schema=OFF",
-            Error::IncompatibleSchema,
-        ),
-        (
-            "PRAGMA writable_schema=ON; UPDATE sqlite_schema SET sql=replace(sql,'AUTOINCREMENT','') WHERE name='preferences'; PRAGMA writable_schema=OFF",
-            Error::IncompatibleSchema,
-        ),
-        (
-            "PRAGMA writable_schema=ON; UPDATE sqlite_schema SET sql=replace(sql,\"CHECK (scope IN ('global','project'))\",'') WHERE name='preferences'; PRAGMA writable_schema=OFF",
-            Error::IncompatibleSchema,
-        ),
-    ];
-    for shape in SHAPES {
-        for (sql, error) in cases {
-            let mut w = SyntheticWorkspace::new(shape).unwrap();
-            let db = workspace::connect(&w.path(Role::Source), false).unwrap();
-            db.execute_batch(sql).unwrap();
-            drop(db);
-            let before = std::fs::read(w.path(Role::Source)).unwrap();
-            assert_eq!(w.prepare(), Err(error));
-            assert_eq!(std::fs::read(w.path(Role::Source)).unwrap(), before);
-            assert!(!w.path(Role::Backup).exists());
-            let w = ready(shape);
-            let db = workspace::connect(&w.path(Role::Candidate), false).unwrap();
-            db.execute_batch(sql).unwrap();
-            drop(db);
-            let before = std::fs::read(w.path(Role::Candidate)).unwrap();
-            assert_eq!(w.writer().unwrap_err(), error);
-            assert_eq!(std::fs::read(w.path(Role::Candidate)).unwrap(), before);
+fn sqlite_page_capacity_failure_rolls_back_current_command() {
+    let (_t, p) = fresh();
+    let mut w = p.writer().unwrap();
+    let pages: i64 =
+        w.db.query_row("PRAGMA page_count", [], |r| r.get(0))
+            .unwrap();
+    w.db.pragma_update(None, "max_page_count", pages).unwrap();
+    let mut hit = false;
+    for i in 0..64 {
+        let before = dump(&w.db);
+        let mut command = suggest(Scope::Global);
+        if let Command::SuggestPreference { value, .. } = &mut command {
+            *value = "合".repeat(4096)
         }
+        let result = w.execute(&request(&p, &format!("full-{i}"), command));
+        if result == Err(Error::StorageFull) {
+            assert_eq!(dump(&w.db), before);
+            hit = true;
+            break;
+        }
+        result.unwrap();
     }
-    let mut w = SyntheticWorkspace::new(FixtureShape::LegacyV0).unwrap();
-    let db = workspace::connect(&w.path(Role::Source), false).unwrap();
-    db.pragma_update(None, "user_version", 1).unwrap();
-    drop(db);
-    assert_eq!(w.prepare(), Err(Error::IncompatibleSchema));
+    assert!(hit);
+    schema::verify(&w.db).unwrap();
 }
 #[test]
-fn invalid_legacy_records_and_technical_metadata_cannot_be_repaired_by_writer() {
-    for sql in [
-        "PRAGMA ignore_check_constraints=ON; UPDATE preferences SET status='unknown' WHERE id=1",
-        "UPDATE handoffs SET validation_json='{}'",
-        "UPDATE sqlite_sequence SET seq=1 WHERE name='preferences'",
-    ] {
-        let mut w = SyntheticWorkspace::new(FixtureShape::Version1).unwrap();
-        let db = workspace::connect(&w.path(Role::Source), false).unwrap();
-        db.execute_batch(sql).unwrap();
-        drop(db);
-        let before = std::fs::read(w.path(Role::Source)).unwrap();
-        assert_eq!(w.prepare(), Err(Error::InvalidRecord));
-        assert_eq!(std::fs::read(w.path(Role::Source)).unwrap(), before);
-    }
-    for (sql, error) in [
-        ("UPDATE acp_profile SET owner_epoch=2", Error::OwnerMismatch),
-        (
-            "UPDATE acp_profile SET generation='00000000000000000000000000000000'",
-            Error::StaleGeneration,
-        ),
-        (
-            "DELETE FROM acp_revisions WHERE kind='preference' AND record_id='1'",
-            Error::InvalidRecord,
-        ),
-        (
-            "UPDATE acp_profile SET commit_sequence=1",
-            Error::InvalidRecord,
-        ),
-        (
-            "UPDATE acp_revisions SET deleted=1 WHERE kind='preference' AND record_id='1'",
-            Error::InvalidRecord,
-        ),
-    ] {
-        let w = ready(FixtureShape::Version1);
-        let mut writer = w.writer().unwrap();
-        writer.db.execute_batch(sql).unwrap();
-        let before = dump(&writer.db);
-        assert_eq!(
-            writer.execute(&request(&w, "corrupt", suggest(Scope::Global))),
-            Err(error)
-        );
-        assert_eq!(dump(&writer.db), before);
-    }
-}
-#[test]
-fn allocation_revision_and_receipt_payload_capacity_fail_atomically() {
-    let w = ready(FixtureShape::Version1);
-    let mut writer = w.writer().unwrap();
-    writer
-        .db
-        .execute(
-            "UPDATE acp_revisions SET revision=?1 WHERE kind='preference' AND record_id='1'",
-            [i64::MAX],
-        )
+fn allocator_overflow_refuses_without_wraparound() {
+    let (_t, p) = fresh();
+    inserted(&p, "initial", Scope::Global);
+    let mut w = p.writer().unwrap();
+    w.db.execute("UPDATE acp_profile SET next_preference_id=?1", [i64::MAX])
         .unwrap();
-    let before = dump(&writer.db);
+    let before = dump(&w.db);
     assert_eq!(
-        writer.execute(&request(
-            &w,
-            "overflow",
-            transition(1, Scope::Global, i64::MAX, 0)
-        )),
+        w.execute(&request(&p, "overflow", suggest(Scope::Global))),
         Err(Error::Capacity)
     );
-    assert_eq!(dump(&writer.db), before);
-    writer
-        .db
-        .execute(
-            "UPDATE sqlite_sequence SET seq=?1 WHERE name='preferences'",
-            [i64::MAX],
-        )
-        .unwrap();
-    let before = dump(&writer.db);
-    assert_eq!(
-        writer.execute(&request(&w, "allocator", suggest(Scope::Global))),
-        Err(Error::StorageFull)
-    );
-    assert_eq!(dump(&writer.db), before);
-    for count in [900, 1024] {
-        let mut w = SyntheticWorkspace::new(FixtureShape::Version1).unwrap();
-        let db = workspace::connect(&w.path(Role::Source), false).unwrap();
-        db.execute_batch("BEGIN").unwrap();
-        for _ in 0..count {
-            db.execute_batch("INSERT INTO preferences(scope,project,pref_key,value,status,source,created_at,updated_at) VALUES('project','alpha','formatter','synthetic','confirmed','fixture','created','updated')").unwrap();
+    assert_eq!(dump(&w.db), before);
+}
+#[test]
+fn malformed_requests_and_text_bounds_are_sanitized_noops() {
+    let (_t, p) = fresh();
+    let mut w = p.writer().unwrap();
+    let before = dump(&w.db);
+    for bytes in [b"{}".as_slice(), b"[]", b"not json"] {
+        assert!(Request::from_json(bytes).is_err());
+    }
+    let mut value = serde_json::to_value(request(&p, "invalid", suggest(Scope::Global))).unwrap();
+    value["extra"] = true.into();
+    assert!(Request::from_json(&serde_json::to_vec(&value).unwrap()).is_err());
+    for value in ["", "  ", "nul\0value"] {
+        let mut command = suggest(Scope::Global);
+        if let Command::SuggestPreference { value: v, .. } = &mut command {
+            *v = value.into()
         }
-        db.execute_batch("COMMIT").unwrap();
-        drop(db);
-        w.prepare().unwrap();
-        let mut writer = w.writer().unwrap();
-        let before = dump(&writer.db);
         assert_eq!(
-            writer.execute(&request(
-                &w,
-                "oversized-confirm",
-                transition(
-                    5,
-                    Scope::Project {
-                        name: "alpha".into()
-                    },
-                    1,
-                    0
-                )
-            )),
-            Err(Error::Capacity)
+            w.execute(&request(&p, "invalid", command)),
+            Err(Error::InvalidCommand)
         );
-        assert_eq!(dump(&writer.db), before);
-        w.verify_prior().unwrap();
     }
-}
-#[test]
-fn live_v2_wal_reader_snapshot_never_observes_partial_data_or_receipt() {
-    let w = ready(FixtureShape::Version1);
-    let mut writer = w.writer().unwrap();
-    writer
-        .db
-        .pragma_update(None, "journal_mode", "WAL")
-        .unwrap();
-    writer
-        .db
-        .pragma_update(None, "wal_autocheckpoint", 0)
-        .unwrap();
-    let reader = workspace::connect(&w.path(Role::Candidate), true).unwrap();
-    reader.execute_batch("BEGIN").unwrap();
-    assert_eq!(status(&reader, 1), "suggested");
-    writer
-        .execute(&request(
-            &w,
-            "wal-command",
-            transition(1, Scope::Global, 1, 0),
-        ))
-        .unwrap();
-    assert_eq!(status(&reader, 1), "suggested");
-    assert_eq!(rev(&reader, 1), (1, false));
-    reader.execute_batch("COMMIT").unwrap();
-    assert_eq!(status(&reader, 1), "confirmed");
-    assert_eq!(rev(&reader, 1), (2, false));
-    let seq: i64 = reader
-        .query_row("SELECT commit_sequence FROM acp_profile", [], |r| r.get(0))
-        .unwrap();
-    assert_eq!(seq, 1);
-    let other = workspace::connect(&w.path(Role::Candidate), false).unwrap();
-    other
-        .execute_batch("BEGIN IMMEDIATE; UPDATE preferences SET value='uncommitted' WHERE id=1")
-        .unwrap();
-    assert_ne!(
-        reader
-            .query_row("SELECT value FROM preferences WHERE id=1", [], |r| r
-                .get::<_, String>(0))
-            .unwrap(),
-        "uncommitted"
+    let mut command = suggest(Scope::Global);
+    if let Command::SuggestPreference { value, .. } = &mut command {
+        *value = "a".repeat(4097)
+    }
+    assert_eq!(
+        w.execute(&request(&p, "oversized", command)),
+        Err(Error::InvalidCommand)
     );
-    other.execute_batch("ROLLBACK").unwrap();
-    crate::writer::verify(&reader, &w.binding()).unwrap();
+    assert_eq!(dump(&w.db), before);
 }
 #[test]
-fn workspace_rejects_target_sidecars_replaced_identities_and_hardlink_aliases() {
-    let mut w = SyntheticWorkspace::new(FixtureShape::Version1).unwrap();
-    let sidecar = w
-        .path(Role::Candidate)
-        .with_file_name("profile.sqlite3-wal");
-    let sidecar_file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&sidecar)
-        .unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        sidecar_file
-            .set_permissions(std::fs::Permissions::from_mode(0o600))
-            .unwrap();
+fn invalid_handoff_status_snapshot_and_nul_are_refused() {
+    let (_t, p) = ready();
+    let mut w = p.writer().unwrap();
+    let before = dump(&w.db);
+    for raw in [
+        "{}",
+        "not-json",
+        "[{\"check\":\"x\",\"status\":\"SUCCESS\"}]",
+        "[{\"check\":\"x\",\"status\":\"PASS\",\"extra\":\"\\u0000\"}]",
+    ] {
+        let mut command = handoff("alpha", Expected::Absent);
+        if let Command::PutHandoff {
+            validation_json, ..
+        } = &mut command
+        {
+            *validation_json = raw.into()
+        }
+        assert_eq!(
+            w.execute(&request(&p, "bad-handoff", command)),
+            Err(Error::InvalidCommand)
+        );
     }
-    drop(sidecar_file);
-    assert_eq!(w.prepare(), Err(Error::Collision));
-    assert_eq!(w.writer().unwrap_err(), Error::Verification);
-    let w = ready(FixtureShape::Version1);
-    let external = tempfile::tempdir().unwrap();
-    std::fs::hard_link(
-        w.path(Role::Candidate),
-        external.path().join("alias.sqlite3"),
-    )
-    .unwrap();
-    assert_eq!(w.writer().unwrap_err(), Error::UnsafeWorkspace);
-    let w = ready(FixtureShape::Version1);
-    let external = tempfile::tempdir().unwrap();
-    let moved = external.path().join("original.sqlite3");
-    std::fs::rename(w.path(Role::Candidate), &moved).unwrap();
-    std::fs::copy(&moved, w.path(Role::Candidate)).unwrap();
-    assert_eq!(w.writer().unwrap_err(), Error::UnsafeWorkspace);
+    let mut command = handoff("alpha", Expected::Absent);
+    if let Command::PutHandoff { snapshot, .. } = &mut command {
+        snapshot.state = "verified".into()
+    }
+    assert_eq!(
+        w.execute(&request(&p, "bad-snapshot", command)),
+        Err(Error::InvalidCommand)
+    );
+    assert_eq!(dump(&w.db), before);
+}
+#[test]
+fn replaced_identity_hardlinks_and_bad_permissions_are_refused() {
+    let (t, p) = fresh();
+    let alias = t.path().join("alias");
+    fs::hard_link(&p.path, &alias).unwrap();
+    assert!(p.writer().is_err());
+    fs::remove_file(alias).unwrap();
+    let replacement = t.path().join("replacement");
+    let file = files::create_private(&replacement).unwrap();
+    drop(file);
+    fs::write(&replacement, fs::read(&p.path).unwrap()).unwrap();
+    files::check_file(&replacement).unwrap();
+    assert_eq!(
+        SqliteStore::open(&replacement)
+            .unwrap()
+            .metadata()
+            .unwrap()
+            .binding,
+        p.binding()
+    );
+    fs::remove_file(&p.path).unwrap();
+    fs::rename(replacement, &p.path).unwrap();
+    assert!(p.writer().is_err());
 }
 #[cfg(unix)]
 #[test]
-fn symlink_escape_and_permission_changes_refuse_before_sqlite_access() {
+fn symlink_parents_and_nonprivate_modes_are_refused() {
     use std::os::unix::fs::{PermissionsExt, symlink};
-    let w = ready(FixtureShape::Version1);
-    let external = tempfile::tempdir().unwrap();
-    let moved = external.path().join("original.sqlite3");
-    std::fs::rename(w.path(Role::Candidate), &moved).unwrap();
-    symlink(&moved, w.path(Role::Candidate)).unwrap();
-    let before = std::fs::read(&moved).unwrap();
-    assert_eq!(w.writer().unwrap_err(), Error::UnsafeWorkspace);
-    assert_eq!(std::fs::read(&moved).unwrap(), before);
-    let w = ready(FixtureShape::Version1);
-    std::fs::set_permissions(
-        w.path(Role::Candidate),
-        std::fs::Permissions::from_mode(0o644),
-    )
-    .unwrap();
-    assert_eq!(w.writer().unwrap_err(), Error::UnsafeWorkspace);
+    let t = tempfile::tempdir().unwrap();
+    let alias = t.path().join("alias");
+    let parent = t.path().join("parent");
+    fs::create_dir(&parent).unwrap();
+    fs::set_permissions(&parent, fs::Permissions::from_mode(0o700)).unwrap();
+    symlink(&parent, &alias).unwrap();
+    assert!(Profile::create(&alias.join("db")).is_err());
+    fs::set_permissions(&parent, fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(Profile::create(&parent.join("db")).is_err());
+    let (_t, p) = fresh();
+    fs::set_permissions(&p.path, fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(p.writer().is_err());
+}
+#[cfg(windows)]
+#[test]
+fn inherited_temp_acl_is_not_a_private_profile_parent() {
+    let t = tempfile::tempdir().unwrap();
+    assert!(Profile::create(&t.path().join("db")).is_err());
+    files::private_test_parent(t.path());
+    Profile::create(&t.path().join("db")).unwrap();
 }
 #[test]
-fn latest_legacy_state_has_lossless_synthetic_v1_projection_for_future_owner_rollback() {
-    for shape in SHAPES {
-        let w = ready(shape);
-        let mut writer = w.writer().unwrap();
-        writer
+fn debug_and_errors_do_not_disclose_private_inputs() {
+    let (_t, p) = fresh();
+    let req = request(&p, "secret-operation", suggest(Scope::Global));
+    assert_eq!(format!("{p:?}"), "Profile(redacted)");
+    assert_eq!(format!("{req:?}"), "Request(redacted)");
+    let r = p.writer().unwrap().execute(&req).unwrap();
+    assert_eq!(format!("{r:?}"), "Receipt(redacted)");
+    assert_eq!(format!("{:?}", p.writer().unwrap()), "Writer(redacted)");
+    let error = crate::sql_error(rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_IOERR),
+        Some("private SQL path and payload".into()),
+    ));
+    assert_eq!(error.to_string(), "IoFailure");
+    let raw = serde_json::to_string(&r).unwrap();
+    assert!(!raw.contains("synthetic"));
+    assert!(!raw.contains("formatter"));
+}
+#[test]
+fn receipt_capacity_still_allows_exact_replay() {
+    let (_t, p) = fresh();
+    register(&p, "alpha");
+    let mut w = p.writer().unwrap();
+    let tx = w.db.transaction().unwrap();
+    let mut last = None;
+    for i in 2..=4096 {
+        let mut req = request(
+            &p,
+            &format!("capacity-{i}"),
+            handoff(
+                "alpha",
+                if i == 2 {
+                    Expected::Absent
+                } else {
+                    Expected::Revision(i - 2)
+                },
+            ),
+        );
+        if let Command::PutHandoff {
+            validation_json, ..
+        } = &mut req.command
+        {
+            *validation_json = "[]".into()
+        }
+        let digest = sha2::Sha256::digest(serde_json::to_vec(&req).unwrap()).to_vec();
+        let result = Receipt {
+            generation: p.binding.generation.clone(),
+            operation_id: req.operation_id.clone(),
+            commit_sequence: i,
+            affected: vec![RecordVersion {
+                kind: "handoff".into(),
+                project: "alpha".into(),
+                record_id: "shared".into(),
+                revision: i - 1,
+                deleted: false,
+            }],
+        };
+        tx.execute(
+            "INSERT INTO acp_receipts VALUES(?1,?2,?3,?4,?5)",
+            rusqlite::params![
+                req.operation_id,
+                p.binding.generation,
+                digest,
+                i,
+                serde_json::to_string(&result).unwrap()
+            ],
+        )
+        .unwrap();
+        last = Some((req, result));
+    }
+    tx.execute_batch("INSERT INTO handoffs VALUES('alpha','shared','synthetic objective','','','unknown',NULL,'','inspect','[]',4095,'2026-01-01T00:00:00Z'); UPDATE acp_profile SET commit_sequence=4096").unwrap();
+    tx.commit().unwrap();
+    let before = dump(&w.db);
+    let (req, result) = last.unwrap();
+    assert_eq!(w.execute(&req).unwrap(), result);
+    assert_eq!(dump(&w.db), before);
+    assert_eq!(
+        w.execute(&request(&p, "capacity-new", suggest(Scope::Global))),
+        Err(Error::Capacity)
+    );
+    assert_eq!(dump(&w.db), before);
+}
+#[test]
+fn read_snapshot_remains_consistent_during_a_concurrent_commit() {
+    let (_t, p) = fresh();
+    let id = inserted(&p, "initial", Scope::Global);
+    let reader = connect(&p.path, true).unwrap();
+    reader.execute_batch("BEGIN").unwrap();
+    schema::verify(&reader).unwrap();
+    let mut writer = p.writer().unwrap();
+    let req = request(&p, "update", transition(id, Scope::Global, 1, 0));
+    assert_eq!(writer.execute(&req), Err(Error::Busy));
+    schema::verify(&reader).unwrap();
+    reader.execute_batch("ROLLBACK").unwrap();
+    writer.execute(&req).unwrap();
+    validated(&p);
+}
+use sha2::Digest;
+#[cfg(windows)]
+#[test]
+fn windows_extended_prefix_keeps_the_same_private_parent_identity() {
+    let t = tempfile::tempdir().unwrap();
+    files::private_test_parent(t.path());
+    let raw = files::check_parent(t.path()).unwrap();
+    let canonical = t.path().canonicalize().unwrap();
+    assert!(files::check_parent(&canonical).unwrap() == raw);
+    let p = Profile::create(&canonical.join("extended.sqlite3")).unwrap();
+    validated(&p);
+}
+#[test]
+fn erased_receipts_deleted_ids_and_metadata_drift_never_enable_reuse() {
+    for mode in 0..4 {
+        let (_t, p) = fresh();
+        let id = inserted(&p, "first", Scope::Global);
+        p.writer()
+            .unwrap()
             .execute(&request(
-                &w,
-                "confirm",
-                transition(
-                    5,
-                    Scope::Project {
-                        name: "alpha".into(),
-                    },
-                    1,
-                    0,
-                ),
-            ))
-            .unwrap();
-        writer
-            .execute(&request(
-                &w,
+                &p,
                 "delete",
                 Command::DeletePreference {
-                    id: 4,
+                    id,
                     scope: Scope::Global,
                     expected: Expected::Revision(1),
                 },
             ))
             .unwrap();
-        writer
-            .execute(&request(&w, "suggest", suggest(Scope::Global)))
-            .unwrap();
-        let expected = schema::records(&writer.db).unwrap();
-        let destination = tempfile::NamedTempFile::new().unwrap();
-        let mut db = workspace::connect(destination.path(), false).unwrap();
-        {
-            let copy = rusqlite::backup::Backup::new(&writer.db, &mut db).unwrap();
-            copy.run_to_completion(16, Duration::from_millis(1), None)
-                .unwrap();
-        }
-        db.execute_batch("BEGIN IMMEDIATE; DROP TABLE acp_receipts; DROP TABLE acp_revisions; DROP TABLE acp_profile; PRAGMA user_version=1; COMMIT").unwrap();
-        assert_eq!(schema::inspect(&db).unwrap(), Shape::V1);
-        assert_eq!(schema::records(&db).unwrap(), expected);
-        drop(db);
-        let reader = acp_store::SqliteStore::open(destination.path()).unwrap();
-        assert_eq!(reader.schema().unwrap(), acp_store::Schema::Version1);
-        assert!(reader.read_preferences("alpha").is_ok());
-        crate::writer::verify(&writer.db, &w.binding()).unwrap();
-        w.verify_prior().unwrap();
-    }
-}
-#[test]
-fn minimal_receipts_tombstones_and_errors_do_not_retain_command_contents() {
-    let w = ready(FixtureShape::Version1);
-    let mut writer = w.writer().unwrap();
-    let r = request(&w, "privacy", suggest(Scope::Global));
-    let receipt = writer.execute(&r).unwrap();
-    let id = receipt.affected[0].record_id.parse::<i64>().unwrap();
-    writer
-        .execute(&request(
-            &w,
-            "privacy-delete",
-            Command::DeletePreference {
-                id,
-                scope: Scope::Global,
-                expected: Expected::Revision(1),
-            },
-        ))
-        .unwrap();
-    for table in ["acp_receipts", "acp_revisions", "acp_profile"] {
-        let mut stmt = writer
-            .db
-            .prepare(&format!("SELECT * FROM {table}"))
-            .unwrap();
-        let cols = stmt.column_count();
-        let rows = stmt
-            .query_map([], |r| {
-                (0..cols)
-                    .map(|i| r.get::<_, Value>(i))
-                    .collect::<rusqlite::Result<Vec<_>>>()
-            })
-            .unwrap()
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .unwrap();
-        for row in rows {
-            for value in row {
-                if let Value::Text(s) = value {
-                    for forbidden in [
-                        "synthetic-payload",
-                        "synthetic-source",
-                        "new-key",
-                        "/home/",
-                        "C:\\Users\\",
-                        "SELECT ",
-                        "INSERT ",
-                    ] {
-                        assert!(!s.contains(forbidden));
-                    }
-                }
-            }
-        }
-    }
-    let columns: Vec<String> = writer
-        .db
-        .prepare("SELECT name FROM pragma_table_info('acp_revisions') ORDER BY cid")
-        .unwrap()
-        .query_map([], |r| r.get(0))
-        .unwrap()
-        .collect::<rusqlite::Result<_>>()
-        .unwrap();
-    assert_eq!(
-        columns,
-        ["kind", "project", "record_id", "revision", "deleted"]
-    );
-    assert_eq!(format!("{writer:?}"), "SyntheticWriter(redacted)");
-    assert_eq!(format!("{w:?}"), "SyntheticWorkspace(redacted)");
-    let error = crate::sql_error(rusqlite::Error::SqliteFailure(
-        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_IOERR),
-        Some("private-command-value /private/path SELECT key".into()),
-    ));
-    assert_eq!(error.to_string(), "IoFailure");
-}
-#[test]
-fn python_independently_compares_all_legacy_fields_on_three_v2_candidates_readonly() {
-    use std::{
-        io::Write,
-        process::{Command as Process, Stdio},
-    };
-    for shape in SHAPES {
-        let w = ready(shape);
-        let root = w
-            .path(Role::Candidate)
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .canonicalize()
-            .unwrap();
-        let before: [Vec<u8>; 3] = [Role::Source, Role::Backup, Role::Candidate]
-            .map(|r| std::fs::read(w.path(r)).unwrap());
-        let mut child =
-            Process::new(std::env::var_os("ACP_TEST_PYTHON").unwrap_or_else(|| "python".into()))
-                .args(["-c", include_str!("../tests/readonly_parity.py")])
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-                .unwrap();
-        let payload =
-            serde_json::to_vec(&serde_json::json!({"root":root,"binding":w.binding()})).unwrap();
-        child.stdin.take().unwrap().write_all(&payload).unwrap();
-        let output = child.wait_with_output().unwrap();
-        assert!(output.status.success(), "synthetic Python verifier failed");
-        assert_eq!(String::from_utf8(output.stdout).unwrap().trim(), "PASS");
-        assert!(output.stderr.is_empty());
-        for (i, role) in [Role::Source, Role::Backup, Role::Candidate]
-            .iter()
-            .enumerate()
-        {
-            assert_eq!(std::fs::read(w.path(*role)).unwrap(), before[i]);
-        }
-    }
-}
-#[cfg(windows)]
-#[test]
-fn windows_readonly_attribute_is_refused_without_weakening_original_permissions() {
-    let w = ready(FixtureShape::Version1);
-    let path = w.path(Role::Candidate);
-    let original = std::fs::metadata(&path).unwrap().permissions();
-    let mut readonly = original.clone();
-    readonly.set_readonly(true);
-    std::fs::set_permissions(&path, readonly).unwrap();
-    assert_eq!(w.writer().unwrap_err(), Error::UnsafeWorkspace);
-    std::fs::set_permissions(path, original).unwrap();
-    assert!(w.writer().is_ok());
-}
-// An ignored helper is selected explicitly only by the subprocess test. The
-// bounded private stdin carries a fresh parent temp directory, never a DB path.
-#[test]
-#[ignore = "private child worker; invoked explicitly by the genuine kill test"]
-fn subprocess_worker() {
-    use std::io::Read;
-    let mut bytes = Vec::new();
-    std::io::stdin().take(4097).read_to_end(&mut bytes).unwrap();
-    assert!(bytes.len() <= 4096);
-    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    let parent = std::path::Path::new(value["parent"].as_str().unwrap());
-    let shape = match value["shape"].as_u64().unwrap() {
-        0 => FixtureShape::LegacyV0,
-        1 => FixtureShape::FingerprintedV0,
-        _ => FixtureShape::Version1,
-    };
-    let mut w = SyntheticWorkspace::for_test_parent(parent, shape).unwrap();
-    w.prepare().unwrap();
-    let fault = if value["after_commit"].as_bool().unwrap() {
-        Fault::PauseAfterCommit
-    } else {
-        Fault::PauseBeforeCommit
-    };
-    let r = request(
-        &w,
-        "child-confirm",
-        transition(
-            5,
-            Scope::Project {
-                name: "alpha".into(),
-            },
-            1,
-            0,
-        ),
-    );
-    let mut writer = w.writer().unwrap();
-    let _ = writer.execute_inner(&r, fault);
-    panic!("worker must pause at its selected boundary");
-}
-#[test]
-fn genuine_child_kill_before_and_after_commit_keeps_v2_transaction_atomic() {
-    use std::{
-        io::{BufRead, BufReader, Write},
-        process::{Child, Command as Process, Stdio},
-    };
-    struct Guard(Child);
-    impl Drop for Guard {
-        fn drop(&mut self) {
-            let _ = self.0.kill();
-            let _ = self.0.wait();
-        }
-    }
-    for (shape_index, _) in SHAPES.iter().enumerate() {
-        for after in [false, true] {
-            let parent = tempfile::Builder::new()
-                .prefix("acp-m1-parent-")
-                .tempdir()
-                .unwrap();
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(parent.path(), std::fs::Permissions::from_mode(0o700))
+        let mut w = p.writer().unwrap();
+        match mode {
+            0 => {
+                w.db.execute_batch("DELETE FROM acp_receipts WHERE commit_sequence=1")
                     .unwrap();
             }
-            let mut child = Guard(
-                Process::new(std::env::current_exe().unwrap())
-                    .args([
-                        "--exact",
-                        "tests::subprocess_worker",
-                        "--ignored",
-                        "--nocapture",
-                    ])
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .spawn()
-                    .unwrap(),
-            );
-            let payload=serde_json::to_vec(&serde_json::json!({"parent":parent.path(),"shape":shape_index,"after_commit":after})).unwrap();
-            child.0.stdin.take().unwrap().write_all(&payload).unwrap();
-            let stdout = child.0.stdout.take().unwrap();
-            let (send, receive) = std::sync::mpsc::channel();
-            let reader = std::thread::spawn(move || {
-                let ready = BufReader::new(stdout)
-                    .lines()
-                    .map_while(std::result::Result::ok)
-                    .any(|line| line == "READY");
-                let _ = send.send(ready);
-            });
-            let ready = receive.recv_timeout(Duration::from_secs(15));
-            child.0.kill().unwrap();
-            let exit = child.0.wait().unwrap();
-            reader.join().unwrap();
-            assert!(ready.is_ok_and(|r| r), "child readiness timeout/failure");
-            assert!(!exit.success());
-            let roots: Vec<_> = std::fs::read_dir(parent.path())
-                .unwrap()
-                .map(|e| e.unwrap().path())
-                .collect();
-            assert_eq!(roots.len(), 1);
-            let path = roots[0].join("candidate/profile.sqlite3");
-            // SQLite is allowed to recover the dead child's owned hot journal here.
-            let recovered = workspace::connect(&path, false).unwrap();
-            let binding: Binding = recovered
-                .query_row(
-                    "SELECT profile_id,generation,owner_epoch FROM acp_profile",
-                    [],
-                    |r| {
-                        Ok(Binding {
-                            profile_id: r.get(0)?,
-                            generation: r.get(1)?,
-                            owner_epoch: r.get(2)?,
-                        })
-                    },
+            1 => {
+                w.db.execute_batch(
+                    "DELETE FROM acp_receipts;UPDATE acp_profile SET commit_sequence=0",
                 )
                 .unwrap();
-            crate::writer::verify(&recovered, &binding).unwrap();
-            assert_eq!(
-                status(&recovered, 5),
-                if after { "confirmed" } else { "suggested" }
-            );
-            for id in [5, 6, 7] {
-                assert_eq!(rev(&recovered, id), (if after { 2 } else { 1 }, false));
             }
-            for id in [6, 7] {
-                assert_eq!(
-                    status(&recovered, id),
-                    if after { "deprecated" } else { "confirmed" }
-                );
+            2 => {
+                w.db.execute("UPDATE acp_profile SET next_preference_id=?1", [id])
+                    .unwrap();
             }
-            let (sequence, receipts): (i64, i64) = recovered
-                .query_row(
-                    "SELECT commit_sequence,(SELECT count(*) FROM acp_receipts) FROM acp_profile",
-                    [],
-                    |r| Ok((r.get(0)?, r.get(1)?)),
+            _ => {
+                let mut r: Receipt = serde_json::from_str(
+                    &w.db
+                        .query_row::<String, _, _>(
+                            "SELECT result_json FROM acp_receipts WHERE commit_sequence=2",
+                            [],
+                            |r| r.get(0),
+                        )
+                        .unwrap(),
                 )
                 .unwrap();
-            assert_eq!((sequence, receipts), if after { (1, 1) } else { (0, 0) });
-            let source =
-                workspace::connect(&roots[0].join("source/profile.sqlite3"), true).unwrap();
-            let backup =
-                workspace::connect(&roots[0].join("backup/profile.sqlite3"), true).unwrap();
-            assert_eq!(
-                schema::records(&source).unwrap(),
-                schema::records(&backup).unwrap()
-            );
+                r.affected[0].deleted = false;
+                w.db.execute(
+                    "UPDATE acp_receipts SET result_json=?1 WHERE commit_sequence=2",
+                    [serde_json::to_string(&r).unwrap()],
+                )
+                .unwrap();
+            }
         }
+        let before = dump(&w.db);
+        assert_eq!(
+            w.execute(&request(&p, "reuse", suggest(Scope::Global))),
+            Err(Error::InvalidRecord)
+        );
+        assert_eq!(dump(&w.db), before);
+        assert!(SqliteStore::open(&p.path).is_err());
     }
 }
 #[test]
-fn initial_candidate_verification_rejects_changed_technical_import_metadata() {
-    for shape in SHAPES {
-        for sql in [
-            "UPDATE acp_revisions SET revision=2 WHERE kind='preference' AND record_id='1'",
-            "UPDATE acp_profile SET receipt_limit=2",
-        ] {
-            let mut w = SyntheticWorkspace::new(shape).unwrap();
-            assert_eq!(
-                w.prepare_inner(Fault::AfterCommit),
-                Err(Error::OutcomeUnknown)
-            );
-            let db = workspace::connect(&w.path(Role::Candidate), false).unwrap();
-            db.execute_batch(sql).unwrap();
-            let before = dump(&db);
-            drop(db);
-            assert_eq!(w.verify_candidate(), Err(Error::Verification));
-            assert_eq!(w.writer().unwrap_err(), Error::Verification);
-            let db = workspace::connect(&w.path(Role::Candidate), true).unwrap();
-            assert_eq!(dump(&db), before);
-            w.verify_prior().unwrap();
-        }
-    }
+fn registration_replay_survives_directory_unavailability() {
+    let (_t, p) = fresh();
+    let directory = p.path.parent().unwrap().join("project");
+    fs::create_dir(&directory).unwrap();
+    let req = request(
+        &p,
+        "register",
+        Command::RegisterProject {
+            name: "alpha".into(),
+            root: directory.canonicalize().unwrap().to_str().unwrap().into(),
+            expected: Expected::Absent,
+        },
+    );
+    let mut w = p.writer().unwrap();
+    let original = w.execute(&req).unwrap();
+    let before = dump(&w.db);
+    fs::remove_dir(directory).unwrap();
+    assert_eq!(w.execute(&req).unwrap(), original);
+    assert_eq!(dump(&w.db), before);
+    let mut changed = req.clone();
+    changed.operation_id = "register-new".into();
+    assert_eq!(w.execute(&changed), Err(Error::InvalidCommand));
+    assert_eq!(dump(&w.db), before);
+}
+#[test]
+fn prepublication_failure_removes_only_its_owned_staging_artifacts() {
+    let t = tempfile::tempdir().unwrap();
+    files::private_test_parent(t.path());
+    let neighbor = t.path().join("unrelated");
+    fs::write(&neighbor, b"preserve").unwrap();
+    let target = t.path().join("fresh.sqlite3");
+    assert!(matches!(
+        Profile::create_inner(&target, Fault::BeforeCommit),
+        Err(Error::BeforeCommit)
+    ));
+    assert!(!target.exists());
+    assert_eq!(fs::read(&neighbor).unwrap(), b"preserve");
+    assert_eq!(fs::read_dir(t.path()).unwrap().count(), 1);
+    let p = Profile::create(&target).unwrap();
+    validated(&p);
 }

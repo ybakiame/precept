@@ -1,13 +1,10 @@
-//! Synthetic-only profile v2 transactions. No arbitrary path opening, profile
-//! discovery, production authority, network, subprocess or agent mutation surface.
+//! Private fresh Profile v1 storage. No production caller, owner lease or IPC.
 mod command;
-mod schema;
-mod workspace;
+mod files;
+mod profile;
 mod writer;
-pub use command::{
-    Binding, Command, Expected, FixtureRoot, Receipt, RecordVersion, Request, Scope, Snapshot,
-};
-pub use workspace::{FixtureShape, SyntheticWorkspace};
+pub use command::{Binding, Command, Expected, Receipt, RecordVersion, Request, Scope, Snapshot};
+pub use profile::Profile;
 pub use writer::Writer;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,13 +58,17 @@ pub(crate) enum Fault {
     #[cfg(test)]
     AfterRevisions,
     #[cfg(test)]
-    BackupPartial,
-    #[cfg(test)]
     StorageFull,
-    #[cfg(test)]
-    PauseBeforeCommit,
-    #[cfg(test)]
-    PauseAfterCommit,
 }
 #[cfg(test)]
 mod tests;
+
+impl From<acp_store::Error> for Error {
+    fn from(e: acp_store::Error) -> Self {
+        match e {
+            acp_store::Error::UnsupportedVersion => Self::UnsupportedVersion,
+            acp_store::Error::IncompatibleSchema => Self::IncompatibleSchema,
+            _ => Self::InvalidRecord,
+        }
+    }
+}

@@ -130,6 +130,14 @@ old validation profiles may be deleted during a deliberate ACP development reset
 no backward-compatibility or retention guarantee is required. Production writes are
 not activated.
 
+Issue #43 Stage 1 now has a locally validated Draft candidate: exact fresh v1 DDL,
+explicit no-overwrite creation, strict read-only store and seven private typed
+transactions, with M1 migration/rehearsal paths removed. The
+[Stage 1 evidence](evaluation/p1-m2-s1-storage.md) records exact native Windows and
+Linux/WSL sources and results. This does not complete parent Issue #40: daemon
+bootstrap, grants/leases, epoch advancement, IPC/CLI/NSH integration and complete
+Python retirement remain later slices. No production writer is wired or activated.
+
 P1-M3 remains conditional. Open it only if M2 reveals a concrete Profile v1 lifecycle
 or recovery need; do not assume backup/restore/retention work in advance. It has no
 Python owner handoff or legacy-schema migration. P1-M4 completes the

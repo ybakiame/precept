@@ -1,5 +1,7 @@
 //! Rust authority for the seven P0 negative cases, through real daemon/IPC/MCP.
-//! Build workspace bins first. Python only constructs a disposable v0 database.
+//! Build workspace bins first. Rust constructs a disposable current-v1 database.
+#[path = "../../acp-store/tests/support/mod.rs"]
+mod storage_fixture;
 use acp_ipc::{Access, Client, Credential, Location, load_credential};
 use serde_json::{Value, json};
 use std::{
@@ -34,17 +36,7 @@ impl Fixture {
             .prefix("acp-e4-")
             .tempdir()
             .unwrap();
-        let checkout = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let builder =
-            Command::new(std::env::var("ACP_TEST_PYTHON").unwrap_or_else(|_| "python".into()))
-                .arg(checkout.join("tools/sqlite_fixture.py"))
-                .arg(temp.path().join("fixture"))
-                .env("PYTHONPATH", checkout.join("src"))
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
-                .unwrap();
-        assert!(builder.success(), "owned synthetic database builder failed");
+        storage_fixture::fixture(&temp.path().join("fixture"));
         let runtime_dir = temp.path().join("run");
         let endpoint = if cfg!(windows) {
             format!(

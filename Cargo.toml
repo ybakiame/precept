@@ -1,3 +1,3 @@
 [workspace]
-members = ["crates/acp-core", "crates/acp-store", "crates/acp-rehearsal", "crates/acp-write", "crates/acp-ipc", "crates/acp-daemon", "crates/acp-query", "crates/acp-mcp", "crates/acp-session"]
+members = ["crates/acp-core", "crates/acp-store", "crates/acp-write", "crates/acp-ipc", "crates/acp-daemon", "crates/acp-query", "crates/acp-mcp", "crates/acp-session"]
 resolver = "2"

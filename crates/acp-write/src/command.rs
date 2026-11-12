@@ -2,13 +2,7 @@
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Binding {
-    pub profile_id: String,
-    pub generation: String,
-    pub owner_epoch: i64,
-}
+pub use acp_store::profile::{Binding, Receipt, RecordVersion};
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
     tag = "kind",
@@ -26,35 +20,20 @@ pub enum Scope {
     Global,
     Project { name: String },
 }
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FixtureRoot {
-    Alpha,
-    Beta,
-    Gamma,
-}
-impl FixtureRoot {
-    pub(crate) fn name(self) -> &'static str {
-        match self {
-            Self::Alpha => "alpha",
-            Self::Beta => "beta",
-            Self::Gamma => "gamma",
-        }
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Snapshot {
-    Clean,
-    Dirty,
-    UnknownFingerprint,
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Snapshot {
+    pub base_sha: String,
+    pub branch: String,
+    pub state: String,
+    pub fingerprint: Option<String>,
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "command", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Command {
     RegisterProject {
         name: String,
-        root: FixtureRoot,
+        root: String,
         expected: Expected,
     },
     SuggestPreference {
@@ -127,7 +106,7 @@ impl Request {
         if self.version != 1
             || !hex(&self.binding.profile_id)
             || !hex(&self.binding.generation)
-            || self.binding.owner_epoch <= 0
+            || self.binding.owner_epoch < 0
             || self.operation_id.is_empty()
             || self.operation_id.len() > 64
             || !self
@@ -138,8 +117,16 @@ impl Request {
             return Err(Error::InvalidCommand);
         }
         let (expected, scope) = match &self.command {
-            Command::RegisterProject { name, expected, .. } => {
-                if !name_valid(name) || *expected != Expected::Absent {
+            Command::RegisterProject {
+                name,
+                root,
+                expected,
+            } => {
+                if !name_valid(name)
+                    || !std::path::Path::new(root).is_absolute()
+                    || root.contains('\0')
+                    || *expected != Expected::Absent
+                {
                     return Err(Error::InvalidCommand);
                 }
                 (expected, None)
@@ -193,9 +180,14 @@ impl Request {
                 next_action,
                 validation_json,
                 expected,
-                ..
+                snapshot,
             } => {
-                if !name_valid(project)
+                if !acp_store::profile::snapshot_valid(
+                    &snapshot.base_sha,
+                    &snapshot.branch,
+                    &snapshot.state,
+                    snapshot.fingerprint.as_deref(),
+                ) || !name_valid(project)
                     || !text(task_id, 120, true)
                     || !text(objective, 4000, true)
                     || !text(completed, 8000, false)
@@ -222,50 +214,4 @@ impl Request {
         Ok(())
     }
 }
-pub(crate) fn name_valid(s: &str) -> bool {
-    !s.is_empty()
-        && s.len() <= 64
-        && s != "."
-        && s != ".."
-        && s.bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
-}
-fn text(s: &str, max: usize, required: bool) -> bool {
-    !s.contains('\0')
-        && s.chars().count() <= max
-        && (!required || s.chars().any(|c| !c.is_whitespace() && !c.is_control()))
-}
-pub(crate) fn validation_valid(raw: &str) -> bool {
-    if !text(raw, 16000, true) {
-        return false;
-    }
-    let Ok(serde_json::Value::Array(items)) = serde_json::from_str(raw) else {
-        return false;
-    };
-    items.iter().all(|item| {
-        item.as_object().is_some_and(|obj| {
-            obj.get("check").is_some_and(serde_json::Value::is_string)
-                && matches!(
-                    obj.get("status").and_then(serde_json::Value::as_str),
-                    Some("PASS" | "FAIL" | "SKIPPED" | "NOT_RUN")
-                )
-        })
-    })
-}
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RecordVersion {
-    pub kind: String,
-    pub project: String,
-    pub record_id: String,
-    pub revision: i64,
-    pub deleted: bool,
-}
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Receipt {
-    pub generation: String,
-    pub operation_id: String,
-    pub commit_sequence: i64,
-    pub affected: Vec<RecordVersion>,
-}
+use acp_store::profile::{name_valid, text, validation_valid};
