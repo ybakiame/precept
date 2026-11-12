@@ -3,10 +3,18 @@
 - Status: contract-first test plan; tests are not yet implemented or run.
 - Contract: [Rust-native Profile v1 and runtime contract](profile-v1-runtime-contract.md).
 - Issue: [#40](https://github.com/ybakiame/agent-control-plane/issues/40).
-- Baseline after ADR merge: \`d8d48fa582f60f1dd0e00b22276e2fbb29ab5e53\`.
+- First implementation slice: [#43 — Profile v1 storage foundation](https://github.com/ybakiame/agent-control-plane/issues/43).
+- Baseline after ADR merge: `d8d48fa582f60f1dd0e00b22276e2fbb29ab5e53`.
 - Target platforms: native Windows and Linux/WSL. Hosted CI is reported separately from local acceptance.
 
 ## 1. Test discipline
+
+This document describes all of M2. Issue #43 implements sections 2–4 and their
+direct schema/domain/storage negatives, plus removal of production-reachable M1
+migration paths. Its exact-source Rust gates and native Windows/Linux/WSL storage
+evidence are required. Sections 5–7 and complete Python retirement in section 8
+belong to later slices; they must not be reported as delivered by Stage 1. The
+full completion gate in section 10 remains the parent Issue #40 gate.
 
 - Every test uses a fresh temporary root and synthetic data. No test reads, migrates, overwrites or deletes a user's existing profile.
 - No preference values, Handoff bodies, credentials, raw SQL diagnostics or private paths are printed in test output.
@@ -18,11 +26,11 @@
 
 | ID | Scenario | Required assertion |
 | --- | --- | --- |
-| S01 | Create a new profile at an explicit absent path | Exact v1 DDL, \`user_version=1\`, one metadata row, random profile/generation IDs, epoch 0, next ID 1, commit sequence 0. |
+| S01 | Create a new profile at an explicit absent path | Exact v1 DDL, `user_version=1`, one metadata row, random profile/generation IDs, epoch 0, next ID 1, commit sequence 0. |
 | S02 | Create at an existing file or directory | Refuse without truncating, changing or replacing the existing object. |
 | S03 | Create under unsafe path conditions | Refuse relative paths, symlink/reparse parents, hard-linked destinations, unsafe permissions/ACLs and path/control-file collisions. |
 | S04 | Open valid v1 read-only | All supported project/preference/Handoff reads work; query-only and read-only flags deny writes even if query_only is toggled off. |
-| S05 | Open old Python v1 fixture | Refuse as incompatible schema even though \`user_version\` is numerically 1. |
+| S05 | Open old Python v1 fixture | Refuse as incompatible schema even though `user_version` is numerically 1. |
 | S06 | Open M1 synthetic v2 fixture | Refuse as unsupported version; no migration or fallback is attempted. |
 | S07 | Mutate schema shape | Refuse extra/missing tables, indexes, views, triggers, columns, changed DDL, type/nullability/PK/FK/check drift and unknown objects. |
 | S08 | Corrupt records/metadata | Refuse missing/duplicate singleton metadata, invalid IDs, bad counters, malformed JSON, invalid enum/scope, broken FK and integrity errors. |
@@ -101,16 +109,16 @@ The final implementation PR must include a machine-checkable inventory and prove
 - No product-owned Python package, CLI, Store, MCP server, Python test dependency, Python build dependency or Python CI job remains.
 - No product binary/runtime path invokes Python, migration/rehearsal code or a compatibility adapter.
 - No active quickstart, install or development instructions refer to Python product entrypoints.
-- Any retained \`.py\` file is individually justified as non-product maintenance and is not imported, packaged, required by CI or reachable at runtime.
+- Any retained `.py` file is individually justified as non-product maintenance and is not imported, packaged, required by CI or reachable at runtime.
 - M1's report and schema document remain historical evidence; no historical PASS claim is rewritten as product v1 acceptance.
 
 ## 9. Required commands and reporting
 
 Run the repository's exact AGENTS-required gates on each native host, including:
 
-- \`cargo fmt --all -- --check\`
-- \`cargo clippy --workspace --all-targets -- -D warnings\`
-- \`cargo test --workspace\`
+- `cargo fmt --all -- --check`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace`
 - Targeted Profile v1 schema, writer transaction, grant/revocation, real IPC and two-process lease tests.
 - Affected NSH/shared UI build and verification commands discovered from the current workspace scripts.
 - Python/package/CI inventory checks proving removal.
