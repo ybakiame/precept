@@ -31,6 +31,7 @@ try {
   run('committed-whitespace',base);
   writeFileSync(path.join(repo,'sample'),'fixed\n');git('commit','-qam','fixed');
   run('fixed-branch',base,true);
+  const fixed=git('rev-parse','HEAD');git('commit','--allow-empty','-qm','empty delta');run('empty-delta',fixed);
   run('missing-base',null);run('invalid-base','f'.repeat(40));run('head-equal',git('rev-parse','HEAD'));
   git('branch','ambiguous');git('tag','ambiguous');run('ambiguous-ref','ambiguous');
   const orphan=execFileSync('git',['commit-tree',git('rev-parse','HEAD^{tree}')],{cwd:repo,env,input:'unrelated\n',encoding:'utf8'}).trim();

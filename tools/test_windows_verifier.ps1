@@ -50,6 +50,9 @@ try {
     Set-Content -LiteralPath sample -Value 'fixed'
     Git-Run @('commit','-qam','fixed')
     Check-Case 'fixed-branch' $base $true
+    $fixed = Git-Run @('rev-parse','HEAD')
+    Git-Run @('commit','--allow-empty','-qm','empty delta')
+    Check-Case 'empty-delta' $fixed
     Check-Case 'missing-base' ''
     Check-Case 'invalid-base' ('f' * 40)
     Check-Case 'head-equal' (Git-Run @('rev-parse','HEAD'))

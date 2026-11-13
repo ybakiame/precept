@@ -538,9 +538,23 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     ui.apply("alt+shift+s", "error=Unauthorized", "Unauthorized");
     assert_eq!(f.rows().len(), 3);
     ui.capture("revoked-grant", out);
-    for n in 1..=5 {
+    for (i, section) in [
+        "Dashboard",
+        "Projects",
+        "Preferences",
+        "Handoff",
+        "Diagnostics",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let n = i + 1;
         ui.key(&format!("alt+{n}"));
         thread::sleep(Duration::from_millis(150));
+        if let Ui::Desktop(d) = &ui {
+            d.wait(&format!("section={section}"));
+        }
+        ui.capture(&format!("page-{n}"), out);
     }
     ui.key("alt+6");
     thread::sleep(Duration::from_millis(200));

@@ -176,7 +176,8 @@ impl Desktop {
         self.control(json!({"action":"close"}));
         let end = Instant::now() + Duration::from_secs(8);
         loop {
-            if self.child.try_wait().unwrap().is_some() {
+            if let Some(status) = self.child.try_wait().unwrap() {
+                assert!(status.success(), "owned GUI did not exit cleanly");
                 break;
             }
             assert!(Instant::now() < end);
