@@ -134,9 +134,11 @@ helper script, bundle, manifest and log lives under the ignored
 | harness `cargo clippy --all-targets --locked -- -D warnings` | PASS |
 | harness `cargo build` / `cargo test --locked` | PASS: 12 `desktop_worker` + 1 `screen` test, 0 failures |
 
-An intermediate full-suite run at `f552ee1` also recorded 13/13 PASS
-(`artifacts/local-p1-m2/s0-windows-final/report.json`) but measured a CRLF working
-tree, so it is retained as history and superseded by the table above.
+An intermediate full-suite run at `f552ee1` also recorded 13/13 PASS (in the Windows
+checkout's own ignored tree,
+`C:\Users\ybakiame\code-workspaces\agent-control-plane\artifacts\local-p1-m2\s0-windows-final\report.json`)
+but measured a CRLF working tree, so it is retained as history and superseded by the
+table above.
 
 Two Windows findings are recorded rather than smoothed over. Clippy at `ba51c4c`
 **FAILED** with `large_enum_variant` (360-byte desktop variant against a 72-byte TTY
@@ -144,7 +146,9 @@ variant, `src/main.rs:191`), which produced the `d0c6cfc` boxing correction: the
 only measures that layout on the host that owns it. And the harness-gate PASS recorded
 at `d0c6cfc` on the file-copied tree (retained in
 `artifacts/local-p1-m2/s0-windows-scratch/s0-windows-harness-gates/`) was only
-provisional Windows evidence until a real checkout was possible.
+provisional Windows evidence until a real checkout was possible. It is retained in
+`C:\Users\ybakiame\code-workspaces\agent-control-plane\artifacts\local-p1-m2\s0-windows-scratch\s0-windows-harness-gates\`,
+and a copy is kept in this repository's ignored `artifacts/local-p1-m2/s0-windows-harness-gates/`.
 
 ## 4. Native desktop and PTY observations
 
