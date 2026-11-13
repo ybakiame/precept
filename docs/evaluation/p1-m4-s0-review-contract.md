@@ -55,9 +55,10 @@ Toolchain `rustc`/`cargo` from `rust-toolchain.toml`.
 `tools/local_verify.sh all /tmp/acp-s0-final-report 18f2670d294deebbc17f530c36bebecdaf8beb90`
 ran on a separate clean clone checked out at `d0c6cfc` (the working copy holds an
 untracked CLI session directory, so gates were executed on a pristine checkout instead
-of loosening the script's clean-tree guard). The script refuses a dirty tree, demands a
-40-character ancestor baseline and executes `git diff --check 18f2670… HEAD` as its
-first and last gates.
+of loosening the script's clean-tree guard). Output is retained under the ignored
+`artifacts/local-p1-m2/s0-linux-final/` directory. The script refuses a dirty tree,
+demands a 40-character ancestor baseline and executes `git diff --check 18f2670… HEAD`
+as its first and last gates.
 
 | Gate | Result |
 | --- | --- |
@@ -70,14 +71,15 @@ first and last gates.
 | nsh-tests | PASS: 7 tests, 0 failures |
 | final `git diff --check` | PASS |
 
-All 13 recorded gates PASS (`/tmp/acp-s0-final-report/result.tsv`, `source.txt` records
-the SHA, diff base, `Linux 6.18.54.1-microsoft-standard-WSL2 x86_64`, rustc and cargo
-1.99.1). The product-side counts are identical to merged S5's Linux counts, which is the
-expected result for a byte-identical product tree.
+All 13 recorded gates PASS (`artifacts/local-p1-m2/s0-linux-final/result.tsv`, whose
+`source.txt` records the SHA, diff base,
+`Linux 6.18.54.1-microsoft-standard-WSL2 x86_64`, rustc and cargo 1.99.1). The
+product-side counts are identical to merged S5's Linux counts, which is the expected
+result for a byte-identical product tree.
 
 An earlier identical run at `ba51c4c` recorded 13/13 PASS too
-(`/tmp/acp-s0-linux-report/result.tsv`); the final-SHA table above is the one this slice
-relies on.
+(`artifacts/local-p1-m2/s0-linux-ba51c4c/result.tsv`); the final-SHA table above is the
+one this slice relies on.
 
 Harness manifest gates at the final SHA in the working copy:
 
@@ -102,7 +104,8 @@ Windows tree is the same source as `d0c6cfc`.
 `%USERPROFILE%\.cargo\bin` PATH plus `vswhere`/`Enter-VsDevShell` only; nothing is
 installed and no persistent setting changes) produced
 `s0-windows-harness-gates/report.json` on Windows 10.0.26300.0 with cargo 1.99.1 and
-rustc 1.99.1:
+rustc 1.99.1. It is retained, with each gate log, under the ignored
+`artifacts/local-p1-m2/s0-windows-harness-gates/` directory:
 
 | Gate | Result |
 | --- | --- |
