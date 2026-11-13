@@ -78,13 +78,13 @@ impl Service {
         permit: Arc<OwnedSemaphorePermit>,
     ) -> acp_ipc::Result<PathBuf> {
         let profiles = self.profiles.clone();
-        let project = project.to_owned();
+        let owned_project = project.to_owned();
         let job = tokio::task::spawn_blocking(move || {
             let _held = permit;
             let (store, roots) = profiles.read()?;
-            let expected = roots.get(&project).ok_or(Error::Unauthorized)?;
+            let expected = roots.get(&owned_project).ok_or(Error::Unauthorized)?;
             let root = store
-                .read_project(&project)
+                .read_project(&owned_project)
                 .map_err(|_| Error::NotFound)?
                 .root
                 .canonicalize()
@@ -94,10 +94,15 @@ impl Service {
             }
             Ok(root)
         });
-        tokio::time::timeout(Duration::from_secs(5), job)
-            .await
-            .map_err(|_| Error::Timeout)?
-            .map_err(|_| Error::Unavailable)?
+        let result = match tokio::time::timeout(Duration::from_secs(5), job).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(_)) => Err(Error::Unavailable),
+            Err(_) => Err(Error::Timeout),
+        };
+        if result.is_err() {
+            self.sessions.invalidate_context(project);
+        }
+        result
     }
     async fn session(
         &self,
@@ -209,7 +214,14 @@ impl Service {
                 json!({"api_version":acp_ipc::API_VERSION,"service":"acp-daemon","version":env!("CARGO_PKG_VERSION"),"schema":schema,"ready":true,"profile_selected":selected,"worktree_fingerprint":"on-demand-acp-worktree-v1"}),
             );
         }
-        let (store, roots) = self.profiles.read()?;
+        let (store, roots) = self.profiles.read().inspect_err(|_| {
+            // Full Profile validation can refuse an unavailable registered root
+            // before the per-project check below. Established session authority
+            // must be revoked on this earlier refusal as well.
+            if session_bound && let Access::Agent { project } = &access {
+                self.sessions.invalidate_context(project);
+            }
+        })?;
         if request.method == "project.list" {
             let _: Empty = decode(params)?;
             if access != Access::Operator {

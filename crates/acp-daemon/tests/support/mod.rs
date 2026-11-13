@@ -58,6 +58,15 @@ pub struct Daemon {
 }
 impl Daemon {
     pub fn launch(base: &Path, id: &str, database: Option<&Path>, session: bool) -> Self {
+        Self::launch_with_ttl(base, id, database, session, 300)
+    }
+    pub fn launch_with_ttl(
+        base: &Path,
+        id: &str,
+        database: Option<&Path>,
+        session: bool,
+        ttl: u64,
+    ) -> Self {
         let runtime_dir = base.join(id);
         let endpoint = if cfg!(windows) {
             format!("s2-{}-{id}", base.file_name().unwrap().to_string_lossy())
@@ -95,7 +104,10 @@ impl Daemon {
                 .arg("--agent-config")
                 .arg(base.join("agent.json"))
                 .arg("--context-mcp")
-                .arg(exe("acp-mcp"));
+                .arg(exe("acp-mcp"))
+                .arg("--context-lease-seconds")
+                .arg(ttl.to_string())
+                .env("ACP_TEST_PARENT_SENTINEL", "must-not-reach-child");
         }
         let child = command
             .stdout(Stdio::null())

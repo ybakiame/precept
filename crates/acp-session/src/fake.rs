@@ -46,6 +46,9 @@ fn main() {
         std::process::exit(99);
     }
     let mode = std::env::args().nth(1).unwrap_or_default();
+    // Dedicated Rust negative tests can receive the real read-only attachment
+    // while exercising malformed/auth/permission responses, without calling tools.
+    let accepts_context = std::env::args().nth(2).as_deref() == Some("--test-context");
     if mode == "timeout" {
         std::thread::sleep(std::time::Duration::from_secs(60));
         return;
@@ -60,7 +63,10 @@ fn main() {
         match v["method"].as_str() {
             Some("initialize") => reply(v["id"].clone(), initialized(&mode)),
             Some("session/new") => {
-                if !mode.starts_with("mcp") && v["params"]["mcpServers"] != json!([]) {
+                if !mode.starts_with("mcp")
+                    && !accepts_context
+                    && v["params"]["mcpServers"] != json!([])
+                {
                     std::process::exit(9);
                 }
                 if mode == "mcp-reject" {
