@@ -548,7 +548,7 @@ fn poll_bytes(stream: &mut ChildStdout, chunk: &mut [u8]) -> Result<Poll, String
     let peeked = unsafe {
         windows_sys::Win32::System::Pipes::PeekNamedPipe(
             handle,
-            std::ptr::null(),
+            std::ptr::null_mut(),
             0,
             std::ptr::null_mut(),
             &mut available,
