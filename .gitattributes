@@ -1,0 +1,8 @@
+# One line-ending policy on every host: repository content is Unix LF.
+# This keeps a native Windows checkout byte-identical to the Linux/WSL tree that the
+# gates, source-identity checks and acceptance evidence measure. Owner-directed during
+# P1-M4/S0. Scripts are stated explicitly so no reader guesses CRLF was intended.
+* text=auto eol=lf
+*.sh text eol=lf
+*.ps1 text eol=lf
+*.png binary
