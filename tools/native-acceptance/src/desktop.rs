@@ -1,17 +1,18 @@
+use acp_native_acceptance::process::OwnedProcess;
+use acp_native_acceptance::worker::WorkerRpc;
 use serde_json::{Value, json};
 use std::{
-    io::{BufRead, BufReader, Write},
     path::Path,
-    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
+    process::Command,
     sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant},
 };
 pub struct Desktop {
-    child: Child,
-    worker: Child,
-    input: ChildStdin,
-    output: BufReader<ChildStdout>,
+    /// Owned from the moment the GUI exists, so an initialization failure below still
+    /// terminates and reaps it and stops its log thread.
+    gui: OwnedProcess,
+    worker: WorkerRpc,
     pub lines: Arc<Mutex<Vec<String>>>,
     after: usize,
     out: std::path::PathBuf,
@@ -23,8 +24,8 @@ impl Desktop {
             .args(args)
             .env("ACP_UI_PROBE", "1")
             .env("ACP_UI_PROBE_ID", nonce)
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped());
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped());
         #[cfg(unix)]
         {
             command
@@ -32,55 +33,44 @@ impl Desktop {
                 .env_remove("DISPLAY")
                 .env("WAYLAND_DISPLAY", "wayland-0");
         }
-        let mut child = command.spawn().unwrap();
-        let stderr = child.stderr.take().unwrap();
-        let lines = Arc::new(Mutex::new(Vec::new()));
-        let log = lines.clone();
-        thread::spawn(move || {
-            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-                if line.starts_with("ACP_") {
-                    let mut log = log.lock().unwrap();
-                    assert!(log.len() < 50000);
-                    log.push(line);
-                }
-            }
-        });
+        let gui = OwnedProcess::adopt(command.spawn().expect("owned native GUI launches"), "gui")
+            .unwrap_or_else(|unfit| panic!("owned GUI adoption refused: {unfit:?}"));
+        let gui_read_mode = gui.read_mode();
+        let lines = gui.log();
         let powershell = if cfg!(windows) {
             "powershell.exe"
         } else {
             "/mnt/c/Program Files/PowerShell/7/pwsh.exe"
         };
-        let mut worker = Command::new(powershell)
-            .args([
+        // A refused session must not leave the window running: unwinding drops `gui`,
+        // which terminates and reaps exactly the process this driver launched.
+        let mut worker = WorkerRpc::spawn(
+            Path::new(powershell),
+            &[
                 "-NoProfile",
                 "-NonInteractive",
                 "-ExecutionPolicy",
                 "Bypass",
                 "-File",
                 script,
-            ])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
-        let input = worker.stdin.take().unwrap();
-        let output = BufReader::new(worker.stdout.take().unwrap());
-        let mut value = Self {
-            child,
-            worker,
-            input,
-            output,
-            lines,
-            after: 0,
-            out: out.to_owned(),
-        };
-        let response = value
-            .rpc(json!({"action":"init","nonce":nonce,"pid":value.child.id(),"remote":cfg!(unix)}));
+            ],
+        )
+        .unwrap_or_else(|reason| panic!("native window worker session unavailable: {reason}"));
+        let response = worker
+            .request(&json!({"action":"init","nonce":nonce,"pid":gui.pid(),"remote":cfg!(unix)}))
+            .unwrap_or_else(|reason| panic!("native window init refused: {reason}"));
         assert_eq!(response["status"], "ok");
+        let (stdin_mode, stdout_mode) = worker.io_modes();
+        println!(
+            "DESKTOP_IO_MODE stdin={stdin_mode} stdout={stdout_mode} gui_stderr={gui_read_mode}"
+        );
+        // Every later reply that carries a nonce must name this owned window.
+        worker.expect_nonce(nonce);
         let end = Instant::now() + Duration::from_secs(30);
         loop {
-            let r = value.rpc(json!({"action":"observe"}));
+            let r = worker
+                .request(&json!({"action":"observe"}))
+                .unwrap_or_else(|reason| panic!("bounded native window observe failure: {reason}"));
             if r["status"] == "ok" {
                 break;
             }
@@ -93,22 +83,30 @@ impl Desktop {
         }
         println!(
             "OWNED_WINDOW_READY nonce={nonce} pid={} foreground protection enabled",
-            value.child.id()
+            gui.pid()
         );
-        value
+        Self {
+            gui,
+            worker,
+            lines,
+            after: 0,
+            out: out.to_owned(),
+        }
     }
-    fn rpc(&mut self, p: Value) -> Value {
-        writeln!(self.input, "{p}").unwrap();
-        self.input.flush().unwrap();
-        let mut line = String::new();
-        self.output.read_line(&mut line).unwrap();
-        serde_json::from_str(&line).expect("native window worker response missing")
+    /// A bounded worker fault is a failed acceptance run, never a silent continue:
+    /// the session is already unusable and no later action may adopt a stale reply.
+    fn call(&mut self, p: &Value) -> Value {
+        self.worker
+            .request(p)
+            .unwrap_or_else(|reason| panic!("bounded native window worker failure: {reason}"))
     }
+    /// Foreground readiness is bounded overall; each request is bounded inside
+    /// `WorkerRpc`. Neither may be replaced by an unbounded blocked pipe read.
     fn control(&mut self, p: Value) -> Value {
         let deadline = Instant::now() + Duration::from_secs(900);
         let mut announced = false;
         loop {
-            let r = self.rpc(p.clone());
+            let r = self.call(&p);
             if r["status"] == "ok" {
                 if r["input_layout"].is_object() {
                     self.lines
@@ -185,13 +183,34 @@ impl Desktop {
         self.control(json!({"action":"close"}));
         let end = Instant::now() + Duration::from_secs(8);
         loop {
-            if let Some(status) = self.child.try_wait().unwrap() {
+            if let Some(status) = self.gui.exited() {
                 assert!(status.success(), "owned GUI did not exit cleanly");
                 break;
             }
             assert!(Instant::now() < end);
             thread::sleep(Duration::from_millis(30));
         }
+        let cleanup = self.worker.shutdown();
+        // Terminating the owned GUI is the last step, and it is never assumed: both its
+        // reap and its log-thread join are reported and asserted.
+        let gui = self.gui.terminate();
+        println!(
+            "OWNED_DRIVER_CLOSED gui_pid={} gui_reaped={} gui_reader_joined={} worker_reaped={} reader_joined={} writer_joined={}",
+            self.gui.pid(),
+            gui.reaped,
+            gui.reader_joined,
+            cleanup.reaped,
+            cleanup.reader_joined,
+            cleanup.writer_joined
+        );
+        assert!(
+            gui.reaped
+                && gui.reader_joined
+                && cleanup.reaped
+                && cleanup.reader_joined
+                && cleanup.writer_joined,
+            "owned driver cleanup left an unreaped child or an unjoined IO thread"
+        );
     }
 }
 impl Drop for Desktop {
@@ -199,9 +218,7 @@ impl Drop for Desktop {
         if let Ok(lines) = self.lines.lock() {
             let _ = std::fs::write(self.out.join("desktop-probes.log"), lines.join("\n"));
         }
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-        let _ = self.worker.kill();
-        let _ = self.worker.wait();
+        // `gui` and `worker` own their processes and threads; dropping them reaps and
+        // joins, which is why no initialization failure below the spawn can leak either.
     }
 }

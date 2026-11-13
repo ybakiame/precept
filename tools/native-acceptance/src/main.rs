@@ -189,7 +189,8 @@ impl Drop for Fixture {
     }
 }
 enum Ui {
-    Desktop(desktop::Desktop),
+    // Boxed: the bounded worker handle set is larger on Windows than the TTY state.
+    Desktop(Box<desktop::Desktop>),
     Tty(tty::Tty),
 }
 impl Ui {
@@ -307,13 +308,13 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         "light".into(),
     ];
     let mut ui = if surface == "desktop" {
-        Ui::Desktop(desktop::Desktop::start(
+        Ui::Desktop(Box::new(desktop::Desktop::start(
             &nsh,
             &args,
             &nonce,
             window_script,
             out,
-        ))
+        )))
     } else {
         Ui::Tty(tty::Tty::start(&nsh, &args, out))
     };

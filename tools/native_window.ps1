@@ -75,8 +75,11 @@ function Ensure-English([IntPtr]$Window) {
 }
 try {
 :requests while ($null -ne ($line = [Console]::ReadLine())) {
+    # Every reply must name the request it answers; the driver refuses otherwise.
+    $rid = $null
     try {
         $command = $line | ConvertFrom-Json
+        $rid = $command.rpc_id
         if ($command.action -eq 'init') {
             if ($nonce -or $command.nonce -notmatch '^[0-9a-f]{16}$') { throw 'Invalid one-time nonce' }
             $nonce = $command.nonce; $expected = [uint32]$command.pid; $remote = [bool]$command.remote
@@ -84,14 +87,14 @@ try {
             $images = Join-Path (Split-Path -Parent $PSScriptRoot) "artifacts/local-p1-m2/s5-window-$nonce"
             if (Test-Path -LiteralPath $images) { throw 'Window capture directory must be new' }
             New-Item -ItemType Directory -Path $images | Out-Null
-            @{status='ok';images=$images} | ConvertTo-Json -Compress
+            @{status='ok';rpc_id=$rid;images=$images} | ConvertTo-Json -Compress
             continue
         }
         if (-not $nonce) { throw 'Initialize owned window first' }
         $h = Owned-Window
         $active = [AcpWindow]::GetForegroundWindow() -eq $h
-        if ($command.action -eq 'observe') { @{status='ok';foreground=$active} | ConvertTo-Json -Compress; continue }
-        if ($command.action -in @('key','text','capture') -and -not $active) { @{status='foreground_required';nonce=$nonce} | ConvertTo-Json -Compress; continue }
+        if ($command.action -eq 'observe') { @{status='ok';rpc_id=$rid;foreground=$active} | ConvertTo-Json -Compress; continue }
+        if ($command.action -in @('key','text','capture') -and -not $active) { @{status='foreground_required';rpc_id=$rid;nonce=$nonce} | ConvertTo-Json -Compress; continue }
         $layout=$null
         if ($command.action -in @('key','text')) { $layout=Ensure-English $h }
         switch ($command.action) {
@@ -132,14 +135,14 @@ try {
                 finally {$graphics.ReleaseHdc($dc);$graphics.Dispose()}
                 $file=Join-Path $images $command.name
                 try {$bitmap.Save($file,[Drawing.Imaging.ImageFormat]::Png)}finally{$bitmap.Dispose()}
-                @{status='ok';file=$file} | ConvertTo-Json -Compress
+                @{status='ok';rpc_id=$rid;file=$file} | ConvertTo-Json -Compress
                 continue requests
             }
             'close' { [AcpWindow]::PostMessage($h,0x10,[IntPtr]::Zero,[IntPtr]::Zero) | Out-Null }
             default { throw 'Unsupported bounded window action' }
         }
-        @{status='ok';input_layout=$layout} | ConvertTo-Json -Compress
-    } catch { @{status='refused';reason=$_.Exception.Message} | ConvertTo-Json -Compress }
+        @{status='ok';rpc_id=$rid;input_layout=$layout} | ConvertTo-Json -Compress
+    } catch { @{status='refused';rpc_id=$rid;reason=$_.Exception.Message} | ConvertTo-Json -Compress }
 }
 } finally {
     if ($originalLayout -ne [IntPtr]::Zero) {
