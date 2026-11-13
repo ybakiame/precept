@@ -575,7 +575,6 @@ fn make_nonblocking(stream: &mut impl std::os::fd::AsFd) -> &'static str {
 
 #[cfg(windows)]
 fn make_nonblocking(stream: &mut impl std::os::windows::io::AsRawHandle) -> &'static str {
-    use std::os::windows::io::AsRawHandle;
     const PIPE_NOWAIT: u32 = 0x0000_0001;
     let handle = stream.as_raw_handle();
     let ok = unsafe {
