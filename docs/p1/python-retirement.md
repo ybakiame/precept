@@ -162,3 +162,9 @@ No hosted Actions, model/vendor, macOS, mobile or niri claims.
 
 Submit one Draft PR, Closes #48 / Refs #40, all commits [skip ci]. Do not merge or
 close #40. S5 final integrated M2 acceptance is a separate issue after S4 merges.
+
+Implementation closure: [S4 evidence](../evaluation/p1-m2-s4-retire-python.md)
+records the exact Rust replacements, clean native source/results, source/CI scans,
+offline Web verification and actual GUI/TTY NOT_RUN boundary. The inventory and
+replacement plan above retain their pre-deletion scope; they are not current
+instructions to run any retired path.
