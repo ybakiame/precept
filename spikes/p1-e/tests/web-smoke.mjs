@@ -1,54 +1,86 @@
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
+import { serveStatic } from './static-server.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-const root = path.resolve(process.argv[2]);
-const out = path.resolve(process.argv[3]);
-await mkdir(out, { recursive:true });
-const server=spawn(process.env.PYTHON || 'python3',['-m','http.server','0','--bind','127.0.0.1','--directory',root],{env:{...process.env,PYTHONUNBUFFERED:'1'}});
-let log=''; const port=await new Promise((resolve,reject)=>{
-  server.stdout.on('data',chunk=>{log+=chunk;const m=log.match(/port (\d+)/);if(m)resolve(Number(m[1]));});
-  server.on('exit',()=>reject(new Error('Static asset server stopped')));
-  setTimeout(()=>reject(new Error('Static asset server timeout')),10000).unref();
-});
+const [directory, output, ...extra] = process.argv.slice(2);
+if (!directory || !output || extra.length) throw Error('Usage: node web-smoke.mjs STATIC_ROOT NEW_OUTPUT');
+const root = path.resolve(directory);
+const out = path.resolve(output);
+await mkdir(out, { recursive:false });
+const server = await serveStatic(root);
 let browser;
 try {
-  browser=await chromium.launch({executablePath:process.env.CHROMIUM,headless:true,args:['--no-sandbox']});
-  const context=await browser.newContext({viewport:{width:1080,height:760}});
-  const origin=`http://127.0.0.1:${port}`;
-  const requests=[], errors=[];
-  await context.route('**/*',route=>{const url=route.request().url();requests.push(url);return url.startsWith(origin+'/')?route.continue():route.abort();});
-  const page=await context.newPage();page.on('pageerror',e=>errors.push(String(e)));page.on('websocket',()=>errors.push('Unexpected WebSocket'));
-  await page.goto(origin,{waitUntil:'networkidle'});
-  await page.getByText('Project: alpha',{exact:true}).waitFor({timeout:30000});
-  await page.screenshot({path:path.join(out,'nsh-web-dark.png')});
+  browser = await chromium.launch({ executablePath:process.env.CHROMIUM, headless:true });
+  const context = await browser.newContext({ viewport:{ width:1080, height:760 } });
+  const origin = server.origin;
+  const requests = [], errors = [];
+  await context.route('**/*', route => {
+    const url = route.request().url(); requests.push(url);
+    return url.startsWith(origin + '/') ? route.continue() : route.abort();
+  });
+  const page = await context.newPage();
+  page.on('pageerror', error => errors.push(String(error)));
+  page.on('websocket', () => errors.push('Unexpected WebSocket'));
+  const button = name => page.getByRole('button', { name, exact:true }).filter({ visible:true });
+  const project = name => page.getByText(` / ${name}`, { exact:true });
+  await page.goto(origin, { waitUntil:'networkidle' });
+  await page.getByText('Project: alpha', { exact:true }).waitFor({ timeout:30000 });
+  assert.equal(await page.locator('#error').innerText(), '');
   await context.setOffline(true);
-  await page.getByRole('button',{name:'Next project',exact:true}).click();
-  await page.getByText('Project: beta',{exact:true}).waitFor();
-  await page.getByRole('button',{name:'Reconnect',exact:true}).focus();
-  await page.keyboard.press('Tab');
-  assert.equal(await page.evaluate(()=>document.activeElement.getAttribute('aria-label')),'Next project');
+  await button('Next project').click(); await project('beta').waitFor();
+  await button('Next project').focus(); await page.keyboard.press('Enter'); await project('alpha').waitFor();
+  await button('Reconnect').focus(); await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), 'Settings');
   await page.keyboard.press('Enter');
-  await page.getByText('Project: alpha',{exact:true}).waitFor();
-  await page.getByRole('button',{name:'Light / dark',exact:true}).click();
-  await page.screenshot({path:path.join(out,'nsh-web-light.png')});
-  await page.setViewportSize({width:640,height:480});
-  await page.getByRole('textbox',{name:'Task ID',exact:true}).fill('missing');
-  await page.getByRole('button',{name:'Lookup',exact:true}).click();
-  await page.getByText('Empty — no handoff for task missing in this project',{exact:true}).waitFor();
-  await page.getByRole('textbox',{name:'Filter preferences',exact:true}).fill('no-match');
-  await page.getByText('Empty — no confirmed preferences match',{exact:true}).waitFor();
-  await page.getByRole('textbox',{name:'Task ID',exact:true}).fill('x'.repeat(121));
-  await page.getByRole('button',{name:'Lookup',exact:true}).click();
+  await page.getByText('Theme collection', { exact:true }).waitFor();
+  await button('Dark').click(); await page.screenshot({ path:path.join(out, 'nsh-web-dark.png') });
+  await button('Light').click(); await page.screenshot({ path:path.join(out, 'nsh-web-light.png') });
+  for (const name of ['Dashboard', 'Workspaces', 'Preferences', 'Handoff', 'Diagnostics']) {
+    await button(name).click();
+    assert.equal(await page.locator('#error').innerText(), '');
+  }
+  await button('Preferences').click();
+  // The pinned renderer does not mirror Input.label into DOM aria-label.
+  // Scope to the sole visible field on this page, then verify its actual result.
+  const filter = page.locator('input:visible');
+  assert.equal(await filter.count(), 1);
+  await filter.fill('no-match');
+  await page.getByText('Empty — no confirmed preferences match', { exact:true }).waitFor();
+  await filter.fill('');
+  await page.getByRole('button', { name:/^Details \d+$/ }).first().click();
+  await page.getByText('Close detail', { exact:true }).waitFor();
+  await button('Close detail').click();
+  await button('Handoff').click();
+  const task = page.locator('input[placeholder="Task ID"]:visible');
+  assert.equal(await task.count(), 1);
+  await task.fill('missing'); await button('Lookup').click();
+  await page.getByText('Empty — no handoff for task missing in this project', { exact:true }).waitFor();
+  await task.fill('x'.repeat(121)); await button('Lookup').click();
   await page.getByText(/Error — invalid task ID/).first().waitFor();
-  await page.getByRole('textbox',{name:'Task ID',exact:true}).fill('shared');
-  await page.getByRole('button',{name:'Reconnect',exact:true}).click();
-  await page.getByText('Project: alpha',{exact:true}).waitFor();
-  assert.equal(await page.locator('#error').innerText(),'');
-  assert.deepEqual(errors,[]);
-  assert(requests.every(u=>u.startsWith(origin+'/')));
-  const result={status:'TEST_PASS',backend:'actual NSH Rust WASM + browser DOM',browser:await browser.version(),offlineInteraction:true,keyboardTabAndEnter:true,resize:[1080,760,640,480],requests:requests.map(u=>new URL(u).pathname),externalRequests:0,daemonConnection:'NOT_RUN: offline fixture only; no native IPC or gateway'};
-  await writeFile(path.join(out,'web-result.json'),JSON.stringify(result,null,2));
+  await task.fill('shared'); await button('Reconnect').click();
+  await button('Dashboard').click();
+  await page.getByText('Project: alpha', { exact:true }).waitFor();
+  await button('Connection target').click(); await button('Profile operator').click();
+  assert.equal(await button('Inspect Profile').isDisabled(), true);
+  assert.equal(await button('Enable writes…').isDisabled(), true);
+  await button('Dashboard').click();
+  await page.setViewportSize({ width:640, height:480 });
+  await page.screenshot({ path:path.join(out, 'nsh-web-compact.png') });
+  assert.equal(await page.locator('#error').innerText(), '');
+  assert(!((await page.locator('body').innerText()).includes('nsh panicked')));
+  assert.deepEqual(errors, []);
+  assert(requests.every(url => url.startsWith(origin + '/')));
+  const result = {
+    status:'PASS', tested_git_sha:execFileSync('git', ['rev-parse','HEAD'], { encoding:'utf8' }).trim(),
+    worktree_dirty:!!execFileSync('git', ['status','--porcelain'], { encoding:'utf8' }).trim(),
+    backend:'actual NSH Rust WASM + browser DOM', browser:await browser.version(),
+    offlineInteraction:true, fivePages:true, exactTaskValidation:true, preferenceFilterAndDetails:true,
+    keyboardTabAndEnter:true, appearance:true, readOnlyOperator:true,
+    resize:[1080,760,640,480], requests:requests.map(url => new URL(url).pathname), externalRequests:0,
+    daemonConnection:'NOT_RUN: offline synthetic fixture, no native IPC or gateway'
+  };
+  await writeFile(path.join(out, 'web-result.json'), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result));
-} finally {await browser?.close();server.kill();}
+} finally { await browser?.close(); await server.close(); }

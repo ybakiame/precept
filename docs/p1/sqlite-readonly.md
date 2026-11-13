@@ -1,5 +1,9 @@
 # P1-C1: read-only SQLite adapter
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](rust-only-development.md) for current commands.
+
 Issue #6; base main `afce07fed08df03b9fe66e308fb83220a0ef15f3`.
 The implementation lives in `crates/acp-store`; `acp-core` has no SQLite dependency.
 Python P0 application code, CLI and MCP remain unchanged and retain all writes.

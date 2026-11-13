@@ -1,5 +1,9 @@
 # UI Spike: GPUI Kit vs NSH / TUI
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](rust-only-development.md) for current commands.
+
 Status: exploratory only. Do not select a renderer based only on README claims or screenshots.
 
 Issue #14 implementation: [comparison and executed evidence](ui-spike-evaluation.md),

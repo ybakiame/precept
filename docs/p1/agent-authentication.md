@@ -136,5 +136,5 @@ expiry/cancel/stop and old-scope denial. They are not real coding-agent success.
 
 Run stable local Windows/ConPTY and native WSLg Wayland matrices once per host after
 implementation stabilizes; repeat only affected gates. Keep pinned/offline Rust,
-Python/parity/fingerprint/IPC/MCP/10k guards, ignored `artifacts/local-p1-h/`, no
+Historical Python/parity guards are retired; current Rust fingerprint/IPC/MCP/10k gates replace them. Retain ignored `artifacts/local-p1-h/`, no
 Actions/system config/real data changes, no niri/mobile. Draft PR only, no auto merge.

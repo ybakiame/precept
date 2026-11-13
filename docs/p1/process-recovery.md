@@ -1,5 +1,9 @@
 # P1-C2B1: persistent synthetic manifests and real process recovery
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](rust-only-development.md) for current commands.
+
 Issue #10; base main `c93279465672888cd04a91926f836a88f378f6e1`.
 No real profile/database access or production migration is authorized here.
 Python CLI/MCP and `acp-store` source/public read-only opening behavior are unchanged.

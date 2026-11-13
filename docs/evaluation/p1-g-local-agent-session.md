@@ -1,5 +1,9 @@
 # P1-G local agent-session evidence
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](../p1/rust-only-development.md) for current commands.
+
 ## Tested source and review status
 
 Local validation completed 2026-11-10–11 (Asia/Shanghai). Base was clean latest main

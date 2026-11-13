@@ -1,5 +1,9 @@
 # ADR-0002: local transports plus explicit read-only capabilities
 
+> Original interface descriptions below are decision history. ADR-0006 supersedes
+> prototype frontend/compatibility paths; S4 removes those executable paths. Use
+> the current [native runbook](../p1/rust-only-development.md) and IPC contracts.
+
 Status: implemented P1-D prototype, not a same-user OS sandbox.
 
 P1-J clarification: this ADR's read-only transport decision remains the baseline.

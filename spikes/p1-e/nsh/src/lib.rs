@@ -70,7 +70,9 @@ pub static INPUTS: std::sync::OnceLock<acp_ui_spike_model::native::Inputs> =
 fn load(model: Signal<Model>) {
     #[cfg(feature = "ipc")]
     let inputs = acp_ui_spike_model::native::Inputs::from_connection(&model.get().connection);
-    let started = std::time::Instant::now();
+    // NSH's clock uses the host monotonic timer on WASM as well as native;
+    // std::time::Instant panics on wasm32-unknown-unknown.
+    let started = nsh_core::time::now();
     let mut request = None;
     model.update(|m| {
         request = m.begin_read().ok();

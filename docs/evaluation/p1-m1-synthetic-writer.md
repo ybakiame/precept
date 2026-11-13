@@ -1,5 +1,9 @@
 # P1-M1 — synthetic profile v2 writer evidence
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](../p1/rust-only-development.md) for current commands.
+
 > Historical M1 evidence, not Profile v1 acceptance. ADR-0006 retires the v2
 > migration/rehearsal implementation. Source links in this report refer to the
 > [preserved M1 tree](https://github.com/ybakiame/agent-control-plane/tree/8eaef4d39169736284c1784d7b6b7f76620b0273)

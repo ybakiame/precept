@@ -1,5 +1,9 @@
 # P1-L implementation plan — Issue #34
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](rust-only-development.md) for current commands.
+
 Status: L0–L2 implemented and locally validated in one PR candidate, pending Draft
 review and owner merge. The [v1 contract](typed-context-v1.md) and pure resolver are
 covered by the [local evidence](../evaluation/p1-l-typed-context-resolver.md).

@@ -211,4 +211,5 @@ a permission grant. A stale version stays attached to its rule with `source.stat
 
 Tests in `crates/acp-core/tests/typed_context.rs` exercise these fragments, the
 empty/no-match/unknown table, masking, conflicts, drift, invalid schemas and stable
-permutations. The legacy fixture and Python parity remain separate unchanged oracles.
+permutations. The preserved logical resolver fixture remains a separate Rust test input; the
+retired cross-language parity drivers are not current acceptance gates.

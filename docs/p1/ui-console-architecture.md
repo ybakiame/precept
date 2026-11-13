@@ -1,6 +1,6 @@
 # NSH console architecture (E4 / S3 operator extension)
 
-The implemented NSH Rust console remains outside the P0 Python package and root
+The implemented NSH Rust console uses separate Cargo manifests outside the root
 Rust workspace. [ADR-0003](../adr/0003-ui-framework-selection.md) now **accepts NSH**
 as the product Desktop/TUI direction; paths and behavior below are unchanged.
 [Product IA](../product-ui.md) describes later workflows, not implemented pages.
@@ -47,7 +47,7 @@ never the UI thread. Existing bounded response size, helper deadline, operator
 capability, UID/Named Pipe checks and project-bound two-tool MCP remain unchanged.
 UI closure never starts/stops the standalone daemon. S3 adds the separate native
 operator workflow below; normal context snapshots and the Windows→WSL helper stay
-read-only. No default user DB is opened, and clients never use Python/SQLite as a
+read-only. No default user DB is opened, and clients never use a retired runtime or direct SQLite as a
 fallback.
 
 ## Keyboard and layout

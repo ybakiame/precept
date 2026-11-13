@@ -1,6 +1,6 @@
 # Architecture — implemented baseline and accepted Rust-only target
 
-Documented implementation baseline: main `10bad176381668aa2dcbe516edde2c17dc6ff3bb` (pre-M2; M1 PR #39 and M0 follow-up merged).
+Implementation baseline: merged S3 main `58750f346bf2288d79f9ff29754ca110ebca52d0`, plus S4 retirement changes.
 P1-J's original product baseline remains recorded in its charter and ADR.
 The [product charter](product.md) defines purpose; [ADR-0004](adr/0004-product-domain-trust.md)
 defines target domain semantics; [ADR-0006](adr/0006-rust-only-runtime.md) selects the Rust-only runtime and retires the Python prototype. Target concepts below are not new APIs or tables.
@@ -22,15 +22,13 @@ trusted agent ─ two-tool MCP stdio ─ acp-mcp ─ project capability ─┘
                               separate opted-in P1-I context lease
 ```
 
-This is the accepted target after P1-M2, not a claim that the current main tree
-already has production writes. The current Python P0 path and legacy profile readers are
-disposable validation-era implementation details scheduled for removal by [Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40).
+This is the implemented validation topology, not production activation or final
+M2 integrated acceptance.
 
-| Component | Current responsibility | Must not own |
+| Component | Implemented responsibility | Must not own |
 | --- | --- | --- |
-| Legacy Python P0 | Historical prototype currently present before M2; scheduled for removal under ADR-0006 | Any new product feature, compatibility path, or release dependency |
 | `crates/acp-core` | Legacy confirmed preference/Handoff resolver plus P1-L pure typed selector/conflict explanation; bounded document/fingerprint semantics through adapters | SQLite connections, UI, process execution, protocol transport or authorization grants |
-| `crates/acp-store` | Target: explicit-path, strict read-only adapter for the fresh Rust-native Profile v1 | Writes, schema migration, legacy-format compatibility |
+| `crates/acp-store` | Explicit-path, strict read-only adapter for the fresh Rust-native Profile v1 | Writes, schema migration, legacy-format compatibility |
 | `crates/acp-ipc`, `acp-daemon` | Local capability/peer checks, scoped reads, live repository adapter, lease authority | TCP listener or caller-selected wider scope |
 | `crates/acp-session` | Optional configured native ACP child lifecycle and bounded observations | OS sandbox, arbitrary shell execution or credential login |
 | `crates/acp-mcp` | Read-only stdio bridge to project-bound IPC | Profile/task/session mutation |
@@ -47,16 +45,13 @@ serialized grant admission/drain and typed IPC v2. Only the daemon normally link
 the writer. [S3](p1/native-operator-workflows.md) adds typed native CLI workflows,
 operator-only exact record previews and a shared NSH operator panel. Clients share
 data-only DTOs through `acp-core::operator`; validation and transactions stay in
-the daemon-owned writer. Python retirement is still separate M2 work; these
+the daemon-owned writer. S4 removes the legacy package/tests/probes and replaces active CI; these
 synthetic results do not activate a real Profile or complete the cutover.
 
-The current main tree still contains the disposable Python P0 prototype.
-Its CLI and MCP launch path share an initializing read/write `Store`; this is a
-historical implementation defect, not an accepted target. ADR-0006 retires that
-runtime rather than building a second Python read-only adapter. P1-M2 replaces the
-active legacy Rust reader with strict reads for the fresh Rust-native Profile v1 and routes every product
-mutation through the daemon-owned `acp-write` capability. Until M2 merges, this
-target topology is not yet an implemented end-user runtime.
+The active tree has one Rust product runtime. Current operator writes traverse
+the daemon; the retired prototype is available only in Git history and historical
+reports. No compatibility frontend, migration/import or direct-write fallback is
+retained. See [S4 inventory](p1/python-retirement.md) and [native development](p1/rust-only-development.md).
 
 ## Target domain and data ownership
 

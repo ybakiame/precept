@@ -9,7 +9,7 @@ version/auth/metadata-ordering details only.
 ## G0 architecture and authority contract (before implementation)
 
 Baseline: clean main `52c01b7b6c5b48a2884e77bcd8a8893a5a010e62` (merge #23),
-no submodules; branch `feat/p1-g-acp-session-runtime`. Existing Python P0,
+no submodules; branch `feat/p1-g-acp-session-runtime`. At that historical baseline, Python P0,
 read-only store, fingerprint byte contract, two-tool MCP and P1-F UI remain the
 reference. Required paths exist; IPC DTOs are in `acp-ipc/src/lib.rs` and the
 Daemon/MCP are binaries in `src/main.rs`, not invented lib/protocol files.
@@ -95,7 +95,7 @@ never a real coding agent. Process tests cover normal updates, completion, cance
 permission deny/explicit once/expiry, malformed/huge/duplicate/out-of-order IDs,
 crash/timeout, scope and credential isolation, two clients and UI lifetime.
 Then run the established local Windows/ConPTY and WSLg-native Wayland/PTY matrix,
-10k/state/fingerprint/parity/MCP regressions once after implementation stabilizes.
+Current regressions use Rust workspace/shared/NSH gates; the original parity probes are retired.
 Only targeted tests are repeated for intervening failures. All evidence stays in
 ignored `artifacts/local-p1-g/`; no system config, real DB or external checkout writes.
 

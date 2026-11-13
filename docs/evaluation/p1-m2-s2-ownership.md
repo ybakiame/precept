@@ -1,5 +1,9 @@
 # P1-M2/S2 — daemon ownership and write IPC evidence
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](../p1/rust-only-development.md) for current commands.
+
 Authority: [Issue #44](https://github.com/ybakiame/agent-control-plane/issues/44),
 parent [#40](https://github.com/ybakiame/agent-control-plane/issues/40), Accepted
 [ADR-0006](../adr/0006-rust-only-runtime.md), the frozen

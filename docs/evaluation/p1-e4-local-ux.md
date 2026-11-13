@@ -1,5 +1,9 @@
 # P1-E4 local NSH UX and Rust migration evidence
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](../p1/rust-only-development.md) for current commands.
+
 Status: local Windows + native WSLg acceptance **PASS**, with owner review of the
 base UI. Final verification used clean source on both actual hosts. All logs,
 synthetic screenshots and unsigned archives remain private local artifacts.

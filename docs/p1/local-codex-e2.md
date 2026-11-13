@@ -1,5 +1,9 @@
 # Local read-only NSH console (P1-E2 / E3)
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](rust-only-development.md) for current commands.
+
 For the current fresh Profile v1 native operator workflow use the
 [S3 contract/CLI guide](native-operator-workflows.md) and [S3 evidence](../evaluation/p1-m2-s3-native-operator.md).
 The E2/E3 fixture/bootstrap instructions below describe their historical read-only

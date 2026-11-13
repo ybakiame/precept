@@ -1,70 +1,65 @@
 # Interfaces and current conformance boundary
 
-## Native operator CLI and IPC (P1-M2/S3)
+## Native local operator
 
-`acp-query` uses native local authenticated IPC v2 for explicit Profile create/select/
-info, separate write enable/disable, exact operator-only preference/Handoff previews
-and all seven typed mutations. Operator control/read authority is not OperatorWrite;
-only the daemon links the ordinary writer. See [syntax, DTOs, retry and UI gates](p1/native-operator-workflows.md).
-Agents/MCP/session/write-role credentials cannot access administrative previews;
-MCP still exposes exactly the two project-bound read-only tools. No default Profile,
-automatic grant, SQL/JSON patch, remote WSL write or unavailable-daemon fallback.
+`acp-query` talks to an explicitly addressed native daemon through authenticated
+IPC v2. Profile create/select/info, independent write enable/disable, exact scoped
+Preference/Handoff previews and all seven typed mutations are described in the
+[operator contract and syntax](p1/native-operator-workflows.md).
+Operator control/read is distinct from the profile/generation/epoch-bound write
+credential. Only the daemon invokes the private writer. No SQL/JSON patch, default
+Profile, automatic grant/startup, remote WSL writes or direct database fallback.
 
-## Legacy Python P0 CLI (historical; pending retirement)
+Preview methods `profile.preferences.list`, `profile.preferences.get` and
+`profile.handoff.get` are Operator-only, bounded and exact-scope/revision. They are
+not exposed to agents, sessions, OperatorWrite peers or MCP.
 
-`acpctl project add/list`, `preference suggest/confirm/reject/deprecate/delete/list`, `context`, `handoff put/get`, and `mcp --project <registered-project>`.
+## Read-only MCP stdio
 
-The CLI is the **only** write path in P0. `preference confirm ID` is an operator action; a tool cannot elevate its own suggestion. `deprecate` allows retracting a confirmed value. `delete` permanently removes a preference row; no archival shadow copy is created by the application.
-
-## MCP stdio
-
-MCP operates on newline-delimited UTF-8 JSON-RPC; stdout is reserved for valid JSON-RPC, stderr for sanitized errors. A specific pre-registered `--project` is mandatory at launch. The agent cannot change the project scope through tool arguments.
+The Rust `acp-mcp` binary uses newline-delimited UTF-8 JSON-RPC; stdout contains only
+protocol output and failures are sanitized. It uses an explicit protected native
+credential and endpoint, with one bound project. Tool arguments cannot change scope.
 
 | Tool | Inputs | Outputs | Side effects |
-|---|---|---|---|
-| `get_effective_context` | `include_documents` boolean (default false) | confirmed effective preferences, live metadata, optional allowlisted document contents, warnings | read only |
-| `get_handoff` | `task_id` string | recorded task snapshot, current repository state, stale/dirty warnings | read only |
+| --- | --- | --- | --- |
+| `get_effective_context` | optional boolean `include_documents` | confirmed effective preferences, live bounded metadata and opt-in allowlisted documents, warnings | Read-only |
+| `get_handoff` | exact string `task_id` | saved task/revision and historical checks, current Git state and drift warnings | Read-only |
 
-2025-11-25: supports `initialize`, `notifications/initialized`, `ping`, `tools/list`, `tools/call` for a local stdio client. 2026-07-28: supports basic per-request `_meta` protocol version and server info for `ping`, `tools/list`, `tools/call`; no initialize needed. This is a **small subset**, not a full certified implementation. No resources, prompts, tools/call mutations, cancellation, batching, HTTP, auth, subscriptions, logging notifications or task augmentation. Two read-only harness integrations have been reported for Codex and Kimi Code; see [2026-11-08 E2E evidence](evaluation/2026-11-08-codex-kimi-handoff.md). Broader compatibility remains unverified.
-
-MCP specification references:
-- https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/basic/transports/stdio.mdx
-- https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/changelog.mdx
-- https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2025-11-25/server/tools.mdx
+Implemented protocol subsets include initialize/initialized, ping, tools/list and
+tools/call for 2025-11-25, plus the 2026-07-28 stateless per-request metadata mode.
+This is not universal MCP certification. There are no write tools, resources,
+prompts, HTTP API, subscriptions, batching or task augmentation. Independent Rust
+process tests cover both supported versions, malformed calls, notifications and
+project-bound negative cases. Historical client/model trials are separate evidence.
 
 ## Handoff evidence
 
-A handoff stores the HEAD at capture, branch, recorded worktree state, task objective, completed work and a structured list of checks. Accepted check statuses: `PASS`, `FAIL`, `SKIPPED`, `NOT_RUN`. New handoffs also store a bounded SHA-256 worktree fingerprint derived from tracked Git diffs plus untracked file contents (up to 16 MiB / 500 files). No raw diff, filename list, or file contents are persisted in the handoff. A later `get_handoff` compares the fingerprint and warns on changed uncommitted content even if HEAD, branch, and dirty count remain identical. Existing databases are migrated by adding a nullable field; old handoffs remain readable but cannot be retroactively fingerprint-verified. If fingerprint computation fails or its bounds are exceeded, the result is explicitly unverified. Ignored files, submodule internals, configuration and external environment are not covered. A matching fingerprint **does not establish complete state or validation equivalence**. Even when unchanged, device/host verification has its own scope and cannot be inferred by presence of an entry.
+Only the fresh Profile v1 schema is accepted. There is no legacy reader, migration
+or nullable-column upgrade at startup. Operator Handoff put requires explicit
+expected-absent or exact revision and a bounded typed file. Saved objective,
+completed work, next action, validation JSON and snapshot remain historical.
+Recognized check states are PASS/FAIL/SKIPPED/NOT_RUN; a saved PASS is not current PASS.
 
-## Future external clients
+The [frozen Fingerprint v1](p1/worktree-fingerprint-v1.md) detects bounded content
+drift alongside separate HEAD/branch/dirty warnings. It stores a digest rather than
+raw diffs, filenames or content. Missing data or exceeded bounds remain unverified.
+Ignored files, submodule internals and external/device state are not attested.
 
-Future ACP/PTY adapters require a separate capability table for session start/resume, permission prompts, tool calls, diff data and terminal rendering. Never report a feature as supported merely because a CLI wrapper can send text to a process.
+## Optional native sessions
 
+The operator-only `session.*` extension uses session API v2 inside IPC v2. It needs
+explicit trusted executable configuration and confirmed Start. Reads, prompt,
+permission-once/deny, cancel, stop and opt-in context controls remain separate.
+The Windows-to-WSL read helper cannot execute these operations. See the
+[session runtime](p1/agent-session-runtime.md) and [auth contract](p1/agent-authentication.md).
+Authentication is observed readiness; no login RPC, credential UI or automatic retry.
 
-## Optional native operator sessions (P1-G)
+Optional context uses a distinct expiring session credential for one
+project/agent/generation. Admission and response publication recheck authority;
+Stop, Cancel, failure, root validation failure, expiry and restart revoke it.
+Established peers retain no authority after revoke, though already delivered bytes
+cannot be recalled. Ordinary operator/project credentials have their own per-launch
+semantics and never gain write authority. See the [lease contract](p1/session-context-bridge.md).
 
-The versioned local `session.*` extension is operator-only and requires explicit
-native daemon configuration and confirmation. It is unavailable through MCP and
-the Windows→WSL read-only helper. Protocol, lifecycle, methods and bounds are in
-[agent session runtime](p1/agent-session-runtime.md). It does not change the Python
-P0 API, the existing IPC API v1 read DTOs or any SQLite schema. External ACP v1
-stdio support is a deliberately limited subset, not a certified agent integration.
-
-
-P1-H updates only the optional session extension to **session API v2** for auth state,
-known capability bits and content-free response/tool counters. Session v1 requests
-receive Version; other IPC API v1 requests and MCP remain compatible. AUTH_REQUIRED
-is an observed action-needed state, never automatic login or prompt retry. Authentication
-RPC/terminal login and MCP attachment overrides remain unsupported; see the
-[auth/capability contract](p1/agent-authentication.md).
-
-
-P1-I adds explicit native `session.start.share_context` and operator-only
-`session.context` inspection to optional session API v2. Existing view DTOs and core
-IPC/auth v1 remain unchanged. New **credential format 2** is only for ephemeral,
-project/agent/generation-bound session leases; format-1 operator and ordinary project
-credentials keep their prior behavior. Session leases are validated on every request
-and before response admission, including established peers. They never permit
-project listing, session control or profile mutation. MCP still exposes the same
-two read-only schemas; the default server list is empty. See the
-[lease/expiry/revocation contract](p1/session-context-bridge.md).
+The retired prototype interfaces are available only in marked historical reports
+and Git history. Current build/setup/verification is [Rust-only](p1/rust-only-development.md).

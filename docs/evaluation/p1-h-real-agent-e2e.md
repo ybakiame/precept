@@ -1,5 +1,9 @@
 # P1-H real-agent evidence
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](../p1/rust-only-development.md) for current commands.
+
 ## Result and authority
 
 Issue #26 implements a bounded native ACP authentication/turn slice, not a login

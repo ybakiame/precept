@@ -1,5 +1,9 @@
 # P1-D: runnable local read-only Rust service
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](rust-only-development.md) for current commands.
+
 Issue #12, based on main `1f024fb8b2d11ba0da24934eff5681ab0fe6d1a9`.
 Python `acpctl`/MCP are unchanged and remain the reference/fallback and only profile
 write interface. Cloud/tests use disposable synthetic fixtures exclusively.

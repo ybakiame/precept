@@ -1,5 +1,9 @@
 # Codex / Kimi Code — MCP context and Handoff E2E
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](../p1/rust-only-development.md) for current commands.
+
 - **Date:** 2026-11-08
 - **Evidence source:** manually reported observations from two coding-agent sessions, not an independently instrumented or CI-driven harness run
 - **Project:** Lanpath (`lanpath`)

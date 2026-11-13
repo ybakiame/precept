@@ -1,5 +1,9 @@
 # P1-I: revocable session Context MCP evidence
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](../p1/rust-only-development.md) for current commands.
+
 ## Result and boundaries
 
 Issue #28 adds an explicitly opted-in project/session/agent-bound MCP capability to

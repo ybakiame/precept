@@ -1,0 +1,106 @@
+# Rust-only development and local gates
+
+Current runtime: fresh Rust-native Profile v1, native daemon/query/MCP and accepted
+NSH Desktop/TUI. Read [AGENTS](../../AGENTS.md), [architecture](../architecture.md)
+and [retirement/replacement map](python-retirement.md). No interpreter/package install,
+legacy database bootstrap, migration, default Profile or model call is required.
+
+## Native gates
+
+Prerequisites: the manifests' supported Rust toolchain (currently rustc 1.99), Git
+and native platform build libraries. Windows needs existing MSVC/SDK; Linux NSH
+needs GTK4, Wayland/xkbcommon, clang and the upstream platform's build libraries.
+Helpers do not install prerequisites or modify persistent system configuration.
+Use locked caches with `CARGO_NET_OFFLINE=true` when available; do not delete locks
+or install a different dependency version to bypass a missing cache.
+
+From a clean committed checkout, use a **new** report directory with an existing
+parent under the ignored ACP artifacts tree. Helpers refuse dirty source and an
+existing output directory, stop at the first failed command and preserve logs.
+Reports include exact source and command/status; they contain no real fixture data.
+
+```bash
+mkdir -p artifacts/local-p1-m2
+CARGO_NET_OFFLINE=true tools/local_verify.sh all artifacts/local-p1-m2/s4-linux
+```
+
+```powershell
+$env:CARGO_NET_OFFLINE = 'true'
+./tools/windows_local_verify.ps1 -Suite All -ReportDir artifacts/local-p1-m2/s4-windows
+```
+
+Linux helper modes: `core`, `ui`, `all`; Windows: `-Suite Core|UI|All`.
+Windows toolchain setup affects only the helper process. The UI mode first builds
+root binaries for the real-daemon integration test. All helpers run these extant
+Cargo commands as applicable:
+
+```text
+cargo fmt --all -- --check
+cargo build --workspace --bins --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --all-targets --locked
+cargo fmt --manifest-path spikes/p1-e/shared/Cargo.toml -- --check
+cargo clippy --manifest-path spikes/p1-e/shared/Cargo.toml --all-targets --features native --locked -- -D warnings
+cargo test --manifest-path spikes/p1-e/shared/Cargo.toml --features native --locked
+cargo fmt --manifest-path spikes/p1-e/nsh/Cargo.toml -- --check
+cargo build --manifest-path spikes/p1-e/nsh/Cargo.toml --features native,tui --bins --locked
+cargo clippy --manifest-path spikes/p1-e/nsh/Cargo.toml --all-targets --features native,tui --locked -- -D warnings
+cargo test --manifest-path spikes/p1-e/nsh/Cargo.toml --all-targets --features native,tui --locked
+```
+
+Root tests launch independent Rust daemon/CLI/MCP/fake-agent processes against owned
+temporary synthetic projects/Profiles. No real vendor executable, key or user DB is
+used. NSH tests include real components, stale state guards and 10k bounded mounting;
+these are headless, not native GUI/TTY acceptance. The optional ignored S1 performance
+measurement is not a skipped security test.
+
+## Source, CI and Node checks
+
+Use Node 24+ and the exact lockfile (Playwright plus YAML parser for CI validation):
+
+```text
+npm ci --prefix spikes/p1-e/tests
+node tools/check_source.mjs
+node --test spikes/p1-e/tests/static-server.test.mjs
+```
+
+The source check rejects tracked prototype executables/packaging, active interpreter
+or removed-target invocations, broken local Markdown links and invalid workflow YAML
+or missing local run-step paths. `docs/archive-index.json` explicitly classifies
+historical documents, whose marked quotations retain old SHAs/results. No historical
+command is part of current setup. The frozen inventory is a reference-only deletion
+map, not a promise those paths still exist.
+
+## Optional offline Web smoke
+
+This is a separate synthetic browser check. Use a new output directory and the
+exact existing upstream NSH revision; obtaining build/cache dependencies is explicit.
+No native daemon, credential or remote-write bridge is needed.
+
+```text
+rustup target add wasm32-unknown-unknown
+cargo build --manifest-path spikes/p1-e/nsh/Cargo.toml --target wasm32-unknown-unknown --lib --locked
+node tools/package_ui_web.mjs PINNED_NSH_CHECKOUT spikes/p1-e/nsh/target/wasm32-unknown-unknown/debug/acp_nsh_spike.wasm spikes/p1-e/nsh/dist
+npx --prefix spikes/p1-e/tests playwright install chromium
+node spikes/p1-e/tests/web-smoke.mjs spikes/p1-e/nsh/dist spikes/p1-e/artifacts
+```
+
+`PINNED_NSH_CHECKOUT` must be an explicit checkout at
+`87c7e8da85d2f15a56107baa6f0fabb419b508b3`, including its renderer/license assets.
+The packager refuses an existing output rather than mixing stale assets. The smoke
+uses a loopback-only static Node server, blocks external requests and exercises the
+actual Rust WASM app offline, keyboard and compact resize. It is not desktop evidence.
+
+## Actual native UI and reporting
+
+S4 changes tooling, not UI layout/features. Existing S3 Windows/ConPTY and native
+WSLg/PTY evidence stays at its original [S3 source](../evaluation/p1-m2-s3-native-operator.md).
+Retired capture/input drivers are not required or retained. If no independent native
+window/terminal driver was run for S4, report actual GUI/TTY as **NOT_RUN**, even when
+build/component tests pass. A manual desktop run can use the native binary with the
+explicit endpoint and `--operator` from the operator guide; it must never activate a
+real Profile implicitly. X11/Xvfb is not native Wayland acceptance.
+
+Hosted workflows describe future gates; do not dispatch them during quota exhaustion.
+Use `[skip ci]`, record clean SHA/platform/commands and actual PASS/FAIL/BLOCKED/NOT_RUN,
+keep raw artifacts private and create a Draft PR. Do not close parent #40 before S5.

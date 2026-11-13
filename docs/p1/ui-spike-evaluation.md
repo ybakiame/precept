@@ -1,5 +1,9 @@
 # P1-E UI framework experiment — evidence, not a framework selection
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](rust-only-development.md) for current commands.
+
 Issue #14, base main `d92bcadddcf33963def536698268db4996b1c889`.
 Status: comparative prototype; [ADR-0003](../adr/0003-ui-framework-selection.md) is
 **Proposed**. [Commands and code](../../spikes/p1-e/README.md).

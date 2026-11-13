@@ -38,10 +38,7 @@ impl Memory {
     }
 }
 fn fixture() -> (tempfile::TempDir, Memory, Value) {
-    let data: Value = serde_json::from_str(include_str!(
-        "../../../tests/fixtures/p1-preference-contract.v1.json"
-    ))
-    .unwrap();
+    let data: Value = serde_json::from_str(include_str!("preference-resolution.v1.json")).unwrap();
     let temp = tempfile::tempdir().unwrap();
     let mut roots = BTreeMap::new();
     for (name, marker) in data["projects"].as_object().unwrap() {

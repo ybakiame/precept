@@ -1,5 +1,9 @@
 # P1 Implementation Plan — Rust Core, Local Daemon and UI Spike
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](rust-only-development.md) for current commands.
+
 Status: **historical P1-A implementation proposal**. The core, local service,
 NSH UI and optional native sessions now exist. Use the current
 [architecture](../architecture.md), [product roadmap](../roadmap.md) and

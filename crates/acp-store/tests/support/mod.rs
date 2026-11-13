@@ -25,7 +25,7 @@ pub fn fixture(base: &Path) -> PathBuf {
     )
     .unwrap();
     let data: Value = serde_json::from_str(include_str!(
-        "../../../../tests/fixtures/p1-preference-contract.v1.json"
+        "../../../acp-core/tests/preference-resolution.v1.json"
     ))
     .unwrap();
     let time = "2026-01-01T00:00:00Z";

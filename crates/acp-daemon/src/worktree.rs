@@ -1,4 +1,4 @@
-//! Shell-free, bounded on-demand Python-compatible Git inspection.
+//! Shell-free, bounded on-demand Fingerprint v1 Git inspection.
 use acp_core::{
     Project, Worktree, WorktreeInspector,
     fingerprint::{FingerprintV1, MAX_BYTES, MAX_UNTRACKED},
@@ -134,7 +134,7 @@ fn target_bytes(path: &Path) -> Option<Vec<u8>> {
         Some(target.into_bytes())
     }
 }
-fn python_mode(path: &Path, metadata: &std::fs::Metadata) -> u32 {
+fn fingerprint_mode(path: &Path, metadata: &std::fs::Metadata) -> u32 {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
@@ -275,7 +275,7 @@ fn fingerprint(root: &Path) -> Option<String> {
             return None;
         }
         let metadata = file.symlink_metadata().ok()?;
-        hash.untracked(raw, python_mode(&file, &metadata))?;
+        hash.untracked(raw, fingerprint_mode(&file, &metadata))?;
         if metadata.file_type().is_symlink() {
             hash.symlink_target(&target_bytes(&std::fs::read_link(&file).ok()?)?);
         } else if metadata.is_file() {
@@ -371,79 +371,75 @@ mod tests {
             root: root.to_owned(),
         }
     }
-    fn oracle(root: &Path) -> Option<String> {
-        let checkout = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let python = std::env::var("ACP_TEST_PYTHON").unwrap_or_else(|_| "python".into());
-        let result=Command::new(python).args(["-c","import json,sys;from pathlib import Path;from agent_control_plane.context import worktree_fingerprint;print(json.dumps(worktree_fingerprint(Path(sys.argv[1]))))"])
-            .arg(root).env("PYTHONPATH",checkout.join("src"))
-            .env("GIT_CONFIG_NOSYSTEM","1").env("GIT_CONFIG_GLOBAL",if cfg!(windows){"NUL"}else{"/dev/null"})
-            .env("GIT_OPTIONAL_LOCKS","0").output().unwrap();
-        assert!(result.status.success(), "Python v1 oracle failed");
-        serde_json::from_slice(&result.stdout).unwrap()
-    }
-    fn parity(root: &Path) -> Option<String> {
-        let expected = oracle(root);
-        let actual = GitInspector
+    fn observed(root: &Path) -> Option<String> {
+        GitInspector
             .inspect(&project(root), true)
             .unwrap()
-            .worktree_fingerprint;
-        assert_eq!(
-            actual, expected,
-            "exact Python/Rust v1 fingerprint mismatch"
-        );
-        actual
+            .worktree_fingerprint
     }
     #[test]
-    fn v1_oracle_clean_staged_unstaged_binary_rename_unicode_and_head_branch() {
+    fn v1_clean_staged_unstaged_binary_rename_unicode_and_head_branch() {
         let dir = repo();
         let root = dir.path();
-        let clean = parity(root).unwrap();
+        let clean = observed(root).unwrap();
+        assert_eq!(
+            clean,
+            "869b578b87029f73beda1c4cf4a76a19645cf0b93a1d4f5aa324c4e5b49c6e1b"
+        );
         let snapshot = GitInspector.inspect(&project(root), false).unwrap();
         assert!(snapshot.worktree_fingerprint.is_none());
         fs::write(root.join("tracked.txt"), b"unstaged\n").unwrap();
-        let first = parity(root).unwrap();
+        let first = observed(root).unwrap();
         assert_ne!(clean, first);
         git_test(root, &["add", "tracked.txt"]);
-        parity(root).unwrap();
+        let staged = observed(root).unwrap();
+        assert_ne!(first, staged);
         fs::write(root.join("tracked.txt"), b"different unstaged\n").unwrap();
-        assert_ne!(first, parity(root).unwrap());
+        assert_ne!(first, observed(root).unwrap());
+        let unstaged = observed(root).unwrap();
         fs::write(root.join("binary.bin"), [0, 5, 255, 3, 0]).unwrap();
-        parity(root).unwrap();
+        let binary = observed(root).unwrap();
+        assert_ne!(unstaged, binary);
         git_test(root, &["mv", "tracked.txt", "renamed.txt"]);
-        parity(root).unwrap();
+        let renamed = observed(root).unwrap();
+        assert_ne!(binary, renamed);
         fs::write(root.join("中文-🚀.txt"), "合成内容").unwrap();
-        parity(root).unwrap();
+        assert_ne!(renamed, observed(root).unwrap());
         git_test(root, &["add", "."]);
         git_test(root, &["commit", "-qm", "changed"]);
-        assert_eq!(clean, parity(root).unwrap());
+        assert_eq!(clean, observed(root).unwrap());
         git_test(root, &["checkout", "-qb", "synthetic-other"]);
-        assert_eq!(clean, parity(root).unwrap());
+        assert_eq!(clean, observed(root).unwrap());
         git_test(root, &["checkout", "--detach", "-q"]);
-        assert_eq!(clean, parity(root).unwrap());
+        assert_eq!(clean, observed(root).unwrap());
     }
     #[test]
-    fn v1_oracle_untracked_same_name_count_changed_bytes_and_modes() {
+    fn v1_untracked_same_name_count_changed_bytes_and_modes() {
         let dir = repo();
         let root = dir.path();
         let file = root.join("new.txt");
         fs::write(&file, b"first bytes").unwrap();
-        let first = parity(root).unwrap();
+        let first = observed(root).unwrap();
         fs::write(&file, b"other bytes").unwrap();
-        assert_ne!(first, parity(root).unwrap());
+        assert_ne!(first, observed(root).unwrap());
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(&file, fs::Permissions::from_mode(0o755)).unwrap();
-            parity(root).unwrap();
+            let executable = observed(root).unwrap();
+            fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).unwrap();
+            assert_ne!(executable, observed(root).unwrap());
         }
         for name in ["tool.exe", "UPPER.CMD", "plain"] {
+            let before = observed(root).unwrap();
             fs::write(root.join(name), b"synthetic").unwrap();
-            parity(root).unwrap();
+            assert_ne!(before, observed(root).unwrap());
         }
+        let writable = observed(root).unwrap();
         let mut permissions = fs::metadata(&file).unwrap().permissions();
         permissions.set_readonly(true);
         fs::set_permissions(&file, permissions).unwrap();
-        parity(root).unwrap();
+        assert_ne!(writable, observed(root).unwrap());
         #[cfg(windows)]
         {
             let mut permissions = fs::metadata(&file).unwrap().permissions();
@@ -454,7 +450,7 @@ mod tests {
         }
     }
     #[test]
-    fn v1_oracle_aggregate_file_count_limits_and_missing_head() {
+    fn v1_aggregate_file_count_limits_and_missing_head() {
         let dir = repo();
         let root = dir.path();
         let status = git_bytes(
@@ -466,61 +462,63 @@ mod tests {
         .unwrap();
         assert!(status.is_empty());
         fs::write(root.join("large"), vec![b'x'; MAX_BYTES]).unwrap();
-        assert_eq!(parity(root), None);
+        assert_eq!(observed(root), None);
         fs::remove_file(root.join("large")).unwrap();
         for i in 0..501 {
             fs::write(root.join(format!("file-{i:03}")), b"x").unwrap();
         }
-        assert_eq!(parity(root), None);
+        assert_eq!(observed(root), None);
         fs::remove_file(root.join("file-500")).unwrap();
-        parity(root).unwrap();
+        observed(root).unwrap();
         let empty = tempfile::tempdir().unwrap();
         git_test(empty.path(), &["init", "-q"]);
-        assert_eq!(parity(empty.path()), None);
+        assert_eq!(observed(empty.path()), None);
         let no_git = tempfile::tempdir().unwrap();
-        assert_eq!(parity(no_git.path()), None);
+        assert_eq!(observed(no_git.path()), None);
     }
     #[cfg(unix)]
     #[test]
-    fn v1_oracle_non_utf8_symlink_targets_and_unsafe_parent_do_not_read_outside() {
+    fn v1_non_utf8_symlink_targets_and_unsafe_parent_do_not_read_outside() {
         use std::os::unix::{ffi::OsStrExt, fs::symlink};
         let dir = repo();
         let root = dir.path();
         let outside = tempfile::tempdir().unwrap();
         fs::write(outside.path().join("private"), b"OUTSIDE_MARKER").unwrap();
         symlink(outside.path().join("private"), root.join("link")).unwrap();
-        parity(root).unwrap();
+        let link = observed(root).unwrap();
+        fs::write(outside.path().join("private"), b"CHANGED_OUTSIDE_MARKER").unwrap();
+        assert_eq!(link, observed(root).unwrap());
         fs::write(
             root.join(std::ffi::OsStr::from_bytes(b"invalid-\xff")),
             b"raw bytes",
         )
         .unwrap();
-        parity(root).unwrap();
+        observed(root).unwrap();
         symlink(
             std::ffi::OsStr::from_bytes(b"target-\xfe"),
             root.join("raw-link"),
         )
         .unwrap();
-        parity(root).unwrap();
+        observed(root).unwrap();
         symlink(outside.path(), root.join("unsafe-parent")).unwrap();
         assert!(confined_file(root, Path::new("unsafe-parent/private")).is_none());
         assert!(confined_file(root, Path::new("../private")).is_none());
     }
     #[cfg(windows)]
     #[test]
-    fn v1_oracle_windows_symlink_targets_modes_and_outside_parent() {
+    fn v1_windows_symlink_targets_modes_and_outside_parent() {
         use std::os::windows::fs::{symlink_dir, symlink_file};
         let dir = repo();
         let root = dir.path();
         let outside = tempfile::tempdir().unwrap();
         fs::write(outside.path().join("private"), b"OUTSIDE_MARKER").unwrap();
         symlink_file(outside.path().join("private"), root.join("link")).unwrap();
-        parity(root).unwrap();
+        observed(root).unwrap();
         symlink_file("tracked.txt", root.join("relative.exe")).unwrap();
-        parity(root).unwrap();
+        observed(root).unwrap();
         symlink_dir(outside.path(), root.join("unsafe-parent")).unwrap();
         assert!(confined_file(root, Path::new("unsafe-parent/private")).is_none());
-        parity(root).unwrap();
+        observed(root).unwrap();
     }
     #[test]
     fn configured_external_filter_is_refused_without_execution() {
