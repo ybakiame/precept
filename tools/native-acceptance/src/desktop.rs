@@ -65,6 +65,8 @@ impl Desktop {
             .request(&json!({"action":"init","nonce":nonce,"pid":child.id(),"remote":cfg!(unix)}))
             .unwrap_or_else(|reason| panic!("native window init refused: {reason}"));
         assert_eq!(response["status"], "ok");
+        let (stdin_mode, stdout_mode) = worker.io_modes();
+        println!("DESKTOP_IO_MODE stdin={stdin_mode} stdout={stdout_mode}");
         // Every later reply that carries a nonce must name this owned window.
         worker.expect_nonce(nonce);
         let end = Instant::now() + Duration::from_secs(30);
@@ -193,14 +195,15 @@ impl Desktop {
         }
         let cleanup = self.worker.shutdown();
         println!(
-            "OWNED_DRIVER_CLOSED gui_pid={} worker_reaped={} reader_joined={}",
+            "OWNED_DRIVER_CLOSED gui_pid={} worker_reaped={} reader_joined={} writer_joined={}",
             self.gui.id(),
             cleanup.reaped,
-            cleanup.reader_joined
+            cleanup.reader_joined,
+            cleanup.writer_joined
         );
         assert!(
-            cleanup.reaped && cleanup.reader_joined,
-            "owned driver cleanup left an unreaped worker or a detached reader"
+            cleanup.reaped && cleanup.reader_joined && cleanup.writer_joined,
+            "owned driver cleanup left an unreaped worker or an unjoined IO thread"
         );
     }
 }
