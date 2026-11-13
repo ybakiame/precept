@@ -4,6 +4,15 @@ version = "0.0.0"
 edition = "2024"
 publish = false
 [workspace]
+[lib]
+name = "acp_native_acceptance"
+path = "src/lib.rs"
+[[bin]]
+name = "acp-native-acceptance"
+path = "src/main.rs"
+[[bin]]
+name = "acp-fake-desktop-worker"
+path = "src/bin/fake_desktop_worker.rs"
 [dependencies]
 acp-ipc = { path = "../../crates/acp-ipc" }
 serde_json = "1"

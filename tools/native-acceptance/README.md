@@ -28,6 +28,16 @@ and invokes the installed Windows PowerShell through WSL interop. Pass the scrip
 from a same-source native Windows checkout, since Windows cannot execute a Linux
 script path. No dependency installation or compositor launch is performed.
 
+Every worker call is bounded. One request settles with exactly one validated reply
+inside its own deadline (init 300 s, capture 180 s, other actions 60 s), tracked by a
+monotonic sequence number, and any reply carrying a nonce must name this owned window.
+A hung, malformed, oversized, silent, early-exiting or out-of-turn worker fails closed:
+the run reports `DESKTOP_RPC_FATAL` with a sanitized cause, terminates and reaps only
+the owned worker, and joins its reader thread instead of detaching a blocked one, so a
+late reply can never acknowledge a later action. `tests/desktop_worker.rs` proves this
+against the owned `acp-fake-desktop-worker` binary on either host with no real window;
+that is driver evidence only and never a native GUI PASS.
+
 The window worker matches a unique synthetic title nonce and exact native child
 PID, or the WSLg host `msrdc` plus the nonce (WSLg may append a distro suffix). It
 never forces focus. `FOREGROUND_REQUIRED` means click the owned window and leave it
