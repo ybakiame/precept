@@ -1,5 +1,9 @@
 # P0 negative tests: unconfirmed preferences and project isolation
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](../p1/rust-only-development.md) for current commands.
+
 **Historical P0 record:** the seven Python checks below were superseded in E4 by
 Rust core + actual daemon/IPC/MCP subprocess tests. See the [migration matrix](../p1/rust-test-migration.md)
 and [local E4 evidence](p1-e4-local-ux.md). The old module was removed only after

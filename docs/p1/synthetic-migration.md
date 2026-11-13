@@ -1,5 +1,9 @@
 # P1-C2A: synthetic-only backup, migration and recovery rehearsal
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](rust-only-development.md) for current commands.
+
 Issue #8; base main `a7a630dd318d79fd07f4af415cb45380287d7796`.
 This is **not approval to migrate or back up a personal/local profile**. Python
 continues owning writes. No CLI/MCP application source, auto-start behavior,

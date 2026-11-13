@@ -15,9 +15,9 @@ P1-K interoperability evidence is scoped separately below.
 
 | Capability | Implemented / evidenced | Outstanding |
 | --- | --- | --- |
-| Context and personal preferences | Rust typed resolver, fresh Profile v1 persistence and S3 minimum native operator workflows; legacy Python P0 remains temporarily in the tree | Python retirement (P1-M2) and full operator review/provenance workflow (P1-M4) |
+| Context and personal preferences | Rust typed resolver, fresh Profile v1 persistence and S3 minimum native operator workflows; S4 retires the legacy Python package/tests/probes | Final M2 integrated acceptance and full operator review/provenance workflow (P1-M4) |
 | Continuity | Exact project/task Handoff, historical checks, revision/worktree/fingerprint warnings | Frozen constraint snapshots, portable bundle format and independent cross-client acceptance |
-| Rust ownership and storage | Fresh Profile v1, read-only store and daemon-exclusive lease/epoch/grant writer validated on disposable native Windows/Linux profiles | Final M2 integrated acceptance and Python retirement; any later data-lifecycle feature requires actual product use |
+| Rust ownership and storage | Fresh Profile v1, read-only store and daemon-exclusive lease/epoch/grant writer validated on disposable native Windows/Linux profiles | Final M2 integrated acceptance; any later data-lifecycle feature requires actual product use |
 | Local service and MCP | Unix sockets/named pipes, operator/project capabilities, two-tool read-only stdio | Full MCP conformance and broader versioned client matrix |
 | NSH Desktop/TUI | Shared model, five pages, Sessions panel, connections/settings, themes/locales and bounded 10k display | Product IA realization, clean-machine release/accessibility and current macOS verification |
 | Optional ACP sessions | Explicit native lifecycle/auth observations; P1-I opt-in lease, expiry and revocation | Persistent resume, vendor parity and sandboxing are not delivered or promised |
@@ -151,9 +151,11 @@ has a [native operator contract](p1/native-operator-workflows.md) and
 [local evidence](evaluation/p1-m2-s3-native-operator.md): all seven typed CLI commands,
 operator-only scoped revision previews and shared NSH Profile/grant/suggestion/
 confirm/reject workflows. Higher-risk registration, deprecate/delete and Handoff
-put remain CLI-only in this minimum UI. This remains Draft for human review.
-Issue #40 still requires Python retirement and final integrated M2 acceptance as
-separate tasks; S3 does not close it or activate production writes.
+put remain CLI-only in this minimum UI. S3 merged in PR #47.
+[S4 / Issue #48](https://github.com/ybakiame/agent-control-plane/issues/48) retires the
+prototype and active toolchain in a separate Draft candidate; see the
+[replacement matrix](p1/python-retirement.md) and [Rust-only runbook](p1/rust-only-development.md).
+Final integrated M2 acceptance is a separate S5 stage; #40 remains open.
 
 P1-M3 remains conditional. Open it only if M2 reveals a concrete Profile v1 lifecycle
 or recovery need; do not assume backup/restore/retention work in advance. It has no

@@ -1,5 +1,9 @@
 # E4 historical remote branch audit
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](rust-only-development.md) for current commands.
+
 Freshly fetched against main `80fdbc57e4ec47557e9130808b401a22ad6b913f`.
 This table records original remote refs; all remain retained after the owner
 changed cleanup to local-only. No worktree was deleted. Original remote listings,

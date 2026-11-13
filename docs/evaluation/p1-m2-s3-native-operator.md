@@ -1,5 +1,9 @@
 # P1-M2/S3 — native operator workflow evidence
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](../p1/rust-only-development.md) for current commands.
+
 Authority: [Issue #46](https://github.com/ybakiame/agent-control-plane/issues/46),
 parent [#40](https://github.com/ybakiame/agent-control-plane/issues/40), accepted
 ADR-0004/0006, the unchanged [Profile v1 contract](../p1/profile-v1-runtime-contract.md)

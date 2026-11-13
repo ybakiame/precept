@@ -1,6 +1,6 @@
 # P1-M2 — Rust-native Profile v1 and runtime contract
 
-- Status: owner-confirmed Stage 1 storage contract, merged in PR #42 at `1976d6f`. S2 merged in PR #45 at `a0bf849`, with its [ownership plan](daemon-profile-ownership.md) and [historical native evidence](../evaluation/p1-m2-s2-ownership.md). S3 adds [native operator workflows](native-operator-workflows.md) without changing this Schema or writer contract. No real-profile activation is implied; Python retirement below remains a separate target.
+- Status: owner-confirmed Stage 1 storage contract, merged in PR #42 at `1976d6f`. S2 merged in PR #45 at `a0bf849`, with its [ownership plan](daemon-profile-ownership.md) and [historical native evidence](../evaluation/p1-m2-s2-ownership.md). S3 adds [native operator workflows](native-operator-workflows.md) without changing this Schema or writer contract. No real-profile activation is implied; S4 retires Python product/tooling; final M2 acceptance remains separate.
 - Authority: accepted [ADR-0006](../adr/0006-rust-only-runtime.md), [ADR-0004](../adr/0004-product-domain-trust.md), and the non-superseded parts of [ADR-0005](../adr/0005-local-storage-and-write-ownership.md).
 - Implementation issue: [#40](https://github.com/ybakiame/agent-control-plane/issues/40).
 - First implementation slice: [#43 — Profile v1 storage foundation](https://github.com/ybakiame/agent-control-plane/issues/43). Owner confirmed the Phase 1 recommendations and authorized continuing on this branch after this contract freeze, without automatically merging the PR.
@@ -316,8 +316,8 @@ review gate. It includes explicit fresh creation, strict read-only access, the
 seven transactional commands and removal of production-reachable M1 migration
 paths. Daemon bootstrap/IPC, OS ownership leases, epoch advancement and write grants
 were separate S2 work, now merged; [S3 CLI/NSH wiring](native-operator-workflows.md) is a
-separate Draft candidate. Complete Python retirement and integrated M2 acceptance
-remain later slices of Issue #40.
+merged slice (PR #47). S4 retirement is a separate Draft candidate; final integrated
+M2 acceptance remains a later slice of Issue #40.
 They are not prerequisites to implement the isolated storage slice and are not
 authorized by that slice. Production write activation remains out of scope.
 

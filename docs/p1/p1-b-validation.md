@@ -1,5 +1,9 @@
 # P1-B read-only Rust core — validation evidence
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](rust-only-development.md) for current commands.
+
 Implemented for issue #4 on `design/p1-rust-daemon-contract`, not the older P0
 revision. Python P0 source, CLI, MCP responses, existing fixture and existing tests
 are unchanged. No user SQLite files were opened, migrated or written by Rust.

@@ -1,82 +1,30 @@
-name: Rust core parity
+name: Rust native gates
 on:
   push:
   pull_request:
 jobs:
   core:
+    timeout-minutes: 20
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
       - run: rustup show
       - run: cargo fmt --all -- --check
+      - run: cargo build --workspace --bins --locked
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - run: cargo test --workspace --all-targets --locked
-      - run: cargo build --locked --example contract_reader
-      - run: cargo build --locked -p acp-store --example sqlite_reader
-      - name: Python regression
-        env:
-          PYTHONPATH: src
-        run: python -m unittest discover -s tests -v
-      - name: Cross-language parity (Unix)
-        if: runner.os != 'Windows'
-        env:
-          PYTHONPATH: src
-        run: python tools/check_p1_parity.py
-      - name: Cross-language parity (Windows)
-        if: runner.os == 'Windows'
-        env:
-          PYTHONPATH: src
-        run: python tools/check_p1_parity.py --reader target/debug/examples/contract_reader.exe
-      - name: SQLite parity (Unix)
-        if: runner.os != 'Windows'
-        env:
-          PYTHONPATH: src
-        run: python tools/check_sqlite_parity.py
-      - name: SQLite parity (Windows)
-        if: runner.os == 'Windows'
-        env:
-          PYTHONPATH: src
-        run: python tools/check_sqlite_parity.py --reader target/debug/examples/sqlite_reader.exe
-      - name: Synthetic-only migration and Python v1 compatibility
-        run: cargo run --locked -p acp-rehearsal --example synthetic_rehearsal -- --synthetic-only
-  process-recovery:
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+      - name: Independent native daemon CLI IPC MCP session and storage regressions
+        run: cargo test --workspace --all-targets --locked
+  source:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-node@v4
         with:
-          python-version: '3.12'
-      - run: rustup show
-      - run: cargo fmt --all -- --check
-      - run: python tools/run_process_recovery_ci.py lint
-      - name: Real child termination and fresh-process recovery
-        run: python tools/run_process_recovery_ci.py test
-  local-service:
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - run: rustup show
-      - run: cargo fmt --all -- --check
-      - run: python tools/run_local_service_ci.py lint
-      - run: cargo build --workspace --bins --examples --locked
-      - name: Real Daemon CLI and two project-bound MCP processes
-        run: python tools/run_local_service_ci.py test
+          node-version: '24'
+      - run: npm ci --prefix spikes/p1-e/tests
+      - run: node tools/check_source.mjs
+      - run: node --test spikes/p1-e/tests/static-server.test.mjs

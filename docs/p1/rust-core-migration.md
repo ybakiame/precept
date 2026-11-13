@@ -1,5 +1,9 @@
 # Rust Core Migration and Behavioral Parity
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](rust-only-development.md) for current commands.
+
 ## Preserve P0 semantics first
 
 Python P0 is the initial behavior oracle, not a permanent runtime dependency. Implement the Rust project/profile/handoff domain without selecting a UI library. The shared fixture at `tests/fixtures/p1-preference-contract.v1.json` defines version 1 of a deliberately small, stable application-level behavior contract.

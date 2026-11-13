@@ -1,5 +1,9 @@
 # P1-E3 local validation
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](../p1/rust-only-development.md) for current commands.
+
 Issue #18, based on latest main `6c331d2c5632fce6140425eb53ed96ce924ec711`.
 Date: 2026-11-09. All execution is local WSL/Windows; no Actions dispatch/rerun,
 release or upload. Commits use `[skip ci]`; the deliverable is a Draft PR with no

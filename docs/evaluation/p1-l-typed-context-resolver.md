@@ -1,5 +1,9 @@
 # P1-L — typed context resolver implementation and local evidence
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](../p1/rust-only-development.md) for current commands.
+
 Date: 2026-11-12. Authority: [Issue #34](https://github.com/ybakiame/agent-control-plane/issues/34)
 and [Accepted ADR-0004](../adr/0004-product-domain-trust.md).
 One PR contains L0, L1 and L2; Draft review and owner merge remain separate.

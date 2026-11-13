@@ -1,5 +1,9 @@
 # P1-J documentation review and validation
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](../p1/rust-only-development.md) for current commands.
+
 Reviewed 2026-11-11 from clean remote main
 `14798f2809b557a16bda16729f2cdeed7f24bbb0`, after verifying PR #29 merged.
 Dedicated branch: `docs/p1-j-product-formalization`. Issue #30 had no comments at

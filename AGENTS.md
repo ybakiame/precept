@@ -15,9 +15,9 @@ Read these before changing architecture or persisted behavior:
 
 ## Accepted runtime direction
 
-- Rust is the only supported product runtime. The Python P0 implementation is
-  legacy and scheduled for removal by P1-M2. Do not add Python features, runtime
-  dependencies, compatibility shims, new Python tests, or Python release paths.
+- Rust is the only supported product runtime. S4 retires the Python prototype,
+  package, tests and executable probes. Do not restore a Python runtime, validation
+  dependency, compatibility shim or release path.
 - The first Rust-native product Profile schema is v1 (`PRAGMA user_version=1`). It is a fresh schema, not compatible with the retired Python prototype's legacy v1 or M1's synthetic v2. M1 v2 is historical only; do not add legacy readers, migration, downgrade, or compatibility fallback.
 - The native daemon is the only production write owner. Only the daemon may invoke
   the private `acp-write` implementation.
@@ -32,10 +32,9 @@ Read these before changing architecture or persisted behavior:
 - No Python rollback owner, Python read-only adapter, schema downgrade, or
   daemon-unavailable direct-write fallback.
 
-Until P1-M2 removes the Python prototype from the tree, treat it as disposable legacy
-code only. Local prototype files and old validation profiles may be deleted during
-an explicit ACP development reset; no compatibility or data-retention guarantee exists. Existing baseline checks may still run when needed to establish an
-unmodified comparison, but do not extend its behavior or treat it as the target.
+Historical reports retain their original evidence; they are not runnable current
+instructions. Use docs/p1/rust-only-development.md for native gates. Do not delete
+ignored local data or authentication/runtime directories during source retirement.
 
 ## Engineering and validation
 

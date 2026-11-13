@@ -1,6 +1,6 @@
 # P1-M2 — Profile v1 runtime acceptance plan
 
-- Status: Stage 1 merged in PR #42; [S1 exact-source results](../evaluation/p1-m2-s1-storage.md) retain their historical sources. S2's [contract-first plan](daemon-profile-ownership.md) and [native results](../evaluation/p1-m2-s2-ownership.md) cover daemon ownership/write IPC only, as a Draft candidate. CLI/NSH and Python retirement remain separately gated.
+- Status: S1–S3 merged in PRs #42/#45/#47. S4 retires prototype product/tooling with its [inventory and scoped gates](python-retirement.md). Final integrated M2 acceptance remains separate S5 work; historical stage reports keep their original source results.
 - Contract: [Rust-native Profile v1 and runtime contract](profile-v1-runtime-contract.md).
 - Issue: [#40](https://github.com/ybakiame/agent-control-plane/issues/40).
 - First implementation slice: [#43 — Profile v1 storage foundation](https://github.com/ybakiame/agent-control-plane/issues/43).

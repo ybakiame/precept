@@ -1,8 +1,8 @@
 # Frozen acp-worktree-v1 contract
 
-The Python reference is `context.worktree_fingerprint`; Rust uses the pure
-`acp_core::fingerprint::FingerprintV1` accumulator and the trusted daemon Git/file
-adapter. No Git/process/DB mutation enters the core. The algorithm is v1; no
+Rust uses the pure `acp_core::fingerprint::FingerprintV1` accumulator and the
+trusted daemon Git/file adapter. The original byte contract predates S4; no
+interpreter or external oracle is required. No Git/process/DB mutation enters the core. The algorithm is v1; no
 normalization or new fingerprint format is introduced.
 
 ## Exact bytes
@@ -45,18 +45,17 @@ submodule configuration conservatively return unavailable for status/fingerprint
 recursive Git status could otherwise invoke an unchecked nested filter.
 
 Unix preserves raw non-UTF8 names/targets. Windows maps Git UTF-8 names to native
-paths; unsupported encoding returns unavailable. Python Windows regular modes are
+paths; unsupported encoding returns unavailable. The frozen Windows regular modes are
 `S_IFREG|0444`, plus `0222` unless read-only, plus `0111` for .exe/.com/.bat/.cmd
 (case-insensitive). Directory symlinks also receive execute bits. Windows absolute symlink target
-bytes preserve Python's `\\?\` / `\\?\UNC\` spelling (Rust's standard read_link
-removes it). Unix uses full native `st_mode`. Thus cross-language equality
-is required **on the same host/configuration**, not an identical digest between
-Windows and Unix modes. Windows symlink permission/encoding cases are labeled
+bytes retain the frozen `\\?\` / `\\?\UNC\` spelling (Rust's standard read_link
+removes it). Unix uses full native `st_mode`. These mode differences intentionally prevent a promise of identical digests
+between Windows and Unix. Windows symlink permission/encoding cases are labeled
 NOT_RUN if the actual host cannot create them; no system/developer-mode changes.
 
 Git output depends on its version/configuration/attributes. The adapter retains
 its existing isolated Git environment (no inherited GIT_* selectors, global/system
-config, fsmonitor, untracked cache, pager or lazy network fetching). Oracle fixtures
+config, fsmonitor, untracked cache, pager or lazy network fetching). Native Git fixtures
 use the same isolated profile and explicit line-ending settings. This avoids
 pretending that differing Git diff configurations produce identical bytes.
 Configured external clean/process filters are refused before status/diff rather
@@ -68,10 +67,11 @@ Handoff reads do. Health advertises on-demand capability without inspecting a ro
 
 ## Evidence
 
-Rust oracle tests compare exact reference digests on synthetic clean, staged,
-unstaged, binary, rename, non-ASCII, same-name untracked drift, mode/permission,
-HEAD/branch, missing HEAD/Git and count/aggregate limits. Unix additionally covers
-non-UTF8 names/targets and symlink/unsafe-parent confinement. The real service suite
-compares complete Python/Rust Handoff JSON, warnings and recorded validation via
-operator IPC and bound MCP, including unchanged HEAD/count with changed content.
-No real profile DB or unrelated project is used by this oracle.
+Rust fixed digest vectors cover binary/tracked bytes, Unicode/raw names, mode
+decimal encoding, symlink targets/order and exact count/byte budgets. Native Git
+behavioral tests retain clean/staged/unstaged/binary/rename/non-ASCII/untracked
+drift, permissions, HEAD/branch, missing HEAD/Git and bounds. Unix also exercises
+non-UTF8 names/targets and symlink/unsafe-parent confinement; Windows exercises
+its native mode/link behavior. External filters, Git overflow/deadline/reaping and
+scoped Handoff warnings remain independent Rust tests. Historical Python/Rust
+oracle results remain in their original reports; they are not current dependencies.

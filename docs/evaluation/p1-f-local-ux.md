@@ -1,5 +1,9 @@
 # P1-F local brand/UI evidence
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](../p1/rust-only-development.md) for current commands.
+
 ## Final tested implementation
 
 Both clean host checkouts tested **`4a6abab938b56b1ba217c6c5648c97681264e30d`**,

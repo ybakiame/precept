@@ -1,5 +1,9 @@
 # P1-K: cross-agent context and Handoff interoperability
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](../p1/rust-only-development.md) for current commands.
+
 ## K0 plan and authorization
 
 Issue #31 starts at merged P1-J main `8e979ba` (2026-11-11), following P1-I merge
@@ -123,7 +127,7 @@ in [P1-I evidence](p1-i-context-bridge.md); K does not relabel or overwrite them
 
 ### Independent call trace and policy checks
 
-For Codex, [the test-only stdio observer](../../tools/interop_trace.py) sits between
+For Codex, the test-only stdio observer (retired path: `../../tools/interop_trace.py`) sits between
 the installed MCP client and the real native `acp-mcp`. It forwards bounded frames
 and correlates actual server responses with requests. It records only sequence,
 allowlisted method/tool/result labels, exact-two-tool inventory, canonical returned-

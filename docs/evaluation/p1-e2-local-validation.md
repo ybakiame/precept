@@ -1,5 +1,9 @@
 # P1-E2 local validation
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](../p1/rust-only-development.md) for current commands.
+
 Date: 2026-11-09. Issue #16; base main
 `d1cf45ca6d5a56fae92b8f79d011db87ef35dadc`. **Local execution only**. No Actions
 request, rerun, hosted check or release is part of this evidence. Task commits use
@@ -24,7 +28,7 @@ psutil 7.2.2, mss 10.2.0 and Windows pywinpty 3.1.2. Cargo gates execute
 `--offline --locked` after a deliberate one-time cache/bootstrap step.
 
 Reproduce with [the quickstart](../p1/local-codex-e2.md) and
-[`tools/local_verify.py`](../../tools/local_verify.py). Private `report.json` files
+`tools/local_verify.py` (retired path: `../../tools/local_verify.py`). Private `report.json` files
 retain the exact argv, exit code, duration, versions, counts, Git SHA and dirty
 state. Raw diagnostic directories and local unsigned packages are ignored and
 were not uploaded. The committed-source revision and gate totals are recorded below. Earlier

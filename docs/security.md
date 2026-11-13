@@ -1,44 +1,62 @@
-# Threat model and privacy limitations — P0 plus optional native sessions
+# Threat model and privacy limitations — Rust-native validation runtime
 
-The implemented controls and limitations below remain unchanged by P1-J.
-[ADR-0004](adr/0004-product-domain-trust.md) proposes the product's explicit
-agent-reported / daemon-observed / independently verified evidence model and
-repository-contract vs user-local state ownership. These are target semantics,
-not a new enforcement, storage or cryptographic implementation.
+Accepted ADR-0004 defines repository authority, user-local review and independent
+evidence distinctions. ADR-0006 retires the disposable prototype without migration.
+Current controls are native Profile v1, scoped IPC v2 and a daemon-exclusive writer;
+this is validation evidence, not enterprise enforcement or production activation.
 
 ## Threat model
 
-A trusted user invokes `acpctl` and configures a trusted local coding-agent process as MCP client. The project folder can contain untrusted repository content. A compromised same-user process or a hostile MCP client outside this trust model can read accessible files and is **not** isolated by the P0 server.
+A trusted operator selects a Profile and explicitly configures trusted local
+clients. Repository content and agent protocol frames may be untrusted. Same-user
+processes with filesystem access can bypass cooperative application controls; this
+is **not an OS sandbox** or a credential isolation boundary.
 
 ## Current controls
 
-- Local SQLite database under a user-specific state directory; best-effort POSIX `0700` directory and `0600` database file permissions.
-- No network listener, credential access, prompt injection execution or agent-facing write tools.
-- Each MCP process requires a registered project name at startup, with no tool parameter that changes scope.
-- Document content is not returned unless requested; a short allowlist, bounded file size, and symlink containment check apply.
-- Shell-free, bounded Git commands inspect only the registered checkout. No `git reset`, `git clean`, `git checkout`, or service restarts.
-- Preferences are opt-in through explicit confirmation. Suggested/rejected/deprecated values are invisible to agent-facing effective context. Provenance remains visible to the operator.
-- No automatic history scraping, remote synchronization, telemetry, memory plugin or third-party network call.
-- New Handoff snapshots may hash tracked Git diffs and bounded untracked file contents locally. The store contains only a SHA-256 digest, not diff text or filenames. Fingerprinting fails closed if the configured limits are exceeded. This is an advisory drift detector, not an isolation boundary or complete repository attestation.
+- Explicit fresh Profile creation/no overwrite or discovery; strict complete v1
+  Schema/data validation and private owner/mode/DACL/path/file-identity checks.
+- Only the daemon writes through typed transactions, OS lease and epoch fencing.
+  Operator read/control and write grants are separate; disabling drains admitted
+  writes. Same-epoch receipts/CAS prevent silently changing or duplicating a request.
+- CLI/UI never receive writable SQLite or fall back to a retired runtime. Startup
+  does not automatically enable writes or adopt incompatible prototype profiles.
+- Exactly two project-bound read-only MCP tools; no administrative previews, profile
+  mutations, context-driven approval or tool-supplied project selector.
+- Preference confirmation binds the exact record/revision/scope. Only confirmed
+  applicable values reach effective context; repository contracts remain authoritative.
+- Document bodies are opt-in, narrowly allowlisted, bounded and contained. Native
+  Git commands are shell-free and bounded; configured external filters/submodules
+  are refused before status/fingerprint. No repository rewriting or credential scraping.
+- Handoff validation is historical. Bounded Fingerprint v1 stores only a digest,
+  not raw diffs/files; overflow or missing observations remain unverified.
+- No product network listener, telemetry, automatic model call, history ingestion,
+  credential import or remote synchronization. Optional Web tests serve only
+  synthetic static assets on loopback, without any daemon API/gateway.
 
-## Known limitations / do not deploy as enterprise policy enforcement
+## Limitations
 
-- The harness retains same-user filesystem access. Process/project scoping in MCP is not an OS sandbox or authorization firewall.
-- The CLI has no interactive authentication. Any process with local database access could bypass intended review states.
-- SQLite WAL sidecar files and OS backups may retain deleted content; app-level deletion is not forensic secure deletion.
-- Explicitly included project docs may contain sensitive information; user is responsible for selecting trusted projects and clients.
-- Git may execute configured external helpers in some repository environments; the subprocess is bounded but should not be used on hostile repositories without additional isolation.
-- Storage encryption, fine-grained per-client policies, profile-review UI, data export/retention workflows, and robust migrations are not yet implemented.
+- Native capabilities protect cooperative local protocol admission, not arbitrary
+  same-user file access or an agent's independent execution/network behavior.
+- An uncertain response may already have committed. Retry must preserve the exact
+  immutable request/ID/binding in the same epoch; UI retention is in memory only.
+- SQLite sidecars/backups may retain deleted content; deletion is not forensic erasure.
+- Selected documents can contain sensitive material. Only attach trusted clients
+  and explicitly selected repositories; historical Handoff does not authorize actions.
+- Fingerprints are bounded, can race concurrent edits and do not attest ignored
+  files, submodule internals, builds, devices or complete repository state.
+- No production activation, migration/import/repair, encryption, full review/provenance,
+  retention/recovery or release guarantee follows from this validation stage.
 
-Future profile-learning must be opt-in, explainable and separately approved; do not automatically classify behavior as an instruction. Do not store secrets or raw transcripts, even in private Git repositories.
-
+Never persist secrets, raw transcripts or private identifiers in tracked fixtures.
+Source retirement does not delete real databases, local auth or runtime directories.
 
 ## Optional P1-G operator session boundary
 
 The native Rust daemon can explicitly opt into one ACP v1 agent through a private
 trusted `--agent-config`; default remains disabled. This adds operator-only local
 session controls, separate from project-bound MCP credentials. MCP still exposes
-only its two read-only tools; Python profile writes and SQLite schema are unchanged.
+only its two read-only tools; Profile writes require the independent native grant.
 The child has local user privileges, **not an OS sandbox**. Permission mediation
 cannot contain an agent's independent filesystem/network access or descendants.
 No Windows→WSL execution bridge, credential inheritance, shell or auto-launch.

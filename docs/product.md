@@ -30,7 +30,7 @@ consume scoped context; native managed sessions are an optional integration.
 | Capability | Product responsibility | Implemented baseline / remaining work |
 | --- | --- | --- |
 | Project context | Bind an explicit checkout; inspect current facts and contract sources | Registered/allowlisted projects, bounded live metadata, optional document content and Git inspection exist; guided UI onboarding is planned |
-| Personal preferences | User-owned habits with scope, review and provenance | Python CLI suggestion/confirm/reject/deprecate/delete exists; Rust reads confirmed records; complete operator review UI is planned |
+| Personal preferences | User-owned habits with scope, review and provenance | Native CLI covers all seven typed mutations; shared NSH supports suggestion/confirm/reject and exact previews; full review/provenance UI remains planned |
 | Project contracts | Explain repository-owned rules alongside actual code/config/tests/accepted ADRs | Live allowlisted document references exist; structured contracts, selectors and conflict resolution are planned |
 | Effective context | Explain inclusion, exclusion, masking, uncertainty and source versions | Confirmed project/global preference resolution exists; full typed explanation and conflict model is planned |
 | Suggestions | Let a human review a proposed durable change before it applies | Preference proposals exist through CLI; generalized review queue and agent proposal capability are not implemented |
@@ -41,8 +41,9 @@ Personal profiles and review state belong in user-local SQLite; project contract
 belong to the repository and its review process, with no automatic file creation.
 Rust is the foundation for domain logic, daemon and local IPC. NSH Rust is the
 single Desktop/TUI UI direction ([ADR-0003](adr/0003-ui-framework-selection.md)).
-Python remains the implemented profile/Handoff writer until a separately reviewed
-migration. No new UI framework, runtime, dependency or migration is introduced by J.
+The native daemon is the only write owner. S4 retires the disposable Python
+prototype without migration. The J charter introduced no implementation; current
+S1–S4 scope and evidence are tracked in the roadmap.
 
 ## Primary workflows
 
@@ -101,7 +102,7 @@ adapts ownership and trust semantics, and rejects copying its implementation.
 - No macOS/mobile/full IME/screen-reader support claim inferred from compilation,
   old smoke tests, upstream platform lists or theme contrast checks.
 
-The implementation remains `0.1.0a0`, an engineering prototype. Windows Desktop/
+The product remains at `0.0.x-rc` validation stage (crate versions are implementation metadata). Windows Desktop/
 ConPTY and native WSLg/TUI have scoped local evidence; broader release, packaging,
 accessibility and current macOS validation remain open. See [ADR-0003](adr/0003-ui-framework-selection.md)
 for platform distinctions and [P1-I evidence](evaluation/p1-i-context-bridge.md)

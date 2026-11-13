@@ -1,5 +1,9 @@
 # ADR-0005: local storage and write ownership
 
+> Original interface descriptions below are decision history. ADR-0006 supersedes
+> prototype frontend/compatibility paths; S4 removes those executable paths. Use
+> the current [native runbook](../p1/rust-only-development.md) and IPC contracts.
+
 - Status: **Accepted, partially superseded by [ADR-0006](0006-rust-only-runtime.md)** — the daemon single-writer and security decisions remain; Python compatibility and legacy-schema migration decisions are superseded
 - Date: 2026-11-12
 - Authority: [P1-M0 / Issue #36](https://github.com/ybakiame/agent-control-plane/issues/36)

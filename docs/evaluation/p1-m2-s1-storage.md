@@ -1,5 +1,9 @@
 # P1-M2 / Stage 1 — fresh Profile v1 storage evidence
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](../p1/rust-only-development.md) for current commands.
+
 Authority: [Issue #43](https://github.com/ybakiame/agent-control-plane/issues/43),
 parent [Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40),
 Accepted [ADR-0006](../adr/0006-rust-only-runtime.md), and the owner-confirmed

@@ -1,5 +1,9 @@
 # Native Wayland diagnosis and local acceptance
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](rust-only-development.md) for current commands.
+
 E3 treats **direct WSLg Weston**, **niri**, and **X11/XWayland** as distinct cases.
 An environment variable is not backend proof. Neither Xvfb, an X11-only test nor
 a Windows-native NSH window can pass Linux Wayland acceptance.

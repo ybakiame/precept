@@ -1,5 +1,9 @@
 # Local Daemon and IPC — Design Contract
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](rust-only-development.md) for current commands.
+
 Implemented prototype: [protocol, operator quickstart and validation](local-service.md).
 The design below remains the architectural boundary; not every future scenario
 is a production guarantee.

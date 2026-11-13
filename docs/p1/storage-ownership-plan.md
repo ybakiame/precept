@@ -1,5 +1,9 @@
 # P1-M0 storage ownership and acceptance plan
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](rust-only-development.md) for current commands.
+
 > **Historical design record — execution plan superseded by [ADR-0006](../adr/0006-rust-only-runtime.md).** This document preserves the original M0 analysis, M1 contract and historical evidence only. Its Python read-only adapter, Python rollback owner, legacy-schema compatibility, compatibility-release, schema downgrade, and multi-generation cutover steps are no longer current requirements. The product target is a fresh Rust-native Profile v1; it is not compatible with the old Python v1 or M1 synthetic v2. Neither format is migrated or preserved. Follow [ADR-0006](../adr/0006-rust-only-runtime.md) and [Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40) for current work.
 
 
@@ -26,14 +30,14 @@ why a compatibility/fencing release must precede cutover.
 
 | Component / data | Implemented now | Proposed owner / restriction |
 | --- | --- | --- |
-| [Python Store](../../src/agent_control_plane/store.py) | Constructor opens RW, enables WAL, creates schema and may add fingerprint; owns all P0 mutations; no version check; allows suggested→deprecated | Legacy behavior may remain during explicitly Python-owned phase; M2 fencing/strict compatibility required before cutover; current direct path unsafe afterward |
-| [Python CLI](../../src/agent_control_plane/cli.py) | Uses Store for reads, writes and MCP | Thin authenticated frontend; reads avoid Store; no fallback writer |
-| [Python MCP](../../src/agent_control_plane/mcp.py) | Two read tools, but launched by CLI with initialized Store | Genuinely RO adapter or read IPC; no initialization writes, operator credentials or mutations |
+| Python Store (retired path: `../../src/agent_control_plane/store.py`) | Constructor opens RW, enables WAL, creates schema and may add fingerprint; owns all P0 mutations; no version check; allows suggested→deprecated | Legacy behavior may remain during explicitly Python-owned phase; M2 fencing/strict compatibility required before cutover; current direct path unsafe afterward |
+| Python CLI (retired path: `../../src/agent_control_plane/cli.py`) | Uses Store for reads, writes and MCP | Thin authenticated frontend; reads avoid Store; no fallback writer |
+| Python MCP (retired path: `../../src/agent_control_plane/mcp.py`) | Two read tools, but launched by CLI with initialized Store | Genuinely RO adapter or read IPC; no initialization writes, operator credentials or mutations |
 | [acp-store](../../crates/acp-store/src/lib.rs) | Explicit existing-path RO connection; structural/version inspection before reads | Remains RO; add reviewed v2 reader support before activation |
 | [daemon](../../crates/acp-daemon/src/main.rs) | Uses SqliteStore; operator sessions and project/lease-scoped reads, no profile mutation | Sole ordinary writer only when explicitly opted in; separate authenticated write extension/library |
 | [acp-query](../../crates/acp-query/src/main.rs) / NSH | Operator reads/session control; UI has no direct DB | Typed operator client of same daemon; no direct SQL or second writer |
 | Proposed maintenance owner | Absent | Exclusive offline mode for backup/migration/restore; no ordinary mutation service |
-| [acp-rehearsal](../../crates/acp-rehearsal/src/lib.rs) | Owned disposable synthetic roots; cannot adopt profiles | Remains synthetic-only; production machinery separate |
+| acp-rehearsal (retired path: `../../crates/acp-rehearsal/src/lib.rs`) | Owned disposable synthetic roots; cannot adopt profiles | Remains synthetic-only; production machinery separate |
 | Profiles, registration, preferences, Handoff | User-local SQLite; legacy source/validation fields | Same authority; exact legacy preservation; later generalized models separately reviewed |
 | Contract sources / cache | Repository AGENTS/docs/accepted ADRs; bounded live reads | Repository remains authority; any DB index disposable and version-bound; no new cache/parser now |
 | Proposed control catalog | Absent | User-local SQLite, separate catalog format; opaque identities/relative artifact roles/owner epoch/stage only |

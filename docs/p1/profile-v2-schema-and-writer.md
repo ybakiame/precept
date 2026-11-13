@@ -1,4 +1,8 @@
 # P1-M1 — Profile v2 schema and synthetic writer contract
+
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved. S4 retired the executable prototype and probes;
+> use [Rust-only development](rust-only-development.md) for current commands.
 > **M1 historical contract/evidence only.** This document records the synthetic Profile v2 schema (`PRAGMA user_version=2`) and the migration experiments completed in PR #39. [ADR-0006](../adr/0006-rust-only-runtime.md) selects a fresh Rust-native Profile v1 (`PRAGMA user_version=1`) for the product. That new v1 is not compatible with the retired Python prototype's legacy v1 despite the shared version number. Neither this M1 v2 schema nor the old Python v1 schema is migrated or adopted; disposable local files may be deleted. Do not treat this historical DDL as the M2 product schema.
 
 

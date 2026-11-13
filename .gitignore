@@ -1,11 +1,6 @@
+# Keep pre-retirement local generated metadata private; never build/package it.
 __pycache__/
-*.py[cod]
 *.egg-info/
-.venv/
-.pytest_cache/
-.coverage
-build/
-dist/
 *.sqlite3
 *.sqlite3-shm
 *.sqlite3-wal
