@@ -21,18 +21,23 @@ Reports include exact source and command/status; they contain no real fixture da
 
 ```bash
 mkdir -p artifacts/local-p1-m2
-CARGO_NET_OFFLINE=true tools/local_verify.sh all artifacts/local-p1-m2/s4-linux
+CARGO_NET_OFFLINE=true tools/local_verify.sh all artifacts/local-p1-m2/s5-linux 05035e21434085faf368ddec5a06904a99ef4a35
 ```
 
 ```powershell
 $env:CARGO_NET_OFFLINE = 'true'
-./tools/windows_local_verify.ps1 -Suite All -ReportDir artifacts/local-p1-m2/s4-windows
+./tools/windows_local_verify.ps1 -Suite All -ReportDir artifacts/local-p1-m2/s5-windows -DiffBase 05035e21434085faf368ddec5a06904a99ef4a35
 ```
 
 Linux helper modes: `core`, `ui`, `all`; Windows: `-Suite Core|UI|All`.
 Windows toolchain setup affects only the helper process. The UI mode first builds
 root binaries for the real-daemon integration test. All helpers run these extant
 Cargo commands as applicable:
+
+Both helpers require an explicit full baseline commit. They refuse HEAD-equal,
+empty, missing, invalid, ambiguous and non-ancestor deltas, and first run
+`git diff --check BASE HEAD`; a clean worktree alone is insufficient. The baseline
+above is the merged S4 main for S5. Use a new artifact directory on every run.
 
 ```text
 cargo fmt --all -- --check

@@ -3,17 +3,26 @@
 set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 suite=${1:-all}
-case "$suite" in core|ui|all) ;; *) echo 'Usage: tools/local_verify.sh [core|ui|all] [NEW_REPORT_DIR]' >&2; exit 2 ;; esac
-if [[ $# -gt 2 ]]; then exit 2; fi
+case "$suite" in core|ui|all) ;; *) exit 2 ;; esac
+if [[ $# -ne 3 ]]; then echo 'Usage: tools/local_verify.sh core|ui|all NEW_REPORT_DIR FULL_BASE_COMMIT' >&2; exit 2; fi
 if [[ -n $(git status --porcelain) ]]; then echo 'Refuse: commit tracked/source changes before exact-SHA verification' >&2; exit 2; fi
-report=${2:-artifacts/local-p1-m2/s4-linux}
-mkdir -- "$report"
+baseline=$3
+if [[ ! $baseline =~ ^[0-9a-fA-F]{40}$ ]] || [[ $(git cat-file -t "$baseline" 2>/dev/null) != commit ]]; then echo 'Refuse: baseline must be one existing full commit SHA' >&2; exit 2; fi
+baseline=$(git rev-parse --verify "$baseline")
+if [[ $baseline == $(git rev-parse HEAD) ]] || ! git merge-base --is-ancestor "$baseline" HEAD; then echo 'Refuse: baseline must be an ancestor with a nonempty branch delta' >&2; exit 2; fi
+if git diff --quiet "$baseline" HEAD; then
+  echo 'Refuse: baseline must have a nonempty branch delta' >&2; exit 2
+else
+  delta_status=$?
+  if [[ $delta_status -ne 1 ]]; then echo 'Refuse: cannot inspect branch delta' >&2; exit 2; fi
+fi
+report=$2
+mkdir -m 700 -- "$report"
 report=$(realpath -- "$report")
 {
   git rev-parse HEAD
+  printf 'diff_base=%s\n' "$baseline"
   uname -srm
-  rustc --version
-  cargo --version
 } > "$report/source.txt"
 run_gate() {
   local name=$1
@@ -28,6 +37,9 @@ run_gate() {
     exit "$result"
   fi
 }
+run_gate branch-diff git diff --check "$baseline" HEAD
+rustc --version >> "$report/source.txt"
+cargo --version >> "$report/source.txt"
 if [[ $suite != ui ]]; then
   run_gate workspace-fmt cargo fmt --all -- --check
   run_gate workspace-build cargo build --workspace --bins --locked
