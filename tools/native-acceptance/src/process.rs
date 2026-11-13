@@ -251,6 +251,10 @@ fn pump(stderr: &mut ChildStderr, lines: &Arc<Mutex<Vec<String>>>, stop: &Atomic
             // The log stream ending or faulting loses evidence but must never hang: it
             // is recorded in the same collection the driver writes out.
             Ok(Poll::Eof) => {
+                let tail = String::from_utf8_lossy(&std::mem::take(&mut buf)).to_string();
+                if tail.starts_with("ACP_") {
+                    record(lines, tail);
+                }
                 record(lines, "ACP_LOG_EOF".to_owned());
                 return;
             }
