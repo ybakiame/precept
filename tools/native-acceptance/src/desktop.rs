@@ -156,6 +156,9 @@ impl Desktop {
         panic!("native GUI state marker missing: {marker}");
     }
     pub fn capture(&mut self, name: &str, out: &Path) {
+        // State probes can precede the compositor's next paint. Captured pixels
+        // still require visual inspection; this delay is not rendering proof.
+        thread::sleep(Duration::from_millis(250));
         let r = self.control(json!({"action":"capture","name":format!("{name}.png")}));
         let file = r["file"].as_str().unwrap();
         let native = if cfg!(unix) {

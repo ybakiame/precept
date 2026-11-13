@@ -505,12 +505,8 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     thread::sleep(Duration::from_millis(200));
     assert_eq!(f.rows().len(), 3);
     ui.field("alt+t", "shared");
-    ui.key("tab");
-    ui.key("enter");
-    thread::sleep(Duration::from_millis(500));
-    if let Ui::Tty(t) = &ui {
-        t.wait("Saved synthetic history");
-    }
+    ui.key("alt+shift+h");
+    ui.wait("handoff_revision=1", "Saved synthetic history");
     ui.capture("saved-handoff", out);
     let saved = f.query(&["handoff-record", "alpha", "shared"]).1;
     assert_eq!(saved["record"]["revision"], 1);
