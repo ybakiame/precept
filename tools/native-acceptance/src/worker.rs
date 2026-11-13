@@ -127,8 +127,8 @@ impl WorkerRpc {
             .spawn()?;
         let mut stdin = child.stdin.take().expect("piped stdin");
         let mut stdout = child.stdout.take().expect("piped stdout");
-        let stdin_mode = make_nonblocking(&mut stdin);
-        let stdout_mode = make_nonblocking(&mut stdout);
+        let stdin_mode = set_write_nonblocking(&mut stdin);
+        let stdout_mode = set_read_mode(&mut stdout);
         let stop = Arc::new(AtomicBool::new(false));
         let cancel_write = Arc::new(AtomicBool::new(false));
         let accepted = Arc::new(AtomicGeneration::default());
@@ -198,8 +198,9 @@ impl WorkerRpc {
         self.fatal.as_deref()
     }
 
-    /// Whether each pipe runs nonblocking, so a stalled peer is bounded by the deadline
-    /// instead of by process death. Recorded in acceptance evidence.
+    /// How each pipe was made bounded, so a stalled peer is released by the deadline
+    /// instead of by process death. The read side differs per platform, so this is
+    /// recorded in acceptance evidence rather than assumed.
     pub fn io_modes(&self) -> (&'static str, &'static str) {
         self.io_modes
     }
@@ -511,6 +512,70 @@ fn write_jobs(
     }
 }
 
+/// One non-blocking observation of the reply stream. Neither variant may block past a
+/// single poll, so the stop flag always gets a turn and teardown can join the reader.
+enum Poll {
+    Bytes(usize),
+    Eof,
+    Idle,
+}
+
+/// Unix relies on O_NONBLOCK, which is honored on both pipe ends.
+#[cfg(unix)]
+fn poll_bytes(stream: &mut ChildStdout, chunk: &mut [u8]) -> Result<Poll, String> {
+    match stream.read(chunk) {
+        Ok(0) => Ok(Poll::Eof),
+        Ok(size) => Ok(Poll::Bytes(size)),
+        Err(error) if error.kind() == ErrorKind::WouldBlock => {
+            thread::sleep(POLL);
+            Ok(Poll::Idle)
+        }
+        Err(error) if error.kind() == ErrorKind::Interrupted => Ok(Poll::Idle),
+        Err(error) => Err(format!("reader io {}", error.kind())),
+    }
+}
+
+/// Windows does not honor `PIPE_NOWAIT` for the read end of an anonymous pipe, so the
+/// reader asks `PeekNamedPipe` first and only then reads bytes that are already there.
+/// Without this, a grandchild that inherits the write end would hold the reader in a
+/// blocking call forever and the thread could never be joined.
+#[cfg(windows)]
+fn poll_bytes(stream: &mut ChildStdout, chunk: &mut [u8]) -> Result<Poll, String> {
+    use std::os::windows::io::AsRawHandle;
+    const ERROR_BROKEN_PIPE: u32 = 109;
+    let handle = stream.as_raw_handle();
+    let mut available = 0u32;
+    let peeked = unsafe {
+        windows_sys::Win32::System::Pipes::PeekNamedPipe(
+            handle,
+            std::ptr::null(),
+            0,
+            std::ptr::null_mut(),
+            &mut available,
+            std::ptr::null_mut(),
+        )
+    };
+    if peeked == 0 {
+        let code = unsafe { windows_sys::Win32::Foundation::GetLastError() };
+        // Every writer closed the pipe: this is the only EOF signal that is reliable
+        // when a process the harness never owns still holds the handle.
+        if code == ERROR_BROKEN_PIPE {
+            return Ok(Poll::Eof);
+        }
+        return Err(format!("reader peek failed with os error {code}"));
+    }
+    if available == 0 {
+        thread::sleep(POLL);
+        return Ok(Poll::Idle);
+    }
+    match stream.read(chunk) {
+        Ok(0) => Ok(Poll::Eof),
+        Ok(size) => Ok(Poll::Bytes(size)),
+        Err(error) if error.kind() == ErrorKind::Interrupted => Ok(Poll::Idle),
+        Err(error) => Err(format!("reader io {}", error.kind())),
+    }
+}
+
 fn read_stream(stdout: &mut ChildStdout, tx: &Sender<Event>, stop: &AtomicBool) {
     let mut line: Vec<u8> = Vec::new();
     let mut chunk = [0u8; 4096];
@@ -518,8 +583,17 @@ fn read_stream(stdout: &mut ChildStdout, tx: &Sender<Event>, stop: &AtomicBool) 
         if stop.load(Ordering::SeqCst) {
             return;
         }
-        match stdout.read(&mut chunk) {
-            Ok(0) => {
+        let polled = match poll_bytes(stdout, &mut chunk) {
+            Ok(poll) => poll,
+            Err(detail) => {
+                let _ = tx.send(Event::Fault(detail));
+                return;
+            }
+        };
+        let size = match polled {
+            Poll::Idle => continue,
+            Poll::Bytes(size) => size,
+            Poll::Eof => {
                 if line.is_empty() {
                     let _ = tx.send(Event::Eof);
                 } else {
@@ -530,36 +604,38 @@ fn read_stream(stdout: &mut ChildStdout, tx: &Sender<Event>, stop: &AtomicBool) 
                 }
                 return;
             }
-            Ok(size) => {
-                for byte in &chunk[..size] {
-                    if *byte != b'\n' {
-                        line.push(*byte);
-                        if line.len() > MAX_RESPONSE_BYTES {
-                            let _ = tx.send(Event::Fault(format!(
-                                "oversized response line bytes>{}",
-                                MAX_RESPONSE_BYTES
-                            )));
-                            return;
-                        }
-                        continue;
-                    }
-                    let Ok(text) = String::from_utf8(std::mem::take(&mut line)) else {
-                        let _ = tx.send(Event::Fault("non-utf8 response line".to_owned()));
-                        return;
-                    };
-                    if tx.send(Event::Line(text)).is_err() {
-                        return;
-                    }
+        };
+        for byte in &chunk[..size] {
+            if *byte != b'\n' {
+                line.push(*byte);
+                if line.len() > MAX_RESPONSE_BYTES {
+                    let _ = tx.send(Event::Fault(format!(
+                        "oversized response line bytes>{}",
+                        MAX_RESPONSE_BYTES
+                    )));
+                    return;
                 }
+                continue;
             }
-            Err(error) if error.kind() == ErrorKind::WouldBlock => thread::sleep(POLL),
-            Err(error) if error.kind() == ErrorKind::Interrupted => {}
-            Err(error) => {
-                let _ = tx.send(Event::Fault(format!("reader io {}", error.kind())));
+            let Ok(text) = String::from_utf8(std::mem::take(&mut line)) else {
+                let _ = tx.send(Event::Fault("non-utf8 response line".to_owned()));
+                return;
+            };
+            if tx.send(Event::Line(text)).is_err() {
                 return;
             }
         }
     }
+}
+
+#[cfg(unix)]
+fn set_write_nonblocking(stream: &mut ChildStdin) -> &'static str {
+    make_nonblocking(stream)
+}
+
+#[cfg(unix)]
+fn set_read_mode(stream: &mut ChildStdout) -> &'static str {
+    make_nonblocking(stream)
 }
 
 #[cfg(unix)]
@@ -573,10 +649,11 @@ fn make_nonblocking(stream: &mut impl std::os::fd::AsFd) -> &'static str {
     if ok { "nonblocking" } else { "blocking" }
 }
 
+/// The write end does honor `PIPE_NOWAIT`; the bounded-write path depends on it.
 #[cfg(windows)]
-fn make_nonblocking(stream: &mut impl std::os::windows::io::AsRawHandle) -> &'static str {
+fn set_write_nonblocking(stream: &mut ChildStdin) -> &'static str {
     const PIPE_NOWAIT: u32 = 0x0000_0001;
-    let handle = stream.as_raw_handle();
+    let handle = std::os::windows::io::AsRawHandle::as_raw_handle(stream);
     let ok = unsafe {
         windows_sys::Win32::System::Pipes::SetNamedPipeHandleState(
             handle,
@@ -586,6 +663,12 @@ fn make_nonblocking(stream: &mut impl std::os::windows::io::AsRawHandle) -> &'st
         )
     };
     if ok != 0 { "nonblocking" } else { "blocking" }
+}
+
+#[cfg(windows)]
+fn set_read_mode(stream: &mut ChildStdout) -> &'static str {
+    let _ = stream;
+    "peek-poll"
 }
 
 /// A reply must name the request it answers. Anything else fails closed, so a late or
