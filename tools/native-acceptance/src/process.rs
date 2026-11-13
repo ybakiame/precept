@@ -184,7 +184,8 @@ impl OwnedProcess {
         done
     }
 
-    /// True once the child has exited and been reaped by this harness.
+    /// True only when a successful `ExitStatus` has been recorded. An OS error from
+    /// `try_wait` does not prove the child exited, so it is reported as not-reaped.
     pub fn reaped(&mut self) -> bool {
         if self.exited.is_some() {
             return true;
@@ -195,7 +196,10 @@ impl OwnedProcess {
                 true
             }
             Ok(None) => false,
-            Err(_) => true,
+            Err(e) => {
+                println!("OWNED_PROCESS_WAIT_ERROR pid={} {e}", self.child.id());
+                false
+            }
         }
     }
 
