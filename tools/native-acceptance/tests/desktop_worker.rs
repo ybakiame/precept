@@ -1,7 +1,7 @@
 //! Boundedness, correlation and cleanup regressions for the owned native-window
 //! worker pipe. These exercise the harness only, against an owned fake worker. They
 //! never drive a real window and never constitute native GUI acceptance.
-use acp_native_acceptance::worker::{Cleanup, WorkerRpc};
+use acp_native_acceptance::worker::{Cleanup, SpawnError, WorkerRpc};
 use serde_json::{Value, json};
 use std::{
     path::Path,
@@ -328,4 +328,55 @@ fn request_without_an_action_is_refused() {
     assert!(reason.contains("no action"), "{reason}");
     assert!(!worker.is_fatal());
     clean_exit(&mut worker);
+}
+
+#[test]
+fn an_established_session_only_ever_reports_bounded_pipe_modes() {
+    // "blocking" is not a value the harness can produce any more, so a session that
+    // exists proves both directions were bounded when it was created.
+    let mut worker = worker("healthy", GENEROUS);
+    let (stdin_mode, stdout_mode) = worker.io_modes();
+    for mode in [stdin_mode, stdout_mode] {
+        assert!(
+            mode == "nonblocking" || mode == "peek-poll",
+            "unbounded pipe mode adopted for the session: {mode}"
+        );
+    }
+    clean_exit(&mut worker);
+}
+
+#[test]
+fn a_worker_whose_pipes_cannot_be_bounded_is_refused_and_reaped() {
+    // Bounded pipe IO is a precondition. The seam injects the failure that neither
+    // host can produce on demand, and the refusal must still clean up after itself.
+    let error = WorkerRpc::spawn_with_pipe_sabotage(Path::new(FAKE), &["healthy"])
+        .expect_err("an unbounded worker session must be refused outright");
+    match error {
+        SpawnError::Unfit {
+            pid,
+            reaped,
+            detail,
+        } => {
+            assert!(
+                pid > 0,
+                "the refusal must name the child it reaped: {detail}"
+            );
+            assert!(
+                reaped,
+                "a refused worker must not be left running: {detail}"
+            );
+            assert!(detail.contains("injected refusal"), "{detail}");
+        }
+        other => panic!("expected a bounded-pipe refusal, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_launch_failure_is_reported_as_launch_not_as_a_silent_session() {
+    let error = WorkerRpc::spawn(Path::new("/definitely/not/a/worker-binary"), &["healthy"])
+        .expect_err("a missing program cannot become a session");
+    assert!(
+        matches!(error, SpawnError::Launch(_)),
+        "unexpected refusal for a program that never started: {error:?}"
+    );
 }

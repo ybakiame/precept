@@ -5,10 +5,14 @@
 //! Both directions are therefore bounded and cancelable here: every request carries an
 //! `rpc_id` that the worker must echo, the caller waits on that correlation instead of
 //! on pipe luck, and both IO threads stop through an explicit flag so teardown joins
-//! them rather than abandoning them.
+//! them rather than abandoning them. Bounded pipe IO is a **precondition**, not a
+//! preference: if it cannot be established, the session is refused and only the child
+//! this call launched is terminated and reaped.
+use crate::pipe::{self, JOIN_WAIT, POLL, Poll};
 use serde_json::Value;
 use std::{
-    io::{ErrorKind, Read, Write},
+    fmt,
+    io::{ErrorKind, Write},
     path::Path,
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
     sync::{
@@ -27,11 +31,6 @@ pub const MAX_REQUEST_BYTES: usize = 8 * 1024;
 const INIT_DEADLINE: Duration = Duration::from_secs(300);
 const CAPTURE_DEADLINE: Duration = Duration::from_secs(180);
 const DEFAULT_DEADLINE: Duration = Duration::from_secs(60);
-/// Poll interval for the cooperative IO threads and their queues.
-const POLL: Duration = Duration::from_millis(2);
-/// Teardown waits no longer than this for a thread that ignores the stop flag, and
-/// reports it as unjoined instead of pretending completion.
-const JOIN_WAIT: Duration = Duration::from_secs(10);
 /// Grace period for a worker to notice that its stdin closed before it is killed.
 const EXIT_WAIT: Duration = Duration::from_millis(250);
 
@@ -59,6 +58,37 @@ pub struct Cleanup {
     pub writer_joined: bool,
 }
 
+/// Why no session exists. `Unfit` is the fail-closed path: bounded pipe IO could not be
+/// established, so the child this call launched was terminated and reaped and no worker
+/// handle was handed out. `reaped` is part of the evidence, not a footnote.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SpawnError {
+    Launch(String),
+    Unfit {
+        detail: String,
+        pid: u32,
+        reaped: bool,
+    },
+}
+
+impl fmt::Display for SpawnError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Launch(detail) => write!(formatter, "worker launch failed: {detail}"),
+            Self::Unfit {
+                detail,
+                pid,
+                reaped,
+            } => write!(
+                formatter,
+                "bounded worker pipe unavailable ({detail}) pid={pid} reaped={reaped}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for SpawnError {}
+
 /// Harness test seam: bytes plus the instant by which the write must be finished.
 struct Job {
     bytes: Vec<u8>,
@@ -66,12 +96,14 @@ struct Job {
     generation: u64,
 }
 
+#[derive(Debug)]
 struct Outstanding {
     seq: u64,
     action: String,
 }
 
 /// One request/response pair at a time against a child the caller owns and may kill.
+#[derive(Debug)]
 pub struct WorkerRpc {
     child: Child,
     event_rx: Receiver<Event>,
@@ -118,17 +150,57 @@ impl AtomicGeneration {
 }
 
 impl WorkerRpc {
-    pub fn spawn(program: &Path, args: &[&str]) -> std::io::Result<Self> {
-        let mut child = Command::new(program)
+    /// Launch one worker the caller owns. Bounded pipe IO is a precondition, so a child
+    /// whose pipes cannot be made bounded is terminated and reaped here and no session
+    /// handle is ever returned for it.
+    pub fn spawn(program: &Path, args: &[&str]) -> Result<Self, SpawnError> {
+        Self::launch(program, args, false)
+    }
+
+    /// Test seam: pretend the mandatory bounded setup failed on a host where the real
+    /// call succeeds, so the refusal and owned-child cleanup path is provable anywhere.
+    pub fn spawn_with_pipe_sabotage(program: &Path, args: &[&str]) -> Result<Self, SpawnError> {
+        Self::launch(program, args, true)
+    }
+
+    fn launch(program: &Path, args: &[&str], sabotage: bool) -> Result<Self, SpawnError> {
+        let mut child = match Command::new(program)
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
-            .spawn()?;
+            .spawn()
+        {
+            Ok(child) => child,
+            Err(detail) => return Err(SpawnError::Launch(detail.to_string())),
+        };
+        let pid = child.id();
         let mut stdin = child.stdin.take().expect("piped stdin");
         let mut stdout = child.stdout.take().expect("piped stdout");
-        let stdin_mode = set_write_nonblocking(&mut stdin);
-        let stdout_mode = set_read_mode(&mut stdout);
+        let modes = if sabotage {
+            Err("injected refusal of the mandatory bounded pipe setup".to_owned())
+        } else {
+            match (
+                pipe::set_write_nonblocking(&mut stdin),
+                pipe::set_read_mode(&mut stdout),
+            ) {
+                (Ok(write), Ok(read)) => Ok((write, read)),
+                (Err(detail), _) | (Ok(_), Err(detail)) => Err(detail),
+            }
+        };
+        let (stdin_mode, stdout_mode) = match modes {
+            Ok(modes) => modes,
+            Err(detail) => {
+                let _ = child.kill();
+                let reaped = child.wait().is_ok();
+                println!("DESKTOP_WORKER_REFUSED pid={pid} reaped={reaped} cause={detail}");
+                return Err(SpawnError::Unfit {
+                    detail,
+                    pid,
+                    reaped,
+                });
+            }
+        };
         let stop = Arc::new(AtomicBool::new(false));
         let cancel_write = Arc::new(AtomicBool::new(false));
         let accepted = Arc::new(AtomicGeneration::default());
@@ -512,70 +584,6 @@ fn write_jobs(
     }
 }
 
-/// One non-blocking observation of the reply stream. Neither variant may block past a
-/// single poll, so the stop flag always gets a turn and teardown can join the reader.
-enum Poll {
-    Bytes(usize),
-    Eof,
-    Idle,
-}
-
-/// Unix relies on O_NONBLOCK, which is honored on both pipe ends.
-#[cfg(unix)]
-fn poll_bytes(stream: &mut ChildStdout, chunk: &mut [u8]) -> Result<Poll, String> {
-    match stream.read(chunk) {
-        Ok(0) => Ok(Poll::Eof),
-        Ok(size) => Ok(Poll::Bytes(size)),
-        Err(error) if error.kind() == ErrorKind::WouldBlock => {
-            thread::sleep(POLL);
-            Ok(Poll::Idle)
-        }
-        Err(error) if error.kind() == ErrorKind::Interrupted => Ok(Poll::Idle),
-        Err(error) => Err(format!("reader io {}", error.kind())),
-    }
-}
-
-/// Windows does not honor `PIPE_NOWAIT` for the read end of an anonymous pipe, so the
-/// reader asks `PeekNamedPipe` first and only then reads bytes that are already there.
-/// Without this, a grandchild that inherits the write end would hold the reader in a
-/// blocking call forever and the thread could never be joined.
-#[cfg(windows)]
-fn poll_bytes(stream: &mut ChildStdout, chunk: &mut [u8]) -> Result<Poll, String> {
-    use std::os::windows::io::AsRawHandle;
-    const ERROR_BROKEN_PIPE: u32 = 109;
-    let handle = stream.as_raw_handle();
-    let mut available = 0u32;
-    let peeked = unsafe {
-        windows_sys::Win32::System::Pipes::PeekNamedPipe(
-            handle,
-            std::ptr::null_mut(),
-            0,
-            std::ptr::null_mut(),
-            &mut available,
-            std::ptr::null_mut(),
-        )
-    };
-    if peeked == 0 {
-        let code = unsafe { windows_sys::Win32::Foundation::GetLastError() };
-        // Every writer closed the pipe: this is the only EOF signal that is reliable
-        // when a process the harness never owns still holds the handle.
-        if code == ERROR_BROKEN_PIPE {
-            return Ok(Poll::Eof);
-        }
-        return Err(format!("reader peek failed with os error {code}"));
-    }
-    if available == 0 {
-        thread::sleep(POLL);
-        return Ok(Poll::Idle);
-    }
-    match stream.read(chunk) {
-        Ok(0) => Ok(Poll::Eof),
-        Ok(size) => Ok(Poll::Bytes(size)),
-        Err(error) if error.kind() == ErrorKind::Interrupted => Ok(Poll::Idle),
-        Err(error) => Err(format!("reader io {}", error.kind())),
-    }
-}
-
 fn read_stream(stdout: &mut ChildStdout, tx: &Sender<Event>, stop: &AtomicBool) {
     let mut line: Vec<u8> = Vec::new();
     let mut chunk = [0u8; 4096];
@@ -583,7 +591,7 @@ fn read_stream(stdout: &mut ChildStdout, tx: &Sender<Event>, stop: &AtomicBool) 
         if stop.load(Ordering::SeqCst) {
             return;
         }
-        let polled = match poll_bytes(stdout, &mut chunk) {
+        let polled = match pipe::poll_bytes(stdout, &mut chunk) {
             Ok(poll) => poll,
             Err(detail) => {
                 let _ = tx.send(Event::Fault(detail));
@@ -627,50 +635,6 @@ fn read_stream(stdout: &mut ChildStdout, tx: &Sender<Event>, stop: &AtomicBool) 
         }
     }
 }
-
-#[cfg(unix)]
-fn set_write_nonblocking(stream: &mut ChildStdin) -> &'static str {
-    make_nonblocking(stream)
-}
-
-#[cfg(unix)]
-fn set_read_mode(stream: &mut ChildStdout) -> &'static str {
-    make_nonblocking(stream)
-}
-
-#[cfg(unix)]
-fn make_nonblocking(stream: &mut impl std::os::fd::AsFd) -> &'static str {
-    use std::os::fd::{AsFd, AsRawFd};
-    let fd = stream.as_fd().as_raw_fd();
-    let ok = unsafe {
-        let flags = libc::fcntl(fd, libc::F_GETFL);
-        flags >= 0 && libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) == 0
-    };
-    if ok { "nonblocking" } else { "blocking" }
-}
-
-/// The write end does honor `PIPE_NOWAIT`; the bounded-write path depends on it.
-#[cfg(windows)]
-fn set_write_nonblocking(stream: &mut ChildStdin) -> &'static str {
-    const PIPE_NOWAIT: u32 = 0x0000_0001;
-    let handle = std::os::windows::io::AsRawHandle::as_raw_handle(stream);
-    let ok = unsafe {
-        windows_sys::Win32::System::Pipes::SetNamedPipeHandleState(
-            handle,
-            &PIPE_NOWAIT,
-            std::ptr::null(),
-            std::ptr::null(),
-        )
-    };
-    if ok != 0 { "nonblocking" } else { "blocking" }
-}
-
-#[cfg(windows)]
-fn set_read_mode(stream: &mut ChildStdout) -> &'static str {
-    let _ = stream;
-    "peek-poll"
-}
-
 /// A reply must name the request it answers. Anything else fails closed, so a late or
 /// duplicated reply for an older call can never settle a newer one.
 fn validate(value: &Value, expected_nonce: Option<&str>, expected_rpc: u64) -> Result<(), String> {

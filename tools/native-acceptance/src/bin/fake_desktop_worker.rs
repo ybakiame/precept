@@ -39,6 +39,15 @@ fn main() {
         thread::sleep(Duration::from_secs(60));
         return;
     }
+    // An owned mock GUI: one probe line on stderr, then it stays alive until the
+    // harness terminates it. Drives the owned-process guard, never a real window.
+    if mode == "gui-hang" {
+        let err = io::stderr();
+        let _ = writeln!(err.lock(), "ACP_GUI_SYNTHETIC mode=gui-hang");
+        let _ = err.lock().flush();
+        thread::sleep(Duration::from_secs(60));
+        return;
+    }
     // Leaves the pipe open through a child the harness never owned, then exits itself.
     if mode == "hold-stdout" {
         let holder = env::current_exe()
