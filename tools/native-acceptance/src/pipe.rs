@@ -120,8 +120,7 @@ pub fn poll_bytes<S: Read + std::os::windows::io::AsRawHandle>(
     stream: &mut S,
     chunk: &mut [u8],
 ) -> Result<Poll, String> {
-    use std::os::windows::io::AsRawHandle;
-    const ERROR_BROKEN_PIPE: u32 = 109;
+    const ERROR_BROKEN_PIPE: i32 = 109;
     let mut available = 0u32;
     let peeked = unsafe {
         windows_sys::Win32::System::Pipes::PeekNamedPipe(
