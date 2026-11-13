@@ -252,6 +252,9 @@ mod platform {
                 let app: Vec<u16> = bin.as_os_str().encode_wide().chain(Some(0)).collect();
                 let mut startup = STARTUPINFOEXW::default();
                 startup.StartupInfo.cb = std::mem::size_of::<STARTUPINFOEXW>() as u32;
+                // Do not inherit this runner's redirected stdio (WSL interop /
+                // PowerShell). Null handles are assigned by the pseudoconsole.
+                startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
                 startup.lpAttributeList = attributes;
                 let mut info = PROCESS_INFORMATION::default();
                 let ok = CreateProcessW(

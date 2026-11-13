@@ -14,12 +14,6 @@ public static class AcpWindow {
  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
  [DllImport("user32.dll")] public static extern void keybd_event(byte k, byte s, uint f, UIntPtr e);
  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern short VkKeyScan(char c);
- [DllImport("user32.dll")] public static extern uint SendInput(uint n, INPUT[] i, int size);
- [StructLayout(LayoutKind.Sequential)] public struct KEY { public ushort vk, scan; public uint flags, time; public UIntPtr extra; }
- [StructLayout(LayoutKind.Sequential)] public struct MOUSE { public int x,y; public uint data,flags,time; public UIntPtr extra; }
- [StructLayout(LayoutKind.Explicit)] public struct UNION { [FieldOffset(0)] public KEY key; [FieldOffset(0)] public MOUSE mouse; }
- [StructLayout(LayoutKind.Sequential)] public struct INPUT { public uint type; public UNION value; }
- public static void Character(char c) { var a=new INPUT[2]; a[0].type=a[1].type=1; a[0].value.key.scan=a[1].value.key.scan=c; a[0].value.key.flags=4;a[1].value.key.flags=6; if(SendInput(2,a,Marshal.SizeOf(typeof(INPUT)))!=2)throw new Exception("Native Unicode input refused"); }
  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int left,top,right,bottom; }
  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
  [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr dc, uint flags);
@@ -50,7 +44,7 @@ function Owned-Window {
     } elseif ($ownerId -ne $expected) { throw 'Window process ownership changed' }
     return $h
 }
-while ($null -ne ($line = [Console]::ReadLine())) {
+:requests while ($null -ne ($line = [Console]::ReadLine())) {
     try {
         $command = $line | ConvertFrom-Json
         if ($command.action -eq 'init') {
@@ -107,7 +101,7 @@ while ($null -ne ($line = [Console]::ReadLine())) {
                 $file=Join-Path $images $command.name
                 try {$bitmap.Save($file,[Drawing.Imaging.ImageFormat]::Png)}finally{$bitmap.Dispose()}
                 @{status='ok';file=$file} | ConvertTo-Json -Compress
-                continue
+                continue requests
             }
             'close' { [AcpWindow]::PostMessage($h,0x10,[IntPtr]::Zero,[IntPtr]::Zero) | Out-Null }
             default { throw 'Unsupported bounded window action' }
