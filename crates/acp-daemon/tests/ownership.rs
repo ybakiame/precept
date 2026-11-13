@@ -1,4 +1,5 @@
 mod support;
+use acp_core::operator::Channel;
 use acp_ipc::{Access, Error};
 use acp_write::{Command, Expected, Request, Scope, Snapshot};
 use serde_json::{Value, json};
@@ -26,7 +27,7 @@ fn handoff(project: &str, expected: Expected) -> Command {
 }
 fn request(b: &acp_write::Binding, op: &str, command: Command) -> Value {
     serde_json::to_value(Request {
-        version: 1,
+        version: 2,
         binding: b.clone(),
         operation_id: op.into(),
         command,
@@ -37,6 +38,15 @@ fn denied(f: &Fixture, method: &str, params: Value, error: Error) {
     let before = logical(&f.db);
     assert_eq!(f.daemon.control(method, params), Err(error));
     assert_eq!(logical(&f.db), before);
+}
+/// The digest a real operator preview returns; never a guessed constant.
+fn preview_digest(f: &Fixture, scope: &Scope, id: i64) -> String {
+    f.daemon
+        .control("profile.preferences.get", json!({"scope":scope,"id":id}))
+        .unwrap()["record"]["proposal_digest"]
+        .as_str()
+        .unwrap()
+        .to_owned()
 }
 
 #[test]
@@ -138,6 +148,9 @@ fn seven_real_ipc_commands_scope_cas_transitions_and_denials() {
         .unwrap()
         .parse::<i64>()
         .unwrap();
+    // Every synthetic suggestion here is the same global proposal, so one
+    // previewed digest binds all of these decisions.
+    let digest = preview_digest(&f, &Scope::Global, id);
     f.daemon
         .mutate(
             &b,
@@ -145,6 +158,8 @@ fn seven_real_ipc_commands_scope_cas_transitions_and_denials() {
             Command::ConfirmPreference {
                 id,
                 scope: Scope::Global,
+                proposal_digest: digest.clone(),
+                channel: Channel::Cli,
                 expected: Expected::Revision(1),
             },
         )
@@ -163,6 +178,8 @@ fn seven_real_ipc_commands_scope_cas_transitions_and_denials() {
             Command::ConfirmPreference {
                 id: id2,
                 scope: Scope::Global,
+                proposal_digest: digest.clone(),
+                channel: Channel::Cli,
                 expected: Expected::Revision(1),
             },
         )
@@ -175,6 +192,8 @@ fn seven_real_ipc_commands_scope_cas_transitions_and_denials() {
             Command::DeprecatePreference {
                 id: id2,
                 scope: Scope::Global,
+                proposal_digest: digest.clone(),
+                channel: Channel::Cli,
                 expected: Expected::Revision(2),
             },
         )
@@ -192,6 +211,8 @@ fn seven_real_ipc_commands_scope_cas_transitions_and_denials() {
             Command::RejectPreference {
                 id: id3,
                 scope: Scope::Global,
+                proposal_digest: digest.clone(),
+                channel: Channel::Cli,
                 expected: Expected::Revision(1),
             },
         )
@@ -203,6 +224,8 @@ fn seven_real_ipc_commands_scope_cas_transitions_and_denials() {
             Command::DeletePreference {
                 id: id3,
                 scope: Scope::Global,
+                proposal_digest: digest.clone(),
+                channel: Channel::Cli,
                 expected: Expected::Revision(2),
             },
         )
@@ -223,6 +246,8 @@ fn seven_real_ipc_commands_scope_cas_transitions_and_denials() {
             Command::ConfirmPreference {
                 id,
                 scope: Scope::Global,
+                proposal_digest: digest.clone(),
+                channel: Channel::Cli,
                 expected: Expected::Revision(3),
             },
             Error::InvalidTransition,
@@ -232,6 +257,8 @@ fn seven_real_ipc_commands_scope_cas_transitions_and_denials() {
             Command::DeletePreference {
                 id,
                 scope: Scope::Global,
+                proposal_digest: digest.clone(),
+                channel: Channel::Cli,
                 expected: Expected::Revision(999),
             },
             Error::Conflict,
@@ -243,6 +270,8 @@ fn seven_real_ipc_commands_scope_cas_transitions_and_denials() {
                 scope: Scope::Project {
                     name: "beta".into(),
                 },
+                proposal_digest: digest.clone(),
+                channel: Channel::Cli,
                 expected: Expected::Revision(3),
             },
             Error::ScopeMismatch,
@@ -285,6 +314,25 @@ fn seven_real_ipc_commands_scope_cas_transitions_and_denials() {
     malformed["extra"] = json!(true);
     assert_eq!(
         f.daemon.call(&c, "profile.mutate", malformed),
+        Err(Error::InvalidRequest)
+    );
+    // The retired v1 envelope is refused; origin is required and closed-set.
+    let mut legacy = request(&b, "legacy-envelope", suggest());
+    legacy["version"] = json!(1);
+    assert_eq!(
+        f.daemon.call(&c, "profile.mutate", legacy),
+        Err(Error::InvalidRequest)
+    );
+    let mut missing = request(&b, "missing-origin", suggest());
+    missing["command"].as_object_mut().unwrap().remove("origin");
+    assert_eq!(
+        f.daemon.call(&c, "profile.mutate", missing),
+        Err(Error::InvalidRequest)
+    );
+    let mut unknown = request(&b, "unknown-origin", suggest());
+    unknown["command"]["origin"] = json!("verified");
+    assert_eq!(
+        f.daemon.call(&c, "profile.mutate", unknown),
         Err(Error::InvalidRequest)
     );
     let mut stale = request(&b, "stale", suggest());
@@ -1064,6 +1112,8 @@ fn native_cli_lifecycle_seven_commands_preview_cas_and_exact_retry() {
             "synthetic",
             "--source",
             "operator",
+            "--origin",
+            "agent_reported",
         ],
     );
     assert!(result.0);
@@ -1085,6 +1135,8 @@ fn native_cli_lifecycle_seven_commands_preview_cas_and_exact_retry() {
             "synthetic",
             "--source",
             "operator",
+            "--origin",
+            "agent_reported",
         ],
     );
     assert_eq!(result, replay);
@@ -1105,7 +1157,9 @@ fn native_cli_lifecycle_seven_commands_preview_cas_and_exact_retry() {
                 "--value",
                 "changed",
                 "--source",
-                "operator"
+                "operator",
+                "--origin",
+                "agent_reported"
             ]
         )
         .1["error"],
@@ -1127,6 +1181,50 @@ fn native_cli_lifecycle_seven_commands_preview_cas_and_exact_retry() {
     assert!(preview.0);
     assert_eq!(preview.1["record"]["revision"], 1);
     assert_eq!(preview.1["record"]["status"], "suggested");
+    assert_eq!(preview.1["record"]["origin"], "agent_reported");
+    let digest = preview.1["record"]["proposal_digest"].as_str().unwrap();
+    assert_eq!(digest.len(), 64);
+    // The operator review reads are reachable from the same bounded CLI.
+    let queue = cli(
+        &f,
+        &["review-queue", "--scope", "project", "--project", "alpha"],
+    );
+    assert!(queue.0);
+    assert_eq!(queue.1["records"].as_array().unwrap().len(), 1);
+    assert_eq!(queue.1["records"][0]["proposal_digest"], digest);
+    let inspected = cli(
+        &f,
+        &[
+            "review-inspect",
+            id,
+            "--scope",
+            "project",
+            "--project",
+            "alpha",
+            "--revision",
+            "1",
+        ],
+    );
+    assert!(inspected.0);
+    assert_eq!(inspected.1["record"]["proposal_digest"], digest);
+    assert!(inspected.1["decisions"].as_array().unwrap().is_empty());
+    assert_eq!(
+        cli(
+            &f,
+            &[
+                "review-inspect",
+                id,
+                "--scope",
+                "project",
+                "--project",
+                "alpha",
+                "--revision",
+                "2"
+            ]
+        )
+        .1["error"],
+        "Conflict"
+    );
     assert!(
         cli(&f, &["preferences", "list", "--scope", "global"]).1["records"]
             .as_array()
@@ -1165,7 +1263,9 @@ fn native_cli_lifecycle_seven_commands_preview_cas_and_exact_retry() {
                 "--project",
                 "alpha",
                 "--expected-revision",
-                "1"
+                "1",
+                "--proposal-digest",
+                digest
             ]
         )
         .1["error"],
@@ -1186,6 +1286,8 @@ fn native_cli_lifecycle_seven_commands_preview_cas_and_exact_retry() {
                 "alpha",
                 "--expected-revision",
                 "1",
+                "--proposal-digest",
+                digest,
                 "--confirm"
             ]
         )
@@ -1206,6 +1308,8 @@ fn native_cli_lifecycle_seven_commands_preview_cas_and_exact_retry() {
                 "alpha",
                 "--expected-revision",
                 "1",
+                "--proposal-digest",
+                digest,
                 "--confirm"
             ]
         )
@@ -1227,6 +1331,8 @@ fn native_cli_lifecycle_seven_commands_preview_cas_and_exact_retry() {
                 "alpha",
                 "--expected-revision",
                 "2",
+                "--proposal-digest",
+                digest,
                 "--confirm"
             ]
         )
@@ -1246,6 +1352,8 @@ fn native_cli_lifecycle_seven_commands_preview_cas_and_exact_retry() {
                 "alpha",
                 "--expected-revision",
                 "3",
+                "--proposal-digest",
+                digest,
                 "--confirm"
             ]
         )
@@ -1265,10 +1373,18 @@ fn native_cli_lifecycle_seven_commands_preview_cas_and_exact_retry() {
             "synthetic",
             "--source",
             "operator",
+            "--origin",
+            "daemon_observed",
         ],
     );
     assert!(result.0);
     let id = result.1["affected"][0]["record_id"].as_str().unwrap();
+    let global_preview = cli(&f, &["preferences", "get", id, "--scope", "global"]).1;
+    assert_eq!(global_preview["record"]["origin"], "daemon_observed");
+    let global_digest = global_preview["record"]["proposal_digest"]
+        .as_str()
+        .unwrap();
+    assert_ne!(global_digest, digest);
     assert!(
         cli_mutate(
             &f,
@@ -1281,6 +1397,8 @@ fn native_cli_lifecycle_seven_commands_preview_cas_and_exact_retry() {
                 "global",
                 "--expected-revision",
                 "1",
+                "--proposal-digest",
+                global_digest,
                 "--confirm"
             ]
         )
@@ -1330,7 +1448,9 @@ fn native_cli_lifecycle_seven_commands_preview_cas_and_exact_retry() {
                 "--value",
                 "b",
                 "--source",
-                "c"
+                "c",
+                "--origin",
+                "legacy_unknown"
             ]
         )
         .0
@@ -1359,6 +1479,7 @@ fn operator_preview_exact_scope_bounds_roles_and_malformed_state_preservation() 
                 key: "k".into(),
                 value: "synthetic-other-scope".into(),
                 source: "test".into(),
+                origin: acp_core::operator::Origin::AgentReported,
                 expected: Expected::Absent,
             },
         )
@@ -1432,4 +1553,243 @@ fn operator_preview_exact_scope_bounds_roles_and_malformed_state_preservation() 
         )
         .unwrap();
     assert!(context["preferences"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn review_queue_inspect_and_digest_binding_are_exact_and_operator_only() {
+    let f = Fixture::created(false);
+    let b = f.daemon.enable();
+    f.register(&b, "alpha");
+    f.register(&b, "beta");
+    for i in 0..14 {
+        f.daemon
+            .mutate(&b, &format!("review-suggest-{i}"), suggest())
+            .unwrap();
+    }
+    f.daemon
+        .mutate(
+            &b,
+            "review-project",
+            Command::SuggestPreference {
+                scope: Scope::Project {
+                    name: "beta".into(),
+                },
+                key: "k".into(),
+                value: "synthetic-other-scope".into(),
+                source: "test".into(),
+                origin: acp_core::operator::Origin::AgentReported,
+                expected: Expected::Absent,
+            },
+        )
+        .unwrap();
+    let global = json!({"kind":"global"});
+    let queue = f
+        .daemon
+        .control("profile.review.queue", json!({"scope":global,"after_id":0}))
+        .unwrap();
+    assert_eq!(queue["records"].as_array().unwrap().len(), 12);
+    assert_eq!(queue["next_after_id"], 12);
+    assert_eq!(queue["commit_sequence"], 17);
+    assert!(queue["records"].as_array().unwrap().iter().all(|r| {
+        r["status"] == "suggested"
+            && r["scope"]["kind"] == "global"
+            && r["origin"] == "agent_reported"
+            && r["proposal_digest"].as_str().unwrap().len() == 64
+    }));
+    let next = f
+        .daemon
+        .control(
+            "profile.review.queue",
+            json!({"scope":global,"after_id":12}),
+        )
+        .unwrap();
+    assert_eq!(next["records"].as_array().unwrap().len(), 2);
+    assert!(next["next_after_id"].is_null());
+    // Scopes are never unioned: the project row stays in its own queue.
+    let project = f
+        .daemon
+        .control(
+            "profile.review.queue",
+            json!({"scope":{"kind":"project","name":"beta"},"after_id":0}),
+        )
+        .unwrap();
+    assert_eq!(project["records"].as_array().unwrap().len(), 1);
+    assert_eq!(project["records"][0]["id"], 15);
+    let inspect = f
+        .daemon
+        .control(
+            "profile.review.inspect",
+            json!({"scope":global,"id":1,"revision":1}),
+        )
+        .unwrap();
+    assert_eq!(inspect["record"]["id"], 1);
+    assert_eq!(inspect["commit_sequence"], 17);
+    assert!(inspect["decisions"].as_array().unwrap().is_empty());
+    assert!(inspect["peer_demotions"].as_array().unwrap().is_empty());
+    assert_eq!(inspect["peer_demotion_total"], 0);
+    // A moved revision is a conflict, never a silently different preview.
+    assert_eq!(
+        f.daemon.control(
+            "profile.review.inspect",
+            json!({"scope":global,"id":1,"revision":2})
+        ),
+        Err(Error::Conflict)
+    );
+    assert_eq!(
+        f.daemon.control(
+            "profile.review.inspect",
+            json!({"scope":global,"id":999,"revision":1})
+        ),
+        Err(Error::NotFound)
+    );
+    assert_eq!(
+        f.daemon.control(
+            "profile.review.inspect",
+            json!({"scope":{"kind":"project","name":"alpha"},"id":1,"revision":1})
+        ),
+        Err(Error::NotFound)
+    );
+    let digest = preview_digest(&f, &Scope::Global, 1);
+    f.daemon
+        .mutate(
+            &b,
+            "review-confirm-1",
+            Command::ConfirmPreference {
+                id: 1,
+                scope: Scope::Global,
+                proposal_digest: digest.clone(),
+                channel: Channel::Cli,
+                expected: Expected::Revision(1),
+            },
+        )
+        .unwrap();
+    let inspect = f
+        .daemon
+        .control(
+            "profile.review.inspect",
+            json!({"scope":global,"id":2,"revision":1}),
+        )
+        .unwrap();
+    assert_eq!(inspect["peer_demotions"].as_array().unwrap().len(), 1);
+    assert_eq!(inspect["peer_demotions"][0]["id"], 1);
+    assert_eq!(inspect["peer_demotions"][0]["revision"], 2);
+    assert_eq!(inspect["peer_demotion_total"], 1);
+    assert!(inspect["decisions"].as_array().unwrap().is_empty());
+    // A substituted proposal at the same revision is ReviewMismatch, not a race.
+    let before = logical(&f.db);
+    assert_eq!(
+        f.daemon.mutate(
+            &b,
+            "review-substituted",
+            Command::ConfirmPreference {
+                id: 2,
+                scope: Scope::Global,
+                proposal_digest: "0".repeat(64),
+                channel: Channel::Desktop,
+                expected: Expected::Revision(1),
+            },
+        ),
+        Err(Error::ReviewMismatch)
+    );
+    assert_eq!(logical(&f.db), before);
+    f.daemon
+        .mutate(
+            &b,
+            "review-confirm-2",
+            Command::ConfirmPreference {
+                id: 2,
+                scope: Scope::Global,
+                proposal_digest: digest.clone(),
+                channel: Channel::Tui,
+                expected: Expected::Revision(1),
+            },
+        )
+        .unwrap();
+    let history = f
+        .daemon
+        .control(
+            "profile.review.inspect",
+            json!({"scope":global,"id":1,"revision":3}),
+        )
+        .unwrap();
+    let decisions = history["decisions"].as_array().unwrap();
+    assert_eq!(decisions.len(), 2);
+    assert_eq!(decisions[0]["action"], "demote");
+    assert_eq!(decisions[0]["from_revision"], 2);
+    assert_eq!(decisions[0]["to_revision"], 3);
+    assert_eq!(decisions[0]["channel"], "tui");
+    assert_eq!(decisions[0]["proposal_digest"], digest);
+    assert_eq!(
+        decisions[0]["receipt_commit_sequence"],
+        history["commit_sequence"]
+    );
+    assert_eq!(decisions[1]["action"], "confirm");
+    assert_eq!(decisions[1]["from_revision"], 1);
+    assert_eq!(decisions[1]["to_revision"], 2);
+    assert_eq!(decisions[1]["channel"], "cli");
+    let queue = f
+        .daemon
+        .control("profile.review.queue", json!({"scope":global,"after_id":0}))
+        .unwrap();
+    assert_eq!(queue["records"].as_array().unwrap().len(), 12);
+    assert!(queue["next_after_id"].is_null());
+    assert!(
+        queue["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|r| r["id"] != 1 && r["id"] != 2)
+    );
+    for name in ["agent-alpha.cap", "operator-write.cap"] {
+        let cap = f.daemon.credential(name);
+        for (method, params) in [
+            ("profile.review.queue", json!({"scope":global,"after_id":0})),
+            (
+                "profile.review.inspect",
+                json!({"scope":global,"id":1,"revision":3}),
+            ),
+        ] {
+            let before = logical(&f.db);
+            assert_eq!(
+                f.daemon.call(&cap, method, params),
+                Err(Error::Unauthorized)
+            );
+            assert_eq!(logical(&f.db), before);
+        }
+    }
+    for params in [
+        json!({"scope":global,"after_id":-1}),
+        json!({"scope":{"kind":"global","name":"beta"},"after_id":0}),
+        json!({"scope":global,"after_id":0,"sql":"never"}),
+    ] {
+        denied(&f, "profile.review.queue", params, Error::InvalidRequest);
+    }
+    for params in [
+        json!({"scope":global,"id":0,"revision":1}),
+        json!({"scope":global,"id":1,"revision":0}),
+        json!({"scope":global,"id":1,"revision":3,"extra":true}),
+    ] {
+        denied(&f, "profile.review.inspect", params, Error::InvalidRequest);
+    }
+    denied(
+        &f,
+        "profile.review.queue",
+        json!({"scope":{"kind":"project","name":"outside"},"after_id":0}),
+        Error::Unauthorized,
+    );
+    // Review history is operator-only and never reaches agent context.
+    let context = f
+        .daemon
+        .control(
+            "context.get",
+            json!({"project":"alpha","include_documents":false}),
+        )
+        .unwrap();
+    // Only the confirmed global preference is effective; suggested rows,
+    // decision history and digests never reach agent-facing context.
+    let preferences = context["preferences"].as_array().unwrap();
+    assert_eq!(preferences.len(), 1);
+    assert_eq!(preferences[0]["id"], 2);
+    assert!(context.get("decisions").is_none());
+    assert!(!context.to_string().contains(&digest));
 }

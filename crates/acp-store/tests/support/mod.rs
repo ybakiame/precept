@@ -20,7 +20,7 @@ pub fn fixture(base: &Path) -> PathBuf {
     db.pragma_update(None, "foreign_keys", true).unwrap();
     let generation = "11111111111111111111111111111111";
     db.execute(
-        "INSERT INTO acp_profile VALUES(1,'00000000000000000000000000000000',?1,0,1,0)",
+        "INSERT INTO acp_profile VALUES(1,'00000000000000000000000000000000',?1,0,1,0,1)",
         [generation],
     )
     .unwrap();
@@ -53,6 +53,38 @@ pub fn fixture(base: &Path) -> PathBuf {
         receipt("project", "", name.clone());
     }
     let mut id = 0;
+    // Synthetic pre-review rows carry the closed legacy label and the real
+    // canonical digest of their own immutable proposal fields.
+    let preference = |id: i64,
+                      scope: &str,
+                      project: Option<&str>,
+                      key: &str,
+                      value: &str,
+                      status: &str,
+                      source: &str| {
+        let origin = acp_ipc::operator::Origin::LegacyUnknown;
+        let typed = match project {
+            Some(name) => acp_ipc::operator::Scope::Project { name: name.into() },
+            None => acp_ipc::operator::Scope::Global,
+        };
+        let digest =
+            acp_ipc::operator::proposal_digest(&typed, project, key, value, origin, source);
+        db.execute(
+            "INSERT INTO preferences VALUES(?1,?2,?3,?4,?5,?6,?7,1,?8,?8,'legacy_unknown',?9)",
+            params![
+                id,
+                scope,
+                project,
+                key,
+                value,
+                status,
+                source,
+                time,
+                digest.to_vec()
+            ],
+        )
+        .unwrap();
+    };
     for p in data["preferences"].as_array().unwrap() {
         id += 1;
         let scope = if p["scope"] == "global" {
@@ -65,23 +97,27 @@ pub fn fixture(base: &Path) -> PathBuf {
         } else {
             p["scope"].as_str()
         };
-        db.execute(
-            "INSERT INTO preferences VALUES(?1,?2,?3,?4,?5,?6,'fixture',1,?7,?7)",
-            params![
-                id,
-                scope,
-                project,
-                p["key"].as_str().unwrap(),
-                p["value"].as_str().unwrap(),
-                p["status"].as_str().unwrap(),
-                time
-            ],
-        )
-        .unwrap();
+        preference(
+            id,
+            scope,
+            project,
+            p["key"].as_str().unwrap(),
+            p["value"].as_str().unwrap(),
+            p["status"].as_str().unwrap(),
+            "fixture",
+        );
         receipt("preference", "", id.to_string());
     }
     id += 1;
-    db.execute("INSERT INTO preferences VALUES(?1,'project','alpha','commit.style','newest','confirmed','fixture-new',1,?2,?2)",(id,time)).unwrap();
+    preference(
+        id,
+        "project",
+        Some("alpha"),
+        "commit.style",
+        "newest",
+        "confirmed",
+        "fixture-new",
+    );
     receipt("preference", "", id.to_string());
     let validation:Vec<_>=["PASS","FAIL","SKIPPED","NOT_RUN"].into_iter().map(|s|json!({"check":s,"status":s,"environment":"synthetic","revision":"base","evidence":{"id":"record-id","updated_at":"recorded","nested":[null,true,2,{"log":"ref"}]}})).collect();
     for (project, task) in [

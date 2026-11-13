@@ -35,6 +35,7 @@ pub fn logical(path: &Path) -> Vec<u8> {
         "SELECT * FROM preferences ORDER BY id",
         "SELECT * FROM handoffs ORDER BY project,task_id",
         "SELECT * FROM acp_receipts ORDER BY commit_sequence",
+        "SELECT * FROM acp_review_decisions ORDER BY id",
     ] {
         let mut s = db.prepare(q).unwrap();
         let n = s.column_count();
@@ -174,7 +175,7 @@ impl Daemon {
     }
     pub fn mutate(&self, b: &Binding, op: &str, command: Command) -> acp_ipc::Result<Value> {
         let request = Request {
-            version: 1,
+            version: 2,
             binding: b.clone(),
             operation_id: op.into(),
             command,
@@ -258,6 +259,7 @@ pub fn suggest() -> Command {
         key: "synthetic-key".into(),
         value: "synthetic-value".into(),
         source: "synthetic-test".into(),
+        origin: acp_core::operator::Origin::AgentReported,
         expected: Expected::Absent,
     }
 }

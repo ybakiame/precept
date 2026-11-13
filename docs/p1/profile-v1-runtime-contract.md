@@ -46,7 +46,8 @@ CREATE TABLE acp_profile (
       CHECK (length(generation) = 32 AND generation NOT GLOB '*[^0-9a-f]*'),
     owner_epoch INTEGER NOT NULL CHECK (owner_epoch >= 0),
     next_preference_id INTEGER NOT NULL CHECK (next_preference_id > 0),
-    commit_sequence INTEGER NOT NULL CHECK (commit_sequence >= 0)
+    commit_sequence INTEGER NOT NULL CHECK (commit_sequence >= 0),
+    next_review_id INTEGER NOT NULL CHECK (next_review_id > 0)
 );
 
 CREATE TABLE projects (
@@ -68,6 +69,9 @@ CREATE TABLE preferences (
     revision INTEGER NOT NULL CHECK (revision > 0),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
+    origin TEXT NOT NULL
+      CHECK (origin IN ('agent_reported', 'daemon_observed', 'independently_verified', 'legacy_unknown')),
+    proposal_digest BLOB NOT NULL CHECK (length(proposal_digest) = 32),
     CHECK (
       (scope = 'global' AND project IS NULL) OR
       (scope = 'project' AND project IS NOT NULL)
@@ -103,6 +107,28 @@ CREATE TABLE acp_receipts (
     result_json TEXT NOT NULL
       CHECK (length(result_json) BETWEEN 1 AND 65536)
 );
+
+CREATE TABLE acp_review_decisions (
+    id INTEGER PRIMARY KEY CHECK (id > 0),
+    scope TEXT NOT NULL CHECK (scope IN ('global', 'project')),
+    project TEXT REFERENCES projects(name) ON DELETE RESTRICT,
+    preference_id INTEGER NOT NULL CHECK (preference_id > 0),
+    action TEXT NOT NULL
+      CHECK (action IN ('confirm', 'reject', 'deprecate', 'demote', 'delete')),
+    from_revision INTEGER NOT NULL CHECK (from_revision > 0),
+    to_revision INTEGER NOT NULL CHECK (to_revision > 0),
+    proposal_digest BLOB NOT NULL CHECK (length(proposal_digest) = 32),
+    receipt_commit_sequence INTEGER NOT NULL CHECK (receipt_commit_sequence > 0),
+    channel TEXT NOT NULL CHECK (channel IN ('cli', 'desktop', 'tui')),
+    decided_at TEXT NOT NULL,
+    CHECK (
+      (scope = 'global' AND project IS NULL) OR
+      (scope = 'project' AND project IS NOT NULL)
+    )
+);
+
+CREATE INDEX review_lookup
+    ON acp_review_decisions(scope, project, preference_id, id);
 
 PRAGMA user_version = 1;
 ```

@@ -153,7 +153,7 @@ fn empty_current_schema_is_valid_but_orphaned_domain_data_is_not() {
     for ddl in profile::DDL {
         db.execute_batch(ddl).unwrap()
     }
-    db.execute_batch("PRAGMA user_version=1; INSERT INTO acp_profile VALUES(1,'00000000000000000000000000000000','11111111111111111111111111111111',0,1,0)").unwrap();
+    db.execute_batch("PRAGMA user_version=1; INSERT INTO acp_profile VALUES(1,'00000000000000000000000000000000','11111111111111111111111111111111',0,1,0,1)").unwrap();
     drop(db);
     assert!(SqliteStore::open(&p).is_ok());
     let db = Connection::open(&p).unwrap();
@@ -164,6 +164,57 @@ fn empty_current_schema_is_valid_but_orphaned_domain_data_is_not() {
     .unwrap();
     drop(db);
     assert!(SqliteStore::open(&p).is_err());
+}
+#[test]
+fn review_decision_chain_digest_and_domain_drift_are_refused() {
+    // The empty drift is the accepted control: one contiguous confirm->demote
+    // chain for a single preference, written directly to isolate these rules.
+    for drift in [
+        "",
+        "UPDATE acp_review_decisions SET from_revision=3,to_revision=4 WHERE id=2",
+        "UPDATE acp_review_decisions SET from_revision=1,to_revision=2 WHERE id=2",
+        "UPDATE acp_review_decisions SET to_revision=4 WHERE id=2",
+        "UPDATE acp_review_decisions SET proposal_digest=zeroblob(32) WHERE id=2",
+        "UPDATE acp_review_decisions SET channel='web' WHERE id=2",
+        "UPDATE acp_review_decisions SET receipt_commit_sequence=4097 WHERE id=2",
+        "UPDATE acp_review_decisions SET decided_at='2026-02-30T00:00:00Z' WHERE id=2",
+        "UPDATE acp_review_decisions SET preference_id=999 WHERE id=2",
+        "UPDATE acp_profile SET next_review_id=2",
+        "DELETE FROM acp_review_decisions WHERE id=1",
+    ] {
+        let (_t, p) = fresh();
+        let db = Connection::open(&p).unwrap();
+        db.pragma_update(None, "foreign_keys", true).unwrap();
+        let digest: Vec<u8> = db
+            .query_row(
+                "SELECT proposal_digest FROM preferences WHERE id=1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        for (id, action, from, to) in [(1, "confirm", 1, 2), (2, "demote", 2, 3)] {
+            db.execute(
+                "INSERT INTO acp_review_decisions VALUES(?1,'global',NULL,1,?2,?3,?4,?5,1,'cli','2026-01-01T00:00:00Z')",
+                rusqlite::params![id, action, from, to, digest],
+            )
+            .unwrap();
+        }
+        db.execute("UPDATE acp_profile SET next_review_id=3", [])
+            .unwrap();
+        // Application verification must refuse domain drift on its own, even
+        // when the SQLite CHECK constraints are bypassed.
+        db.execute_batch("PRAGMA ignore_check_constraints=ON")
+            .unwrap();
+        db.execute_batch(drift).unwrap();
+        drop(db);
+        let before = fs::read(&p).unwrap();
+        assert_eq!(
+            SqliteStore::open(&p).is_ok(),
+            drift.is_empty(),
+            "unexpected decision-history outcome"
+        );
+        assert_eq!(fs::read(&p).unwrap(), before);
+    }
 }
 #[test]
 fn frozen_ddl_matches_implementation() {

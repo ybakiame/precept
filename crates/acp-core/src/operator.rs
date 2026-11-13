@@ -97,26 +97,35 @@ pub enum Command {
         key: String,
         value: String,
         source: String,
+        origin: Origin,
         expected: Expected,
     },
     ConfirmPreference {
         id: i64,
         scope: Scope,
+        proposal_digest: String,
+        channel: Channel,
         expected: Expected,
     },
     RejectPreference {
         id: i64,
         scope: Scope,
+        proposal_digest: String,
+        channel: Channel,
         expected: Expected,
     },
     DeprecatePreference {
         id: i64,
         scope: Scope,
+        proposal_digest: String,
+        channel: Channel,
         expected: Expected,
     },
     DeletePreference {
         id: i64,
         scope: Scope,
+        proposal_digest: String,
+        channel: Channel,
         expected: Expected,
     },
     PutHandoff {
@@ -142,6 +151,10 @@ pub struct PreferenceRecord {
     pub source: String,
     pub status: String,
     pub revision: i64,
+    pub origin: Origin,
+    pub proposal_digest: String,
+    pub created_at: String,
+    pub updated_at: String,
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

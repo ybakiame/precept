@@ -33,7 +33,13 @@ impl Request {
                 && s.bytes()
                     .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
         }
-        if self.version != 1
+        // Canonical lowercase SHA-256 hex; the writer byte-compares it later.
+        fn digest(s: &str) -> bool {
+            s.len() == 64
+                && s.bytes()
+                    .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        }
+        if self.version != 2
             || !hex(&self.binding.profile_id)
             || !hex(&self.binding.generation)
             || self.binding.owner_epoch < 0
@@ -67,6 +73,8 @@ impl Request {
                 value,
                 source,
                 expected,
+                // origin is a closed serde enum; no additional domain check.
+                ..
             } => {
                 if !text(key, 120, true)
                     || !text(value, 4096, true)
@@ -80,24 +88,35 @@ impl Request {
             Command::ConfirmPreference {
                 id,
                 scope,
+                proposal_digest,
                 expected,
+                ..
             }
             | Command::RejectPreference {
                 id,
                 scope,
+                proposal_digest,
                 expected,
+                ..
             }
             | Command::DeprecatePreference {
                 id,
                 scope,
+                proposal_digest,
                 expected,
+                ..
             }
             | Command::DeletePreference {
                 id,
                 scope,
+                proposal_digest,
                 expected,
+                ..
             } => {
-                if *id <= 0 || !matches!(expected, Expected::Revision(n) if *n>0) {
+                if *id <= 0
+                    || !digest(proposal_digest)
+                    || !matches!(expected, Expected::Revision(n) if *n>0)
+                {
                     return Err(Error::InvalidCommand);
                 }
                 (expected, Some(scope))

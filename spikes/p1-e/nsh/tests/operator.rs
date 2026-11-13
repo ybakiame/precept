@@ -221,7 +221,7 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     assert_eq!(page["records"][0]["status"], "confirmed");
     assert_eq!(page["records"][1]["status"], "rejected");
     let request: operator::Mutation = serde_json::from_value(json!({
-        "version":1,"binding":f.info()["binding"],"operation_id":"headless-handoff",
+        "version":2,"binding":f.info()["binding"],"operation_id":"headless-handoff",
         "command":{"command":"put_handoff","project":"alpha","task_id":"shared",
             "objective":"Saved synthetic history","completed":"","next_action":"Inspect current facts",
             "validation_json":"[{\"check\":\"synthetic\",\"status\":\"NOT_RUN\"}]",

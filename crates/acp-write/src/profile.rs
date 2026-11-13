@@ -43,7 +43,7 @@ impl Profile {
                 owner_epoch: 0,
             };
             db.execute(
-                "INSERT INTO acp_profile VALUES(1,?1,?2,0,1,0)",
+                "INSERT INTO acp_profile VALUES(1,?1,?2,0,1,0,1)",
                 (&binding.profile_id, &binding.generation),
             )
             .map_err(crate::sql_error)?;
