@@ -110,6 +110,12 @@ impl Desktop {
         loop {
             let r = self.rpc(p.clone());
             if r["status"] == "ok" {
+                if r["input_layout"].is_object() {
+                    self.lines
+                        .lock()
+                        .unwrap()
+                        .push(format!("ACP_INPUT_LAYOUT {}", r["input_layout"]));
+                }
                 return r;
             }
             if r["status"] == "foreground_required" {

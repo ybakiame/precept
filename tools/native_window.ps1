@@ -11,6 +11,8 @@ public static class AcpWindow {
  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);
+ [DllImport("user32.dll")] public static extern IntPtr GetKeyboardLayout(uint thread);
+ [DllImport("user32.dll")] public static extern int GetKeyboardLayoutList(int count, [Out] IntPtr[] layouts);
  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
  [DllImport("user32.dll")] public static extern void keybd_event(byte k, byte s, uint f, UIntPtr e);
  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern short VkKeyScan(char c);
@@ -25,6 +27,8 @@ $nonce = $null
 $expected = 0
 $remote = $false
 $images = $null
+$originalLayout = [IntPtr]::Zero
+$layoutWindow = [IntPtr]::Zero
 function Owned-Window {
     $script:ownedHandles = [System.Collections.Generic.List[IntPtr]]::new()
     [AcpWindow]::EnumWindows({ param($h,$unused)
@@ -44,6 +48,32 @@ function Owned-Window {
     } elseif ($ownerId -ne $expected) { throw 'Window process ownership changed' }
     return $h
 }
+function Ensure-English([IntPtr]$Window) {
+    if ($remote) { return $null }
+    [uint32]$ownerId=0
+    $thread=[AcpWindow]::GetWindowThreadProcessId($Window,[ref]$ownerId)
+    $current=[AcpWindow]::GetKeyboardLayout($thread)
+    $switched=$false
+    if (($current.ToInt64() -band 0x3ff) -ne 9) {
+        $count=[AcpWindow]::GetKeyboardLayoutList(0,$null)
+        if ($count -lt 1 -or $count -gt 64) { throw 'Installed keyboard layout list unavailable' }
+        $layouts=[IntPtr[]]::new($count)
+        [void][AcpWindow]::GetKeyboardLayoutList($count,$layouts)
+        $english=@($layouts | Where-Object { ($_.ToInt64() -band 0x3ff) -eq 9 })
+        if ($english.Count -eq 0) { throw 'An already-installed English layout is required; none will be installed' }
+        if ($originalLayout -eq [IntPtr]::Zero) { $script:originalLayout=$current; $script:layoutWindow=$Window }
+        if (-not [AcpWindow]::PostMessage($Window,0x50,[IntPtr]::Zero,$english[0])) { throw 'Owned window input-layout request refused' }
+        $deadline=[DateTime]::UtcNow.AddSeconds(3)
+        while (([AcpWindow]::GetKeyboardLayout($thread).ToInt64() -band 0x3ff) -ne 9) {
+            if ([DateTime]::UtcNow -gt $deadline) { throw 'Owned window did not acknowledge English layout' }
+            Start-Sleep -Milliseconds 20
+        }
+        $switched=$true
+    }
+    if ((Owned-Window) -ne $Window -or [AcpWindow]::GetForegroundWindow() -ne $Window) { throw 'Foreground changed during input-layout check' }
+    return @{english=$true;switched=$switched}
+}
+try {
 :requests while ($null -ne ($line = [Console]::ReadLine())) {
     try {
         $command = $line | ConvertFrom-Json
@@ -62,6 +92,8 @@ function Owned-Window {
         $active = [AcpWindow]::GetForegroundWindow() -eq $h
         if ($command.action -eq 'observe') { @{status='ok';foreground=$active} | ConvertTo-Json -Compress; continue }
         if ($command.action -in @('key','text','capture') -and -not $active) { @{status='foreground_required';nonce=$nonce} | ConvertTo-Json -Compress; continue }
+        $layout=$null
+        if ($command.action -in @('key','text')) { $layout=Ensure-English $h }
         switch ($command.action) {
             'key' {
                 if ($command.key -notmatch '^(alt\+shift\+[umerxlsvynzi]|alt\+[opkwft1-6abc]|alt\+(right|left)|ctrl\+[alrpq]|escape|enter|tab)$') { throw 'Key outside fixed synthetic vocabulary' }
@@ -106,6 +138,11 @@ function Owned-Window {
             'close' { [AcpWindow]::PostMessage($h,0x10,[IntPtr]::Zero,[IntPtr]::Zero) | Out-Null }
             default { throw 'Unsupported bounded window action' }
         }
-        @{status='ok'} | ConvertTo-Json -Compress
+        @{status='ok';input_layout=$layout} | ConvertTo-Json -Compress
     } catch { @{status='refused';reason=$_.Exception.Message} | ConvertTo-Json -Compress }
+}
+} finally {
+    if ($originalLayout -ne [IntPtr]::Zero) {
+        try { if ((Owned-Window) -eq $layoutWindow) { [void][AcpWindow]::PostMessage($layoutWindow,0x50,[IntPtr]::Zero,$originalLayout) } } catch { }
+    }
 }

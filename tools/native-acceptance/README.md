@@ -36,6 +36,17 @@ fields are accepted; Ctrl+1 is excluded. Captures use only that owned window via
 PrintWindow. Verify the PNGs visually; neither a probe nor a successful capture
 API return alone proves rendered content. GUI shutdown is an owned WM_CLOSE.
 
+Windows may remember a Chinese IME separately for each window. As explicitly
+authorized for this acceptance task, before native Windows input the worker checks
+the owned window thread's layout and requests an **already installed** English
+layout using WM_INPUTLANGCHANGEREQUEST. It verifies the result and foreground again
+before typing, emits content-free layout observations, and restores the original
+layout on worker exit if that exact window still exists. It never installs/loads
+a layout, activates another window or changes persistent input/system settings.
+No installed English layout means refusal. This does not certify IME composition
+input; Chinese UI rendering remains a separate assertion. WSLg host layout is not
+changed by this native-Windows-only step.
+
 Each run creates only its own `acp-s5-*` temporary root, synthetic alpha/beta
 projects, private runtime and explicitly reviewed Profile. CLI-only setup is done
 with the native CLI. A bounded local authenticated relay consumes one **actual**
