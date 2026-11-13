@@ -17,6 +17,7 @@ pub enum Error {
     InvalidTransition,
     IdempotencyConflict,
     Conflict,
+    ReviewMismatch,
     ScopeMismatch,
     StaleGeneration,
     OwnerMismatch,

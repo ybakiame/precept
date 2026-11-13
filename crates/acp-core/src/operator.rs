@@ -1,4 +1,5 @@
 //! Data-only Profile operator DTOs. No authorization, storage or writer implementation.
+pub use crate::typed_context::Origin;
 use serde::{Deserialize, Serialize};
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -192,6 +193,115 @@ pub struct Mutation {
     pub command: Command,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Channel {
+    Cli,
+    Desktop,
+    Tui,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DecisionAction {
+    Confirm,
+    Reject,
+    Deprecate,
+    Demote,
+    Delete,
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReviewDecisionRecord {
+    pub preference_id: i64,
+    pub action: DecisionAction,
+    pub from_revision: i64,
+    pub to_revision: i64,
+    pub proposal_digest: String,
+    pub receipt_commit_sequence: i64,
+    pub channel: Channel,
+    pub decided_at: String,
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PeerDemotion {
+    pub id: i64,
+    pub revision: i64,
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReviewQueue {
+    pub binding: Binding,
+    pub commit_sequence: i64,
+    pub records: Vec<PreferenceRecord>,
+    pub next_after_id: Option<i64>,
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReviewInspect {
+    pub binding: Binding,
+    pub commit_sequence: i64,
+    pub record: PreferenceRecord,
+    pub decisions: Vec<ReviewDecisionRecord>,
+    pub peer_demotions: Vec<PeerDemotion>,
+    pub peer_demotion_total: i64,
+}
+
+/// SHA-256 over canonical compact JSON of the six immutable proposal fields.
+/// Key order is sorted; no whitespace variance. Byte comparison only, not attestation.
+pub fn proposal_digest(
+    scope: &Scope,
+    project: Option<&str>,
+    key: &str,
+    value: &str,
+    origin: Origin,
+    source: &str,
+) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    let scope_val = serde_json::to_value(scope).expect("scope serializes");
+    let mut map = std::collections::BTreeMap::new();
+    map.insert("key", serde_json::Value::String(key.to_owned()));
+    map.insert(
+        "origin",
+        serde_json::to_value(origin).expect("origin serializes"),
+    );
+    map.insert(
+        "project",
+        match project {
+            Some(p) => serde_json::Value::String(p.to_owned()),
+            None => serde_json::Value::Null,
+        },
+    );
+    map.insert("scope", scope_val);
+    map.insert("source", serde_json::Value::String(source.to_owned()));
+    map.insert("value", serde_json::Value::String(value.to_owned()));
+    let bytes = serde_json::to_vec(&map).expect("canonical map serializes");
+    Sha256::digest(&bytes).into()
+}
+
+pub fn digest_hex(digest: &[u8; 32]) -> String {
+    digest.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+pub fn digest_from_hex(hex: &str) -> Option<[u8; 32]> {
+    if hex.len() != 64
+        || !hex
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    {
+        return None;
+    }
+    let mut out = [0u8; 32];
+    for (i, chunk) in hex.as_bytes().chunks(2).enumerate() {
+        out[i] = u8::from_str_radix(std::str::from_utf8(chunk).ok()?, 16).ok()?;
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -214,5 +324,88 @@ mod tests {
             let raw = serde_json::to_string(&scope).unwrap();
             assert!(serde_json::from_str::<Scope>(&raw).unwrap() == scope);
         }
+    }
+
+    #[test]
+    fn canonical_digest_is_deterministic_and_field_sensitive() {
+        let d1 = proposal_digest(
+            &Scope::Global,
+            None,
+            "editor",
+            "vim",
+            Origin::AgentReported,
+            "test",
+        );
+        let d2 = proposal_digest(
+            &Scope::Global,
+            None,
+            "editor",
+            "vim",
+            Origin::AgentReported,
+            "test",
+        );
+        assert_eq!(d1, d2);
+        let d3 = proposal_digest(
+            &Scope::Global,
+            None,
+            "editor",
+            "emacs",
+            Origin::AgentReported,
+            "test",
+        );
+        assert_ne!(d1, d3);
+        let d4 = proposal_digest(
+            &Scope::Global,
+            None,
+            "editor",
+            "vim",
+            Origin::DaemonObserved,
+            "test",
+        );
+        assert_ne!(d1, d4);
+        let d5 = proposal_digest(
+            &Scope::Project {
+                name: "alpha".into(),
+            },
+            Some("alpha"),
+            "editor",
+            "vim",
+            Origin::AgentReported,
+            "test",
+        );
+        assert_ne!(d1, d5);
+    }
+
+    #[test]
+    fn digest_hex_roundtrip() {
+        let d = proposal_digest(&Scope::Global, None, "k", "v", Origin::LegacyUnknown, "s");
+        let hex = digest_hex(&d);
+        assert_eq!(hex.len(), 64);
+        assert_eq!(digest_from_hex(&hex), Some(d));
+        assert_eq!(digest_from_hex(&hex.to_uppercase()), None);
+        assert_eq!(digest_from_hex("short"), None);
+        assert_eq!(digest_from_hex(&"g".repeat(64)), None);
+    }
+
+    #[test]
+    fn channel_and_decision_action_closed_sets() {
+        assert!(serde_json::from_str::<Channel>("\"cli\"").is_ok());
+        assert!(serde_json::from_str::<Channel>("\"desktop\"").is_ok());
+        assert!(serde_json::from_str::<Channel>("\"tui\"").is_ok());
+        assert!(serde_json::from_str::<Channel>("\"web\"").is_err());
+        assert!(serde_json::from_str::<DecisionAction>("\"confirm\"").is_ok());
+        assert!(serde_json::from_str::<DecisionAction>("\"demote\"").is_ok());
+        assert!(serde_json::from_str::<DecisionAction>("\"approve\"").is_err());
+    }
+
+    #[test]
+    fn origin_default_is_agent_reported() {
+        assert_eq!(Origin::default(), Origin::AgentReported);
+    }
+
+    #[test]
+    fn review_dtos_refuse_unknown_fields() {
+        let raw = r#"{"preference_id":1,"action":"confirm","from_revision":1,"to_revision":2,"proposal_digest":"aa","receipt_commit_sequence":1,"channel":"cli","decided_at":"t","extra":true}"#;
+        assert!(serde_json::from_str::<ReviewDecisionRecord>(raw).is_err());
     }
 }

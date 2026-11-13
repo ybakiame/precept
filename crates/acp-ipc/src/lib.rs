@@ -34,6 +34,7 @@ pub enum Error {
     EndpointCollision,
     RestartRequired,
     Conflict,
+    ReviewMismatch,
     InvalidTransition,
     IdempotencyConflict,
     ScopeMismatch,
