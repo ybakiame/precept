@@ -1,5 +1,12 @@
 param([string]$SourceRoot = (Split-Path -Parent $PSScriptRoot))
 $ErrorActionPreference = 'Stop'
+$originalEnvironment = [Environment]::GetEnvironmentVariables('Process')
+function Restore-Environment($Saved) {
+    foreach ($key in @([Environment]::GetEnvironmentVariables('Process').Keys)) {
+        if (-not $Saved.Contains($key)) { [Environment]::SetEnvironmentVariable($key, $null, 'Process') }
+    }
+    foreach ($key in $Saved.Keys) { [Environment]::SetEnvironmentVariable($key, $Saved[$key], 'Process') }
+}
 $root = Join-Path ([System.IO.Path]::GetTempPath()) ('acp-s5-verify-' + [guid]::NewGuid().ToString('N'))
 $repo = Join-Path $root 'repo'
 New-Item -ItemType Directory -Path (Join-Path $repo 'tools') | Out-Null
@@ -20,8 +27,10 @@ function Check-Case([string]$Name, [string]$Base, [bool]$Pass = $false, [bool]$E
     $report = Join-Path $root $Name
     if ($Existing) { New-Item -ItemType Directory -Path $report | Out-Null }
     $ok = $true
+    $environment = [Environment]::GetEnvironmentVariables('Process')
     try { & ./tools/windows_local_verify.ps1 -Suite Core -ReportDir $report -DiffBase $Base *> (Join-Path $root "$Name.log") }
     catch { $ok = $false; $failure = $_.Exception.Message }
+    finally { Restore-Environment $environment }
     if ($ok -ne $Pass) { throw "Unexpected helper outcome: $Name ($failure)" }
     if ((Test-Path $env:ACP_S5_TRACE) -ne $Pass) { throw "Cargo before valid branch diff: $Name" }
     if ($Name -eq 'committed-whitespace') {
@@ -67,4 +76,4 @@ try {
     Set-Content -LiteralPath sample -Value 'dirty'
     Check-Case 'dirty-source' $base
     @{ status = 'PASS'; platform = 'Windows'; proof = 'Actual helper and native Git; Cargo function stub for control-flow only'; cases = $results } | ConvertTo-Json -Depth 6
-} finally { Pop-Location; Remove-Item -LiteralPath $root -Recurse -Force }
+} finally { Pop-Location; Restore-Environment $originalEnvironment; Remove-Item -LiteralPath $root -Recurse -Force }
