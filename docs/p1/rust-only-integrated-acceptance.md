@@ -96,3 +96,22 @@ who observed them, private artifact paths and PASS/FAIL/BLOCKED/NOT_RUN. Later
 docs-only SHAs must have an explicit diff proof. No Actions/macOS/mobile/niri/model/
 installer/release claim. Every commit uses [skip ci]. Submit Draft PR, Closes #50,
 Refs #40; no self-merge or automatic parent closure.
+
+## Acceptance-discovered corrections and verdict
+
+The initial matrix remains frozen in commit
+2624bdf6945c5cdfd13fc7d70f46a7e3d58e4ab1. Actual Windows inspection found that
+Tab/Enter had not activated the existing exact saved-Handoff read. The scoped
+correction adds Alt+Shift+H for that same read, English/Chinese shortcut help and
+an opt-in content-free saved revision probe. The native driver now requires the
+actual revision and rendered history; a real-component/daemon regression also
+checks that changing task clears the earlier saved record. No new write method,
+grant, Schema, domain or layout is introduced.
+
+With explicit operator authorization, the native Windows input worker checks the
+owned thread's layout and requests an already-installed English layout when
+needed. It verifies acknowledgement and foreground, never installs a layout or
+changes persistent system settings, and restores the original layout on worker
+exit if the exact window still exists. WSLg host layout is not changed.
+
+Final clean code and evidence: [S5 verdict](../evaluation/p1-m2-s5-rust-only-integrated-acceptance.md).
