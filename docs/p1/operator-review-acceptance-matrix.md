@@ -60,6 +60,12 @@ review behavior does not exist yet; recording the requirement is the deliverable
 
 Rules that define PASS, independent of environment:
 
+- Both hosts measure the same source: `.gitattributes` pins Unix LF, so a native
+  Windows checkout is byte-equal to the Linux/WSL tree and each host's own
+  `git status --porcelain` must be empty on the tested revision. A file copy or an
+  end-of-line-normalized checkout is not byte identity; when Git disagrees between
+  hosts about cleanliness, stop and fix the attributes rather than relabel the run.
+
 - Headless runs, the Web build, X11/XWayland and Xvfb do **not** substitute for
   native acceptance. niri and mobile are out of scope for M4.
 - A window is locked by its unique nonce title plus owning process identity
@@ -145,15 +151,19 @@ untouched):
 - Harness gates on the clean committed SHA:
   `cargo fmt --manifest-path tools/native-acceptance/Cargo.toml -- --check`,
   `cargo clippy --manifest-path tools/native-acceptance/Cargo.toml --all-targets --locked -- -D warnings`,
-  `cargo test --manifest-path tools/native-acceptance/Cargo.toml --locked`, plus the
-  targeted fake-worker cases. Because only `tools/native-acceptance` and `docs/`
-  change, the full workspace/NSH suites are reported with a precise unchanged-product
-  rationale and the current S5 regression linkage, not silently skipped.
-- Full gates, when run, use `tools/local_verify.sh all NEW_REPORT_DIR FULL_MERGED_BASE_SHA`
+  `cargo build --manifest-path tools/native-acceptance/Cargo.toml --locked` before any
+  native run (a running executable blocks its own replacement on Windows), then
+  `cargo test --manifest-path tools/native-acceptance/Cargo.toml --locked` plus the
+  targeted fake-worker cases. S0 also ran the full workspace/shared/NSH suites on both
+  hosts rather than relying on the unchanged-product argument; a future slice may report
+  the rationale plus current regression linkage instead, but never silently skips.
+- Full gates use `tools/local_verify.sh all NEW_REPORT_DIR FULL_MERGED_BASE_SHA`
   and `tools/windows_local_verify.ps1 -Suite All -ReportDir NEW_REPORT_DIR -DiffBase FULL_MERGED_BASE_SHA`.
-  Both already require a clean tree and a 40-character ancestor baseline, and both run
+  Both require a clean tree and a 40-character ancestor baseline, and both run
   `git diff --check BASE HEAD`: a clean working tree is never a substitute for that
-  diff gate.
+  diff gate. Build the product binaries first and the driver before a native run, and
+  keep every helper script, bundle, manifest and report inside the repository's ignored
+  artifact tree rather than beside the checkout.
 - Evidence goes to `docs/evaluation/` with exact source SHA, diff base, commands,
   per-host PASS/FAIL/BLOCKED/NOT_RUN and binary hashes. Raw logs and screenshots stay
   in the ignored local artifact root. `node tools/check_source.mjs` runs locally
