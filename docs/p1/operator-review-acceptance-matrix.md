@@ -37,7 +37,7 @@ acceptance, see contract section 10), **out of scope** (not delivered by M4).
 | MCP surface | implemented, frozen | exactly two tools `crates/acp-mcp/src/main.rs:20-25` | review/provenance never exposed to agents; no third tool |
 | Agent visibility of non-confirmed values | implemented as a refusal | confirmed-only filter `crates/acp-core/src/lib.rs:215` | regression must keep failing if the filter widens |
 | Registration / Handoff put in UI | out of scope (S3 gate) | `native-operator-workflows.md` CLI-only list | stays CLI-only until separately authorized |
-| Bounded native desktop RPC in the acceptance driver | **implemented as a gap** | unbounded `BufReader::read_line` `tools/native-acceptance/src/desktop.rs:100-106` | section 5 |
+| Bounded native desktop RPC in the acceptance driver | **implemented (harness only)** | correlated, cancelable `tools/native-acceptance/src/worker.rs:222`, `:437`, `:514` | none in S0; re-verify the driver at each later tested SHA (section 6) |
 
 ## 2. Four-surface acceptance matrix
 
@@ -49,14 +49,22 @@ review behavior does not exist yet; recording the requirement is the deliverable
 | --- | --- | --- | --- | --- |
 | Queue page and watermark rendered from live daemon read | required: real `alt` chord + rendered revision/digest evidence | required | required (TUI over ConPTY) | required (TUI over PTY) |
 | Inspect exact record + digest + provenance label | required | required | required | required |
-| Confirm with digest binding; peer-demotion disclosure | required | required | NOT_APPLICABLE (desktop-only panel) | NOT_APPLICABLE |
-| Reject | required | required | NOT_APPLICABLE | NOT_APPLICABLE |
-| Deprecate (proposed `alt+shift+w`) | required | required | NOT_APPLICABLE | NOT_APPLICABLE |
-| Delete with destructive tier (proposed `alt+shift+q`) | required | required | NOT_APPLICABLE | NOT_APPLICABLE |
-| History view shows decision rows; deleted leaves none | required | required | NOT_APPLICABLE | NOT_APPLICABLE |
+| Confirm with digest binding; peer-demotion disclosure | required | required | required: same shared action, real chord over ConPTY | required: same shared action, real chord over PTY |
+| Reject | required | required | required | required |
+| Deprecate (proposed `alt+shift+w`) | required | required | required | required |
+| Delete with destructive tier (proposed `alt+shift+q`) | required | required | required | required |
+| History view shows decision rows; deleted leaves none | required | required | required | required |
 | Stale revision / changed scope / revoked grant refusal | required | required | required | required |
 | `OutcomeUnknown` then identical same-epoch replay, receipt equal, no second write | required | required | required | required |
 | Agent/MCP denial of queue, decisions, provenance | required once on the desktop surface with a live client | required once | NOT_RUN without a real client | NOT_RUN without a real client |
+
+The five review actions are one shared-model flow, so they are required on the TUI
+surfaces as well as the desktop surfaces. A terminal that cannot deliver the chord is
+a **BLOCKED** finding for that surface with the observed key event recorded, never a
+reason to mark the row `NOT_APPLICABLE`. Desktop-only review actions would contradict
+the parent #52 shared Desktop/TUI goal and require the owner decision in
+[contract section 10](operator-review-contract.md#10-owner-decisions-required-before-s1-and-s2)
+(D11) plus a contract amendment first.
 
 Rules that define PASS, independent of environment:
 
@@ -105,7 +113,7 @@ Rules that define PASS, independent of environment:
 | Stage | Must be true before the next stage starts |
 | --- | --- |
 | **M4/S1 — persistence and IPC** | D1-D5, D7, D9, D10 accepted by the owner; DDL replacement in one breaking commit with regenerated fixtures and updated `inspect()` allowlist; writer/daemon/CLI/NSH bumped together with `Request.version` 2 and no v1 mutation reader; storage + real-process IPC tests green on both native hosts |
-| **M4/S2 — review UX** | S1 merged and its evidence committed; queue/detail/history panes and the destructive tier implemented in the shared model only (no TUI-specific rule); driver chord set extended only by an explicitly authorized commit; component plus native surface checks green |
+| **M4/S2 — review UX** | S1 merged and its evidence committed; D6, D8 and D11 accepted by the owner; queue/detail/history panes and the destructive tier implemented in the shared model only (no TUI-specific rule); driver chord set extended only by an explicitly authorized commit; component plus native surface checks green on all four surfaces |
 | **M4/S3 — full acceptance** | S2 merged; the whole section 2 matrix executed on clean committed SHAs on real Windows Desktop, WSLg Wayland, ConPTY and Linux PTY with per-surface PASS/FAIL/BLOCKED/NOT_RUN, binary hashes, and the section 5 driver gate green on both hosts |
 
 S0 authorizes neither S1 nor any product code change. This Draft PR existing is not
@@ -113,35 +121,43 @@ permission to start implementation.
 
 ## 5. Bounded native desktop RPC (S0 Deliverable B)
 
-`Desktop::rpc` writes one JSON line and then blocks in
-`BufReader<ChildStdout>::read_line` with no per-call bound
-(`tools/native-acceptance/src/desktop.rs:100-106`). The only deadlines live in the
-outer loops — 30 s window appearance (`:81`), 900 s foreground readiness (`:108`) —
-so one blocked worker response wedges the run instead of failing it. This is
-reachable for real: `Owned-Window` enumerates top-level windows and calls
-`GetWindowText`, which sends `WM_GETTEXT` to the owning thread and waits, so a GUI
-thread that stopped pumping blocks the synchronous PowerShell worker indefinitely
-(`tools/native_window.ps1:32-49`, `:11`).
+Before this slice, `Desktop::rpc` wrote one JSON line and then blocked in
+`BufReader<ChildStdout>::read_line` with no per-call bound; the only deadlines lived in
+the outer loops — 30 s window appearance, 900 s foreground readiness — so one stalled
+worker response wedged the run instead of failing it. The reachability is real:
+`Owned-Window` enumerates top-level windows and calls `GetWindowText`, which sends
+`WM_GETTEXT` to the owning thread and waits, so a GUI thread that stopped pumping blocks
+the synchronous PowerShell worker indefinitely (`tools/native_window.ps1:32-49`, `:11`).
 
-Required properties, harness-only (product IPC, daemon, UI and permissions are
-untouched):
+The pipe now runs through `WorkerRpc` (`tools/native-acceptance/src/worker.rs`). This is
+harness-only: product IPC, daemon, UI and permissions are untouched.
 
-1. Every request carries an explicit per-request deadline; the outstanding request is
-   tracked with a monotonic sequence number and exactly one response may settle it.
-2. A hung worker, a malformed line, an oversized line, worker EOF, an unsolicited
-   response and a second response to one request all fail closed and mark the session
-   unusable, so a late response can never be mistaken for a later action's ack.
-3. Timeout kills and reaps only the owned worker and the owned GUI child; the reader
-   thread is unblocked through the child's own stdout EOF and joined at teardown
-   instead of detached.
+1. Every request carries a monotonic `rpc_id` on the wire (`worker.rs:239`) and the
+   reply must name it (`:594`). Absent, non-numeric, mismatched, duplicated or
+   unsolicited correlation fails closed and marks the session unusable, so an older
+   reply can never settle a newer action — including when it arrives only after that
+   newer request was written (`stale-after-next` mode, tested without any sleep).
+2. One deadline covers the write and the reply (`worker.rs:222`). The write is a job on
+   the writer thread (`:437`) that the caller can cancel; a worker that stops consuming
+   stdin is driven until the pipe refuses bytes and each attempt still returns inside its
+   own bound instead of blocking on a full pipe.
+3. Both IO threads are cooperative: an explicit stop flag ends the reader (`:514`) and
+   the writer, teardown joins them (`:427`) and reports `reader_joined` plus
+   `writer_joined` rather than assuming them. Only the child this harness spawned is
+   terminated and reaped; an unjoined thread is a reported failure, never a PASS.
+   `held-stdout` (a grandchild the harness never owns keeps the pipe open) and
+   `crash` (abnormal exit) are the negative cases.
 4. Finite foreground waiting stays distinct from per-request deadlines;
    `foreground_required` remains an explicit state, not a stalled pipe.
-5. Nonce, exact PID and WSLg host-process ownership plus the frontmost requirement
-   and English-layout restoration semantics are preserved unchanged.
-6. A standalone Rust fake-worker binary (no interpreter dependency reintroduced)
-   proves finite failure and cleanup for healthy, silent, EOF, malformed, oversized,
-   late and duplicate replies, on both hosts and without any real window. These tests
-   prove driver boundedness only; they never certify a native GUI PASS.
+5. Nonce, exact PID and WSLg host-process ownership, the frontmost requirement and
+   English-layout restoration semantics are unchanged. Request and reply sizes stay
+   bounded (`:24`, `:26`); a reply is never echoed into evidence, only its byte length.
+6. The owned standalone Rust fake-worker binary (no interpreter dependency reintroduced)
+   proves the above for healthy, silent, EOF, crash, malformed, oversized, late,
+   duplicate, stale, unsolicited, shapeless, wrong-nonce, refusal, no-stdin-read and
+   hold-stdout behaviour in `tests/desktop_worker.rs`, on both hosts, without any real
+   window. These tests prove driver boundedness only; they never certify a native GUI
+   PASS, and the real-window runs in the evidence report stay a separate evidence class.
 
 ## 6. Gates and evidence honesty
 

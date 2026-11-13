@@ -376,6 +376,17 @@ Shortcut constraints are real, not stylistic: the native driver accepts only
 screenshot key and stays unavailable. `w` and `q` above are free in that chord set;
 any other chord requires a separately authorized driver change.
 
+The five review actions are shared-model actions, so they are in scope for the TUI
+surfaces too: confirm, reject, deprecate, delete and history are required on Windows
+ConPTY and Linux/WSL PTY in
+[section 2 of the matrix](operator-review-acceptance-matrix.md#2-four-surface-acceptance-matrix).
+The TUI already forwards alt and shift modifiers from the terminal into the same model
+(`spikes/p1-e/nsh/src/tui.rs:72`), so no TUI-only rule or desktop-only exemption is
+introduced here. What is unproven is delivery: a terminal that does not report the
+chord must be recorded as BLOCKED for that surface with the observed key event, never
+silently dropped from scope. Restricting any review action to Desktop alone is owner
+decision D11 and would require amending this section and the matrix first.
+
 Still CLI-only until separately authorized: project registration and Handoff put.
 The S3 gate is unchanged ([native-operator-workflows.md](native-operator-workflows.md)),
 and the UI keeps labelling it instead of offering nonfunctional controls
@@ -400,7 +411,7 @@ deliberate operator file deletion or development reset, never an automatic actio
 Nothing in review history is ever written to a tracked repository file, a log or a
 test fixture, and no raw diagnostic is echoed by CLI or UI.
 
-## 10. Owner decisions required before S1
+## 10. Owner decisions required before S1 and S2
 
 | # | Unresolved choice | Options | Recommended default | Blocks |
 | --- | --- | --- | --- | --- |
@@ -414,6 +425,7 @@ test fixture, and no raw diagnostic is echoed by CLI or UI.
 | D8 | Which high-risk operations gain UI | deprecate+delete in S2 / all four including register and Handoff put | **deprecate+delete in S2**; register and Handoff put stay CLI-only | S2 |
 | D9 | 4096 receipts per generation with review decisions | keep ceiling and prove `Capacity` refusal / raise it | **keep**; raising it is an owner-only policy change | S3 wording |
 | D10 | Queue consistency across pages | watermark disclosure / held read snapshot | **watermark disclosure** | S1 |
+| D11 | Review actions on the TUI surfaces | required on all four surfaces, chord delivery proven per surface (BLOCKED if a terminal cannot deliver it) / desktop-only with a documented TUI read-only panel | **required on all four surfaces**, as frozen in section 8 and matrix section 2; desktop-only needs an explicit owner amendment | S2 acceptance |
 
 Roadmap status is updated separately in [docs/roadmap.md](../roadmap.md); this
 document deliberately does not rewrite any prior evidence report. No ADR is amended
