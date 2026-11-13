@@ -211,11 +211,11 @@ S0 is a contract and acceptance-harness preflight. It changes no product DDL, wr
 daemon, core, IPC, CLI or UI behavior and adds no MCP method. The pending queue,
 proposal digest, decision history, closed origin label and destructive deprecate/delete
 UX are **proposed**, not implemented; ten unresolved choices (contract section 10)
-need owner acceptance before
-[S1 persistence/IPC](https://github.com/ybakiame/agent-control-plane/issues/52) is
-opened, and S2/S3 follow only after S1 merges. M3 stays conditional: no demonstrated
-Profile-v1 lifecycle need has appeared, so no backup, import, restore, retention or
-migration work is bundled into M4.
+need owner acceptance before a separate S1 persistence/IPC issue is opened, and S2/S3
+follow only after S1 merges. M3 stays conditional: no demonstrated Profile-v1 lifecycle
+need has appeared, so no backup, import, restore, retention or migration work is
+bundled into M4. The [S0 evidence](evaluation/p1-m4-s0-review-contract.md) records the
+tested SHA, both hosts' harness gates and the honest NOT_RUN items.
 
 ## Invariants for every implementation task
 
