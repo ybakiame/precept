@@ -143,10 +143,15 @@ harness-only: product IPC, daemon, UI and permissions are untouched.
    own bound instead of blocking on a full pipe.
 3. Both IO threads are cooperative: an explicit stop flag ends the reader (`:514`) and
    the writer, teardown joins them (`:427`) and reports `reader_joined` plus
-   `writer_joined` rather than assuming them. Only the child this harness spawned is
-   terminated and reaped; an unjoined thread is a reported failure, never a PASS.
-   `held-stdout` (a grandchild the harness never owns keeps the pipe open) and
-   `crash` (abnormal exit) are the negative cases.
+   `writer_joined` rather than assuming them. Neither thread may block past one poll —
+   Unix sets `O_NONBLOCK` on both ends, Windows sets `PIPE_NOWAIT` only on the write end
+   and polls the read end with `PeekNamedPipe`, because `PIPE_NOWAIT` is not honored for
+   the read end of an anonymous pipe and a held stdout would otherwise leak the reader.
+   `DESKTOP_IO_MODE` records the mode actually achieved. Only the child this harness
+   spawned is terminated and reaped; an unjoined thread is a reported failure, never a
+   PASS. `hold-stdout` (a grandchild the harness never owns keeps the pipe open) and
+   `crash` (abnormal exit) are the negative cases; the Windows case is what produced the
+   `PeekNamedPipe` strategy.
 4. Finite foreground waiting stays distinct from per-request deadlines;
    `foreground_required` remains an explicit state, not a stalled pipe.
 5. Nonce, exact PID and WSLg host-process ownership, the frontmost requirement and
