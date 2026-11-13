@@ -25,7 +25,7 @@ macro_rules! catalog {
     };
 }
 catalog! {
-    OperatorKeys => ("Alt O operator · Alt+Shift: U create / M select / R inspect / E enable / X disable / L records / I select / Y confirm / N reject / S suggest / V apply / Z retry · Escape cancel", "Alt O 操作 · Alt+Shift：U 创建 / M 选择 / R 检查 / E 启用 / X 停用 / L 记录 / I 选择 / Y 确认 / N 拒绝 / S 建议 / V 执行 / Z 重试 · Escape 取消"),
+    OperatorKeys => ("Alt O operator · Alt+Shift: U create / M select / R inspect / E enable / X disable / L records / H Handoff / I select / Y confirm / N reject / S suggest / V apply / Z retry · Escape cancel", "Alt O 操作 · Alt+Shift：U 创建 / M 选择 / R 检查 / E 启用 / X 停用 / L 记录 / H 交接 / I 选择 / Y 确认 / N 拒绝 / S 建议 / V 执行 / Z 重试 · Escape 取消"),
     OperatorPreferences => ("Preference records", "偏好记录"),
     OperatorSavedHandoff => ("Saved Handoff", "已保存 Handoff"),
     OperatorObserved => ("Last operator response received", "已收到上次操作响应"),

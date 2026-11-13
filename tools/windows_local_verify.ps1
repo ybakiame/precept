@@ -1,6 +1,7 @@
 param(
     [ValidateSet('Core', 'UI', 'All')][string]$Suite = 'All',
-    [string]$ReportDir = 'artifacts/local-p1-m2/s4-windows'
+    [string]$ReportDir = 'artifacts/local-p1-m2/s5-windows',
+    [string]$DiffBase
 )
 $ErrorActionPreference = 'Stop'
 $project = Split-Path -Parent $PSScriptRoot
@@ -22,10 +23,20 @@ Push-Location -LiteralPath $project
 try {
     $dirty = & git status --porcelain
     if ($LASTEXITCODE -ne 0 -or $dirty) { throw 'Commit source changes before exact-SHA verification' }
+    if ($DiffBase -notmatch '^[0-9a-fA-F]{40}$') { throw 'Baseline must be one existing full commit SHA' }
+    $kind = & git cat-file -t $DiffBase 2>$null
+    if ($LASTEXITCODE -ne 0 -or $kind -ne 'commit') { throw 'Baseline must be one existing full commit SHA' }
+    $baseline = & git rev-parse --verify $DiffBase
+    $headSha = & git rev-parse HEAD
+    & git merge-base --is-ancestor $baseline HEAD
+    if ($LASTEXITCODE -ne 0 -or $baseline -eq $headSha) { throw 'Baseline must be an ancestor with a nonempty branch delta' }
+    & git diff --quiet $baseline HEAD
+    if ($LASTEXITCODE -eq 0) { throw 'Baseline must have a nonempty branch delta' }
+    if ($LASTEXITCODE -ne 1) { throw 'Cannot inspect branch delta' }
     if (Test-Path -LiteralPath $ReportDir) { throw 'Report directory must be new' }
     $report = New-Item -ItemType Directory -Path $ReportDir
     $results = [System.Collections.Generic.List[object]]::new()
-    $metadata = @{ git_sha = (& git rev-parse HEAD); worktree_dirty = $false; platform = 'Windows'; version = [System.Environment]::OSVersion.Version.ToString(); rustc = (& rustc --version); cargo = (& cargo --version); gates = $results }
+    $metadata = @{ git_sha = $headSha; diff_base = $baseline; worktree_dirty = $false; platform = 'Windows'; version = [System.Environment]::OSVersion.Version.ToString(); gates = $results }
     function Invoke-Gate([string]$Name, [string[]]$Arguments) {
         $program = $Arguments[0]
         $gateArguments = $Arguments[1..($Arguments.Count-1)]
@@ -36,6 +47,9 @@ try {
         if ($code -ne 0) { throw "Gate failed: $Name ($code)" }
     }
     try {
+        Invoke-Gate 'branch-diff' @('git','diff','--check',$baseline,'HEAD')
+        $metadata.rustc = & rustc --version
+        $metadata.cargo = & cargo --version
         if ($Suite -ne 'UI') {
             Invoke-Gate 'workspace-fmt' @('cargo','fmt','--all','--','--check')
             Invoke-Gate 'workspace-build' @('cargo','build','--workspace','--bins','--locked')

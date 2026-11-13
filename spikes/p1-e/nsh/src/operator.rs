@@ -198,6 +198,14 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
             refresh(model, "profile.preferences.list");
         }
     });
+    // Windows' native Tab chain visits text fields; expose the existing exact
+    // saved-Handoff read without depending on a button's platform traversal.
+    on_key_with("alt+shift+h", global, move |_| {
+        let m = model.get();
+        if m.operator.pane == Pane::Handoff && m.selected_project.is_some() && available(model) {
+            refresh(model, "profile.handoff.get");
+        }
+    });
     on_key_with("alt+shift+z", global, move |_| {
         if model.get().operator.open {
             let mut request = None;
@@ -246,7 +254,7 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
             let o = &m.operator;
             if o.open {
                 eprintln!(
-                    "ACP_NSH_OPERATOR selected={} grant={} busy={} review={} unknown={} rows={} record_revision={} receipt={} error={}",
+                    "ACP_NSH_OPERATOR selected={} grant={} busy={} review={} unknown={} rows={} record_revision={} receipt={} error={} handoff_revision={}",
                     o.info.as_ref().is_some_and(|i| i.selected),
                     o.info.as_ref().is_some_and(|i| i.write_enabled),
                     o.busy,
@@ -255,7 +263,11 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                     o.page.as_ref().map_or(0, |p| p.records.len()),
                     o.record().map_or(0, |r| r.revision),
                     o.receipt.as_ref().map_or(0, |r| r.commit_sequence),
-                    o.error.as_deref().unwrap_or("none")
+                    o.error.as_deref().unwrap_or("none"),
+                    o.handoff
+                        .as_ref()
+                        .and_then(|h| h.record.as_ref())
+                        .map_or(0, |r| r.revision)
                 );
             }
         }

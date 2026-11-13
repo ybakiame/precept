@@ -21,18 +21,23 @@ Reports include exact source and command/status; they contain no real fixture da
 
 ```bash
 mkdir -p artifacts/local-p1-m2
-CARGO_NET_OFFLINE=true tools/local_verify.sh all artifacts/local-p1-m2/s4-linux
+CARGO_NET_OFFLINE=true tools/local_verify.sh all artifacts/local-p1-m2/s5-linux 05035e21434085faf368ddec5a06904a99ef4a35
 ```
 
 ```powershell
 $env:CARGO_NET_OFFLINE = 'true'
-./tools/windows_local_verify.ps1 -Suite All -ReportDir artifacts/local-p1-m2/s4-windows
+./tools/windows_local_verify.ps1 -Suite All -ReportDir artifacts/local-p1-m2/s5-windows -DiffBase 05035e21434085faf368ddec5a06904a99ef4a35
 ```
 
 Linux helper modes: `core`, `ui`, `all`; Windows: `-Suite Core|UI|All`.
 Windows toolchain setup affects only the helper process. The UI mode first builds
 root binaries for the real-daemon integration test. All helpers run these extant
 Cargo commands as applicable:
+
+Both helpers require an explicit full baseline commit. They refuse HEAD-equal,
+empty, missing, invalid, ambiguous and non-ancestor deltas, and first run
+`git diff --check BASE HEAD`; a clean worktree alone is insufficient. The baseline
+above is the merged S4 main for S5. Use a new artifact directory on every run.
 
 ```text
 cargo fmt --all -- --check
@@ -93,13 +98,19 @@ actual Rust WASM app offline, keyboard and compact resize. It is not desktop evi
 
 ## Actual native UI and reporting
 
-S4 changes tooling, not UI layout/features. Existing S3 Windows/ConPTY and native
-WSLg/PTY evidence stays at its original [S3 source](../evaluation/p1-m2-s3-native-operator.md).
-Retired capture/input drivers are not required or retained. If no independent native
-window/terminal driver was run for S4, report actual GUI/TTY as **NOT_RUN**, even when
-build/component tests pass. A manual desktop run can use the native binary with the
-explicit endpoint and `--operator` from the operator guide; it must never activate a
-real Profile implicitly. X11/Xvfb is not native Wayland acceptance.
+S5's [owned Rust/PowerShell driver](../../tools/native-acceptance/README.md) supplies
+actual Windows/ConPTY and direct WSLg Wayland/PTY input and captures. Use a clean
+committed source, build all product binaries first, then run the native scenarios
+sequentially with respect to builds; Windows refuses replacement of a running exe.
+Never infer native PASS from component tests or borrow historical S3 observations.
+The [S5 verdict](../evaluation/p1-m2-s5-rust-only-integrated-acceptance.md) records the
+exact tested code SHA, binary hashes, private report paths and evidence levels.
+The operator guide includes Alt+Shift+H for the exact saved-Handoff read; verify
+the actual saved revision/history is displayed. Stored history is not fresh evidence.
+
+Retired capture/input drivers are not required or restored. A manual desktop run
+uses the native binary with an explicit endpoint and `--operator`; it must never
+activate a real Profile implicitly. X11/Xvfb is not native Wayland acceptance.
 
 Hosted workflows describe future gates; do not dispatch them during quota exhaustion.
 Use `[skip ci]`, record clean SHA/platform/commands and actual PASS/FAIL/BLOCKED/NOT_RUN,

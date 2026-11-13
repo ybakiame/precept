@@ -220,6 +220,30 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
         .unwrap();
     assert_eq!(page["records"][0]["status"], "confirmed");
     assert_eq!(page["records"][1]["status"], "rejected");
+    let request: operator::Mutation = serde_json::from_value(json!({
+        "version":1,"binding":f.info()["binding"],"operation_id":"headless-handoff",
+        "command":{"command":"put_handoff","project":"alpha","task_id":"shared",
+            "objective":"Saved synthetic history","completed":"","next_action":"Inspect current facts",
+            "validation_json":"[{\"check\":\"synthetic\",\"status\":\"NOT_RUN\"}]",
+            "snapshot":{"base_sha":"","branch":"","state":"unknown","fingerprint":null},
+            "expected":{"kind":"absent"}}
+    })).unwrap();
+    tokio_runtime(|| operator::mutate(&f.location, &request)).unwrap();
+    app.press_key("alt+t").unwrap();
+    app.type_text("Exact saved task ID", "shared").unwrap();
+    app.press_key("alt+shift+h").unwrap();
+    contains(&mut app, "Saved synthetic history");
+    contains(&mut app, "NOT_RUN");
+    // A different task cannot retain or display the preceding saved record.
+    app.type_text("Exact saved task ID", "missing").unwrap();
+    app.press_key("alt+shift+h").unwrap();
+    contains(&mut app, "null");
+    assert!(
+        !app.screen()
+            .texts()
+            .iter()
+            .any(|t| t.contains("Saved synthetic history"))
+    );
     app.press_key("alt+shift+x").unwrap();
     assert_eq!(f.info()["write_enabled"], true);
     app.press_key("alt+shift+v").unwrap();

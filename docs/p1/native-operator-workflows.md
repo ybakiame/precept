@@ -197,7 +197,8 @@ Start either NSH binary with the same explicit native target and `--operator`, o
 open Connections → Profile operator / Alt+O. Profile, Preference records and Saved
 Handoff tabs share the same model. Keyboard commands use Alt+Shift U/M/R/E/X for
 create/select/inspect/enable/disable, L/I/Y/N/S for list/select/confirm/reject/suggest,
-V to apply the exact reviewed operation and Z to retry an uncertain request. Alt
+H to inspect the exact saved Handoff in that pane, V to apply the exact reviewed
+operation and Z to retry an uncertain request. Alt
 P/K/W/F/T focuses the path/key/value/source/task input. Existing Sessions shortcuts
 are preserved. The pane shows errors and last acknowledged receipt separately from
 the pending operation; an old context read is not daemon write-health evidence.
