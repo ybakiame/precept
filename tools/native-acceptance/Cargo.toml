@@ -1,0 +1,18 @@
+[package]
+name = "acp-native-acceptance"
+version = "0.0.0"
+edition = "2024"
+publish = false
+[workspace]
+[dependencies]
+acp-ipc = { path = "../../crates/acp-ipc" }
+serde_json = "1"
+sha2 = "0.10"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tempfile = "3"
+vte = "=0.15.0"
+unicode-width = "0.2"
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Console", "Win32_System_Threading", "Win32_System_Pipes"] }
