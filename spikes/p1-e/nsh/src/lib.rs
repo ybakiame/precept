@@ -6,6 +6,7 @@ pub mod brand_preview;
 mod chrome;
 mod components;
 mod icons;
+mod operator;
 mod sessions;
 mod settings;
 mod tokens;
@@ -114,6 +115,9 @@ fn load(model: Signal<Model>) {
                 m.last_duration_ms = Some(started.elapsed().as_millis() as u64);
             }
         });
+        if model.get().operator.open {
+            operator::open(model);
+        }
     });
 }
 fn reconnect(model: Signal<Model>) {
@@ -166,6 +170,7 @@ fn copy_page(model: Signal<Model>) {
         && !model.get().settings
         && !model.get().connection_editor
         && !model.get().sessions
+        && !model.get().operator.open
     {
         set_clipboard(model.get().visible_lines().join("\n"));
         model.update(|m| m.copied = true);
@@ -192,6 +197,7 @@ pub fn App() -> impl IntoElement {
             _ => acp_ui_spike_model::appearance::ColorMode::Dark,
         };
         initial.sessions = inputs.sessions;
+        initial.operator.open = inputs.operator;
         initial.settings = inputs.settings;
         initial.connection_editor = inputs.connection_settings;
         initial.section = match inputs.section.as_str() {
@@ -226,6 +232,8 @@ fn console(model: Signal<Model>) -> impl IntoElement {
     on_key("mod+p", move |_| next_project(model));
     on_key("mod+f", move |_| {
         model.update(|m| {
+            m.operator.open = false;
+            m.operator.review = None;
             m.settings = false;
             m.sessions = false;
             m.session.confirm_start = false;
@@ -236,6 +244,8 @@ fn console(model: Signal<Model>) -> impl IntoElement {
     });
     on_key("mod+k", move |_| {
         model.update(|m| {
+            m.operator.open = false;
+            m.operator.review = None;
             m.settings = false;
             m.sessions = false;
             m.session.confirm_start = false;
@@ -277,6 +287,8 @@ fn console(model: Signal<Model>) -> impl IntoElement {
         task_ref.blur();
         model.update(|m| {
             m.cancel_read();
+            m.operator.open = false;
+            m.operator.review = None;
             m.settings = false;
             m.sessions = false;
             m.session.confirm_start = false;
@@ -291,6 +303,8 @@ fn console(model: Signal<Model>) -> impl IntoElement {
             filter_ref.blur();
             task_ref.blur();
             model.update(|m| {
+                m.operator.open = false;
+                m.operator.review = None;
                 m.settings = false;
                 m.sessions = false;
                 m.session.confirm_start = false;
@@ -300,6 +314,7 @@ fn console(model: Signal<Model>) -> impl IntoElement {
         });
     }
     on_key_with("alt+6", global, move |_| sessions::open(model));
+    on_key_with("alt+o", global, move |_| operator::open(model));
     on_key("mod+d", move |_| toggle_theme(model));
     on_key("mod+shift+c", move |_| copy_page(model));
     on_key_with("alt+ArrowRight", global, move |_| {

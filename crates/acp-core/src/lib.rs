@@ -309,3 +309,6 @@ impl<'a> ContextResolver<'a> {
         }
     }
 }
+
+/// Typed operator serialization only; authority remains in the daemon.
+pub mod operator;

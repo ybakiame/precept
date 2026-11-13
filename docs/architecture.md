@@ -34,17 +34,20 @@ disposable validation-era implementation details scheduled for removal by [Issue
 | `crates/acp-ipc`, `acp-daemon` | Local capability/peer checks, scoped reads, live repository adapter, lease authority | TCP listener or caller-selected wider scope |
 | `crates/acp-session` | Optional configured native ACP child lifecycle and bounded observations | OS sandbox, arbitrary shell execution or credential login |
 | `crates/acp-mcp` | Read-only stdio bridge to project-bound IPC | Profile/task/session mutation |
-| `crates/acp-write` | S1 fresh-v1 storage; S2 candidate adds guarded existing-v1 attachment through daemon-owned lease/epoch and explicit grant | Arbitrary existing-path Writer, direct UI/CLI writes, generic SQL |
-| `crates/acp-query` | Native operator reads/session controls; later M2 adds typed write requests through daemon IPC | Direct database access or a second writer |
+| `crates/acp-write` | S1 fresh-v1 storage; merged S2 adds guarded existing-v1 attachment through daemon-owned lease/epoch and explicit grant | Arbitrary existing-path Writer, direct UI/CLI writes, generic SQL |
+| `crates/acp-query` | Native operator reads/session controls and S3 typed write requests through authenticated daemon IPC | Direct database access or a second writer |
 | `spikes/p1-e/shared`, `spikes/p1-e/nsh` | Shared typed presentation and NSH Desktop/TUI surfaces | Direct database access, duplicate resolution logic or autonomous daemon startup |
 
 The paths remain as implemented; accepting NSH does not move crates or remove
 historical comparison workspaces. Windows→WSL owner queries remain read-only.
 
-The [S2 candidate and native evidence](evaluation/p1-m2-s2-ownership.md) add
+The [merged S2 implementation and native evidence](evaluation/p1-m2-s2-ownership.md) add
 single-assignment daemon selection, native file binding, a distinct write role,
 serialized grant admission/drain and typed IPC v2. Only the daemon normally links
-the writer. CLI/NSH write UX and Python retirement are still later M2 work; these
+the writer. [S3](p1/native-operator-workflows.md) adds typed native CLI workflows,
+operator-only exact record previews and a shared NSH operator panel. Clients share
+data-only DTOs through `acp-core::operator`; validation and transactions stay in
+the daemon-owned writer. Python retirement is still separate M2 work; these
 synthetic results do not activate a real Profile or complete the cutover.
 
 The current main tree still contains the disposable Python P0 prototype.

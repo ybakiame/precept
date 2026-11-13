@@ -6,6 +6,7 @@ use acp_core::{
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 #[doc(hidden)]
 pub mod native;
+mod operator;
 #[doc(hidden)]
 pub mod profile;
 use std::{
@@ -26,6 +27,7 @@ pub enum Error {
     InvalidRecord,
     UnknownProject,
     HandoffNotFound,
+    PreferenceNotFound,
 }
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
