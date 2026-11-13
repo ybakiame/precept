@@ -40,10 +40,29 @@ later action. The stdin write is a cancelable job, so a worker that stops consum
 cannot wedge the harness on a full pipe. Neither thread may block past one poll: Unix uses
 `O_NONBLOCK` on both ends, while Windows sets it only on the write end and polls the read
 end with `PeekNamedPipe`, because `PIPE_NOWAIT` is not honored for the read end of an
-anonymous pipe. `DESKTOP_IO_MODE` prints the mode actually achieved per direction.
-`tests/desktop_worker.rs` proves all of this against the owned `acp-fake-desktop-worker`
-binary on either host with no real window; that is driver evidence only and never a
-native GUI PASS.
+anonymous pipe. `DESKTOP_IO_MODE stdin=… stdout=… gui_stderr=…` prints the mode actually
+achieved per direction. `tests/desktop_worker.rs` proves all of this against the owned
+`acp-fake-desktop-worker` binary on either host with no real window; that is driver
+evidence only and never a native GUI PASS.
+
+Bounded pipe IO is a precondition, not a preference. The setters in `src/pipe.rs` can
+only return `nonblocking` or `peek-poll`: there is no `blocking` value to keep going with.
+If the mandatory setup fails, `WorkerRpc::spawn` refuses the session
+(`SpawnError::Unfit { pid, reaped, detail }`) after terminating and reaping exactly the
+child it launched, and a program that never started is reported as
+`SpawnError::Launch` rather than as a half-built session.
+
+The GUI window process is owned from the moment `Desktop::start` spawns it
+(`src/process.rs`): adoption happens before any initialization step can fail, and its
+stderr probe pump runs on the same cooperative bounded reader. A refused `init`, a window
+that never appears, a bounded worker fault, a refused adoption or a panic therefore
+unwinds through ownership, which terminates and reaps that child and bounded-joins its log
+thread, printing `OWNED_PROCESS_CLEANUP name=gui … reaped=… reader_joined=…` (plus an
+explicit `OWNED_PROCESS_TEARDOWN_INCOMPLETE` when either is false). `OWNED_DRIVER_CLOSED`
+reports `gui_reaped` and `gui_reader_joined` next to the worker's own three fields.
+`tests/owned_process.rs` drives those paths with an owned mock GUI, including a panic in
+the middle of initialization; the refusal paths that neither host can produce on demand go
+through the documented `*_with_*sabotage` seams instead of being claimed.
 
 The window worker matches a unique synthetic title nonce and exact native child
 PID, or the WSLg host `msrdc` plus the nonce (WSLg may append a distro suffix). It

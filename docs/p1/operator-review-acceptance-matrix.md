@@ -37,7 +37,7 @@ acceptance, see contract section 10), **out of scope** (not delivered by M4).
 | MCP surface | implemented, frozen | exactly two tools `crates/acp-mcp/src/main.rs:20-25` | review/provenance never exposed to agents; no third tool |
 | Agent visibility of non-confirmed values | implemented as a refusal | confirmed-only filter `crates/acp-core/src/lib.rs:215` | regression must keep failing if the filter widens |
 | Registration / Handoff put in UI | out of scope (S3 gate) | `native-operator-workflows.md` CLI-only list | stays CLI-only until separately authorized |
-| Bounded native desktop RPC in the acceptance driver | **implemented (harness only)** | correlated, cancelable `tools/native-acceptance/src/worker.rs:222`, `:437`, `:514` | none in S0; re-verify the driver at each later tested SHA (section 6) |
+| Bounded native desktop RPC in the acceptance driver | **implemented (harness only)** | correlated, cancelable, owned `tools/native-acceptance/src/worker.rs` and `src/process.rs` | none in S0; re-verify the driver at each later tested SHA (section 6) |
 
 ## 2. Four-surface acceptance matrix
 
@@ -132,17 +132,17 @@ the synchronous PowerShell worker indefinitely (`tools/native_window.ps1:32-49`,
 The pipe now runs through `WorkerRpc` (`tools/native-acceptance/src/worker.rs`). This is
 harness-only: product IPC, daemon, UI and permissions are untouched.
 
-1. Every request carries a monotonic `rpc_id` on the wire (`worker.rs:239`) and the
-   reply must name it (`:594`). Absent, non-numeric, mismatched, duplicated or
+1. Every request carries a monotonic `rpc_id` on the wire (`worker.rs:312`) and the
+   reply must name it (`:640`). Absent, non-numeric, mismatched, duplicated or
    unsolicited correlation fails closed and marks the session unusable, so an older
    reply can never settle a newer action — including when it arrives only after that
    newer request was written (`stale-after-next` mode, tested without any sleep).
-2. One deadline covers the write and the reply (`worker.rs:222`). The write is a job on
-   the writer thread (`:437`) that the caller can cancel; a worker that stops consuming
-   stdin is driven until the pipe refuses bytes and each attempt still returns inside its
-   own bound instead of blocking on a full pipe.
-3. Both IO threads are cooperative: an explicit stop flag ends the reader (`:514`) and
-   the writer, teardown joins them (`:427`) and reports `reader_joined` plus
+2. One deadline covers the write and the reply (`worker.rs:295`). The write is a job on
+   the writer thread (`src/worker.rs:510`), which the caller can cancel: a worker that stops
+   consuming stdin is driven until the pipe refuses bytes, and each attempt still returns
+   inside its own bound instead of blocking on a full pipe.
+3. Both IO threads are cooperative: an explicit stop flag ends the reader (`:587`) and
+   the writer, teardown joins them (`:500`) and reports `reader_joined` plus
    `writer_joined` rather than assuming them. Neither thread may block past one poll —
    Unix sets `O_NONBLOCK` on both ends, Windows sets `PIPE_NOWAIT` only on the write end
    and polls the read end with `PeekNamedPipe`, because `PIPE_NOWAIT` is not honored for
@@ -152,17 +152,36 @@ harness-only: product IPC, daemon, UI and permissions are untouched.
    PASS. `hold-stdout` (a grandchild the harness never owns keeps the pipe open) and
    `crash` (abnormal exit) are the negative cases; the Windows case is what produced the
    `PeekNamedPipe` strategy.
-4. Finite foreground waiting stays distinct from per-request deadlines;
+4. Bounded pipe IO is a **precondition**, not a preference. The mode setters return a
+   result whose only success values are `nonblocking` and `peek-poll`, so `blocking` is
+   not a state a caller can continue in. If the mandatory setup fails, `WorkerRpc::spawn`
+   refuses the session (`src/worker.rs:156`), terminates and reaps exactly the child it
+   launched, and reports `SpawnError::Unfit { pid, reaped, detail }`; a program that never
+   started is a distinct `SpawnError::Launch` cause rather than a half-built session.
+5. Finite foreground waiting stays distinct from per-request deadlines;
    `foreground_required` remains an explicit state, not a stalled pipe.
-5. Nonce, exact PID and WSLg host-process ownership, the frontmost requirement and
+6. Nonce, exact PID and WSLg host-process ownership, the frontmost requirement and
    English-layout restoration semantics are unchanged. Request and reply sizes stay
-   bounded (`:24`, `:26`); a reply is never echoed into evidence, only its byte length.
-6. The owned standalone Rust fake-worker binary (no interpreter dependency reintroduced)
+   bounded (`worker.rs:28`, `:30`); a reply is never echoed into evidence, only its byte
+   length.
+7. The GUI process is **owned from the moment it is spawned** (`src/process.rs:82`):
+   `Desktop::start` adopts the child before any initialization step can fail, and its
+   stderr pump runs on the same cooperative bounded reader. A refused `init`, a window
+   that never appears, a bounded worker fault, a refused adoption or a panic therefore
+   unwinds through ownership, which terminates and reaps that child and bounded-joins its
+   log thread, printing `OWNED_PROCESS_CLEANUP name=gui … reaped=… reader_joined=…` and an
+   explicit incomplete marker when either is false. `OWNED_DRIVER_CLOSED` reports
+   `gui_reaped` and `gui_reader_joined` next to the worker's own three fields.
+8. The owned standalone Rust fake-worker binary (no interpreter dependency reintroduced)
    proves the above for healthy, silent, EOF, crash, malformed, oversized, late,
    duplicate, stale, unsolicited, shapeless, wrong-nonce, refusal, no-stdin-read and
-   hold-stdout behaviour in `tests/desktop_worker.rs`, on both hosts, without any real
-   window. These tests prove driver boundedness only; they never certify a native GUI
-   PASS, and the real-window runs in the evidence report stay a separate evidence class.
+   hold-stdout behaviour in `tests/desktop_worker.rs`, plus an owned mock GUI that hangs,
+   one that exits cleanly, a panic during initialization and a refused adoption in
+   `tests/owned_process.rs` — on both hosts, without any real window. Paths no host can
+   produce on demand (a failing nonblocking setter) are exercised through documented
+   seams rather than claimed. These tests prove driver boundedness and ownership only;
+   they never certify a native GUI PASS, and the real-window runs in the evidence report
+   stay a separate evidence class.
 
 ## 6. Gates and evidence honesty
 
