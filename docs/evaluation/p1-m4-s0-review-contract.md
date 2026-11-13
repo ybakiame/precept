@@ -17,8 +17,13 @@ PR #51 had no unresolved review feedback.
 | `f0b7db3` | Deliverable A only: contract, gap/acceptance matrix, current-status roadmap lines. No source file changed |
 | `ba51c4c` | Deliverable B: bounded desktop worker RPC, owned fake worker, 12 harness tests |
 | `d0c6cfc` | Native Windows Clippy `large_enum_variant` correction: box the driver's desktop variant |
+| `b140af5` | Evidence report plus its roadmap link |
 
-**Final tested code SHA: `d0c6cfcf163757ccbb266d763b5da1f1f95073a8`.**
+**Final tested code SHA: `d0c6cfcf163757ccbb266d763b5da1f1f95073a8`.** Every gate and
+native run below was executed on that revision or on a byte-identical tree. Commits
+after `d0c6cfc` are documentation only — `git diff --name-only d0c6cfc HEAD` lists
+nothing outside `docs/` — so no result here is claimed to have been re-executed at a
+report commit.
 
 ## 1. Changed surface
 
