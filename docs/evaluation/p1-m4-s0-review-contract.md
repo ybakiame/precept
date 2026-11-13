@@ -25,18 +25,22 @@ PR #51 had no unresolved review feedback.
 | `d39b2fd` | Windows Clippy: drop the redundant `AsRawHandle` import |
 | `2d2f021`, `f200137` | Windows reply pipe polled with `PeekNamedPipe` instead of `PIPE_NOWAIT` |
 | `d3a4a3d` | Harness README and matrix wording for the per-platform polling strategy |
+| `f59e3ed` | Evidence-report documentation only (first review rework) |
+| `8f36266` | Fail-closed bounded-IO precondition (`SpawnError::Unfit`/`Launch`), GUI owned from spawn (`OwnedProcess`), 21+4 harness tests |
+| `11ffef6` | Flush trailing partial probe line at stderr EOF |
+| `8d03548` | Matrix section 5 and README: record the precondition and ownership properties |
+| `963c308` | Windows `ERROR_BROKEN_PIPE` type correction (`u32`→`i32`) and unused import removal |
 
-**Final tested code SHA: `d3a4a3dbb5572a8af18793a9fa02c687e0e9c23c`.** Every gate and
-native run in this report is executed at that tip or on a tree proved equal to it;
-`015f818` is superseded as the tested tip by the review rework, not by documentation.
-`git diff --name-only d0c6cfc d3a4a3d` contains only `.gitattributes`, `docs/`,
+**Final tested code SHA: `963c308fb2fc69d4dcee6325890a49624a66c296`.** Every gate and
+native run in this report is executed at that tip or on a tree proved equal to it.
+`git diff --name-only d0c6cfc 963c308` contains only `.gitattributes`, `docs/`,
 `tools/native_window.ps1` and `tools/native-acceptance/`, so no product input changed at
 any point in this PR. Earlier rows in this table record what each intermediate revision
 measured rather than being re-presented as final evidence.
 
 ## 1. Changed surface
 
-`git diff --name-only 18f2670 d3a4a3d` returns 14 paths: four under `docs/`, eight
+`git diff --name-only 18f2670 963c308` returns 17 paths: five under `docs/`, eleven
 under `tools/native-acceptance/`, `tools/native_window.ps1` and the repository
 `.gitattributes`. No product crate, DDL, writer, daemon, IPC, CLI, MCP,
 NSH or shared-model file is touched. The full Linux/WSL **and** native Windows
@@ -60,6 +64,17 @@ its separate finite 900 s wait. Nonce, exact PID and WSLg `msrdc` ownership, fro
 input, the fixed chord vocabulary, Ctrl+1 exclusion and the already-installed-English-layout
 restoration path are unchanged.
 
+Bounded pipe IO is a **precondition**, not a preference. The mode setters in
+`src/pipe.rs` return `Result<Mode, String>` whose only success values are `nonblocking`
+and `peek-poll`; there is no `blocking` value to continue with. If the mandatory setup
+fails, `WorkerRpc::spawn` refuses the session (`SpawnError::Unfit { pid, reaped, detail }`)
+after terminating and reaping exactly the child it launched. A program that never started
+is a distinct `SpawnError::Launch` cause. The GUI window process is owned from the moment
+`Desktop::start` spawns it (`src/process.rs`): `OwnedProcess::adopt` establishes the
+bounded stderr reader before any initialization step can fail, and a refused `init`, a
+window that never appears, a bounded worker fault, a refused adoption or a panic unwinds
+through ownership, which terminates and reaps that child and bounded-joins its log thread.
+
 ### 1.1 Repository-wide line endings
 
 The Windows validation copy first reached the tested source by file copy and then by a
@@ -78,18 +93,18 @@ sections 3 needed before the attribute file existed.
 ## 2. Linux/WSL verification
 
 Host: Linux 6.18.54.1-microsoft-standard-WSL2, x86_64, WSLg `wayland-0`.
-Toolchain `rustc`/`cargo` from `rust-toolchain.toml`.
+Toolchain `rustc`/`cargo` 1.99.1 from `rust-toolchain.toml`.
 
-`tools/local_verify.sh all <repo>/artifacts/local-p1-m2/s0-linux-reviewfix 18f2670d…`
-ran in the working copy at the final tip `d3a4a3d`: this CLI's untracked session
-directory is now covered by `.git/info/exclude`, so the script's own clean-tree guard
+`tools/local_verify.sh all <repo>/artifacts/local-p1-m2/s0-linux-963c308 18f2670d…`
+ran in the working copy at the final tip `963c308`: this CLI's untracked session
+directory is covered by `.git/info/exclude`, so the script's own clean-tree guard
 applies without weakening it. The script refuses a dirty tree, demands a 40-character
 ancestor baseline and executes `git diff --check 18f2670… HEAD` as its first and last
 gates.
 
 | Gate | Result |
 | --- | --- |
-| branch-diff `git diff --check 18f2670… d3a4a3d` | PASS |
+| branch-diff `git diff --check 18f2670… 963c308` | PASS |
 | workspace-fmt / workspace-build / workspace-clippy `-D warnings` | PASS |
 | workspace-tests | PASS: 116 tests, 0 failures |
 | shared-fmt / shared-clippy `-D warnings` | PASS |
@@ -98,17 +113,17 @@ gates.
 | nsh-tests | PASS: 7 tests, 0 failures |
 | final `git diff --check` | PASS |
 
-All 13 recorded gates PASS (`artifacts/local-p1-m2/s0-linux-reviewfix/result.tsv`, whose
-`source.txt` records `d3a4a3dbb5572a8af18793a9fa02c687e0e9c23c`, the diff base,
+All 13 recorded gates PASS (`artifacts/local-p1-m2/s0-linux-963c308/result.tsv`, whose
+`source.txt` records `963c308fb2fc69d4dcee6325890a49624a66c296`, the diff base,
 `Linux 6.18.54.1-microsoft-standard-WSL2 x86_64`, rustc and cargo 1.99.1). The
 product-side counts equal merged S5's Linux counts, which is the expected result for a
 byte-identical product tree.
 
 Earlier runs are retained as intermediates rather than presented as final evidence:
-13/13 PASS at `015f818` (`artifacts/local-p1-m2/s0-linux-eol/`), 13/13 PASS at `d0c6cfc`
-in a separate clean clone (`artifacts/local-p1-m2/s0-linux-final/`, measured before the
-session directory was locally excluded) and 13/13 PASS at `ba51c4c`
-(`artifacts/local-p1-m2/s0-linux-ba51c4c/`).
+13/13 PASS at `8d03548` (`artifacts/local-p1-m2/s0-linux-final/`), 13/13 PASS at
+`8f36266` (`artifacts/local-p1-m2/s0-linux-review2/`), 13/13 PASS at `d3a4a3d`
+(`artifacts/local-p1-m2/s0-linux-reviewfix/`), and earlier tips in their respective
+directories.
 
 Harness manifest gates at the final SHA in the working copy:
 
@@ -116,21 +131,17 @@ Harness manifest gates at the final SHA in the working copy:
 | --- | --- |
 | `cargo fmt --manifest-path tools/native-acceptance/Cargo.toml -- --check` | PASS |
 | `cargo clippy --manifest-path tools/native-acceptance/Cargo.toml --all-targets --locked -- -D warnings` | PASS |
-| `cargo test --manifest-path tools/native-acceptance/Cargo.toml --locked` | PASS: 18 `desktop_worker` + 1 `screen` test, 0 failures, 0.52 s |
-| `node tools/check_source.mjs` | PASS: 214 active/historical tracked paths, zero tracked prototype executables or packaging, 33 marked archives, all active refs, local Markdown links and workflow targets valid |
+| `cargo test --manifest-path tools/native-acceptance/Cargo.toml --locked` | PASS: 21 `desktop_worker` + 4 `owned_process` + 1 `screen` test, 0 failures |
+| `node tools/check_source.mjs` | PASS: 217 active/historical tracked paths, zero tracked prototype executables or packaging, 33 marked archives, all active refs, local Markdown links and workflow targets valid |
 
 ## 3. Native Windows verification
 
 Host: Windows 10.0.26300.0, x86_64; cargo and rustc 1.99.1; global Git
-2.56.0.windows.4. Git became available on this host during this slice, so the earlier
-Windows evidence had to work without it: the tracked file set was file-copied into the
-owned validation copy `acp-m1-validation-m44gv_kj` and identity was proved by hashing
-all 212 tracked paths on both hosts, which normalized to the same SHA-256
-`a657895e5b8e0c3a4eb313ea28679243ca8b14c74fd3fae8c94bf9c5c01d4ad2`. That workaround is
-now history. The copy was renamed to the formal
-`C:\Users\ybakiame\code-workspaces\agent-control-plane`, synced by an offline
-incremental `git bundle` (no network, no credentials, no interactive auth), and after
-`015f818` **both** hosts' `git status --porcelain` are empty on the same bytes.
+2.56.0.windows.4. The formal checkout is
+`C:\Users\ybakiame\code-workspaces\agent-control-plane`, synced by offline incremental
+`git bundle` (no network, no credentials, no interactive auth) and fast-forward merges
+only; both hosts' `git status --porcelain` are empty on the same bytes at every measured
+tip.
 
 Only a process-local environment is used: `C:\Program Files\Git\cmd` plus
 `%USERPROFILE%\.cargo\bin` on `PATH`, and `vswhere`/`Enter-VsDevShell` for MSVC.
@@ -138,50 +149,33 @@ Nothing is installed and no persistent system or global Git setting is modified.
 helper script, bundle, manifest and log lives under the ignored
 `artifacts/local-p1-m2/s0-windows-scratch/` directory, not beside the checkout.
 
-| Gate at `d3a4a3d` | Result |
+| Gate | Result |
 | --- | --- |
-| `tools/windows_local_verify.ps1 -Suite All -DiffBase 18f2670…` | **PASS 13/13**: branch-diff, workspace fmt/build/clippy/tests, shared fmt/clippy/tests, nsh fmt/build/clippy/tests, final `git diff --check` (`…\artifacts\local-p1-m2\s0-windows-reviewfix-20261113-225941\report.json`, `worktree_dirty=false`) |
+| `tools/windows_local_verify.ps1 -Suite All -DiffBase 18f2670…` at `8d03548` | **PASS 13/13**: branch-diff, workspace fmt/build/clippy/tests, shared fmt/clippy/tests, nsh fmt/build/clippy/tests, final `git diff --check` (`…\s0-windows-reviewfix-20261113-234230\report.json`, `worktree_dirty=false`) |
 | Windows test counts | PASS: workspace 117, shared-model 32, NSH 7 tests, 0 failures |
-| harness `cargo fmt --check` | PASS |
-| harness `cargo clippy --all-targets --locked -- -D warnings` | PASS |
-| harness `cargo build` / `cargo test --locked` | PASS: 18 `desktop_worker` + 1 `screen` test, 0 failures, 0.36 s (`…\s0-windows-harness-reviewfix-20261113-225941\`) |
+| harness `cargo fmt --check` at `963c308` | PASS |
+| harness `cargo clippy --all-targets --locked -- -D warnings` at `963c308` | PASS |
+| harness `cargo build` / `cargo test --locked` at `963c308` | PASS: 21 `desktop_worker` + 4 `owned_process` + 1 `screen` test, 0 failures (`…\s0-windows-harness-final-20261113-234615\`) |
 
-The Windows copy is synced to the same commit as the Linux tree by offline incremental
-`git bundle` fetches (no network, no credentials, no interactive auth) and fast-forward
-merges only; both hosts' `git status --porcelain` are empty on the same bytes at every
-measured tip.
+The full product suite ran at `8d03548`; `git diff --name-only 8d03548 963c308` is
+exactly `tools/native-acceptance/src/pipe.rs` (a Windows-only `#[cfg(windows)]` type
+correction), so the product tree is byte-identical at both tips. The harness gates and
+native surfaces ran at `963c308` itself.
 
-An intermediate full-suite run at `f552ee1` also recorded 13/13 PASS (in the Windows
-checkout's own ignored tree,
-`C:\Users\ybakiame\code-workspaces\agent-control-plane\artifacts\local-p1-m2\s0-windows-final\report.json`)
-but measured a CRLF working tree, so it is retained as history and superseded by the
-table above. A first attempt at `d3a4a3d` under **Windows PowerShell 5.1** aborted inside
+An earlier full-suite run at `d3a4a3d` under **Windows PowerShell 5.1** aborted inside
 `workspace-build`: with `$ErrorActionPreference='Stop'`, 5.1 turns cargo's ordinary stderr
 progress into a terminating `NativeCommandError`, which is a host-shell behavior of the
-invocation and not a gate failure. The recorded 13/13 above is the same script re-run
-under the installed PowerShell 7, which does not do that. This is noted rather than
-silently worked around, because the runner shell is part of reproducibility.
+invocation and not a gate failure. All recorded PASS results above are under the installed
+PowerShell 7, which does not do that. This is noted rather than silently worked around,
+because the runner shell is part of reproducibility.
 
-Three Windows findings are recorded rather than smoothed over. Clippy at `ba51c4c`
-**FAILED** with `large_enum_variant` (360-byte desktop variant against a 72-byte TTY
-variant, `src/main.rs:191`), which produced the `d0c6cfc` boxing correction: the lint
-only measures that layout on the host that owns it. The reworked harness at `3fa77e8`
-then **FAILED 1 of 18 tests on Windows only** —
-`held_stdout_from_an_unowned_child_still_joins_the_reader` reported an unjoined reader
-after the full 10 s join bound, because Windows does not honor `PIPE_NOWAIT` for the read
-end of an anonymous pipe, so a grandchild inheriting the write end left the reader parked
-in a blocking `read` that no stop flag could interrupt. Linux could not surface that:
-`O_NONBLOCK` is honored there. `2d2f021` replaced trust in `PIPE_NOWAIT` with a
-`PeekNamedPipe` availability poll on the read side only, `f200137` corrected its buffer
-pointer type, and the 18/18 PASS in the table above is the result at `d3a4a3d` on both
-hosts; `DESKTOP_IO_MODE stdin=nonblocking stdout=peek-poll` in section 4 is the Windows
-run confirming which strategy it actually got. Clippy additionally denied one dead
-`AsRawHandle` import at `d39b2fd`. The harness-gate PASS recorded
-at `d0c6cfc` on the file-copied tree (retained in
-`artifacts/local-p1-m2/s0-windows-scratch/s0-windows-harness-gates/`) was only
-provisional Windows evidence until a real checkout was possible. It is retained in
-`C:\Users\ybakiame\code-workspaces\agent-control-plane\artifacts\local-p1-m2\s0-windows-scratch\s0-windows-harness-gates\`,
-and a copy is kept in this repository's ignored `artifacts/local-p1-m2/s0-windows-harness-gates/`.
+Windows findings retained from earlier rounds: Clippy at `ba51c4c` **FAILED** with
+`large_enum_variant` (producing `d0c6cfc`); the reworked harness at `3fa77e8` **FAILED
+1 of 18 tests on Windows only** because `PIPE_NOWAIT` is not honored for the read end of
+an anonymous pipe (producing `2d2f021`/`f200137`); Clippy denied one dead `AsRawHandle`
+import at `d39b2fd`; and at `8d03548` Clippy denied `ERROR_BROKEN_PIPE: u32` against
+`raw_os_error() -> Option<i32>` plus a redundant import (producing `963c308`). Each was
+a Windows-only lint or type error that Linux could not surface.
 
 ## 4. Native desktop and PTY observations
 
@@ -191,55 +185,54 @@ provider, credential or authentication directory was touched.
 
 | Surface | SHA | Result | Evidence |
 | --- | --- | --- | --- |
-| Native Windows HWND desktop (real OS input, real daemon/CLI/NSH) | `d3a4a3d` | **PASS** | `…\agent-control-plane\artifacts\local-p1-m2\s0-windows-desktop-reviewfix-20261113-225941\report.json` |
-| Windows ConPTY | `d3a4a3d` | **PASS** | `…\agent-control-plane\artifacts\local-p1-m2\s0-windows-tui-reviewfix-20261113-225941\report.json` |
-| WSLg native Wayland desktop | `d3a4a3d` | **PASS** | `artifacts/local-p1-m2/s0-wslg-desktop-reviewfix-225614/report.json` |
-| Linux/WSL PTY | `d3a4a3d` | **PASS** | `artifacts/local-p1-m2/s0-linux-pty-reviewfix-225648/report.json` |
+| Native Windows HWND desktop (real OS input, real daemon/CLI/NSH) | `963c308` | **PASS** | `…\agent-control-plane\artifacts\local-p1-m2\s0-windows-desktop-final-20261113-234615\report.json` |
+| Windows ConPTY | `963c308` | **PASS** | `…\agent-control-plane\artifacts\local-p1-m2\s0-windows-tui-final-20261113-234615\report.json` |
+| WSLg native Wayland desktop | `963c308` | **PASS** | `artifacts/local-p1-m2/s0-final2-wayland/report.json` |
+| Linux/WSL PTY | `963c308` | **PASS** | `artifacts/local-p1-m2/s0-final2-pty/report.json` |
 | niri, mobile, X11/XWayland/Xvfb, headless, Web | — | out of scope, and never a substitute for native acceptance | unchanged S5 boundary |
 
-Earlier revisions of these surfaces (`015f818` for all four, plus the `d0c6cfc`,
-`ba51c4c` and `d3a4a3d`-era Linux-side runs) are retained in the
-`artifacts/local-p1-m2/s0-wslg-desktop-*`, `s0-linux-pty-*` and the Windows
-`s0-windows-desktop-*`/`s0-windows-tui-*` directories as intermediates, not presented as
-final evidence.
-
-Both desktop surfaces printed the bounded-lifecycle markers and completed the whole
-S5 scenario (unselected Profile, explicit UI create, Busy, grant enable, exact
+Both desktop surfaces printed the bounded-lifecycle and ownership markers and completed
+the whole S5 scenario (unselected Profile, explicit UI create, Busy, grant enable, exact
 suggestion/confirm/reject, lost-reply same-request replay, Conflict, Escape/project
 invalidation, saved exact-task Handoff `NOT_RUN` history, disable acknowledgement,
 revoked-grant `Unauthorized`, five pages plus Sessions, theme/locale/resize,
-disconnect, clean child exit), each with 15 window captures. Native Windows HWND, from
-`…\s0-windows-harness-reviewfix-20261113-225941\native-desktop.log`:
+disconnect, clean child exit), each with 15 window captures. Native Windows HWND:
 
 ```text
-DESKTOP_IO_MODE stdin=nonblocking stdout=peek-poll
-OWNED_WINDOW_READY nonce=a43a2d161ff5fc3e pid=29952 foreground protection enabled
-DESKTOP_WORKER_CLEANUP reaped=true reader_joined=true writer_joined=true
-OWNED_DRIVER_CLOSED gui_pid=29952 worker_reaped=true reader_joined=true writer_joined=true
+DESKTOP_IO_MODE stdin=nonblocking stdout=peek-poll gui_stderr=peek-poll
+OWNED_WINDOW_READY nonce=a43a2e1940c70f58 pid=43196 foreground protection enabled
+OWNED_PROCESS_CLEANUP name=gui pid=43196 reaped=true reader_joined=true
+OWNED_DRIVER_CLOSED gui_pid=43196 gui_reaped=true gui_reader_joined=true worker_reaped=true reader_joined=true writer_joined=true
 ```
 
 WSLg native Wayland:
 
 ```text
-DESKTOP_IO_MODE stdin=nonblocking stdout=nonblocking
-OWNED_WINDOW_READY nonce=a43a2e10f16dc745 pid=3620805 foreground protection enabled
-DESKTOP_WORKER_CLEANUP reaped=true reader_joined=true writer_joined=true
-OWNED_DRIVER_CLOSED gui_pid=3620805 worker_reaped=true reader_joined=true writer_joined=true
+DESKTOP_IO_MODE stdin=nonblocking stdout=nonblocking gui_stderr=nonblocking
+OWNED_WINDOW_READY nonce=a43a2d1b677c6083 pid=3639519 foreground protection enabled
+OWNED_PROCESS_CLEANUP name=gui pid=3639519 reaped=true reader_joined=true
+OWNED_DRIVER_CLOSED gui_pid=3639519 gui_reaped=true gui_reader_joined=true worker_reaped=true reader_joined=true writer_joined=true
 ```
 
-No `DESKTOP_RPC_FATAL` and no `DESKTOP_TEARDOWN_INCOMPLETE` line appeared in either real
-window run.
+No `DESKTOP_RPC_FATAL`, no `OWNED_PROCESS_TEARDOWN_INCOMPLETE` and no
+`DESKTOP_TEARDOWN_INCOMPLETE` line appeared in either real window run.
 
-Measured binaries at `d3a4a3d` — Windows: `acp-native-acceptance.exe` `a4af1e791a73…`,
-`acp-daemon.exe` `657e17d6f862…`, `acp-query.exe` `df0e8db4afe1…`, `acp-nsh-native.exe`
-`6ef08ee3b8b9…`, `acp-nsh-tui.exe` `9963f7f05b2f…`. Linux/WSL:
-`acp-native-acceptance` `d923896ede4b…`, `acp-daemon` `eb20a194f0ba…`, `acp-query`
-`46e39f07704a…`, `acp-nsh-native` `65c475bad537…`, `acp-nsh-tui` `b2f23023e47d…`. The
-full 64-hex digests are inside each run's `report.json`; the owned fake worker measured
-`60d83a1f93fa2e820117c0a25b5d5ffd00881aaeb3344dccc792e5b1caa43e31` as built on Windows
-and `c959d6133ef809ee96cd62529304b919d5048ffc42e798c8487b7b86265aaa05` as built on
-Linux/WSL. Raw logs, screenshots and per-run window captures stay in the ignored artifact
-tree.
+Measured binaries at `963c308` — Windows: `acp-native-acceptance.exe`
+`d15a0eeeb37b2bcb380d737c372d78c54a595b543bf607b8776059b1189c9369`,
+`acp-daemon.exe` `657e17d6f86226ee242944a902f6dea36d4ce044b78f4aa622524e0c67c743b4`,
+`acp-query.exe` `df0e8db4afe1d45974b91b05dff8f586363315c1dffa107ffaf9b651beb8f5f4`,
+`acp-nsh-native.exe` `be9f6315a0d43f1fdb9c91d96d0aaec377e5aa424c127c9fe07b58784b7c0192`,
+`acp-nsh-tui.exe` `3133df57dcba7ab921f0d6d06edbda33edceab78ae86a40e00d9966d2e6e873b`.
+Linux/WSL: `acp-native-acceptance`
+`874a3f1ec46bbd67253366bad067f017c32335df87c24a7a3ade1ea493966124`,
+`acp-daemon` `eb20a194f0baa711f9ae0edd4ff1fce6111efd67fb1f16005c1b2066a0923a90`,
+`acp-query` `46e39f07704aa3ba0c0feb43b2e2ecf4772f8b9a4ad11f92ab712aaf8c27ca64`,
+`acp-nsh-native` `65c475bad537cf183cdaddcbb6d957706d659dab4e5d80f7eb14c4a06306fcd0`,
+`acp-nsh-tui` `b2f23023e47d6acb742a08ec85be8932cf4e1313b9c5d2b7fff4afdf400c2af1`.
+The owned fake worker measured
+`d143b379748ece85d280094013bf400094cd586fecbc06d7e4bae466b74d9201` on Windows and
+`3a2d3a95c07faf61c1637a6c11ce2e13934a89d3a594629b18e82c3ab66aa6f0` on Linux/WSL.
+Raw logs, screenshots and per-run window captures stay in the ignored artifact tree.
 
 No per-call deadline elapsed during either real-window run, on either host: the runs
 finish the PowerShell cold start, `Add-Type` compilation, input-layout switching and
@@ -254,7 +247,7 @@ boundedness itself is proven by section 5, not by these runs.
 so it runs identically on either host. Every case asserts a bounded outcome and
 `Cleanup { reaped: true, reader_joined: true, writer_joined: true }` completed inside
 10 s, and every failure assertion checks the reported cause, so an unjoined thread or an
-unreaped child cannot be mistaken for success. 18 cases:
+unreaped child cannot be mistaken for success. 21 cases:
 
 | Injected worker behaviour | Required outcome | Proven |
 | --- | --- | --- |
@@ -275,9 +268,22 @@ unreaped child cannot be mistaken for success. 18 cases:
 | oversized request line / actionless request | refused locally before touching the pipe, session unaffected | yes |
 | worker that stops consuming stdin | each write attempt returns inside its own bound, then `write deadline exceeded` or `write refused`; cleanup still joins both threads | yes |
 | stdout held open by a grandchild the harness never owned | the call fails on its deadline and the reader is still joined, never detached | yes |
+| established session reports only bounded modes | `io_modes()` returns only `nonblocking` or `peek-poll`, never `blocking` | yes |
+| mandatory pipe setup fails (injected) | `SpawnError::Unfit { pid, reaped: true, detail }` — session refused, child terminated and reaped | yes |
+| program that never started | `SpawnError::Launch` — distinct from a half-built session | yes |
 
-These prove driver boundedness only. They are not native GUI, OS-input, model or
-real-window evidence, and no real window PASS is inferred from them.
+`tools/native-acceptance/tests/owned_process.rs` drives an owned mock GUI (the same
+fake-worker binary in `gui-hang` and `eof` modes) with no real window. 4 cases:
+
+| Injected GUI behaviour | Required outcome | Proven |
+| --- | --- | --- |
+| adopted child hangs, then terminate | `OwnedCleanup { pid, reaped: true, reader_joined: true }` inside 10 s; second terminate returns the cached result | yes |
+| child exits cleanly on its own | reaped without being forced down; `exited()` reports success | yes |
+| panic during initialization (after adoption) | `catch_unwind` observes the panic; the cleanup sink reports `reaped && reader_joined` for the owned child | yes |
+| bounded read mode unavailable (injected) | `Unfit { pid, reaped: true, detail }` — adoption refused, child terminated and reaped | yes |
+
+These prove driver boundedness and ownership only. They are not native GUI, OS-input,
+model or real-window evidence, and no real window PASS is inferred from them.
 
 ## 6. Limitations and honesty
 
@@ -290,11 +296,11 @@ real-window evidence, and no real window PASS is inferred from them.
 - `typed_context` provenance/review types currently have no consumer outside
   `acp-core`; this is reported as a finding, not silently rewired or deleted.
 - All four native surfaces (Windows HWND, WSLg Wayland, ConPTY, Linux/WSL PTY) ran at
-  `d3a4a3d` and PASS, so the revised driver is validated on both hosts with real OS
+  `963c308` and PASS, so the revised driver is validated on both hosts with real OS
   input rather than only by injected fakes. This does **not** recertify S5's product
-  acceptance, whose
-  PASS remains scoped to `ddc12ac8c17215014e04cc65ed802819b1bc8376`: the product inputs
-  here are unchanged, and no new product behavior was tested.
+  acceptance, whose PASS remains scoped to
+  `ddc12ac8c17215014e04cc65ed802819b1bc8376`: the product inputs here are unchanged,
+  and no new product behavior was tested.
 - The driver's boundedness is proven by the injected fake workers, not by the real runs.
   One negative case that only Windows can reach (a reply pipe held by an unowned
   grandchild) failed there first and produced the polling fix in section 3; Linux never
