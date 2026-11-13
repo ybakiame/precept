@@ -21,8 +21,8 @@ function Check-Case([string]$Name, [string]$Base, [bool]$Pass = $false, [bool]$E
     if ($Existing) { New-Item -ItemType Directory -Path $report | Out-Null }
     $ok = $true
     try { & ./tools/windows_local_verify.ps1 -Suite Core -ReportDir $report -DiffBase $Base *> (Join-Path $root "$Name.log") }
-    catch { $ok = $false }
-    if ($ok -ne $Pass) { throw "Unexpected helper outcome: $Name" }
+    catch { $ok = $false; $failure = $_.Exception.Message }
+    if ($ok -ne $Pass) { throw "Unexpected helper outcome: $Name ($failure)" }
     if ((Test-Path $env:ACP_S5_TRACE) -ne $Pass) { throw "Cargo before valid branch diff: $Name" }
     if ($Name -eq 'committed-whitespace') {
         $data = Get-Content -Raw -LiteralPath (Join-Path $report 'report.json') | ConvertFrom-Json
@@ -39,6 +39,7 @@ try {
     Git-Run @('init','-q')
     Git-Run @('config','user.name','Synthetic')
     Git-Run @('config','user.email','synthetic@example.invalid')
+    Git-Run @('config','core.autocrlf','true')
     Set-Content -LiteralPath sample -Value 'base'
     Git-Run @('add','.')
     Git-Run @('commit','-qm','base')

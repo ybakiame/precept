@@ -307,7 +307,13 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         "light".into(),
     ];
     let mut ui = if surface == "desktop" {
-        Ui::Desktop(desktop::Desktop::start(&nsh, &args, &nonce, window_script))
+        Ui::Desktop(desktop::Desktop::start(
+            &nsh,
+            &args,
+            &nonce,
+            window_script,
+            out,
+        ))
     } else {
         Ui::Tty(tty::Tty::start(&nsh, &args, out))
     };
@@ -317,11 +323,11 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         "No Profile selected",
     );
     ui.field("alt+p", f.db.to_str().unwrap());
-    ui.apply(
-        "alt+shift+u",
-        "selected=true grant=false busy=false",
-        "Profile selected",
-    );
+    ui.key("alt+shift+u");
+    ui.wait("review=true", "Prepared operation");
+    ui.capture("create-review", out);
+    ui.key("alt+shift+v");
+    ui.wait("selected=true grant=false busy=false", "Profile selected");
     assert_eq!(f.query(&["profile", "info"]).1["write_enabled"], false);
     let competitor_run = f.root.path().join("competitor");
     let competitor_endpoint = if cfg!(windows) {

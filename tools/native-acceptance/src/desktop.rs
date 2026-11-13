@@ -14,9 +14,10 @@ pub struct Desktop {
     output: BufReader<ChildStdout>,
     pub lines: Arc<Mutex<Vec<String>>>,
     after: usize,
+    out: std::path::PathBuf,
 }
 impl Desktop {
-    pub fn start(binary: &Path, args: &[String], nonce: &str, script: &str) -> Self {
+    pub fn start(binary: &Path, args: &[String], nonce: &str, script: &str, out: &Path) -> Self {
         let mut command = Command::new(binary);
         command
             .args(args)
@@ -72,6 +73,7 @@ impl Desktop {
             output,
             lines,
             after: 0,
+            out: out.to_owned(),
         };
         let response = value
             .rpc(json!({"action":"init","nonce":nonce,"pid":value.child.id(),"remote":cfg!(unix)}));
@@ -82,7 +84,11 @@ impl Desktop {
             if r["status"] == "ok" {
                 break;
             }
-            assert!(Instant::now() < end, "owned native window did not appear");
+            assert!(
+                Instant::now() < end,
+                "owned native window did not appear: {}",
+                r["reason"]
+            );
             thread::sleep(Duration::from_millis(150));
         }
         println!(
@@ -180,6 +186,9 @@ impl Desktop {
 }
 impl Drop for Desktop {
     fn drop(&mut self) {
+        if let Ok(lines) = self.lines.lock() {
+            let _ = std::fs::write(self.out.join("desktop-probes.log"), lines.join("\n"));
+        }
         let _ = self.child.kill();
         let _ = self.child.wait();
         let _ = self.worker.kill();

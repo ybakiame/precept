@@ -13,6 +13,7 @@ public static class AcpWindow {
  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);
  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
  [DllImport("user32.dll")] public static extern void keybd_event(byte k, byte s, uint f, UIntPtr e);
+ [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern short VkKeyScan(char c);
  [DllImport("user32.dll")] public static extern uint SendInput(uint n, INPUT[] i, int size);
  [StructLayout(LayoutKind.Sequential)] public struct KEY { public ushort vk, scan; public uint flags, time; public UIntPtr extra; }
  [StructLayout(LayoutKind.Sequential)] public struct MOUSE { public int x,y; public uint data,flags,time; public UIntPtr extra; }
@@ -35,7 +36,9 @@ function Owned-Window {
     [AcpWindow]::EnumWindows({ param($h,$unused)
         $text = [System.Text.StringBuilder]::new(512)
         [void][AcpWindow]::GetWindowText($h,$text,512)
-        if ([AcpWindow]::IsWindowVisible($h) -and $text.ToString().EndsWith(" [$nonce]", [StringComparison]::Ordinal)) { $script:ownedHandles.Add($h) }
+        $title = $text.ToString()
+        $owned = $title.StartsWith('Agent Control Plane ', [StringComparison]::Ordinal) -and $(if ($remote) { $title.Contains(" [$nonce]") } else { $title.EndsWith(" [$nonce]", [StringComparison]::Ordinal) })
+        if ([AcpWindow]::IsWindowVisible($h) -and $owned) { $script:ownedHandles.Add($h) }
         return $true
     },[IntPtr]::Zero) | Out-Null
     if ($ownedHandles.Count -ne 1) { throw 'Owned nonce window unavailable or ambiguous' }
@@ -78,7 +81,15 @@ while ($null -ne ($line = [Console]::ReadLine())) {
             }
             'text' {
                 if ($command.text.Length -gt 1024 -or $command.text.Contains("`n") -or $command.text.Contains("`r")) { throw 'Synthetic field bound exceeded' }
-                foreach($c in $command.text.ToCharArray()) { $current = Owned-Window; if ($current -ne $h -or [AcpWindow]::GetForegroundWindow() -ne $h) { throw 'Foreground changed during native input' }; [AcpWindow]::Character($c) }
+                foreach($c in $command.text.ToCharArray()) {
+                    $current = Owned-Window; if ($current -ne $h -or [AcpWindow]::GetForegroundWindow() -ne $h) { throw 'Foreground changed during native input' }
+                    $scan = [int][AcpWindow]::VkKeyScan($c)
+                    if ([int]$c -lt 32 -or [int]$c -gt 126 -or $scan -lt 0 -or ($scan -shr 8) -gt 1) { throw 'Only fixed ASCII synthetic fields supported' }
+                    $shift = ($scan -band 256) -ne 0
+                    try { if ($shift) { [AcpWindow]::keybd_event(16,0,0,[UIntPtr]::Zero) }; [AcpWindow]::keybd_event(($scan -band 255),0,0,[UIntPtr]::Zero); [AcpWindow]::keybd_event(($scan -band 255),0,2,[UIntPtr]::Zero) }
+                    finally { if ($shift) { [AcpWindow]::keybd_event(16,0,2,[UIntPtr]::Zero) } }
+                    Start-Sleep -Milliseconds 4
+                }
             }
             'resize' {
                 $w=[int]$command.width;$height=[int]$command.height

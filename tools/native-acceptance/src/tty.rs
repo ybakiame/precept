@@ -219,8 +219,6 @@ mod platform {
                     CreatePseudoConsole(COORD { X: 160, Y: 50 }, ir, ow, 0, &mut console),
                     0
                 );
-                CloseHandle(ir);
-                CloseHandle(ow);
                 let mut bytes = 0;
                 InitializeProcThreadAttributeList(std::ptr::null_mut(), 1, 0, &mut bytes);
                 let mut buffer = vec![0usize; bytes.div_ceil(std::mem::size_of::<usize>())];
@@ -269,6 +267,8 @@ mod platform {
                     &mut info,
                 );
                 DeleteProcThreadAttributeList(attributes);
+                CloseHandle(ir);
+                CloseHandle(ow);
                 assert_ne!(ok, 0, "ConPTY child launch failed");
                 CloseHandle(info.hThread);
                 (
