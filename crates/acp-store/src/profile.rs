@@ -397,6 +397,8 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
     }
     let mut pref_digests: BTreeMap<i64, Vec<u8>> = BTreeMap::new();
     let mut pref_revisions: BTreeMap<i64, i64> = BTreeMap::new();
+    let mut pref_bindings: BTreeMap<i64, (String, Option<String>)> = BTreeMap::new();
+    let mut pref_statuses: BTreeMap<i64, String> = BTreeMap::new();
     for r in rows(
         db,
         "SELECT id,scope,project,pref_key,value,status,source,revision,created_at,updated_at,origin,proposal_digest FROM preferences",
@@ -453,6 +455,13 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
         pref_digests.insert(id, digest);
         let pref_rev = positive(&r[7])?;
         pref_revisions.insert(id, pref_rev);
+        let project = if r[2] == Value::Null {
+            None
+        } else {
+            Some(string(&r[2])?.to_owned())
+        };
+        pref_bindings.insert(id, (scope.to_owned(), project));
+        pref_statuses.insert(id, string(&r[5])?.to_owned());
         live.insert(
             ("preference".into(), String::new(), id.to_string()),
             pref_rev,
@@ -562,18 +571,32 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
         8192,
     )?;
     let mut max_review_id = 0i64;
-    let mut decision_counts: BTreeMap<i64, (i64, i64)> = BTreeMap::new();
+    // Per preference: (revision the next decision must start from, status the
+    // decision chain has produced so far). A live row's final revision and
+    // status must both be explained by this chain; a suggestion with no
+    // decision stays `suggested` at revision 1.
+    let mut decision_state: BTreeMap<i64, (i64, String)> = BTreeMap::new();
     for r in &decisions {
         let did = positive(&r[0])?;
         max_review_id = max_review_id.max(did);
         let scope = string(&r[1])?;
+        let project = if r[2] == Value::Null {
+            None
+        } else {
+            Some(string(&r[2])?)
+        };
         valid(
-            (scope == "global" && r[2] == Value::Null)
-                || (scope == "project" && name_valid(string(&r[2])?)),
+            (scope == "global" && project.is_none())
+                || (scope == "project" && project.is_some_and(name_valid)),
         )?;
         let pref_id = positive(&r[3])?;
         valid(pref_digests.contains_key(&pref_id))?;
-        valid(["confirm", "reject", "deprecate", "demote", "delete"].contains(&string(&r[4])?))?;
+        // The decision must name the exact scope/project of its preference;
+        // otherwise precise operator history queries would lose the row.
+        let (pref_scope, pref_project) = &pref_bindings[&pref_id];
+        valid(scope == pref_scope && project.map(str::to_owned) == *pref_project)?;
+        let action = string(&r[4])?;
+        valid(["confirm", "reject", "deprecate", "demote", "delete"].contains(&action))?;
         let from = positive(&r[5])?;
         let to = positive(&r[6])?;
         valid(to == from + 1)?;
@@ -593,16 +616,27 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
         }))?;
         valid(["cli", "desktop", "tui"].contains(&string(&r[9])?))?;
         valid(timestamp_valid(string(&r[10])?))?;
-        // Per-preference chain: the first decision starts at revision 1 and each
-        // later one starts exactly where the previous decision left the record.
-        let entry = decision_counts.entry(pref_id).or_insert((0, 1));
-        valid(from == entry.1)?;
-        entry.0 += 1;
-        entry.1 = to;
+        // Replay the writer's status machine over the ordered decision chain.
+        let entry = decision_state
+            .entry(pref_id)
+            .or_insert((1, "suggested".to_owned()));
+        valid(from == entry.0)?;
+        let next_status = match action {
+            "confirm" if entry.1 == "suggested" => "confirmed",
+            "reject" if entry.1 == "suggested" => "rejected",
+            "deprecate" | "demote" if entry.1 == "confirmed" => "deprecated",
+            _ => return Err(Error::InvalidRecord),
+        };
+        entry.0 = to;
+        entry.1 = next_status.to_owned();
     }
     for (pref_id, revision) in &pref_revisions {
-        let expected_rev = decision_counts.get(pref_id).map(|(_, to)| *to).unwrap_or(1);
+        let (expected_rev, expected_status) = decision_state
+            .get(pref_id)
+            .map(|(to, status)| (*to, status.clone()))
+            .unwrap_or((1, "suggested".to_owned()));
         valid(*revision == expected_rev)?;
+        valid(pref_statuses[pref_id] == expected_status)?;
     }
     valid(next_review > max_review_id && (seq != 0 || next_review == 1))?;
     Ok(Metadata {

@@ -38,7 +38,7 @@ fn exact_v1_reads_are_scoped_readonly_and_expose_separate_revisions() {
     assert_eq!(s.schema().unwrap(), Schema::Version1);
     assert_eq!(s.metadata().unwrap().binding.owner_epoch, 0);
     assert_eq!(s.project_revision("alpha").unwrap(), 1);
-    assert_eq!(s.preference_revision(1).unwrap(), 1);
+    assert_eq!(s.preference_revision(1).unwrap(), 2);
     assert_eq!(s.handoff_revision("alpha", "shared").unwrap(), 1);
     assert!(
         s.read_preferences("alpha")
@@ -119,8 +119,12 @@ fn corrupt_types_domains_metadata_receipts_and_fks_are_rejected() {
         "UPDATE acp_profile SET next_preference_id=1",
         "UPDATE acp_profile SET commit_sequence=0",
         "UPDATE acp_profile SET profile_id='BAD'",
-        "UPDATE preferences SET revision=2 WHERE id=1",
+        "UPDATE preferences SET revision=3 WHERE id=1",
         "UPDATE preferences SET status='wrong'",
+        "UPDATE preferences SET status='confirmed' WHERE id=5",
+        "UPDATE preferences SET status='rejected' WHERE id=1",
+        "UPDATE acp_review_decisions SET project='beta' WHERE preference_id=1",
+        "UPDATE acp_review_decisions SET scope='project' WHERE preference_id=1",
         "UPDATE preferences SET project='missing' WHERE scope='project'",
         "UPDATE handoffs SET validation_json='{}'",
         "UPDATE handoffs SET worktree_state='verified'",
@@ -167,45 +171,30 @@ fn empty_current_schema_is_valid_but_orphaned_domain_data_is_not() {
 }
 #[test]
 fn review_decision_chain_digest_and_domain_drift_are_refused() {
-    // The empty drift is the accepted control: base fixture with no decisions
-    // (suggested preferences at revision 1, next_review_id=1).
-    // Negative cases insert forged decisions that violate structural causality
-    // (no matching receipt transition) and/or domain constraints.
+    // The empty drift is the accepted control: the base fixture's writer-producible
+    // decision history (suggestion receipts plus confirm/reject/deprecate chains).
+    // Negative cases corrupt that real history or forge a decision whose referenced
+    // receipt never produced the claimed transition. D7 delete semantics are
+    // exercised separately by the writer test.
     for drift in [
         "",
-        "UPDATE acp_review_decisions SET from_revision=3,to_revision=4 WHERE id=2",
-        "UPDATE acp_review_decisions SET from_revision=1,to_revision=2 WHERE id=2",
-        "UPDATE acp_review_decisions SET to_revision=4 WHERE id=2",
-        "UPDATE acp_review_decisions SET proposal_digest=zeroblob(32) WHERE id=2",
-        "UPDATE acp_review_decisions SET channel='web' WHERE id=2",
-        "UPDATE acp_review_decisions SET receipt_commit_sequence=4097 WHERE id=2",
-        "UPDATE acp_review_decisions SET decided_at='2026-02-30T00:00:00Z' WHERE id=2",
-        "UPDATE acp_review_decisions SET preference_id=999 WHERE id=2",
-        "UPDATE acp_profile SET next_review_id=2",
-        "DELETE FROM acp_review_decisions WHERE id=1",
-        "UPDATE preferences SET revision=2 WHERE id=1",
+        "UPDATE acp_review_decisions SET from_revision=3,to_revision=4 WHERE id=1",
+        "UPDATE acp_review_decisions SET to_revision=5 WHERE id=1",
+        "UPDATE acp_review_decisions SET proposal_digest=zeroblob(32) WHERE id=1",
+        "UPDATE acp_review_decisions SET channel='web' WHERE id=1",
+        "UPDATE acp_review_decisions SET receipt_commit_sequence=4097 WHERE id=1",
+        "UPDATE acp_review_decisions SET decided_at='2026-02-30T00:00:00Z' WHERE id=1",
+        "UPDATE acp_review_decisions SET preference_id=999 WHERE id=1",
+        "UPDATE acp_review_decisions SET project='beta' WHERE id=1",
+        "UPDATE acp_review_decisions SET scope='project' WHERE id=1",
+        "UPDATE acp_profile SET next_review_id=1",
+        "DELETE FROM acp_review_decisions WHERE preference_id=7 AND action='deprecate'",
+        "UPDATE preferences SET status='confirmed' WHERE id=5",
+        "UPDATE preferences SET status='rejected' WHERE id=1",
     ] {
         let (_t, p) = fresh();
         let db = Connection::open(&p).unwrap();
         db.pragma_update(None, "foreign_keys", true).unwrap();
-        if !drift.is_empty() {
-            let digest: Vec<u8> = db
-                .query_row(
-                    "SELECT proposal_digest FROM preferences WHERE id=1",
-                    [],
-                    |r| r.get(0),
-                )
-                .unwrap();
-            for (id, action, from, to) in [(1, "confirm", 1, 2), (2, "demote", 2, 3)] {
-                db.execute(
-                    "INSERT INTO acp_review_decisions VALUES(?1,'global',NULL,1,?2,?3,?4,?5,1,'cli','2026-01-01T00:00:00Z')",
-                    rusqlite::params![id, action, from, to, digest],
-                )
-                .unwrap();
-            }
-            db.execute("UPDATE acp_profile SET next_review_id=3", [])
-                .unwrap();
-        }
         db.execute_batch("PRAGMA ignore_check_constraints=ON")
             .unwrap();
         if !drift.is_empty() {
@@ -216,10 +205,38 @@ fn review_decision_chain_digest_and_domain_drift_are_refused() {
         assert_eq!(
             SqliteStore::open(&p).is_ok(),
             drift.is_empty(),
-            "unexpected decision-history outcome"
+            "unexpected decision-history outcome for: {drift}"
         );
         assert_eq!(fs::read(&p).unwrap(), before);
     }
+}
+
+#[test]
+fn forged_decision_without_matching_receipt_transition_is_refused() {
+    // Preference 5 is a real suggestion at revision 1 with no decision. A forged
+    // confirm decision claiming revision 2 must be refused because no receipt
+    // ever changed preference 5 to revision 2 (structural causality, not domain).
+    let (_t, p) = fresh();
+    let db = Connection::open(&p).unwrap();
+    let digest: Vec<u8> = db
+        .query_row(
+            "SELECT proposal_digest FROM preferences WHERE id=5",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let next_id: i64 = db
+        .query_row("SELECT next_review_id FROM acp_profile", [], |r| r.get(0))
+        .unwrap();
+    db.execute(
+        "INSERT INTO acp_review_decisions VALUES(?1,'global',NULL,5,'confirm',1,2,?2,1,'cli','2026-01-01T00:00:00Z')",
+        rusqlite::params![next_id, digest],
+    )
+    .unwrap();
+    db.execute("UPDATE acp_profile SET next_review_id=?1", [next_id + 1])
+        .unwrap();
+    drop(db);
+    assert!(SqliteStore::open(&p).is_err());
 }
 #[test]
 fn frozen_ddl_matches_implementation() {
