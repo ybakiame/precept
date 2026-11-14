@@ -639,18 +639,14 @@ impl Model {
                     {
                         return Err("OutcomeUnknown");
                     }
-                    // A delete receipt must carry the identity-only tombstone of
-                    // the exact deleted row; anything else is not a delete proof.
+                    // Preference IDs are profile-global: Writer's identity-only
+                    // receipt leaves project empty even for project-scoped rows.
                     if let Command::DeletePreference { id, .. } = &mutation.command
                         && !receipt.affected.iter().any(|a| {
                             a.kind == "preference"
                                 && a.record_id == id.to_string()
                                 && a.deleted
-                                && a.project
-                                    == match &request.guard.scope {
-                                        Scope::Global => "",
-                                        Scope::Project { name } => name.as_str(),
-                                    }
+                                && a.project.is_empty()
                                 && request
                                     .record
                                     .as_ref()
@@ -1826,7 +1822,7 @@ mod tests {
         }
     }
     #[test]
-    fn delete_tombstone_must_match_exact_scope_and_resulting_revision() {
+    fn delete_tombstone_must_match_preference_identity_and_resulting_revision() {
         for (project, revision) in [("other-project", 2), ("", 1), ("", 3)] {
             let mut m = armed_delete_model();
             assert!(m.operator_review("delete", "exact-delete"));
@@ -1862,6 +1858,68 @@ mod tests {
             ));
             assert!(m.operator.receipt.is_some());
         }
+    }
+    #[test]
+    fn project_delete_accepts_writer_global_id_receipt_without_losing_request_scope() {
+        let mut m = model();
+        let scope = Scope::Project {
+            name: "alpha".into(),
+        };
+        let record = synthetic_record(7, &scope, "suggested", 1);
+        m.operator.global = false;
+        m.operator.page = Some(PreferencePage {
+            binding: binding(),
+            records: vec![record.clone()],
+            next_after_id: None,
+        });
+        m.operator.selected_id = Some(7);
+        m.operator.inspect = None;
+        m.operator.inspect_revision = 0;
+        assert!(complete_inspect(
+            &mut m,
+            inspect_of(record.clone(), vec![], vec![], 0)
+        ));
+        m.operator.delete_arm = Some(DeleteArm {
+            retype: "7".into(),
+            id: 7,
+            revision: 1,
+            proposal_digest: record.proposal_digest.clone(),
+        });
+        assert!(m.operator_review("delete", "project-delete"));
+        let request = m.operator_confirm().unwrap();
+        match &request.mutation.as_ref().unwrap().command {
+            Command::DeletePreference {
+                id,
+                scope: actual_scope,
+                expected,
+                proposal_digest,
+                ..
+            } => {
+                assert_eq!(*id, 7);
+                assert!(*actual_scope == scope);
+                assert!(*expected == Expected::Revision(1));
+                assert_eq!(proposal_digest, &record.proposal_digest);
+            }
+            _ => panic!("expected exact project delete"),
+        }
+        assert!(m.complete_operator(
+            &request,
+            Ok(receipt_json(
+                "project-delete",
+                9,
+                json!([{
+                    "kind":"preference", "project":"", "record_id":"7",
+                    "revision":2, "deleted":true
+                }])
+            ))
+        ));
+        assert!(!m.operator.outcome_unknown);
+        assert!(m.operator.receipt.is_some());
+        assert!(m.operator.pending.is_none());
+        assert!(m.operator.record().is_none());
+        assert!(m.operator.inspect.is_none());
+        assert!(m.operator.delete_arm.is_none());
+        assert!(m.operator_retry().is_none());
     }
     #[test]
     fn precise_review_refusals_are_settled_without_replay_or_success() {

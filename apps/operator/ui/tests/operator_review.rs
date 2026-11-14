@@ -161,7 +161,8 @@ where
         .block_on(f())
 }
 fn contains(app: &mut nsh_testing::Headless, needle: &str) {
-    app.wait_until("sanitized result", Duration::from_secs(10), |s| {
+    let label = format!("sanitized result containing {needle:?}");
+    app.wait_until(&label, Duration::from_secs(10), |s| {
         s.texts().iter().any(|t| t.contains(needle))
     })
     .unwrap();
@@ -317,6 +318,9 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, " · commit 7");
+    // Project preference receipts deliberately use a globally allocated ID
+    // (empty receipt project), not the request's project-scoped read binding.
+    assert!(!app.screen().shows("Retry identical request"));
     assert!(
         f.call(
             "profile.review.inspect",
@@ -451,6 +455,7 @@ fn terminal_channel_and_revoked_delete(f: &Fixture) {
     app.type_text("Retype the exact ID", "3").unwrap();
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, " · commit 13");
+    assert!(!app.screen().shows("Retry identical request"));
     app.wait_for("Deleted. Content and decision history are gone; receipts remain identity-only.")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
