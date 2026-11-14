@@ -2,7 +2,6 @@
 use super::*;
 use acp_operator_model::i18n::Msg;
 use acp_operator_model::{PAGE_SIZE, Section, presentation::sanitize};
-use nsh_core::element::input;
 use tokens::{compact, palette};
 
 pub(super) fn action(
@@ -11,22 +10,9 @@ pub(super) fn action(
     enabled: impl Fn() -> bool + 'static,
     callback: impl Fn() + 'static,
 ) -> impl IntoElement {
-    let label = label.into();
-    button()
-        .accessibility_label(label.clone())
-        .px_2()
-        .py_1()
-        .rounded(px(6.0))
-        .border_2()
-        .bg(move || palette(model).inset)
-        .text_color(move || palette(model).text)
-        .border_color(move || palette(model).border)
-        .hover(|s| s.border_color(palette(model).border))
-        .focus(|s| s.border_color(palette(model).primary))
+    ui::button(model, label.into())
         .disabled(move || !enabled())
-        .disabled_style(|s| s.opacity(0.45))
         .on_press(callback)
-        .child(text(label))
 }
 pub(super) fn word_action(
     model: Signal<Model>,
@@ -34,19 +20,9 @@ pub(super) fn word_action(
     enabled: impl Fn() -> bool + 'static,
     callback: impl Fn() + 'static,
 ) -> impl IntoElement {
-    button()
-        .accessibility_label(move || Some(model.get().word(key).into()))
-        .px_2()
-        .py_1()
-        .rounded(px(6.0))
-        .border_2()
-        .bg(move || palette(model).inset)
-        .text_color(move || palette(model).text)
-        .border_color(move || palette(model).border)
-        .hover(|s| s.border_color(palette(model).primary))
-        .focus(|s| s.border_color(palette(model).text))
+    ui::button(model, "")
+        .label_fn(move || model.get().word(key).into())
         .disabled(move || !enabled())
-        .disabled_style(|s| s.opacity(0.45))
         .on_press(move || {
             #[cfg(not(target_arch = "wasm32"))]
             if std::env::var_os("ACP_UI_PROBE").is_some() {
@@ -54,7 +30,6 @@ pub(super) fn word_action(
             }
             callback();
         })
-        .child(text(move || model.get().word(key)))
 }
 fn control(model: Signal<Model>, key: Msg, callback: impl Fn() + 'static) -> impl IntoElement {
     word_action(model, key, || true, callback)
@@ -73,20 +48,7 @@ pub(super) fn card(
     title: &'static str,
     lines: Vec<String>,
 ) -> impl IntoElement {
-    view()
-        .flex_shrink_0()
-        .p_3()
-        .gap_2()
-        .rounded(px(8.0))
-        .border_1()
-        .border_color(move || palette(model).border)
-        .bg(move || palette(model).panel)
-        .child(
-            text(title)
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_size(px(14.0)),
-        )
-        .children(lines.into_iter().map(|line| text(sanitize(&line, 512))))
+    ui::card(model, title, lines)
 }
 fn navigation(model: Signal<Model>) -> impl IntoElement {
     view()
@@ -227,22 +189,17 @@ fn task_input(model: Signal<Model>, task_ref: ElementRef) -> impl IntoElement {
                 .flex_row()
                 .gap_2()
                 .child(
-                    input()
-                        .element_ref(&task_ref)
-                        .label(move || model.get().word(Msg::TaskId))
-                        .h(px(30.0))
-                        .flex_1()
-                        .border_2()
-                        .border_color(move || palette(model).border)
-                        .bg(move || palette(model).panel)
-                        .text_color(move || palette(model).text)
-                        .focus(|s| s.border_color(palette(model).primary))
-                        .value(move || model.get().task_id)
-                        .placeholder("Task ID")
-                        .on_change(move |v: &str| {
-                            model.update(|m| m.task_id = v.chars().take(121).collect())
-                        })
-                        .on_submit(move |_: &str| reconnect(model)),
+                    view().flex_1().child(
+                        ui::input(model, "")
+                            .label_fn(move || model.get().word(Msg::TaskId).into())
+                            .element_ref(&task_ref)
+                            .value(move || model.get().task_id)
+                            .placeholder("Task ID")
+                            .on_change(move |v| {
+                                model.update(|m| m.task_id = v.chars().take(121).collect())
+                            })
+                            .on_submit(move |_| reconnect(model)),
+                    ),
                 )
                 .child(control(model, Msg::Lookup, move || reconnect(model))),
         )
@@ -262,17 +219,11 @@ fn preference_input(model: Signal<Model>, filter_ref: ElementRef) -> impl IntoEl
         )
         .child(text(move || model.get().word(Msg::FilterHelp)).text_size(px(12.0)))
         .child(
-            input()
+            ui::input(model, "")
+                .label_fn(move || model.get().word(Msg::Filter).into())
                 .element_ref(&filter_ref)
-                .label(move || model.get().word(Msg::Filter))
-                .h(px(30.0))
-                .border_2()
-                .border_color(move || palette(model).border)
-                .bg(move || palette(model).panel)
-                .text_color(move || palette(model).text)
-                .focus(|s| s.border_color(palette(model).primary))
                 .value(move || model.get().filter)
-                .on_change(move |v: &str| model.update(|m| m.set_filter(v))),
+                .on_change(move |v| model.update(|m| m.set_filter(v))),
         )
         .child(
             view()

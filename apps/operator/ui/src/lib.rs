@@ -10,6 +10,7 @@ mod operator;
 mod sessions;
 mod settings;
 mod tokens;
+mod ui;
 pub static DESKTOP_RUNTIME: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();
 fn runtime_lines(locale: acp_operator_model::i18n::Locale) -> Vec<String> {
     use acp_operator_model::i18n::{Msg, tr};
@@ -181,6 +182,11 @@ fn copy_page(model: Signal<Model>) {
 
 #[component]
 pub fn App() -> impl IntoElement {
+    // Debug-only design-system gallery; never reached from normal navigation.
+    #[cfg(not(target_arch = "wasm32"))]
+    if std::env::var_os("ACP_UI_GALLERY").is_some() {
+        return ui::gallery::gallery().into_element();
+    }
     #[cfg(feature = "ipc")]
     let inputs = INPUTS.get().cloned().unwrap_or_default();
     let mut initial = Model::loading();
@@ -229,7 +235,7 @@ pub fn App() -> impl IntoElement {
     let model = signal(initial);
     load(model);
     sessions::poll(model);
-    console(model)
+    console(model).into_element()
 }
 
 fn console(model: Signal<Model>) -> impl IntoElement {
