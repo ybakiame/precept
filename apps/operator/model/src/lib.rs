@@ -19,14 +19,14 @@ pub fn valid_task(task: &str) -> bool {
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 pub mod native;
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Health {
     pub api_version: u32,
     pub service: String,
     pub ready: bool,
     pub schema: String,
 }
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Preference {
     pub key: String,
     pub value: String,
@@ -34,14 +34,14 @@ pub struct Preference {
     pub source: String,
     pub status: String,
 }
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Repository {
     pub head: Option<String>,
     pub branch: Option<String>,
     pub dirty: Option<bool>,
     pub change_count: Option<u64>,
 }
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Context {
     pub project: String,
     pub preferences: Vec<Preference>,
@@ -49,7 +49,7 @@ pub struct Context {
     pub documents: Vec<Value>,
     pub warnings: Vec<String>,
 }
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Handoff {
     pub project: String,
     pub task_id: String,
@@ -59,13 +59,13 @@ pub struct Handoff {
     pub resume_warnings: Vec<String>,
     pub current_repository: Value,
 }
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Project {
     pub name: String,
     pub context: Context,
     pub handoff: Option<Handoff>,
 }
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Snapshot {
     pub health: Health,
     pub projects: Vec<Project>,

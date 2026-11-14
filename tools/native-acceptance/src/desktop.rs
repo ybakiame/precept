@@ -143,20 +143,11 @@ impl Desktop {
     pub fn wait(&self, marker: &str) {
         let end = Instant::now() + Duration::from_secs(20);
         while Instant::now() < end {
+            if self.lines.lock().unwrap()[self.after..]
+                .iter()
+                .any(|s| s.contains(marker))
             {
-                let lines = self.lines.lock().unwrap();
-                // A probe emitted after the action, or the current state already
-                // satisfying the marker: an action that leaves the state unchanged
-                // (e.g. re-opening an already-inspected record) emits no new probe.
-                let fresh = lines[self.after..].iter().any(|s| s.contains(marker));
-                let current = lines
-                    .iter()
-                    .rev()
-                    .find(|s| s.contains("ACP_NSH_OPERATOR"))
-                    .is_some_and(|s| s.contains(marker));
-                if fresh || current {
-                    return;
-                }
+                return;
             }
             thread::sleep(Duration::from_millis(25));
         }

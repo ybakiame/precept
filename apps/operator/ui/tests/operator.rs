@@ -196,6 +196,9 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     app.wait_for("#1 · editor · suggested · r1").unwrap();
     app.press_key("alt+shift+i").unwrap();
     app.press_key("alt+shift+y").unwrap();
+    app.wait_for("Show full digest").unwrap();
+    assert!(!app.screen().shows("Prepared operation; no write sent yet"));
+    app.press_key("alt+shift+y").unwrap();
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
@@ -207,6 +210,9 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     app.wait_for("#2 · editor · suggested · r1").unwrap();
     app.press_key("alt+shift+i").unwrap();
     app.press_key("alt+shift+i").unwrap();
+    app.press_key("alt+shift+n").unwrap();
+    app.wait_for("Show full digest").unwrap();
+    assert!(!app.screen().shows("Prepared operation; no write sent yet"));
     app.press_key("alt+shift+n").unwrap();
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();

@@ -511,6 +511,8 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     ui.wait("rows=1", "#1");
     ui.key("alt+shift+i");
     ui.wait("record_revision=1", "#1");
+    ui.key("alt+shift+y");
+    ui.wait("inspected_id=1 inspected_revision=1", "Show full digest");
     ui.receipt("alt+shift+y", 5);
     assert_eq!(f.rows()[0]["status"], "confirmed");
     ui.capture("confirmed-exact-record", out);
@@ -520,6 +522,8 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     ui.key("alt+shift+i");
     ui.key("alt+shift+i");
     ui.wait("record_revision=1", "#2");
+    ui.key("alt+shift+n");
+    ui.wait("inspected_id=2 inspected_revision=1", "Show full digest");
     ui.receipt("alt+shift+n", 7);
     assert_eq!(f.rows()[1]["status"], "rejected");
     fs::write(f.root.path().join("drop-next"), b"synthetic fault").unwrap();
@@ -555,6 +559,8 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     ui.key("alt+shift+i");
     ui.key("alt+shift+i");
     ui.wait("record_revision=1", "#3");
+    ui.key("alt+shift+y");
+    ui.wait("inspected_id=3 inspected_revision=1", "Show full digest");
     ui.key("alt+shift+y");
     ui.wait("review=true", "Prepared operation");
     // S1 made `--proposal-digest` mandatory for every decision. Bind the exact
@@ -620,10 +626,10 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     );
     // ---- S2 review workspace: Queue / Detail / History tabs, deprecate and the
     // destructive delete tier, driven by real chords on both surfaces. A dedicated
-    // suggestion (#4) walks the whole lifecycle so the earlier records and the
-    // lost-reply / Conflict / Unauthorized proofs stay untouched; deleting it
-    // returns the row count to three. ----
-    ui.field("alt+k", "review-alpha");
+    // suggestion (#4) walks the whole lifecycle and demonstrates atomic demotion
+    // of the same-key confirmed peer (#1); deleting it returns the row count to
+    // three without restoring the deprecated peer. ----
+    ui.field("alt+k", "editor");
     ui.field("alt+w", "synthetic-value");
     ui.field("alt+f", "synthetic-source");
     let n = f.commit_sequence() + 1;
@@ -659,7 +665,14 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     ui.activate("alt+f", 4, 3, "queue=1", "#4");
     ui.capture("review-queue", out);
     // Open the exact record from its queue row; Detail auto-selects and inspects.
-    ui.activate("alt+f", 5, 3, "record_revision=1", "Show full digest");
+    ui.activate(
+        "alt+f",
+        5,
+        3,
+        "inspected_id=4 inspected_revision=1",
+        "Show full digest",
+    );
+    ui.wait("peer_total=1", "Deprecates 1 same-key confirmed records");
     ui.capture("review-detail", out);
     // Exercise the same global Alt+left/right review chords on both surfaces.
     ui.tab_nav(1);
@@ -676,7 +689,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     ui.wait("review_tab=Detail", "Show full digest");
     // The digest is a 16-hex prefix until an explicit expand reveals the whole.
     let digest4 = f.digest(id4);
-    ui.activate("alt+f", 4, 3, "record_revision=1", "Collapse digest");
+    ui.activate("alt+f", 4, 3, "digest_expanded=true", "Collapse digest");
     ui.capture("review-digest-expanded", out);
     if let Ui::Tty(t) = &ui {
         assert!(
@@ -696,7 +709,13 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     for _ in 0..4 {
         ui.key("alt+shift+i");
     }
-    ui.activate("alt+f", 4, 3, "record_revision=2", "Show full digest");
+    ui.activate(
+        "alt+f",
+        4,
+        3,
+        "inspected_id=4 inspected_revision=2",
+        "Show full digest",
+    );
     ui.tab_nav(1);
     ui.wait("review_tab=History", "Channel is client-asserted");
     ui.capture("review-history-confirm", out);
@@ -728,7 +747,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     let n = f.commit_sequence() + 1;
     ui.receipt("alt+shift+w", n);
     assert_eq!(f.record(id4)["status"], "deprecated");
-    assert_eq!(f.record(1)["status"], "confirmed");
+    assert_eq!(f.record(1)["status"], "deprecated");
     ui.capture("review-deprecated", out);
     // Delete through the destructive tier. Re-inspect the deprecated record first.
     ui.key("alt+shift+l");
@@ -736,7 +755,13 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     for _ in 0..4 {
         ui.key("alt+shift+i");
     }
-    ui.activate("alt+f", 4, 3, "record_revision=3", "Show full digest");
+    ui.activate(
+        "alt+f",
+        4,
+        3,
+        "inspected_id=4 inspected_revision=3",
+        "Show full digest",
+    );
     let inspect = f
         .query(&[
             "review-inspect",
@@ -756,6 +781,49 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         .map(|d| d["action"].as_str().unwrap())
         .collect();
     assert!(actions.contains(&"confirm") && actions.contains(&"deprecate"));
+    let channel = if surface == "desktop" {
+        "desktop"
+    } else {
+        "tui"
+    };
+    for (action, from, to) in [("confirm", 1, 2), ("deprecate", 2, 3)] {
+        let decision = inspect["decisions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|d| d["action"] == action)
+            .unwrap();
+        assert_eq!(decision["channel"], channel);
+        assert_eq!(decision["from_revision"], from);
+        assert_eq!(decision["to_revision"], to);
+        assert_eq!(decision["proposal_digest"], digest4);
+    }
+    let peer = f
+        .query(&[
+            "review-inspect",
+            "1",
+            "--scope",
+            "project",
+            "--project",
+            "alpha",
+            "--revision",
+            "3",
+        ])
+        .1;
+    let demotion = peer["decisions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["action"] == "demote")
+        .unwrap();
+    assert_eq!(demotion["channel"], channel);
+    assert_eq!(demotion["from_revision"], 2);
+    assert_eq!(demotion["to_revision"], 3);
+    fs::write(
+        out.join("review-history-proof.json"),
+        serde_json::to_vec_pretty(&inspect["decisions"]).unwrap(),
+    )
+    .unwrap();
     // NEGATIVE: a wrong retyped ID and a blind Enter on the empty field must both
     // refuse the delete; no write lands and the record stays present.
     let seq_before = f.commit_sequence();
@@ -817,6 +885,21 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         "alpha",
     ]);
     assert!(!ok, "a deleted record must keep no content");
+    let (ok, deleted) = f.query(&[
+        "review-inspect",
+        "4",
+        "--scope",
+        "project",
+        "--project",
+        "alpha",
+        "--revision",
+        "3",
+    ]);
+    assert!(
+        !ok,
+        "deleted content and decision history must be unavailable"
+    );
+    assert_eq!(deleted["error"], "NotFound");
     let queue = f
         .query(&["review-queue", "--scope", "project", "--project", "alpha"])
         .1;

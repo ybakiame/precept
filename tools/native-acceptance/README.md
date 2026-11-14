@@ -109,6 +109,14 @@ and receipt checks. Shared-model/process tests remain responsible for specific
 late completion and task/scope/target races; do not claim every race was injected
 through OS input. Stored NOT_RUN Handoff history is not fresh Git evidence.
 
+S2 review checks wait for fresh, action-specific probes: exact inspected ID/revision
+after an inspect, and `digest_expanded=true` after deliberate expansion. A previously
+observed row revision cannot acknowledge either action. The scenario also confirms
+a same-key peer demotion, checks actual decision revisions and `desktop`/`tui`
+channel labels through independent CLI reads, and refuses history inspection after
+deletion. A first decision chord without exact inspection performs only that read;
+preparation and application remain separate explicit inputs.
+
 A normal run requires clean source before and after and records the Git SHA plus
 actual driver/daemon/query/NSH SHA-256. `ACP_S5_DEVELOPMENT=1` explicitly labels
 exploratory runs DEV_PASS and allows dirty source; those are never final acceptance.

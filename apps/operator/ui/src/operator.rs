@@ -85,8 +85,21 @@ fn send(model: Signal<Model>, request: Review) {
         });
     });
 }
+/// Inspect is read-only; a missing exact snapshot never prepares an action.
+/// The operator must invoke the decision again after seeing its disclosures.
+fn ensure_inspected(model: Signal<Model>) -> bool {
+    let exact = model.with(Model::operator_inspected);
+    if !exact {
+        model.update(|m| m.operator.review_tab = ReviewTab::Detail);
+        refresh(model, "profile.review.inspect");
+    }
+    exact
+}
 fn review(model: Signal<Model>, action: &str) {
     if !available(model) {
+        return;
+    }
+    if matches!(action, "confirm" | "reject" | "deprecate" | "delete") && !ensure_inspected(model) {
         return;
     }
     #[cfg(feature = "ipc")]
@@ -152,6 +165,9 @@ fn open_delete(model: Signal<Model>, delete_open: Signal<bool>) {
     if !available(model) || !write_grant(model) {
         return;
     }
+    if !ensure_inspected(model) {
+        return;
+    }
     let m = model.get();
     let Some(r) = m.operator.record() else {
         return;
@@ -175,7 +191,7 @@ fn disarm(model: Signal<Model>, delete_open: Signal<bool>) {
 /// Prepare the destructive delete only when exactly armed; the shared model
 /// rechecks the arm again at submit. A blind activation prepares nothing.
 fn commit_delete(model: Signal<Model>, delete_open: Signal<bool>) {
-    if delete_armed(model) && available(model) {
+    if delete_open.get() && delete_armed(model) && available(model) && write_grant(model) {
         review(model, "delete");
         delete_open.set(false);
     }
@@ -292,6 +308,15 @@ fn field(
                 }),
         )
 }
+/// The displayed preview never reveals the full digest without deliberate
+/// expansion. The immutable mutation/request bytes remain untouched.
+fn review_literal(review: &Review, expanded: bool, value: &str) -> Vec<String> {
+    if !expanded && let Some(record) = &review.record {
+        let prefix = record.proposal_digest.chars().take(16).collect::<String>();
+        return literal(&value.replace(&record.proposal_digest, &format!("{prefix}…")));
+    }
+    literal(value)
+}
 /// Preserve all record characters for review; make control/bidi content visible.
 fn literal(s: &str) -> Vec<String> {
     let escaped: String = s
@@ -372,23 +397,21 @@ fn queue_tab(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
                 },
             )),
     );
-    let empty = m
-        .operator
-        .queue
-        .as_ref()
-        .is_none_or(|q| q.records.is_empty());
-    if empty {
-        // The load action lives in the control row above; the empty state explains
-        // the valid pending-review state without duplicating that command.
+    let Some(queue) = &m.operator.queue else {
         return body
-            .child(
-                ui::empty(model, m.word(Msg::ReviewQueueEmpty))
-                    .description(m.word(Msg::ReviewQueueEmptyHelp)),
-            )
+            .child(ui::empty(model, m.word(Msg::ReviewQueueUnobserved)))
             .into_element();
-    }
-    let queue = m.operator.queue.as_ref().expect("non-empty queue");
-    // Paging is not a snapshot: disclose the drift against the session baseline.
+    };
+    body = body.child(text(
+        tr(m.locale, Msg::ReviewQueueWatermark)
+            .replace("{sequence}", &queue.commit_sequence.to_string()),
+    ));
+    body = body.child(
+        text(m.word(Msg::ReviewQueuePaging))
+            .text_size(px(ui::scale::text::CAPTION))
+            .text_color(move || palette(model).muted),
+    );
+    // Even an empty later page can disclose drift; paging is not a snapshot.
     if queue.commit_sequence > m.operator.queue_watermark {
         let delta = queue.commit_sequence - m.operator.queue_watermark;
         body = body.child(
@@ -398,6 +421,14 @@ fn queue_tab(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
             )
             .variant(ui::BadgeVariant::Warning),
         );
+    }
+    if queue.records.is_empty() {
+        return body
+            .child(
+                ui::empty(model, m.word(Msg::ReviewQueueEmpty))
+                    .description(m.word(Msg::ReviewQueueEmptyHelp)),
+            )
+            .into_element();
     }
     for (index, r) in queue.records.iter().enumerate() {
         let id = r.id;
@@ -430,6 +461,9 @@ fn queue_tab(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
                     disarm(model, delete_open);
                     model.update(|m| {
                         m.operator.selected_id = Some(id);
+                        m.operator.inspect = None;
+                        m.operator.inspect_revision = 0;
+                        m.operator.digest_expanded = false;
                         m.operator.review_tab = ReviewTab::Detail;
                         m.operator.review = None;
                         m.operator.serial += 1;
@@ -494,19 +528,32 @@ fn detail_tab(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
             scope_label(m.locale, &r.scope)
         ),
         format!("{}: {}", m.word(Msg::Project), project_name(&r.scope)),
-        format!("{}: {}", m.word(Msg::OperatorKey), sanitize(&r.key, 120)),
-        format!("{}:", m.word(Msg::OperatorValue)),
+        format!("{}: {}", m.word(Msg::ReviewStatus), r.status),
+        format!("{}:", m.word(Msg::OperatorKey)),
     ];
+    lines.extend(literal(&r.key));
+    lines.push(format!("{}:", m.word(Msg::OperatorValue)));
     lines.extend(literal(&r.value));
+    lines.push(format!("{}:", m.word(Msg::OperatorSource)));
+    lines.extend(literal(&r.source));
     lines.push(format!(
         "{}: {}",
-        m.word(Msg::OperatorSource),
-        sanitize(&r.source, 512)
+        m.word(Msg::ReviewOrigin),
+        origin_label(r.origin)
     ));
-    lines.push(format!("Origin: {}", origin_label(r.origin)));
-    lines.push(format!("Revision: {}", r.revision));
+    lines.push(format!("{}: {}", m.word(Msg::ReviewRevision), r.revision));
     lines.push(format!("{}: {}", m.word(Msg::ReviewDigest), digest));
     body = body.child(card(model, m.word(Msg::ReviewDetailTab), lines));
+    body = body.child(
+        text(m.word(Msg::ReviewProvenanceNote))
+            .text_size(px(ui::scale::text::CAPTION))
+            .text_color(move || palette(model).muted),
+    );
+    body = body.child(
+        text(m.word(Msg::ReviewContractNote))
+            .text_size(px(ui::scale::text::CAPTION))
+            .text_color(move || palette(model).muted),
+    );
     body = body.child(word_action(
         model,
         if m.operator.digest_expanded {
@@ -587,7 +634,12 @@ fn detail_tab(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
 fn history_tab(model: Signal<Model>) -> AnyElement {
     let m = model.get();
     let mut body = view().gap_2().flex_shrink_0();
-    let Some(inspect) = &m.operator.inspect else {
+    let Some(inspect) = m
+        .operator
+        .inspect
+        .as_ref()
+        .filter(|i| m.operator.selected_id == Some(i.record.id))
+    else {
         return body
             .child(
                 ui::empty(model, m.word(Msg::ReviewNoSelection))
@@ -611,12 +663,13 @@ fn history_tab(model: Signal<Model>) -> AnyElement {
         .take(8)
         .map(|d| {
             format!(
-                "{} · r{}→r{} · {} · {} · commit {}",
+                "{} · r{}→r{} · {} · {} · {} {}",
                 decision_word(m.locale, d.action),
                 d.from_revision,
                 d.to_revision,
                 channel_word(m.locale, d.channel),
                 sanitize(&d.decided_at, 40),
+                m.word(Msg::ReviewCommit),
                 d.receipt_commit_sequence
             )
         })
@@ -819,6 +872,9 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                         .map(|n| (n + 1) % page.records.len().max(1))
                         .unwrap_or(0);
                     m.operator.selected_id = page.records.get(next).map(|r| r.id);
+                    m.operator.inspect = None;
+                    m.operator.inspect_revision = 0;
+                    m.operator.digest_expanded = false;
                     m.operator.serial += 1;
                     m.operator.review = None;
                     // A selection change never carries an armed delete forward.
@@ -861,7 +917,7 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
             let o = &m.operator;
             if o.open {
                 eprintln!(
-                    "ACP_NSH_OPERATOR selected={} grant={} busy={} review={} unknown={} rows={} record_revision={} receipt={} error={} handoff_revision={} review_tab={:?} queue={} inspect={} delete_armed={}",
+                    "ACP_NSH_OPERATOR selected={} grant={} busy={} review={} unknown={} rows={} record_revision={} receipt={} error={} handoff_revision={} review_tab={:?} queue={} inspect={} delete_armed={} digest_expanded={} inspected_id={} inspected_revision={} peer_total={}",
                     o.info.as_ref().is_some_and(|i| i.selected),
                     o.info.as_ref().is_some_and(|i| i.write_enabled),
                     o.busy,
@@ -878,7 +934,11 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                     o.review_tab,
                     o.queue.as_ref().map_or(0, |q| q.records.len()),
                     o.inspect.as_ref().map_or(0, |i| i.decisions.len()),
-                    o.delete_arm.is_some()
+                    o.delete_arm.is_some(),
+                    o.digest_expanded,
+                    o.inspect.as_ref().map_or(0, |i| i.record.id),
+                    o.inspect.as_ref().map_or(0, |i| i.record.revision),
+                    o.inspect.as_ref().map_or(0, |i| i.peer_demotion_total)
                 );
             }
         }
@@ -967,6 +1027,7 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                 if r.affected.iter().any(|a| a.deleted) {
                     lines.push(m.word(Msg::ReviewDeleted).into());
                 }
+                lines.push(m.word(Msg::ReviewReceiptNote).into());
             }
             if let Some(p) = o.pending.and_then(|r| r.mutation) {
                 lines.push(format!(
@@ -1217,6 +1278,9 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                                     m.operator.review = None;
                                     m.operator.delete_arm = None;
                                     m.operator.serial += 1;
+                                    m.operator.inspect = None;
+                                    m.operator.inspect_revision = 0;
+                                    m.operator.digest_expanded = false;
                                 })
                             },
                         ));
@@ -1383,13 +1447,12 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
             let m = model.get();
             let mut body = view().gap_2().flex_shrink_0();
             if let Some(review) = &m.operator.review {
-                let mut lines = vec![
-                    m.word(Msg::OperatorPending).into(),
-                    review.method.clone(),
-                    m.word(Msg::OperatorPeerWarning).into(),
-                ];
+                let mut lines = vec![m.word(Msg::OperatorPending).into(), review.method.clone()];
                 if let Some(mutation) = &review.mutation {
                     match &mutation.command {
+                        Command::ConfirmPreference { .. } => {
+                            lines.push(m.word(Msg::OperatorPeerWarning).into());
+                        }
                         Command::DeprecatePreference { .. } => {
                             lines.push(m.word(Msg::ReviewDeprecateImpact).into());
                         }
@@ -1400,10 +1463,16 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                     }
                 }
                 if let Some(record) = &review.record {
-                    lines.extend(literal(&serde_json::to_string(record).unwrap_or_default()));
+                    lines.extend(review_literal(
+                        review,
+                        m.operator.digest_expanded,
+                        &serde_json::to_string(record).unwrap_or_default(),
+                    ));
                 }
                 if let Some(mutation) = &review.mutation {
-                    lines.extend(literal(
+                    lines.extend(review_literal(
+                        review,
+                        m.operator.digest_expanded,
                         &serde_json::to_string(mutation).unwrap_or_default(),
                     ));
                 } else {
@@ -1420,7 +1489,16 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                     .child(
                         ui::button(model, "")
                             .label_fn(move || model.get().word(Msg::OperatorCommit).into())
-                            .variant(ui::ButtonVariant::Primary)
+                            .variant(
+                                if matches!(
+                                    review.mutation.as_ref().map(|m| &m.command),
+                                    Some(Command::DeletePreference { .. })
+                                ) {
+                                    ui::ButtonVariant::Danger
+                                } else {
+                                    ui::ButtonVariant::Primary
+                                },
+                            )
                             .loading(move || model.get().operator.busy)
                             .disabled(move || !available(model))
                             .on_press(move || submit(model)),
@@ -1518,6 +1596,11 @@ mod tests {
             updated_at: "2026-01-01T00:00:00Z".into(),
         }
     }
+    fn observe_inspect(m: &mut Model) {
+        let inspect = m.operator.inspect.clone().unwrap();
+        let request = m.operator_read("profile.review.inspect").unwrap();
+        assert!(m.complete_operator(&request, Ok(serde_json::to_value(inspect).unwrap()),));
+    }
     /// A local, write-granted operator with one suggested queue row and its exact
     /// inspect snapshot. No daemon: these tests exercise rendering and the
     /// prepare/refuse guards, never a real submit.
@@ -1550,6 +1633,7 @@ mod tests {
             peer_demotion_total: 0,
         });
         m.operator.inspect_revision = 1;
+        observe_inspect(&mut m);
         m
     }
     fn peer_model() -> Model {
@@ -1582,6 +1666,7 @@ mod tests {
             peer_demotion_total: 0,
         });
         m.operator.inspect_revision = 2;
+        observe_inspect(&mut m);
         m
     }
     fn empty_queue_model() -> Model {
@@ -1622,6 +1707,32 @@ mod tests {
     #[component]
     fn EmptyQueueConsole() -> impl IntoElement {
         crate::console(signal(empty_queue_model()))
+    }
+    #[component]
+    fn UnobservedQueueConsole() -> impl IntoElement {
+        let mut m = empty_queue_model();
+        m.operator.queue = None;
+        crate::console(signal(m))
+    }
+    #[component]
+    fn DriftedEmptyQueueConsole() -> impl IntoElement {
+        let mut m = empty_queue_model();
+        m.operator.queue.as_mut().unwrap().commit_sequence = 8;
+        crate::console(signal(m))
+    }
+    #[component]
+    fn SwitchedHistoryConsole() -> impl IntoElement {
+        let mut m = queue_model();
+        m.operator.selected_id = Some(8);
+        m.operator.review_tab = ReviewTab::History;
+        crate::console(signal(m))
+    }
+    #[component]
+    fn LiteralSourceConsole() -> impl IntoElement {
+        let mut m = peer_model();
+        m.operator.inspect.as_mut().unwrap().record.source =
+            format!("{}\n\u{202e}source-tail", "s".repeat(490));
+        crate::console(signal(m))
     }
     #[component]
     fn StaleDeleteDialog() -> impl IntoElement {
@@ -1795,5 +1906,104 @@ mod tests {
         app.wait_for_gone("Delete global preference #7?", Duration::from_secs(5))
             .unwrap();
         assert!(!app.screen().shows("Prepared operation; no write sent yet"));
+    }
+
+    #[test]
+    fn unloaded_queue_does_not_claim_no_pending_suggestions() {
+        let mut app = start::<UnobservedQueueConsole>();
+        app.wait_for("Inspect the queue to load pending suggestions")
+            .unwrap();
+        assert!(!app.screen().shows("No pending suggestions"));
+    }
+
+    #[test]
+    fn empty_later_queue_page_still_discloses_watermark_and_drift() {
+        let mut app = start::<DriftedEmptyQueueConsole>();
+        app.wait_for("No pending suggestions").unwrap();
+        app.wait_for("Queue watermark: commit 8").unwrap();
+        app.wait_for("Queue changed since page loaded · +3")
+            .unwrap();
+        app.wait_for("Pages are separate reads, not a shared snapshot.")
+            .unwrap();
+        app.press_key("mod+l").unwrap();
+        app.wait_for("队列水位：提交 8").unwrap();
+        app.wait_for("页面加载后队列已变化 · +3").unwrap();
+    }
+
+    #[test]
+    fn history_never_renders_the_previous_selection() {
+        let mut app = start::<SwitchedHistoryConsole>();
+        app.wait_for("Select a queue row to inspect").unwrap();
+        assert!(!app.screen().shows("No decisions recorded for this record"));
+    }
+
+    #[test]
+    fn exact_detail_preserves_source_characters_and_explains_authority() {
+        let mut app = start::<LiteralSourceConsole>();
+        app.wait_for("Show full digest").unwrap();
+        app.wait_until("escaped source tail", Duration::from_secs(5), |s| {
+            s.texts()
+                .iter()
+                .any(|t| t.contains("\\n\\u{202e}source-tail"))
+        })
+        .unwrap();
+        app.wait_for("Source and origin are unverified claims; the digest proves byte equality, not authorship.").unwrap();
+        app.wait_for("Repository ProjectContracts outrank personal preferences. Confirming a preference does not approve a ProjectContract.").unwrap();
+        app.press_key("mod+l").unwrap();
+        app.wait_for("来源类别: agent_reported").unwrap();
+        app.wait_for("修订: 1").unwrap();
+    }
+
+    #[test]
+    fn focus_shortcut_disarms_delete_before_apply() {
+        let mut app = start::<QueueConsole>();
+        app.wait_for("#7 · synthetic-key-7 · r1").unwrap();
+        app.press_key("alt+shift+q").unwrap();
+        app.wait_for("Delete global preference #7?").unwrap();
+        app.type_text("Retype the exact ID", "7").unwrap();
+        app.wait_for("Deletion armed; apply to commit").unwrap();
+        app.press_key("alt+k").unwrap();
+        app.wait_for_gone("Delete global preference #7?", Duration::from_secs(5))
+            .unwrap();
+        app.press_key("alt+shift+v").unwrap();
+        assert!(!app.screen().shows("Prepared operation; no write sent yet"));
+        app.press_key("alt+shift+q").unwrap();
+        assert!(!app.screen().shows("Prepared operation; no write sent yet"));
+        assert!(!app.screen().shows("Deletion armed; apply to commit"));
+    }
+
+    #[test]
+    fn precise_review_errors_map_without_raw_diagnostics() {
+        for (code, expected) in [
+            ("ReviewMismatch", Msg::ReviewMismatch),
+            ("Conflict", Msg::ReviewErrorConflict),
+            ("InvalidTransition", Msg::ReviewErrorInvalidTransition),
+            ("Unauthorized", Msg::ReviewErrorUnauthorized),
+            ("Busy", Msg::ReviewErrorBusy),
+            ("Capacity", Msg::ReviewErrorCapacity),
+            ("Unavailable", Msg::ReviewErrorUnavailable),
+            ("OutcomeUnknown", Msg::OperatorUnknown),
+            ("unknown", Msg::ReviewErrorGeneric),
+        ] {
+            assert_eq!(error_msg(code), expected);
+        }
+    }
+
+    #[test]
+    fn preparing_a_decision_does_not_implicitly_expand_its_digest() {
+        let mut app = start::<QueueConsole>();
+        app.wait_for("#7 · synthetic-key-7 · r1").unwrap();
+        let full = record(7, "suggested", 1).proposal_digest;
+        app.press_key("alt+shift+y").unwrap();
+        app.wait_for("Prepared operation; no write sent yet")
+            .unwrap();
+        assert!(!app.screen().texts().join("").contains(&full));
+        app.press("Cancel review").unwrap();
+        app.press("Detail").unwrap();
+        app.press("Show full digest").unwrap();
+        app.press_key("alt+shift+y").unwrap();
+        app.wait_for("Prepared operation; no write sent yet")
+            .unwrap();
+        assert!(app.screen().texts().join("").contains(&full));
     }
 }

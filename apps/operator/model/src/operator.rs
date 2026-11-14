@@ -71,6 +71,8 @@ pub struct Operator {
     pub inspect_revision: i64,
     pub digest_expanded: bool,
     pub delete_arm: Option<DeleteArm>,
+    /// Authority and live sources of the last completed exact inspection.
+    inspection: Option<Guard>,
 }
 impl std::fmt::Debug for Operator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -82,6 +84,14 @@ pub struct Guard {
     epoch: u64,
     connection: Connection,
     project: Option<String>,
+    info: Option<ProfileInfo>,
+    selected_id: Option<i64>,
+    source_snapshot: Option<std::sync::Arc<crate::Snapshot>>,
+    source_available: bool,
+    source_live: bool,
+    permission_denied: bool,
+    open: bool,
+    queue_sequence: Option<i64>,
     task: String,
     context_task: String,
     queried_task: String,
@@ -90,7 +100,7 @@ pub struct Guard {
     queue_after_id: i64,
     queue_watermark: i64,
     inspect_revision: i64,
-    inspect_digest: Option<String>,
+    inspect_record: Option<PreferenceRecord>,
     serial: u64,
 }
 #[derive(Clone, PartialEq, Eq)]
@@ -137,31 +147,10 @@ impl Operator {
                 && a.proposal_digest == r.proposal_digest
         })
     }
-    /// The arm survives only while a current snapshot reconfirms the exact
-    /// armed identity; a refreshed snapshot that no longer does disarms it.
-    fn revalidate_delete_arm(&mut self) {
-        let Some(a) = self.delete_arm.as_ref() else {
-            return;
-        };
-        let exact = |r: &PreferenceRecord| {
-            r.id == a.id && r.revision == a.revision && r.proposal_digest == a.proposal_digest
-        };
-        let confirmed = self.inspect.as_ref().is_some_and(|i| exact(&i.record))
-            || self
-                .queue
-                .as_ref()
-                .is_some_and(|q| q.records.iter().any(exact))
-            || self
-                .page
-                .as_ref()
-                .is_some_and(|p| p.records.iter().any(exact));
-        if !confirmed {
-            self.delete_arm = None;
-        }
-    }
     fn clear_review_snapshots(&mut self) {
         self.queue = None;
         self.inspect = None;
+        self.inspection = None;
         self.queue_after_id = 0;
         self.queue_watermark = 0;
         self.inspect_revision = 0;
@@ -198,6 +187,14 @@ impl Model {
             epoch: self.epoch,
             connection: self.connection.clone(),
             project: self.selected_project.clone(),
+            info: self.operator.info.clone(),
+            selected_id: self.operator.selected_id,
+            source_snapshot: self.data.clone(),
+            source_available: matches!(self.phase, crate::Phase::Ready | crate::Phase::Empty),
+            source_live: self.live,
+            permission_denied: self.permission_denied,
+            open: self.operator.open,
+            queue_sequence: self.operator.queue.as_ref().map(|q| q.commit_sequence),
             task: self.operator.task.clone(),
             context_task: self.task_id.clone(),
             queried_task: self.queried_task.clone(),
@@ -206,16 +203,32 @@ impl Model {
             queue_after_id: self.operator.queue_after_id,
             queue_watermark: self.operator.queue_watermark,
             inspect_revision: self.operator.inspect_revision,
-            inspect_digest: self
-                .operator
-                .inspect
-                .as_ref()
-                .map(|i| i.record.proposal_digest.clone()),
+            inspect_record: self.operator.inspect.as_ref().map(|i| i.record.clone()),
             serial: self.operator.serial,
         })
     }
+    /// Whether the exact inspection still belongs to the current selection,
+    /// authority and observed sources. A false value requires a fresh inspect.
+    pub fn operator_inspected(&self) -> bool {
+        self.operator
+            .inspection
+            .as_ref()
+            .is_some_and(|guard| self.operator_guard().as_ref() == Some(guard))
+    }
     pub fn operator_current(&self, review: &Review) -> bool {
-        self.operator_guard().as_ref() == Some(&review.guard)
+        let Some(mut guard) = self.operator_guard() else {
+            return false;
+        };
+        // OutcomeUnknown hides live grant controls, but keeps the captured
+        // authority for exact manual replay only. A newly observed grant or
+        // binding always wins; epoch/serial/connection/source fences still apply.
+        if self.operator.outcome_unknown
+            && self.operator.info.is_none()
+            && let Some(pending) = &self.operator.pending
+        {
+            guard.info = pending.guard.info.clone();
+        }
+        guard == review.guard
     }
     pub fn operator_read(&mut self, method: &str) -> Option<Review> {
         if self.operator.busy || self.operator.outcome_unknown || !self.operator.open {
@@ -248,6 +261,7 @@ impl Model {
         self.operator.serial += 1;
         let guard = self.operator_guard()?;
         self.operator.review = None;
+        self.operator.delete_arm = None;
         self.operator.busy = true;
         Some(Review {
             guard,
@@ -261,6 +275,7 @@ impl Model {
         if self.operator.busy || self.operator.outcome_unknown || !self.operator.open {
             return false;
         }
+        self.operator.review = None;
         let Some(guard) = self.operator_guard() else {
             return false;
         };
@@ -314,7 +329,20 @@ impl Model {
                     let Some((r, source)) = self.operator.selected() else {
                         return false;
                     };
-                    if r.scope != scope || *source != binding {
+                    // A list/queue row is not an inspection: decisions require
+                    // the exact snapshot that disclosed peers and history.
+                    let Some(inspect) = &self.operator.inspect else {
+                        return false;
+                    };
+                    if self.operator.inspection.as_ref() != Some(&guard) {
+                        return false;
+                    }
+                    if r.scope != scope
+                        || *source != binding
+                        || inspect.record != *r
+                        || inspect.binding != binding
+                        || self.operator.inspect_revision != r.revision
+                    {
                         return false;
                     }
                     // Deprecate only retires a confirmed row; confirm/reject
@@ -464,14 +492,20 @@ impl Model {
                         return Err("StaleGeneration");
                     }
                     self.operator.selected_id = None;
+                    self.operator.inspect = None;
+                    self.operator.inspect_revision = 0;
+                    self.operator.digest_expanded = false;
                     self.operator.page = Some(page);
-                    self.operator.revalidate_delete_arm();
                 }
                 "profile.review.queue" => {
                     let queue: ReviewQueue =
                         serde_json::from_value(v).map_err(|_| "InvalidRequest")?;
                     let after_id = request.guard.queue_after_id;
                     if queue.commit_sequence < 0
+                        || request
+                            .guard
+                            .queue_sequence
+                            .is_some_and(|sequence| queue.commit_sequence < sequence)
                         || queue.records.len() > 12
                         || queue.records.iter().any(|r| {
                             r.scope != request.guard.scope
@@ -503,11 +537,16 @@ impl Model {
                     if after_id == 0 {
                         self.operator.queue_watermark = queue.commit_sequence;
                     }
+                    // A queue refresh replaces the source of review. An older
+                    // exact inspect may not hide a moved or removed candidate.
+                    self.operator.inspect = None;
+                    self.operator.inspect_revision = 0;
+                    self.operator.digest_expanded = false;
+                    self.operator.page = None;
                     self.operator.queue = Some(queue);
                     if self.operator.selected_id.is_some() && self.operator.record().is_none() {
                         self.operator.selected_id = None;
                     }
-                    self.operator.revalidate_delete_arm();
                 }
                 "profile.review.inspect" => {
                     let inspect: ReviewInspect =
@@ -526,20 +565,34 @@ impl Model {
                     if inspect.commit_sequence < 0
                         || (request.guard.queue_watermark > 0
                             && inspect.commit_sequence < request.guard.queue_watermark)
+                        || request
+                            .guard
+                            .queue_sequence
+                            .is_some_and(|sequence| inspect.commit_sequence < sequence)
                         || r.id != id
                         || r.revision != revision
                         || r.revision <= 0
                         || r.scope != request.guard.scope
                         || digest_from_hex(&r.proposal_digest).is_none()
                         || inspect.decisions.len() > 8
+                        || inspect
+                            .decisions
+                            .windows(2)
+                            .any(|w| w[0].receipt_commit_sequence <= w[1].receipt_commit_sequence)
                         || inspect.decisions.iter().any(|d| {
                             d.preference_id != id
                                 || d.from_revision <= 0
-                                || d.to_revision <= 0
+                                || d.to_revision.checked_sub(1) != Some(d.from_revision)
                                 || d.receipt_commit_sequence <= 0
+                                || d.receipt_commit_sequence > inspect.commit_sequence
                                 || digest_from_hex(&d.proposal_digest).is_none()
+                                || d.proposal_digest != r.proposal_digest
                         })
                         || inspect.peer_demotions.len() > 12
+                        || inspect
+                            .peer_demotions
+                            .windows(2)
+                            .any(|w| w[0].id >= w[1].id)
                         || inspect.peer_demotions.len() as i64
                             != inspect.peer_demotion_total.min(12)
                         || inspect
@@ -557,7 +610,6 @@ impl Model {
                     self.operator.inspect = Some(inspect);
                     self.operator.inspect_revision = revision;
                     self.operator.digest_expanded = false;
-                    self.operator.revalidate_delete_arm();
                 }
                 "profile.handoff.get" => {
                     let preview: HandoffPreview =
@@ -594,7 +646,16 @@ impl Model {
                             a.kind == "preference"
                                 && a.record_id == id.to_string()
                                 && a.deleted
-                                && a.revision > 0
+                                && a.project
+                                    == match &request.guard.scope {
+                                        Scope::Global => "",
+                                        Scope::Project { name } => name.as_str(),
+                                    }
+                                && request
+                                    .record
+                                    .as_ref()
+                                    .and_then(|r| r.revision.checked_add(1))
+                                    == Some(a.revision)
                         })
                     {
                         return Err("OutcomeUnknown");
@@ -651,13 +712,18 @@ impl Model {
             self.operator.info = None;
             self.operator.page = None;
             self.operator.handoff = None;
-            self.operator.selected_id = None;
+            if !self.operator.outcome_unknown {
+                self.operator.selected_id = None;
+            }
         }
         // A settled request is fenced off: a duplicate or delayed completion can
         // never apply twice. Only an uncertain mutation keeps its guard so the
         // identical same-epoch retry can still settle it once.
         if !self.operator.outcome_unknown {
             self.operator.serial += 1;
+        }
+        if request.method == "profile.review.inspect" && self.operator.error.is_none() {
+            self.operator.inspection = self.operator_guard();
         }
         true
     }
@@ -687,6 +753,7 @@ impl crate::native::Inputs {
             });
         result.map_err(|e| match e {
             acp_ipc::Error::Busy => "Busy",
+            acp_ipc::Error::Capacity => "Capacity",
             acp_ipc::Error::Conflict => "Conflict",
             acp_ipc::Error::OutcomeUnknown => "OutcomeUnknown",
             acp_ipc::Error::Unauthorized | acp_ipc::Error::UnsafeRuntime => "Unauthorized",
@@ -753,6 +820,11 @@ mod tests {
             next_after_id: None,
         });
         m.operator.selected_id = Some(1);
+        let record = m.operator.page.as_ref().unwrap().records[0].clone();
+        assert!(complete_inspect(
+            &mut m,
+            inspect_of(record, vec![], vec![], 0)
+        ));
         m
     }
     #[test]
@@ -883,10 +955,10 @@ mod tests {
     #[test]
     fn changed_generation_or_review_state_cannot_be_confirmed() {
         let mut m = model();
-        m.operator.page.as_mut().unwrap().binding.owner_epoch = 2;
+        m.operator.inspect.as_mut().unwrap().binding.owner_epoch = 2;
         assert!(!m.operator_review("confirm", "once"));
-        m.operator.page.as_mut().unwrap().binding.owner_epoch = 1;
-        m.operator.page.as_mut().unwrap().records[0].status = "confirmed".into();
+        m.operator.inspect.as_mut().unwrap().binding.owner_epoch = 1;
+        m.operator.inspect.as_mut().unwrap().record.status = "confirmed".into();
         assert!(!m.operator_review("confirm", "once"));
         assert!(!m.operator_review("reject", "once"));
     }
@@ -946,7 +1018,8 @@ mod tests {
             action,
             from_revision: 1,
             to_revision: 2,
-            proposal_digest: "c".repeat(64),
+            proposal_digest: synthetic_record(preference_id, &Scope::Global, "suggested", 1)
+                .proposal_digest,
             receipt_commit_sequence: seq,
             channel: Channel::Desktop,
             decided_at: "2026-01-01T00:00:00Z".into(),
@@ -960,7 +1033,7 @@ mod tests {
     ) -> ReviewInspect {
         ReviewInspect {
             binding: binding(),
-            commit_sequence: 6,
+            commit_sequence: 8,
             record,
             decisions,
             peer_demotions,
@@ -1115,6 +1188,7 @@ mod tests {
         assert_eq!(request.params["scope"], json!({"kind":"global"}));
         let record = synthetic_record(7, &Scope::Global, "suggested", 1);
         let decisions: Vec<_> = (1..=8)
+            .rev()
             .map(|seq| decision(7, DecisionAction::Confirm, seq))
             .collect();
         let peers: Vec<_> = (1..=12)
@@ -1276,14 +1350,18 @@ mod tests {
     fn deprecate_requires_confirmed_exact_identity() {
         let mut m = model();
         assert!(!m.operator_review("deprecate", "op"));
-        m.operator.page.as_mut().unwrap().records[0].status = "confirmed".into();
-        m.operator.page.as_mut().unwrap().records[0].revision = 2;
+        m.operator.inspect.as_mut().unwrap().record.status = "confirmed".into();
+        m.operator.inspect.as_mut().unwrap().record.revision = 2;
+        m.operator.inspect_revision = 2;
         m.operator.channel = Channel::Tui;
+        let record = m.operator.record().unwrap().clone();
+        assert!(complete_inspect(
+            &mut m,
+            inspect_of(record, vec![], vec![], 0)
+        ));
         assert!(m.operator_review("deprecate", "dep-op"));
         let request = m.operator_confirm().unwrap();
-        let digest = m.operator.page.as_ref().unwrap().records[0]
-            .proposal_digest
-            .clone();
+        let digest = m.operator.record().unwrap().proposal_digest.clone();
         match &request.mutation.as_ref().unwrap().command {
             Command::DeprecatePreference {
                 id,
@@ -1312,9 +1390,14 @@ mod tests {
         // Digest or revision drift between prepare and apply refuses the submit.
         for drift in 0..2 {
             let mut m = model();
-            m.operator.page.as_mut().unwrap().records[0].status = "confirmed".into();
+            m.operator.inspect.as_mut().unwrap().record.status = "confirmed".into();
+            let record = m.operator.record().unwrap().clone();
+            assert!(complete_inspect(
+                &mut m,
+                inspect_of(record, vec![], vec![], 0)
+            ));
             assert!(m.operator_review("deprecate", "drift"));
-            let record = &mut m.operator.page.as_mut().unwrap().records[0];
+            let record = &mut m.operator.inspect.as_mut().unwrap().record;
             if drift == 0 {
                 record.proposal_digest = "d".repeat(64);
             } else {
@@ -1510,6 +1593,8 @@ mod tests {
     fn queue_sourced_selection_drives_detail_and_confirm() {
         let mut m = model();
         m.operator.page = None;
+        m.operator.inspect = None;
+        m.operator.inspect_revision = 0;
         m.operator.selected_id = Some(1);
         assert!(m.operator.record().is_none());
         assert!(m.operator_read("profile.review.inspect").is_none());
@@ -1567,6 +1652,398 @@ mod tests {
         assert!(complete_queue(&mut m, queue_of(vec![], 6, None)));
         assert!(m.operator.selected_id.is_none());
         assert!(m.operator.record().is_none());
+    }
+    fn change_review_context(m: &mut Model, change: usize) {
+        match change {
+            0 => {
+                m.operator
+                    .info
+                    .as_mut()
+                    .unwrap()
+                    .binding
+                    .as_mut()
+                    .unwrap()
+                    .profile_id = "d".repeat(32)
+            }
+            1 => {
+                m.operator
+                    .info
+                    .as_mut()
+                    .unwrap()
+                    .binding
+                    .as_mut()
+                    .unwrap()
+                    .generation = "d".repeat(32)
+            }
+            2 => {
+                m.operator
+                    .info
+                    .as_mut()
+                    .unwrap()
+                    .binding
+                    .as_mut()
+                    .unwrap()
+                    .owner_epoch += 1
+            }
+            3 => m.operator.info.as_mut().unwrap().write_enabled = false,
+            4 => m.operator.selected_id = Some(8),
+            5 => m.task_id = "new-context-task".into(),
+            6 => m.queried_task = "new-queried-task".into(),
+            7 => m.operator.after_id += 1,
+            8 => m.operator.queue.as_mut().unwrap().commit_sequence += 1,
+            9 => m.phase = crate::Phase::Unavailable,
+            10 => {
+                let snapshot = std::sync::Arc::make_mut(m.data.as_mut().unwrap());
+                snapshot.projects[0].context.documents[0]["status"] = json!("unavailable");
+            }
+            11 => {
+                let snapshot = std::sync::Arc::make_mut(m.data.as_mut().unwrap());
+                snapshot.projects[0].context.documents[0]["sha256"] = json!("d".repeat(64));
+            }
+            12 => {
+                let snapshot = std::sync::Arc::make_mut(m.data.as_mut().unwrap());
+                snapshot.projects[0]
+                    .context
+                    .warnings
+                    .push("Source changed".into());
+            }
+            13 => m.operator.open = false,
+            14 => m.permission_denied = true,
+            15 => m.live = !m.live,
+            _ => m.data = None,
+        }
+    }
+    #[test]
+    fn profile_grant_selection_and_live_sources_fence_prepared_and_delayed_actions() {
+        for change in 0..17 {
+            let mut m = armed_delete_model();
+            assert!(m.operator_review("delete", "stale"));
+            change_review_context(&mut m, change);
+            assert!(m.operator_confirm().is_none(), "prepared change {change}");
+            assert!(m.operator.pending.is_none());
+
+            let mut m = armed_delete_model();
+            let request = m.operator_read("profile.review.inspect").unwrap();
+            change_review_context(&mut m, change);
+            assert!(
+                !m.complete_operator(&request, Err("Conflict")),
+                "late change {change}"
+            );
+            assert!(m.operator.error.is_none());
+        }
+        // Losing observed authority is not equivalent to a current write grant.
+        let mut m = armed_delete_model();
+        assert!(m.operator_review("delete", "no-info"));
+        m.operator.info = None;
+        assert!(m.operator_confirm().is_none());
+    }
+    #[test]
+    fn unknown_replay_never_crosses_observed_authority_or_source_changes() {
+        for change in 0..17 {
+            let mut m = armed_delete_model();
+            assert!(m.operator_retry().is_none());
+            assert!(m.operator_review("delete", "immutable-delete"));
+            let request = m.operator_confirm().unwrap();
+            let info = m.operator.info.clone();
+            let bytes = serde_json::to_vec(&request.mutation).unwrap();
+            assert!(m.complete_operator(&request, Err("OutcomeUnknown")));
+            assert!(!m.operator.busy, "no automatic retry");
+            assert_eq!(m.operator.selected_id, Some(7));
+            m.operator.info = info;
+            change_review_context(&mut m, change);
+            assert!(m.operator_retry().is_none(), "replay change {change}");
+            assert!(
+                !m.complete_operator(&request, Ok(receipt_json("immutable-delete", 9, json!([]))))
+            );
+            assert_eq!(
+                serde_json::to_vec(&m.operator.pending.as_ref().unwrap().mutation).unwrap(),
+                bytes,
+                "request identity is retained, never rebound"
+            );
+        }
+    }
+    #[test]
+    fn refreshed_queue_drops_stale_inspect_content_and_delete_consent() {
+        let mut m = armed_delete_model();
+        assert!(m.operator_review("delete", "old-delete"));
+        let request = m.operator_read("profile.review.queue").unwrap();
+        assert!(m.operator.review.is_none());
+        assert!(m.operator.delete_arm.is_none());
+        let mut record = synthetic_record(7, &Scope::Global, "suggested", 2);
+        record.source = "new source claim".into();
+        record.value = "new proposal".into();
+        record.proposal_digest = "d".repeat(64);
+        assert!(m.complete_operator(
+            &request,
+            Ok(serde_json::to_value(queue_of(vec![record.clone()], 9, None)).unwrap())
+        ));
+        assert!(m.operator.inspect.is_none());
+        assert_eq!(m.operator.inspect_revision, 0);
+        assert!(m.operator.record() == Some(&record));
+        assert!(!m.operator_review("delete", "stale-consent"));
+        assert!(complete_queue(&mut m, queue_of(vec![], 10, None)));
+        assert!(m.operator.record().is_none());
+        assert!(m.operator.selected_id.is_none());
+    }
+    #[test]
+    fn changed_immutable_content_or_source_claim_refuses_prepared_decision() {
+        for change in 0..5 {
+            let mut m = armed_delete_model();
+            assert!(m.operator_review("confirm", "exact-content"));
+            let record = &mut m.operator.inspect.as_mut().unwrap().record;
+            match change {
+                0 => record.key = "different-key".into(),
+                1 => record.value = "different-value".into(),
+                2 => record.source = "different-source".into(),
+                3 => record.origin = Origin::LegacyUnknown,
+                _ => record.status = "rejected".into(),
+            }
+            assert!(m.operator_confirm().is_none(), "content change {change}");
+        }
+    }
+    #[test]
+    fn history_order_future_receipts_and_nonconsecutive_revisions_fail_closed() {
+        for change in 0..4 {
+            let mut m = inspect_model();
+            let mut inspect = inspect_of(
+                synthetic_record(7, &Scope::Global, "suggested", 1),
+                vec![
+                    decision(7, DecisionAction::Demote, 8),
+                    decision(7, DecisionAction::Confirm, 6),
+                ],
+                vec![],
+                0,
+            );
+            match change {
+                0 => inspect.decisions.reverse(),
+                1 => inspect.decisions[0].receipt_commit_sequence = 9,
+                2 => inspect.decisions[0].to_revision = 4,
+                _ => inspect.decisions[1].receipt_commit_sequence = 8,
+            }
+            assert!(complete_inspect(&mut m, inspect));
+            assert_eq!(m.operator.error.as_deref(), Some("InvalidRequest"));
+            assert!(m.operator.inspect.is_none());
+        }
+    }
+    #[test]
+    fn delete_tombstone_must_match_exact_scope_and_resulting_revision() {
+        for (project, revision) in [("other-project", 2), ("", 1), ("", 3)] {
+            let mut m = armed_delete_model();
+            assert!(m.operator_review("delete", "exact-delete"));
+            let request = m.operator_confirm().unwrap();
+            assert!(m.complete_operator(
+                &request,
+                Ok(receipt_json(
+                    "exact-delete",
+                    9,
+                    json!([{
+                        "kind":"preference", "project":project, "record_id":"7",
+                        "revision":revision, "deleted":true
+                    }])
+                ))
+            ));
+            assert!(m.operator.outcome_unknown);
+            assert!(m.operator.receipt.is_none());
+            let replay = m.operator_retry().unwrap();
+            assert_eq!(
+                serde_json::to_vec(&request.mutation).unwrap(),
+                serde_json::to_vec(&replay.mutation).unwrap()
+            );
+            assert!(m.complete_operator(
+                &replay,
+                Ok(receipt_json(
+                    "exact-delete",
+                    9,
+                    json!([{
+                        "kind":"preference", "project":"", "record_id":"7",
+                        "revision":2, "deleted":true
+                    }])
+                ))
+            ));
+            assert!(m.operator.receipt.is_some());
+        }
+    }
+    #[test]
+    fn precise_review_refusals_are_settled_without_replay_or_success() {
+        for error in [
+            "ReviewMismatch",
+            "Conflict",
+            "InvalidTransition",
+            "Unauthorized",
+            "Busy",
+            "Capacity",
+            "Unavailable",
+            "IdempotencyConflict",
+        ] {
+            let mut m = armed_delete_model();
+            assert!(m.operator_review("confirm", "refused"));
+            let request = m.operator_confirm().unwrap();
+            assert!(m.complete_operator(&request, Err(error)));
+            assert_eq!(m.operator.error.as_deref(), Some(error));
+            assert!(m.operator.receipt.is_none());
+            assert!(m.operator.pending.is_none());
+            assert!(m.operator.review.is_none());
+            assert!(m.operator.inspect.is_none());
+            assert!(m.operator_retry().is_none());
+        }
+    }
+    #[test]
+    fn decisions_require_current_exact_inspection_and_failed_prepare_cancels() {
+        for action in ["confirm", "reject", "deprecate", "delete"] {
+            let mut m = model();
+            m.operator.inspect = None;
+            m.operator.inspect_revision = 0;
+            if action == "deprecate" {
+                m.operator.page.as_mut().unwrap().records[0].status = "confirmed".into();
+            }
+            assert!(!m.operator_review(action, "uninspected"), "{action}");
+            assert!(m.operator_confirm().is_none());
+            let record = m.operator.record().unwrap().clone();
+            assert!(complete_inspect(
+                &mut m,
+                inspect_of(record.clone(), vec![], vec![], 0)
+            ));
+            if action == "delete" {
+                m.operator.delete_arm = Some(DeleteArm {
+                    retype: record.id.to_string(),
+                    id: record.id,
+                    revision: record.revision,
+                    proposal_digest: record.proposal_digest,
+                });
+            }
+            assert!(m.operator_review(action, "inspected"), "{action}");
+            assert!(m.operator_confirm().is_some(), "{action}");
+        }
+        let mut m = model();
+        assert!(m.operator_review("confirm", "old-confirm"));
+        assert!(!m.operator_review("deprecate", "invalid-action"));
+        assert!(m.operator.review.is_none());
+        assert!(m.operator_confirm().is_none());
+        for change in 0..17 {
+            let mut m = armed_delete_model();
+            change_review_context(&mut m, change);
+            assert!(
+                !m.operator_review("delete", "obsolete-inspect"),
+                "change {change}"
+            );
+            assert!(
+                !m.operator_review("confirm", "obsolete-inspect"),
+                "change {change}"
+            );
+        }
+    }
+    #[test]
+    fn queue_and_inspect_watermarks_never_regress_behind_latest_observed_page() {
+        let mut m = inspect_model();
+        m.operator.queue.as_mut().unwrap().commit_sequence = 9;
+        m.operator.queue_after_id = 7;
+        assert!(complete_queue(&mut m, queue_of(vec![], 8, None)));
+        assert_eq!(m.operator.error.as_deref(), Some("InvalidRequest"));
+        let mut m = inspect_model();
+        m.operator.queue.as_mut().unwrap().commit_sequence = 9;
+        assert!(complete_inspect(
+            &mut m,
+            inspect_of(
+                synthetic_record(7, &Scope::Global, "suggested", 1),
+                vec![],
+                vec![],
+                0
+            )
+        ));
+        assert_eq!(m.operator.error.as_deref(), Some("InvalidRequest"));
+        assert!(m.operator.inspect.is_none());
+    }
+    #[test]
+    fn changed_history_digest_and_duplicate_peer_preview_are_not_displayed_as_exact() {
+        for change in 0..2 {
+            let mut m = inspect_model();
+            let mut inspect = inspect_of(
+                synthetic_record(7, &Scope::Global, "suggested", 1),
+                vec![decision(7, DecisionAction::Confirm, 6)],
+                vec![PeerDemotion {
+                    id: 100,
+                    revision: 1,
+                }],
+                1,
+            );
+            if change == 0 {
+                inspect.decisions[0].proposal_digest = "d".repeat(64);
+            } else {
+                inspect.peer_demotions.push(PeerDemotion {
+                    id: 100,
+                    revision: 1,
+                });
+                inspect.peer_demotion_total = 2;
+            }
+            assert!(complete_inspect(&mut m, inspect));
+            assert_eq!(m.operator.error.as_deref(), Some("InvalidRequest"));
+            assert!(m.operator.inspect.is_none());
+        }
+    }
+    #[test]
+    fn unsafe_root_refusal_discards_inspection_and_requires_fresh_consent_after_restore() {
+        // Native IPC sanitizes UnsafeRuntime to Unauthorized. Either spelling
+        // must settle as a refusal, never preserve an arm for a restored root.
+        for error in ["UnsafeRuntime", "Unauthorized"] {
+            for action in ["confirm", "reject", "deprecate", "delete"] {
+                let mut m = armed_delete_model();
+                if action == "deprecate" {
+                    m.operator.inspect.as_mut().unwrap().record.status = "confirmed".into();
+                    let record = m.operator.record().unwrap().clone();
+                    assert!(complete_inspect(
+                        &mut m,
+                        inspect_of(record, vec![], vec![], 0)
+                    ));
+                }
+                let info = m.operator.info.clone();
+                let record = m.operator.record().unwrap().clone();
+                let arm = m.operator.delete_arm.clone();
+                assert!(m.operator_review(action, "unsafe-root"));
+                let request = m.operator_confirm().unwrap();
+                assert!(m.complete_operator(&request, Err(error)));
+                assert_eq!(m.operator.error.as_deref(), Some(error));
+                assert!(m.operator.inspection.is_none());
+                assert!(m.operator.inspect.is_none());
+                assert!(m.operator.delete_arm.is_none());
+                assert!(m.operator.review.is_none());
+                assert!(m.operator.pending.is_none());
+                assert!(m.operator.receipt.is_none());
+                assert!(m.operator_retry().is_none());
+
+                // Restoring availability or even old content/typed consent does
+                // not restore the discarded inspection authority.
+                m.operator.info = info;
+                m.operator.page = Some(PreferencePage {
+                    binding: binding(),
+                    records: vec![record.clone()],
+                    next_after_id: None,
+                });
+                m.operator.selected_id = Some(record.id);
+                m.operator.delete_arm = arm;
+                assert!(!m.operator_inspected());
+                assert!(!m.operator_review(action, "restored-root"));
+                assert!(m.operator_confirm().is_none());
+                assert!(complete_inspect(
+                    &mut m,
+                    inspect_of(record.clone(), vec![], vec![], 0)
+                ));
+                assert!(m.operator_inspected());
+                assert!(
+                    m.operator.delete_arm.is_none(),
+                    "inspection never restores typed consent"
+                );
+                if action == "delete" {
+                    m.operator.delete_arm = Some(DeleteArm {
+                        retype: record.id.to_string(),
+                        id: record.id,
+                        revision: record.revision,
+                        proposal_digest: record.proposal_digest,
+                    });
+                }
+                assert!(m.operator_review(action, "fresh-explicit-review"));
+                assert!(m.operator.pending.is_none(), "preparation does not submit");
+            }
+        }
     }
 }
 

@@ -249,6 +249,26 @@ understandable. Verify each line in the running app before the work is done.
 | Loading (prepare/apply in flight) | `animate_spin` spinner | Continuous | Rests (still drawn) |
 | A value updating many times a second | No motion | — | Dense data cell stays put |
 
+## Review safety and copy
+
+Queue absence means **not inspected**, not an empty queue. Every received page,
+including an empty later page, displays its commit watermark and any observed
+delta; pages never claim to share one snapshot.
+
+Decision preparation requires a current exact inspect. When a records-list
+shortcut has no current inspect, it only opens Detail and reads the record;
+the operator invokes the decision again after seeing its fields and peer impact.
+Changing selection clears the previous inspect and digest expansion; History
+never displays a different selected ID. A delete commitment also requires the
+dialog to remain open, the current write grant, and the exact retyped ID.
+
+Detail preserves immutable key/value/source text in bounded escaped lines.
+Source/origin remain claims, the digest proves only byte equality, and preference
+confirmation never approves a repository ProjectContract. History's channel is
+client-asserted; receipts identify transactions, not reviewers or human approval.
+English and zh-CN carry these distinctions together. Capacity refusal never
+suggests deleting records to recover the generation's receipt ceiling.
+
 ## Verification
 
 Behavior is covered by headless tests (`nsh_testing::Headless`) and the
