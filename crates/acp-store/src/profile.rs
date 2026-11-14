@@ -396,6 +396,7 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
         );
     }
     let mut pref_digests: BTreeMap<i64, Vec<u8>> = BTreeMap::new();
+    let mut pref_revisions: BTreeMap<i64, i64> = BTreeMap::new();
     for r in rows(
         db,
         "SELECT id,scope,project,pref_key,value,status,source,revision,created_at,updated_at,origin,proposal_digest FROM preferences",
@@ -450,9 +451,11 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
         );
         valid(digest == expected)?;
         pref_digests.insert(id, digest);
+        let pref_rev = positive(&r[7])?;
+        pref_revisions.insert(id, pref_rev);
         live.insert(
             ("preference".into(), String::new(), id.to_string()),
-            positive(&r[7])?,
+            pref_rev,
         );
     }
     for r in rows(
@@ -481,6 +484,7 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
         );
     }
     let mut history: BTreeMap<(String, String, String), RecordVersion> = BTreeMap::new();
+    let mut receipts_by_seq: Vec<Receipt> = Vec::new();
     let receipts = rows(
         db,
         "SELECT operation_id,generation,request_digest,commit_sequence,result_json FROM acp_receipts ORDER BY commit_sequence",
@@ -504,6 +508,7 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
                 && !receipt.affected.is_empty()
                 && receipt.affected.len() <= 1024,
         )?;
+        receipts_by_seq.push(receipt.clone());
         let mut previous = None;
         for version in receipt.affected {
             let key = version.key();
@@ -579,6 +584,13 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
         valid(d_digest == pref_digests[&pref_id])?;
         let rseq = positive(&r[8])?;
         valid(rseq <= seq)?;
+        let referenced = &receipts_by_seq[(rseq - 1) as usize];
+        valid(referenced.affected.iter().any(|v| {
+            v.kind == "preference"
+                && v.record_id == pref_id.to_string()
+                && v.revision == to
+                && !v.deleted
+        }))?;
         valid(["cli", "desktop", "tui"].contains(&string(&r[9])?))?;
         valid(timestamp_valid(string(&r[10])?))?;
         // Per-preference chain: the first decision starts at revision 1 and each
@@ -587,6 +599,10 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
         valid(from == entry.1)?;
         entry.0 += 1;
         entry.1 = to;
+    }
+    for (pref_id, revision) in &pref_revisions {
+        let expected_rev = decision_counts.get(pref_id).map(|(_, to)| *to).unwrap_or(1);
+        valid(*revision == expected_rev)?;
     }
     valid(next_review > max_review_id && (seq != 0 || next_review == 1))?;
     Ok(Metadata {

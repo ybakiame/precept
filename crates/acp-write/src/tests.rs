@@ -1196,3 +1196,36 @@ fn prepublication_failure_removes_only_its_owned_staging_artifacts() {
     let p = Profile::create(&target).unwrap();
     validated(&p);
 }
+
+#[test]
+fn writer_produced_decision_chain_passes_strict_verification() {
+    let (t, p) = ready();
+    let r = p
+        .writer()
+        .unwrap()
+        .execute(&request(&p, "suggest-1", suggest(Scope::Global)))
+        .unwrap();
+    let id = r.affected[0].record_id.parse::<i64>().unwrap();
+    let cmd = Command::ConfirmPreference {
+        id,
+        scope: Scope::Global,
+        proposal_digest: proposal(&Scope::Global),
+        channel: acp_core::operator::Channel::Cli,
+        expected: Expected::Revision(1),
+    };
+    p.writer()
+        .unwrap()
+        .execute(&request(&p, "confirm-1", cmd))
+        .unwrap();
+    validated(&p);
+    // Deleting the decision rows breaks the live-revision invariant.
+    let db = rusqlite::Connection::open(&p.path).unwrap();
+    db.execute(
+        "DELETE FROM acp_review_decisions WHERE preference_id=?1",
+        [id],
+    )
+    .unwrap();
+    drop(db);
+    assert!(SqliteStore::open(&p.path).is_err());
+    let _ = t;
+}

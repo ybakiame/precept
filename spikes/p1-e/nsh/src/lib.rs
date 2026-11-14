@@ -184,6 +184,11 @@ pub fn App() -> impl IntoElement {
     #[cfg(feature = "ipc")]
     let inputs = INPUTS.get().cloned().unwrap_or_default();
     let mut initial = Model::loading();
+    initial.operator.channel = if TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed) {
+        acp_ui_spike_model::operator::Channel::Tui
+    } else {
+        acp_ui_spike_model::operator::Channel::Desktop
+    };
     #[cfg(feature = "ipc")]
     {
         initial.locale =

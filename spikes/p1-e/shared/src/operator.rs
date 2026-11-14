@@ -36,6 +36,7 @@ pub struct Operator {
     pub review: Option<Review>,
     pub pending: Option<Review>,
     pub outcome_unknown: bool,
+    pub channel: Channel,
 }
 impl std::fmt::Debug for Operator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -203,7 +204,7 @@ impl Model {
                             id: r.id,
                             scope,
                             proposal_digest: r.proposal_digest.clone(),
-                            channel: Channel::Cli,
+                            channel: self.operator.channel,
                             expected: Expected::Revision(r.revision),
                         }
                     } else {
@@ -211,7 +212,7 @@ impl Model {
                             id: r.id,
                             scope,
                             proposal_digest: r.proposal_digest.clone(),
-                            channel: Channel::Cli,
+                            channel: self.operator.channel,
                             expected: Expected::Revision(r.revision),
                         }
                     }

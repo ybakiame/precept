@@ -167,8 +167,10 @@ fn empty_current_schema_is_valid_but_orphaned_domain_data_is_not() {
 }
 #[test]
 fn review_decision_chain_digest_and_domain_drift_are_refused() {
-    // The empty drift is the accepted control: one contiguous confirm->demote
-    // chain for a single preference, written directly to isolate these rules.
+    // The empty drift is the accepted control: base fixture with no decisions
+    // (suggested preferences at revision 1, next_review_id=1).
+    // Negative cases insert forged decisions that violate structural causality
+    // (no matching receipt transition) and/or domain constraints.
     for drift in [
         "",
         "UPDATE acp_review_decisions SET from_revision=3,to_revision=4 WHERE id=2",
@@ -181,31 +183,34 @@ fn review_decision_chain_digest_and_domain_drift_are_refused() {
         "UPDATE acp_review_decisions SET preference_id=999 WHERE id=2",
         "UPDATE acp_profile SET next_review_id=2",
         "DELETE FROM acp_review_decisions WHERE id=1",
+        "UPDATE preferences SET revision=2 WHERE id=1",
     ] {
         let (_t, p) = fresh();
         let db = Connection::open(&p).unwrap();
         db.pragma_update(None, "foreign_keys", true).unwrap();
-        let digest: Vec<u8> = db
-            .query_row(
-                "SELECT proposal_digest FROM preferences WHERE id=1",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        for (id, action, from, to) in [(1, "confirm", 1, 2), (2, "demote", 2, 3)] {
-            db.execute(
-                "INSERT INTO acp_review_decisions VALUES(?1,'global',NULL,1,?2,?3,?4,?5,1,'cli','2026-01-01T00:00:00Z')",
-                rusqlite::params![id, action, from, to, digest],
-            )
-            .unwrap();
+        if !drift.is_empty() {
+            let digest: Vec<u8> = db
+                .query_row(
+                    "SELECT proposal_digest FROM preferences WHERE id=1",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            for (id, action, from, to) in [(1, "confirm", 1, 2), (2, "demote", 2, 3)] {
+                db.execute(
+                    "INSERT INTO acp_review_decisions VALUES(?1,'global',NULL,1,?2,?3,?4,?5,1,'cli','2026-01-01T00:00:00Z')",
+                    rusqlite::params![id, action, from, to, digest],
+                )
+                .unwrap();
+            }
+            db.execute("UPDATE acp_profile SET next_review_id=3", [])
+                .unwrap();
         }
-        db.execute("UPDATE acp_profile SET next_review_id=3", [])
-            .unwrap();
-        // Application verification must refuse domain drift on its own, even
-        // when the SQLite CHECK constraints are bypassed.
         db.execute_batch("PRAGMA ignore_check_constraints=ON")
             .unwrap();
-        db.execute_batch(drift).unwrap();
+        if !drift.is_empty() {
+            db.execute_batch(drift).unwrap();
+        }
         drop(db);
         let before = fs::read(&p).unwrap();
         assert_eq!(

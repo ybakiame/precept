@@ -206,9 +206,10 @@ pub struct Mutation {
     pub command: Command,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Channel {
+    #[default]
     Cli,
     Desktop,
     Tui,
