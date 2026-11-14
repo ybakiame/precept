@@ -1,8 +1,17 @@
-# One line-ending policy on every host: repository content is Unix LF.
-# This keeps a native Windows checkout byte-identical to the Linux/WSL tree that the
-# gates, source-identity checks and acceptance evidence measure. Owner-directed during
-# P1-M4/S0. Scripts are stated explicitly so no reader guesses CRLF was intended.
+# Normalize line endings: store LF in the repo and check out LF by default.
+# This overrides any local core.autocrlf so every contributor gets consistent endings.
 * text=auto eol=lf
+
 *.sh text eol=lf
-*.ps1 text eol=lf
+
+# Windows-specific scripts are the exception: keep CRLF in the working tree
+# (PowerShell / cmd convention). The repo still stores LF.
+*.ps1  text eol=crlf
+*.psm1 text eol=crlf
+*.psd1 text eol=crlf
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+# Binary assets: never normalize, diff, or merge.
 *.png binary
+*.ico binary
