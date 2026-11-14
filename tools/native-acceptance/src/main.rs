@@ -148,7 +148,7 @@ impl Fixture {
     fn query(&self, args: &[&str]) -> (bool, Value) {
         self.query_at(&self.runtime, &self.endpoint, args)
     }
-    fn mutate(&self, op: &str, args: &[&str]) -> Value {
+    fn try_mutate(&self, op: &str, args: &[&str]) -> (bool, Value) {
         let b = self.query(&["profile", "info"]).1["binding"].clone();
         let mut all = args.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         all.extend([
@@ -161,9 +161,41 @@ impl Fixture {
             "--operation-id".into(),
             op.into(),
         ]);
-        let (ok, v) = self.query(&all.iter().map(String::as_str).collect::<Vec<_>>());
+        self.query(&all.iter().map(String::as_str).collect::<Vec<_>>())
+    }
+    fn mutate(&self, op: &str, args: &[&str]) -> Value {
+        let (ok, v) = self.try_mutate(op, args);
         assert!(ok, "synthetic CLI mutation refused: {}", v["error"]);
         v
+    }
+    /// The exact persisted record. Its immutable `proposal_digest` is what the
+    /// S1 CLI requires for every confirm/reject/deprecate/delete; reading it back
+    /// binds the decision to the precise content the operator reviewed.
+    fn record(&self, id: i64) -> Value {
+        let id = id.to_string();
+        let (ok, v) = self.query(&[
+            "preferences",
+            "get",
+            &id,
+            "--scope",
+            "project",
+            "--project",
+            "alpha",
+        ]);
+        assert!(ok, "synthetic record read refused: {}", v["error"]);
+        v["record"].clone()
+    }
+    fn digest(&self, id: i64) -> String {
+        self.record(id)["proposal_digest"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    }
+    /// Current global transaction sequence; the next committed mutation is +1.
+    fn commit_sequence(&self) -> i64 {
+        let (ok, v) = self.query(&["review-queue", "--scope", "project", "--project", "alpha"]);
+        assert!(ok, "synthetic queue read refused: {}", v["error"]);
+        v["commit_sequence"].as_i64().unwrap()
     }
     fn rows(&self) -> Vec<Value> {
         let (ok, v) = self.query(&[
@@ -203,6 +235,8 @@ impl Ui {
                     "enter" => vec![13],
                     "tab" => vec![9],
                     "ctrl+a" => vec![1],
+                    "ctrl+e" => vec![5],
+                    "ctrl+u" => vec![21],
                     "ctrl+l" => vec![12],
                     "ctrl+r" => vec![18],
                     "ctrl+p" => vec![16],
@@ -234,8 +268,35 @@ impl Ui {
     }
     fn field(&mut self, key: &str, text: &str) {
         self.key(key);
-        self.key("ctrl+a");
+        match self {
+            // Desktop ctrl+a selects all, so typing replaces the field content.
+            Self::Desktop(_) => self.key("ctrl+a"),
+            // The TUI input reads ctrl+a as cursor-to-start (not select-all), so
+            // move to end (ctrl+e) and kill back to start (ctrl+u) to clear first.
+            // Both are editing keys with no app mod binding; the focused input
+            // consumes them (app mod bindings stay suppressed while editing).
+            Self::Tty(_) => {
+                self.key("ctrl+e");
+                self.key("ctrl+u");
+            }
+        }
         self.text(text);
+    }
+    /// Activate a rendered button with keyboard only: focus a known anchor field
+    /// (an alt chord), Tab forward a fixed number of stops, then Enter. The shared
+    /// view tree gives the same stop order on Desktop and TUI; disabled and hidden
+    /// controls are skipped and the tab list is one roving stop. Anchoring on the
+    /// source field keeps the count independent of the surface-specific chrome
+    /// above it. The fixed counts below were validated against the real PTY
+    /// surface: four Tabs reach the first review-workspace content stop, five the
+    /// first queue row behind the load action.
+    fn activate(&mut self, anchor: &str, tabs: usize, marker: &str, text: &str) {
+        self.key(anchor);
+        for _ in 0..tabs {
+            self.key("tab");
+        }
+        self.key("enter");
+        self.wait(marker, text);
     }
     fn wait(&self, marker: &str, text: &str) {
         match self {
@@ -437,7 +498,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     ui.receipt("alt+shift+n", 7);
     assert_eq!(f.rows()[1]["status"], "rejected");
     fs::write(f.root.path().join("drop-next"), b"synthetic fault").unwrap();
-    ui.apply("alt+shift+s", "unknown=true", "OutcomeUnknown");
+    ui.apply("alt+shift+s", "unknown=true", "Outcome unknown");
     ui.capture("outcome-unknown", out);
     let before = f.rows();
     assert_eq!(before.len(), 3);
@@ -471,6 +532,10 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     ui.wait("record_revision=1", "#3");
     ui.key("alt+shift+y");
     ui.wait("review=true", "Prepared operation");
+    // S1 made `--proposal-digest` mandatory for every decision. Bind the exact
+    // persisted digest of record #3 so the competing CLI reject names the same
+    // proposal the UI prepared; a stale or absent digest is a clap usage error.
+    let digest3 = f.digest(3);
     f.mutate(
         "competing-reject",
         &[
@@ -482,6 +547,8 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
             "alpha",
             "--expected-revision",
             "1",
+            "--proposal-digest",
+            &digest3,
             "--confirm",
         ],
     );
@@ -519,6 +586,221 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     );
     ui.key("alt+shift+r");
     ui.wait("selected=true grant=true busy=false", "Write grant active");
+    // The review workspace renders below the preference records; give both
+    // surfaces enough height that the Queue/Detail/History content and the
+    // destructive tier stay inside the captured viewport. Restored below.
+    ui.resize(
+        if surface == "desktop" { 1080 } else { 160 },
+        if surface == "desktop" { 1000 } else { 90 },
+    );
+    // ---- S2 review workspace: Queue / Detail / History tabs, deprecate and the
+    // destructive delete tier, driven by real chords on both surfaces. A dedicated
+    // suggestion (#4) walks the whole lifecycle so the earlier records and the
+    // lost-reply / Conflict / Unauthorized proofs stay untouched; deleting it
+    // returns the row count to three. ----
+    ui.field("alt+k", "review-alpha");
+    ui.field("alt+w", "synthetic-value");
+    ui.field("alt+f", "synthetic-source");
+    let n = f.commit_sequence() + 1;
+    ui.receipt("alt+shift+s", n);
+    assert_eq!(f.rows().len(), 4);
+    let id4 = f.rows()[3]["id"].as_i64().unwrap();
+    assert_eq!(id4, 4);
+    assert_eq!(f.record(id4)["status"], "suggested");
+    // The S1 digest gate is real: a wrong proposal digest is refused before any
+    // write, and the record stays suggested.
+    let (ok, v) = f.try_mutate(
+        "wrong-digest-confirm",
+        &[
+            "preference-confirm",
+            "4",
+            "--scope",
+            "project",
+            "--project",
+            "alpha",
+            "--expected-revision",
+            "1",
+            "--proposal-digest",
+            &"0".repeat(64),
+            "--confirm",
+        ],
+    );
+    assert!(!ok, "a wrong proposal digest must be refused");
+    assert_eq!(v["error"], "ReviewMismatch");
+    assert_eq!(f.record(id4)["status"], "suggested");
+    // Queue tab: load the suggested-only page. The load action is a rendered
+    // button reached by the fixed Tab count from the source-field anchor (see
+    // Ui::activate); the disabled First/Next paging controls are skipped.
+    ui.activate("alt+f", 4, "queue=1", "#4");
+    ui.capture("review-queue", out);
+    // Open the exact record from its queue row; Detail auto-selects and inspects.
+    ui.activate("alt+f", 5, "record_revision=1", "Show full digest");
+    ui.capture("review-detail", out);
+    // Navigate Queue / Detail / History with the alt+left/right review chords.
+    ui.key("alt+right");
+    ui.wait(
+        "review_tab=History",
+        "No decisions recorded for this record",
+    );
+    ui.capture("review-history-empty", out);
+    ui.key("alt+left");
+    ui.wait("review_tab=Detail", "Show full digest");
+    ui.key("alt+left");
+    ui.wait("review_tab=Queue", "#4");
+    ui.key("alt+right");
+    ui.wait("review_tab=Detail", "Show full digest");
+    // The digest is a 16-hex prefix until an explicit expand reveals the whole.
+    let digest4 = f.digest(id4);
+    ui.activate("alt+f", 4, "record_revision=1", "Collapse digest");
+    ui.capture("review-digest-expanded", out);
+    if let Ui::Tty(t) = &ui {
+        assert!(
+            t.state.lock().unwrap().text().contains(&digest4),
+            "expanded proposal digest not rendered"
+        );
+    }
+    // Confirm the suggestion through the shared chord; it becomes confirmed.
+    let n = f.commit_sequence() + 1;
+    ui.receipt("alt+shift+y", n);
+    assert_eq!(f.record(id4)["status"], "confirmed");
+    ui.capture("review-confirmed", out);
+    // Deprecate the confirmed record: re-inspect it from the record list, read its
+    // decision history, then prepare/apply the deprecate chord.
+    ui.key("alt+shift+l");
+    ui.wait("rows=4", "#4");
+    for _ in 0..4 {
+        ui.key("alt+shift+i");
+    }
+    ui.activate("alt+f", 4, "record_revision=2", "Show full digest");
+    ui.key("alt+right");
+    ui.wait("review_tab=History", "Channel is client-asserted");
+    ui.capture("review-history-confirm", out);
+    let inspect = f
+        .query(&[
+            "review-inspect",
+            "4",
+            "--scope",
+            "project",
+            "--project",
+            "alpha",
+            "--revision",
+            "2",
+        ])
+        .1;
+    assert!(
+        inspect["decisions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["action"] == "confirm"),
+        "history must show the confirm decision"
+    );
+    ui.key("alt+left");
+    ui.wait(
+        "review_tab=Detail",
+        "Deprecation makes the record inactive in agent effective context.",
+    );
+    let n = f.commit_sequence() + 1;
+    ui.receipt("alt+shift+w", n);
+    assert_eq!(f.record(id4)["status"], "deprecated");
+    assert_eq!(f.record(1)["status"], "confirmed");
+    ui.capture("review-deprecated", out);
+    // Delete through the destructive tier. Re-inspect the deprecated record first.
+    ui.key("alt+shift+l");
+    ui.wait("rows=4", "#4");
+    for _ in 0..4 {
+        ui.key("alt+shift+i");
+    }
+    ui.activate("alt+f", 4, "record_revision=3", "Show full digest");
+    let inspect = f
+        .query(&[
+            "review-inspect",
+            "4",
+            "--scope",
+            "project",
+            "--project",
+            "alpha",
+            "--revision",
+            "3",
+        ])
+        .1;
+    let actions: Vec<_> = inspect["decisions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["action"].as_str().unwrap())
+        .collect();
+    assert!(actions.contains(&"confirm") && actions.contains(&"deprecate"));
+    // NEGATIVE: a wrong retyped ID and a blind Enter on the empty field must both
+    // refuse the delete; no write lands and the record stays present.
+    let seq_before = f.commit_sequence();
+    // Wrong retype: the tier shows the mismatch and Enter prepares nothing.
+    ui.key("alt+shift+q");
+    ui.wait("delete_armed=true", "Delete project alpha preference #4?");
+    ui.capture("review-delete-tier", out);
+    ui.text("999");
+    ui.wait("delete_armed=true", "The typed ID does not match");
+    ui.key("enter");
+    ui.capture("review-delete-refused", out);
+    assert_eq!(
+        f.commit_sequence(),
+        seq_before,
+        "a wrong retype must not write"
+    );
+    assert_eq!(f.record(id4)["status"], "deprecated");
+    assert_eq!(f.record(id4)["revision"], 3);
+    // Cancel the refused tier (Tab to Cancel, Enter).
+    ui.key("tab");
+    ui.key("enter");
+    ui.wait("delete_armed=false", "Show full digest");
+    // Blind Enter on a fresh empty retype field also prepares nothing.
+    ui.key("alt+shift+q");
+    ui.wait("delete_armed=true", "Delete project alpha preference #4?");
+    ui.key("enter");
+    assert_eq!(
+        f.commit_sequence(),
+        seq_before,
+        "a blind Enter must not write"
+    );
+    assert_eq!(f.record(id4)["status"], "deprecated");
+    ui.key("tab");
+    ui.key("enter");
+    ui.wait("delete_armed=false", "Show full digest");
+    // POSITIVE: arm with the exact ID and apply; only the exact retype prepares
+    // and commits the delete.
+    ui.key("alt+shift+q");
+    ui.wait("delete_armed=true", "Delete project alpha preference #4?");
+    ui.text("4");
+    ui.wait("delete_armed=true", "Deletion armed; apply to commit");
+    ui.capture("review-delete-armed", out);
+    let n = f.commit_sequence() + 1;
+    ui.key("alt+shift+v");
+    ui.wait(
+        &format!("receipt={n} "),
+        "Deleted. Content and decision history are gone; receipts remain identity-only.",
+    );
+    ui.capture("review-deleted", out);
+    // The deleted record keeps no content or decision history; the queue is empty
+    // and the row count returns to the three earlier records.
+    let (ok, _) = f.query(&[
+        "preferences",
+        "get",
+        "4",
+        "--scope",
+        "project",
+        "--project",
+        "alpha",
+    ]);
+    assert!(!ok, "a deleted record must keep no content");
+    let queue = f
+        .query(&["review-queue", "--scope", "project", "--project", "alpha"])
+        .1;
+    assert!(queue["records"].as_array().unwrap().is_empty());
+    assert_eq!(f.rows().len(), 3);
+    // ---- end S2 review workspace ----
+    // The tall viewport stays until the existing compact/restore resize below
+    // returns the surface to its normal size; a height-only resize here redraws
+    // the TUI with collapsed spaces.
     ui.apply(
         "alt+shift+x",
         "selected=true grant=false busy=false",
@@ -610,7 +892,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         };
     assert!(development || git(&["status", "--porcelain"]).is_empty());
     let binaries: Vec<_> = [std::env::current_exe().unwrap(), Fixture::bin(&repo,"acp-daemon"),Fixture::bin(&repo,"acp-query"),nsh].iter().map(|path|json!({"name":path.file_name().unwrap().to_str().unwrap(),"sha256":format!("{:x}",Sha256::digest(fs::read(path).unwrap()))})).collect();
-    json!({"status":if development{"DEV_PASS"}else{"PASS"},"tested_git_sha":sha,"worktree_dirty":dirty,"platform":std::env::consts::OS,"arch":std::env::consts::ARCH,"surface":surface,"backend":backend,"binaries":binaries,"actions":["unselected Profile","explicit UI create","Busy","enable","exact suggestion/confirm/reject","committed lost reply and explicit same-request retry","Conflict","Escape/project review invalidation","saved exact-task Handoff NOT_RUN history","disable acknowledgement","revoked-grant Unauthorized","five pages/Sessions","theme/locale/resize","disconnect","clean child exit"],"rows":3,"historical_source_substitution":false})
+    json!({"status":if development{"DEV_PASS"}else{"PASS"},"tested_git_sha":sha,"worktree_dirty":dirty,"platform":std::env::consts::OS,"arch":std::env::consts::ARCH,"surface":surface,"backend":backend,"binaries":binaries,"actions":["unselected Profile","explicit UI create","Busy","enable","exact suggestion/confirm/reject","committed lost reply and explicit same-request retry","Conflict","Escape/project review invalidation","saved exact-task Handoff NOT_RUN history","S2 review queue load and Queue/Detail/History tabs","exact inspect with digest prefix expand","wrong-digest CLI ReviewMismatch","confirm/deprecate via chords","destructive delete wrong-retype/blind-Enter refusal","exact-retype delete with identity-only receipt","deleted record keeps no content; empty queue","disable acknowledgement","revoked-grant Unauthorized","five pages/Sessions","theme/locale/resize","disconnect","clean child exit"],"rows":3,"historical_source_substitution":false})
 }
 fn main() {
     let a: Vec<_> = std::env::args().skip(1).collect();

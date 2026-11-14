@@ -38,6 +38,14 @@ impl Perform for Screen {
             return;
         }
         self.clamp();
+        // Overwriting the first cell of a wide glyph retires its continuation
+        // cell. A later diff repaint may skip that cell (the backend reads it as
+        // empty), so it must become a real space, not a dropped `None` that would
+        // collapse the words around it (e.g. after a zh-CN -> en locale switch).
+        if width == 1 && self.x + 1 < self.rows[0].len() && self.rows[self.y][self.x + 1].is_none()
+        {
+            self.rows[self.y][self.x + 1] = Some(' ');
+        }
         self.rows[self.y][self.x] = Some(c);
         if width == 2 && self.x + 1 < self.rows[0].len() {
             self.rows[self.y][self.x + 1] = None;
@@ -104,5 +112,17 @@ mod tests {
         assert!(!s.text().contains("hello"));
         p.advance(&mut s, b"\x1b[3;7H\x1b[6n");
         assert_eq!(s.responses, vec![b"\x1b[3;7R".to_vec()]);
+    }
+    #[test]
+    fn narrow_diff_over_wide_glyph_keeps_the_skipped_space() {
+        let mut s = Screen::new(20, 3);
+        let mut p = vte::Parser::new();
+        // A wide zh-CN glyph pair, then an en diff repaint that writes the words
+        // with cursor jumps over the space cells (the backend skips them). The
+        // retired continuation cells must read as spaces, not collapse the words.
+        p.advance(&mut s, "写入授权".as_bytes());
+        assert!(s.text().contains("写入授权"));
+        p.advance(&mut s, b"\x1b[1;1HWrite\x1b[1;7Hgrant\x1b[1;13Hoff");
+        assert!(s.text().contains("Write grant off"));
     }
 }
