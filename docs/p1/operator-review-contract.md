@@ -65,7 +65,7 @@ previews (`crates/acp-store/src/operator.rs:32`), separate ephemeral write
 capability with per-request revocation checks
 (`crates/acp-ipc/src/write_grant.rs:37`), the operator CLI surface and the shared
 NSH operator panel with prepare/apply and same-request retry
-(`spikes/p1-e/shared/src/operator.rs:148`, `spikes/p1-e/nsh/src/operator.rs:170`).
+(`apps/operator/model/src/operator.rs:148`, `apps/operator/ui/src/operator.rs:170`).
 
 Missing and therefore designed below: a pending-review queue with honest staleness,
 a proposal content digest bound to the exact reviewed bytes, any decision history
@@ -346,11 +346,11 @@ directories.
 ## 8. NSH Desktop/TUI review UX
 
 One operator panel in the existing shared `Model`
-(`spikes/p1-e/shared/src/operator.rs`), rendered by both Desktop and TUI, with the
+(`apps/operator/model/src/operator.rs`), rendered by both Desktop and TUI, with the
 current tokens, English/zh-CN copy, `compact()` behaviour below 900 px
-(`spikes/p1-e/nsh/src/tokens.rs:38`), visible keyboard focus and the existing
-staleness guards (read `epoch` in `spikes/p1-e/shared/src/lib.rs:148`, operator
-`serial`/`Guard` in `spikes/p1-e/shared/src/operator.rs:46`). No new screen
+(`apps/operator/ui/src/tokens.rs:38`), visible keyboard focus and the existing
+staleness guards (read `epoch` in `apps/operator/model/src/lib.rs:148`, operator
+`serial`/`Guard` in `apps/operator/model/src/operator.rs:46`). No new screen
 framework, no second renderer and no TUI-only business rule.
 
 Proposed tabs, navigated with the already-supported `alt+left`/`alt+right` chords:
@@ -366,7 +366,7 @@ Queue, Detail, History. Per-tab copy obligations are in
 | deprecate | proposed `alt+shift+w` | armed only on exact `id`+`revision`+digest; same prepare/apply gate |
 | delete | proposed `alt+shift+q` | distinct destructive tier: names the ID, states that content and decision history are removed, requires the exact ID retyped into the focused input, then `alt+shift+v` |
 | history view | proposed | decision rows for the inspected ID; live reads and saved Handoff stay visually separate |
-| disabled/read-only states | **implemented** | `available()` plus `Field::disabled` (`spikes/p1-e/nsh/src/operator.rs:22`, `:136`); unavailable actions are labelled, never rendered as working buttons |
+| disabled/read-only states | **implemented** | `available()` plus `Field::disabled` (`apps/operator/ui/src/operator.rs:22`, `:136`); unavailable actions are labelled, never rendered as working buttons |
 
 Shortcut constraints are real, not stylistic: the native driver accepts only
 `alt+shift+[umerxlsvynzih]`, `alt+[opkwft1-6abc]`, `alt+left/right`,
@@ -381,7 +381,7 @@ surfaces too: confirm, reject, deprecate, delete and history are required on Win
 ConPTY and Linux/WSL PTY in
 [section 2 of the matrix](operator-review-acceptance-matrix.md#2-four-surface-acceptance-matrix).
 The TUI already forwards alt and shift modifiers from the terminal into the same model
-(`spikes/p1-e/nsh/src/tui.rs:72`), so no TUI-only rule or desktop-only exemption is
+(`apps/operator/ui/src/tui.rs:72`), so no TUI-only rule or desktop-only exemption is
 introduced here. What is unproven is delivery: a terminal that does not report the
 chord must be recorded as BLOCKED for that surface with the observed key event, never
 silently dropped from scope. Restricting any review action to Desktop alone is owner
@@ -390,7 +390,7 @@ decision D11 and would require amending this section and the matrix first.
 Still CLI-only until separately authorized: project registration and Handoff put.
 The S3 gate is unchanged ([native-operator-workflows.md](native-operator-workflows.md)),
 and the UI keeps labelling it instead of offering nonfunctional controls
-(`OperatorCliGate` copy at `spikes/p1-e/shared/src/i18n.rs:62`). S0 asserts no
+(`OperatorCliGate` copy at `apps/operator/model/src/i18n.rs:62`). S0 asserts no
 complete review flow exists in the UI.
 
 ## 9. Privacy, retention and deletion

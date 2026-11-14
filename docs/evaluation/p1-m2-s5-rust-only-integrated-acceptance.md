@@ -153,7 +153,7 @@ outcomes stay in the private helper logs; sources are
 [sessions](../../crates/acp-daemon/tests/sessions.rs),
 [MCP process security](../../crates/acp-mcp/tests/security_process.rs),
 [store refusal](../../crates/acp-store/tests/sqlite.rs), and
-[shared operator races](../../spikes/p1-e/shared/src/operator.rs).
+[shared operator races](../../apps/operator/model/src/operator.rs).
 
 ## Actual binary identities
 

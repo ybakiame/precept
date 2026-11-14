@@ -34,10 +34,12 @@ M2 integrated acceptance.
 | `crates/acp-mcp` | Read-only stdio bridge to project-bound IPC | Profile/task/session mutation |
 | `crates/acp-write` | S1 fresh-v1 storage; merged S2 adds guarded existing-v1 attachment through daemon-owned lease/epoch and explicit grant | Arbitrary existing-path Writer, direct UI/CLI writes, generic SQL |
 | `crates/acp-query` | Native operator reads/session controls and S3 typed write requests through authenticated daemon IPC | Direct database access or a second writer |
-| `spikes/p1-e/shared`, `spikes/p1-e/nsh` | Shared typed presentation and NSH Desktop/TUI surfaces | Direct database access, duplicate resolution logic or autonomous daemon startup |
+| `apps/operator/model`, `apps/operator/ui` | Shared typed presentation and NSH Desktop/TUI surfaces | Direct database access, duplicate resolution logic or autonomous daemon startup |
 
-The paths remain as implemented; accepting NSH does not move crates or remove
-historical comparison workspaces. Windows→WSL owner queries remain read-only.
+Product crate paths remain as implemented; the operator app moved from `spikes/p1-e`
+to one `apps/operator` workspace, and the historical comparison workspace is
+archived under `docs/archive/gpui-kit-spike`, not removed. Windows→WSL owner queries
+remain read-only.
 
 The [merged S2 implementation and native evidence](evaluation/p1-m2-s2-ownership.md) add
 single-assignment daemon selection, native file binding, a distinct write role,

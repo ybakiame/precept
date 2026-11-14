@@ -289,7 +289,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         .bytes()
         .fold(0u64, |a, b| a.wrapping_mul(131).wrapping_add(b as u64));
     let nonce = format!("{hash:016x}");
-    let nsh = repo.join("spikes/p1-e/nsh/target/debug").join(format!(
+    let nsh = repo.join("apps/operator/target/debug").join(format!(
         "acp-nsh-{}{}",
         if surface == "desktop" {
             "native"

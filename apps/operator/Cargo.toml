@@ -1,0 +1,8 @@
+[workspace]
+members = ["model", "ui"]
+resolver = "2"
+
+# Workspace-wide: Cargo ignores profiles declared in member manifests. This was
+# previously [profile.dev] in the ui manifest, before model/ui became members.
+[profile.dev]
+debug = 0

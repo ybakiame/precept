@@ -62,7 +62,8 @@ crates/
   acp-query/      # explicit native operator CLI
   acp-mcp/        # project-bound read-only stdio bridge
   acp-session/    # optional native ACP session supervisor
-spikes/p1-e/      # accepted shared NSH Desktop/TUI, optional offline Web fixture
+apps/operator/    # accepted NSH Desktop/TUI app workspace: model/, ui/, tests/,
+                  # plus the optional offline Web fixture (formerly spikes/p1-e)
  tools/          # native validation helpers and Node maintenance checks
  docs/           # contracts, ADRs, current runbooks and marked historical evidence
 ```

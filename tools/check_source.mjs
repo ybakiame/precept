@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseDocument } from '../spikes/p1-e/tests/node_modules/yaml/dist/index.js';
+import { parseDocument } from '../apps/operator/tests/node_modules/yaml/dist/index.js';
 const root = fileURLToPath(new URL('../', import.meta.url));
 process.chdir(root);
 const listed = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { encoding:'utf8' }).split('\0').filter(Boolean);
@@ -48,7 +48,7 @@ for (const file of files) {
     for (const job of Object.values(workflow?.jobs || {})) {
       requireCheck(Array.isArray(job.steps), `Missing workflow steps: ${file}`);
       for (const step of job.steps || []) {
-        for (const match of (step.run || '').matchAll(/\bnode\s+(?:--test\s+)?((?:tools|spikes)\/[\w./-]+\.mjs)/g)) {
+        for (const match of (step.run || '').matchAll(/\bnode\s+(?:--test\s+)?((?:tools|spikes|apps)\/[\w./-]+\.mjs)/g)) {
           requireCheck(existsSync(match[1]), `Missing workflow script: ${file} -> ${match[1]}`);
         }
       }

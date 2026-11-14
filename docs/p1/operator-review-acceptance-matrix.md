@@ -24,13 +24,13 @@ acceptance, see contract section 10), **out of scope** (not delivered by M4).
 | Handoff saved history + revision | implemented | `crates/acp-store/src/profile.rs:47-63`, `crates/acp-core/src/operator.rs:161` | saved history stays distinct from live reads; not review state |
 | Historical validation statuses `PASS\|FAIL\|SKIPPED\|NOT_RUN` | implemented | `crates/acp-core/src/lib.rs:70-84` | never renewable; `Validation.extra` flatten preserves unknown keys, so it cannot be sealed |
 | Free-text preference `source` | implemented, weak | `crates/acp-store/src/profile.rs:36`; immutable after insert | not provenance; needs closed `origin` beside it (D4) |
-| Pending review queue | **absent / proposed** | closest is unfiltered `Pane::Preferences` rows `spikes/p1-e/nsh/src/operator.rs:559` | `profile.review.queue` over `status='suggested'`, ID-ordered, watermarked |
+| Pending review queue | **absent / proposed** | closest is unfiltered `Pane::Preferences` rows `apps/operator/ui/src/operator.rs:559` | `profile.review.queue` over `status='suggested'`, ID-ordered, watermarked |
 | Proposal content digest | **absent / proposed** | `request_digest` is idempotency-only `crates/acp-write/src/writer.rs:96` | new `preferences.proposal_digest`, bound into each decision (D3) |
 | Decision history (actor/time/cause) | **absent / proposed** | no `reviewed_by`, `decided_at`, note or cause anywhere | `acp_review_decisions`, `channel` label only (D2, D5) |
 | Provenance object with origin/references | **contract-only** | `crates/acp-core/src/typed_context/types.rs:105`; module has zero consumers outside `acp-core` | adopt vocabulary or justify a second one; no parallel enum (D4) |
 | `ReviewState::Unreviewed/Accepted` | contract-only (repository contracts) | `crates/acp-core/src/typed_context/types.rs:64` | never persisted as a profile status; local review cannot accept a contract |
-| Deprecate/delete UX | **absent / proposed** | CLI-only gate `spikes/p1-e/shared/src/i18n.rs:62`; no arm in `shared/src/operator.rs:148-223` | S2 adds both with the destructive tier (D8) |
-| High-risk confirmation tier | **absent / proposed** | one generic review card; `OperatorPeerWarning` is plain text `shared/src/i18n.rs:61` | delete needs exact-ID re-entry + explicit removal disclosure |
+| Deprecate/delete UX | **absent / proposed** | CLI-only gate `apps/operator/model/src/i18n.rs:62`; no arm in `apps/operator/model/src/operator.rs:148-223` | S2 adds both with the destructive tier (D8) |
+| High-risk confirmation tier | **absent / proposed** | one generic review card; `OperatorPeerWarning` is plain text `apps/operator/model/src/i18n.rs:61` | delete needs exact-ID re-entry + explicit removal disclosure |
 | Diff view | **out of scope for M4** | only a hashed worktree fingerprint `crates/acp-core/src/fingerprint.rs:12` | preference "diff" is the digest of an immutable row; repository diffs stay out of scope |
 | Minimal Profile controls beyond create/select/info/grant | out of scope | `crates/acp-daemon/src/profiles.rs:301-451` | no export, reset, delete-profile or backup in M4 |
 | ProjectContract approval from the UI | out of scope | ADR-0004 human-review section | repository change stays a repository review |
