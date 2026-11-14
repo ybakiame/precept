@@ -343,6 +343,8 @@ fn unregistered_unknown_and_mutating_tools_have_no_authority() {
         "unknown",
         "profile.preferences.list",
         "profile.preferences.get",
+        "profile.review.queue",
+        "profile.review.inspect",
         "profile.handoff.get",
         "profile.mutate",
         "profile.write.enable",

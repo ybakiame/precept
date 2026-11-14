@@ -36,6 +36,7 @@ pub struct Operator {
     pub review: Option<Review>,
     pub pending: Option<Review>,
     pub outcome_unknown: bool,
+    pub channel: Channel,
 }
 impl std::fmt::Debug for Operator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -185,6 +186,7 @@ impl Model {
                         key: self.operator.key.clone(),
                         value: self.operator.value.clone(),
                         source: self.operator.source.clone(),
+                        origin: Origin::AgentReported,
                         expected: Expected::Absent,
                     }
                 } else {
@@ -201,18 +203,22 @@ impl Model {
                         Command::ConfirmPreference {
                             id: r.id,
                             scope,
+                            proposal_digest: r.proposal_digest.clone(),
+                            channel: self.operator.channel,
                             expected: Expected::Revision(r.revision),
                         }
                     } else {
                         Command::RejectPreference {
                             id: r.id,
                             scope,
+                            proposal_digest: r.proposal_digest.clone(),
+                            channel: self.operator.channel,
                             expected: Expected::Revision(r.revision),
                         }
                     }
                 };
                 let mutation = Mutation {
-                    version: 1,
+                    version: 2,
                     binding,
                     operation_id: operation_id.into(),
                     command,
@@ -405,6 +411,7 @@ impl crate::native::Inputs {
             acp_ipc::Error::IdempotencyConflict => "IdempotencyConflict",
             acp_ipc::Error::InvalidRequest => "InvalidRequest",
             acp_ipc::Error::InvalidTransition => "InvalidTransition",
+            acp_ipc::Error::ReviewMismatch => "ReviewMismatch",
             _ => "Unavailable",
         })
     }
@@ -446,6 +453,17 @@ mod tests {
                 source: "test".into(),
                 status: "suggested".into(),
                 revision: 1,
+                origin: Origin::AgentReported,
+                proposal_digest: digest_hex(&proposal_digest(
+                    &Scope::Global,
+                    None,
+                    "synthetic-key",
+                    "synthetic-value",
+                    Origin::AgentReported,
+                    "test",
+                )),
+                created_at: "2026-01-01T00:00:00Z".into(),
+                updated_at: "2026-01-01T00:00:00Z".into(),
             }],
             next_after_id: None,
         });

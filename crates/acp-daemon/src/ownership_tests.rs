@@ -78,7 +78,7 @@ async fn revoke_closes_admissions_drains_and_preserves_admitted_committed_respon
         reached.send(()).unwrap();
         barrier.wait();
     }));
-    let mutation = json!({"version":1,"binding":enabled["binding"],"operation_id":"admitted","command":{"command":"suggest_preference","scope":{"kind":"global"},"key":"synthetic","value":"synthetic","source":"synthetic","expected":{"kind":"absent"}}});
+    let mutation = json!({"version":2,"binding":enabled["binding"],"operation_id":"admitted","command":{"command":"suggest_preference","scope":{"kind":"global"},"key":"synthetic","value":"synthetic","source":"synthetic","origin":"agent_reported","expected":{"kind":"absent"}}});
     send(&mut writer, "write", "profile.mutate", mutation.clone()).await;
     tokio::task::spawn_blocking(move || observed.recv_timeout(Duration::from_secs(2)).unwrap())
         .await

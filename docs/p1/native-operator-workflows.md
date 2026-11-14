@@ -23,17 +23,22 @@ commands and adds:
 - `project-register`, `preference-suggest`, `preference-confirm`,
   `preference-reject`, `preference-deprecate`, `preference-delete`, `handoff-put`.
   Every mutation requires explicit `--profile-id`, `--generation`, `--owner-epoch`
-  and `--operation-id`. Review/delete require `--confirm`, exact ID/scope and
-  positive `--expected-revision`. Suggest/register use Expected::Absent.
+  and `--operation-id`. Review/delete require `--confirm`, exact ID/scope,
+  positive `--expected-revision` and `--proposal-digest` (64 lowercase hex).
+  Suggest requires `--origin` (closed set: agent_reported, daemon_observed,
+  independently_verified, legacy_unknown) and uses Expected::Absent.
+  Register uses Expected::Absent.
   Handoff requires exactly one of `--expected-absent` / `--expected-revision` and
   a bounded typed `--input PATH` JSON document (objective, completed, next_action,
   validation_json and snapshot only), at most 128 KiB, unknown fields refused.
+- `review-queue --scope ... [--after-id ID]` and
+  `review-inspect ID --scope ... --revision N` (S1 additive Operator reads).
 
 Clients use protected native credentials, checking Operator for control/preview
 and the independent exact OperatorWrite binding for mutation. They never link the
 Writer or open SQLite. Typed serialization DTOs may be shared without moving
-validation/transaction ownership out of the daemon. IPC stays v2: these are additive
-operator methods, not a change to existing request/response meanings.
+validation/transaction ownership out of the daemon. IPC transport stays API_VERSION 2;
+the write envelope `Request.version` is 2 (S1 breaking change, no v1 reader).
 
 Success outputs bounded JSON; failures output sanitized enum errors with exit 3.
 Mutation failures also identify the operation ID and uncertainty. No token, DB path,
@@ -54,13 +59,18 @@ roles and unreachable through MCP:
 | `profile.preferences.list` | scope, after_id (nonnegative; default caller supplies 0) | binding, up to 12 exact records ordered by ID, next_after_id or null |
 | `profile.preferences.get` | scope, positive id | binding, exact record or NotFound |
 | `profile.handoff.get` | project, task_id | binding, exact saved Handoff and revision, or explicit absent |
+| `profile.review.queue` | scope, after_id (nonnegative) | binding, commit_sequence watermark, up to 12 suggested records ordered by ID, next_after_id or null |
+| `profile.review.inspect` | scope, positive id, positive revision | binding, commit_sequence watermark, exact record (Conflict if revision differs), up to 8 recent decisions, projected peer demotions |
 
 Scope is exactly `{kind:"global"}` or `{kind:"project",name:NAME}`; no union of
 global/project records. Preference records contain ID, scope, key, value, source,
-status and revision. Selection, record and revision are read in the same snapshot.
+status, revision, origin, proposal_digest (64-hex), created_at and updated_at.
+Selection, record and revision are read in the same snapshot.
 Project-scoped previews require the daemon allowlist and pinned canonical root;
 global inspection requires Operator but does not pretend a selected project scope.
-Lists are bounded pages, not a pending-review queue or a stable multi-page snapshot.
+Lists are bounded pages, not a stable multi-page snapshot. The dedicated
+`profile.review.queue` filters to `status='suggested'` and discloses a
+`commit_sequence` watermark; it is still not a held cross-page snapshot.
 Handoff saved values and opaque historical validation remain distinct from the
 existing resolver's current Git/worktree observations. context.get stays confirmed-only.
 

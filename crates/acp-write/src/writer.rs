@@ -8,6 +8,8 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 type Key = (String, String, String);
+/// Stored scope/project/key/status/revision/digest read inside a decision.
+type ProposalRow = (String, Option<String>, String, String, i64, Vec<u8>);
 pub struct Writer<'a> {
     pub(crate) db: Connection,
     pub(crate) profile: &'a Profile,
@@ -49,6 +51,21 @@ fn scope(scope: &Scope) -> (&str, Option<&str>) {
     match scope {
         Scope::Global => ("global", None),
         Scope::Project { name } => ("project", Some(name)),
+    }
+}
+fn origin_name(origin: acp_core::operator::Origin) -> &'static str {
+    match origin {
+        acp_core::operator::Origin::AgentReported => "agent_reported",
+        acp_core::operator::Origin::DaemonObserved => "daemon_observed",
+        acp_core::operator::Origin::IndependentlyVerified => "independently_verified",
+        acp_core::operator::Origin::LegacyUnknown => "legacy_unknown",
+    }
+}
+fn channel_name(channel: acp_core::operator::Channel) -> &'static str {
+    match channel {
+        acp_core::operator::Channel::Cli => "cli",
+        acp_core::operator::Channel::Desktop => "desktop",
+        acp_core::operator::Channel::Tui => "tui",
     }
 }
 fn check_project(db: &Connection, name: &str) -> Result<()> {
@@ -119,7 +136,14 @@ impl Writer<'_> {
         }
         let sequence = next_revision(metadata.commit_sequence)?;
         let now = profile::timestamp()?;
-        let versions = mutate(&tx, &request.command, &now, metadata.next_preference_id)?;
+        let versions = mutate(
+            &tx,
+            &request.command,
+            &now,
+            metadata.next_preference_id,
+            sequence,
+            metadata.next_review_id,
+        )?;
         #[cfg(test)]
         if matches!(_fault, Fault::AfterData | Fault::AfterRevisions) {
             return Err(Error::BeforeCommit);
@@ -196,6 +220,8 @@ fn mutate(
     command: &Command,
     now: &str,
     allocated: i64,
+    sequence: i64,
+    next_review_id: i64,
 ) -> Result<BTreeMap<Key, (i64, bool)>> {
     let mut versions = BTreeMap::new();
     match command {
@@ -228,6 +254,7 @@ fn mutate(
             key,
             value,
             source,
+            origin,
             ..
         } => {
             let (scope, project) = scope(requested);
@@ -235,9 +262,22 @@ fn mutate(
                 check_project(db, p)?
             }
             let next = next_revision(allocated)?;
+            let digest = acp_core::operator::proposal_digest(
+                requested, project, key, value, *origin, source,
+            );
             db.execute(
-                "INSERT INTO preferences VALUES(?1,?2,?3,?4,?5,'suggested',?6,1,?7,?7)",
-                params![allocated, scope, project, key, value, source, now],
+                "INSERT INTO preferences(id,scope,project,pref_key,value,status,source,revision,created_at,updated_at,origin,proposal_digest) VALUES(?1,?2,?3,?4,?5,'suggested',?6,1,?7,?7,?8,?9)",
+                params![
+                    allocated,
+                    scope,
+                    project,
+                    key,
+                    value,
+                    source,
+                    now,
+                    origin_name(*origin),
+                    digest.to_vec()
+                ],
             )
             .map_err(crate::sql_error)?;
             db.execute(
@@ -250,67 +290,143 @@ fn mutate(
         Command::ConfirmPreference {
             id,
             scope: requested,
+            proposal_digest,
+            channel,
             expected,
         }
         | Command::RejectPreference {
             id,
             scope: requested,
+            proposal_digest,
+            channel,
             expected,
         }
         | Command::DeprecatePreference {
             id,
             scope: requested,
+            proposal_digest,
+            channel,
             expected,
         }
         | Command::DeletePreference {
             id,
             scope: requested,
+            proposal_digest,
+            channel,
             expected,
         } => {
-            let row: Option<(String, Option<String>, String, String, i64)> = db
+            let row: Option<ProposalRow> = db
                 .query_row(
-                    "SELECT scope,project,pref_key,status,revision FROM preferences WHERE id=?1",
+                    "SELECT scope,project,pref_key,status,revision,proposal_digest FROM preferences WHERE id=?1",
                     [id],
-                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+                    |r| {
+                        Ok((
+                            r.get(0)?,
+                            r.get(1)?,
+                            r.get(2)?,
+                            r.get(3)?,
+                            r.get(4)?,
+                            r.get(5)?,
+                        ))
+                    },
                 )
                 .optional()
                 .map_err(crate::sql_error)?;
             cas(row.as_ref().map(|r| r.4), expected)?;
-            let (stored_scope, project, key, status, revision) = row.ok_or(Error::Conflict)?;
+            let (stored_scope, project, key, status, previous, stored_digest) =
+                row.ok_or(Error::Conflict)?;
             let (want_scope, want_project) = scope(requested);
             if stored_scope != want_scope || project.as_deref() != want_project {
                 return Err(Error::ScopeMismatch);
             }
-            let revision = next_revision(revision)?;
+            // The decision names the exact proposal the operator inspected.
+            let supplied = acp_core::operator::digest_from_hex(proposal_digest)
+                .ok_or(Error::ReviewMismatch)?;
+            if supplied.as_slice() != stored_digest.as_slice() {
+                return Err(Error::ReviewMismatch);
+            }
+            let revision = next_revision(previous)?;
             if matches!(command, Command::DeletePreference { .. }) {
+                // Erasure removes the decision history with the record; no row.
+                db.execute(
+                    "DELETE FROM acp_review_decisions WHERE preference_id=?1",
+                    [id],
+                )
+                .map_err(crate::sql_error)?;
                 db.execute("DELETE FROM preferences WHERE id=?1", [id])
                     .map_err(crate::sql_error)?;
                 versions.insert(pref_key(*id), (revision, true));
             } else {
-                let next = match command {
-                    Command::ConfirmPreference { .. } if status == "suggested" => "confirmed",
-                    Command::RejectPreference { .. } if status == "suggested" => "rejected",
-                    Command::DeprecatePreference { .. } if status == "confirmed" => "deprecated",
+                let (next, action) = match command {
+                    Command::ConfirmPreference { .. } if status == "suggested" => {
+                        ("confirmed", "confirm")
+                    }
+                    Command::RejectPreference { .. } if status == "suggested" => {
+                        ("rejected", "reject")
+                    }
+                    Command::DeprecatePreference { .. } if status == "confirmed" => {
+                        ("deprecated", "deprecate")
+                    }
                     _ => return Err(Error::InvalidTransition),
                 };
+                let channel = channel_name(*channel);
+                let mut review_id = next_review_id;
+                let mut decision = |preference_id: i64,
+                                    action: &str,
+                                    from: i64,
+                                    to: i64,
+                                    digest: &[u8]|
+                 -> Result<()> {
+                    let id = review_id;
+                    review_id = review_id.checked_add(1).ok_or(Error::Capacity)?;
+                    db.execute(
+                        "INSERT INTO acp_review_decisions(id,scope,project,preference_id,action,from_revision,to_revision,proposal_digest,receipt_commit_sequence,channel,decided_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+                        params![
+                            id,
+                            want_scope,
+                            want_project,
+                            preference_id,
+                            action,
+                            from,
+                            to,
+                            digest.to_vec(),
+                            sequence,
+                            channel,
+                            now
+                        ],
+                    )
+                    .map_err(crate::sql_error)?;
+                    Ok(())
+                };
                 if next == "confirmed" {
-                    let mut stmt=db.prepare("SELECT id,revision FROM preferences WHERE scope=?1 AND project IS ?2 AND pref_key=?3 AND status='confirmed' AND id<>?4 ORDER BY id").map_err(crate::sql_error)?;
+                    let mut stmt=db.prepare("SELECT id,revision,proposal_digest FROM preferences WHERE scope=?1 AND project IS ?2 AND pref_key=?3 AND status='confirmed' AND id<>?4 ORDER BY id").map_err(crate::sql_error)?;
                     let peers = stmt
                         .query_map(params![want_scope, want_project, key, id], |r| {
-                            Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
+                            Ok((
+                                r.get::<_, i64>(0)?,
+                                r.get::<_, i64>(1)?,
+                                r.get::<_, Vec<u8>>(2)?,
+                            ))
                         })
                         .map_err(crate::sql_error)?
                         .collect::<rusqlite::Result<Vec<_>>>()
                         .map_err(crate::sql_error)?;
-                    for (peer, revision) in peers {
-                        let revision = next_revision(revision)?;
-                        db.execute("UPDATE preferences SET status='deprecated',revision=?1,updated_at=?2 WHERE id=?3",(revision,now,peer)).map_err(crate::sql_error)?;
-                        versions.insert(pref_key(peer), (revision, false));
+                    for (peer, peer_previous, peer_digest) in peers {
+                        let peer_revision = next_revision(peer_previous)?;
+                        db.execute("UPDATE preferences SET status='deprecated',revision=?1,updated_at=?2 WHERE id=?3",(peer_revision,now,peer)).map_err(crate::sql_error)?;
+                        decision(peer, "demote", peer_previous, peer_revision, &peer_digest)?;
+                        versions.insert(pref_key(peer), (peer_revision, false));
                     }
                 }
                 db.execute(
                     "UPDATE preferences SET status=?1,revision=?2,updated_at=?3 WHERE id=?4",
                     (next, revision, now, id),
+                )
+                .map_err(crate::sql_error)?;
+                decision(*id, action, previous, revision, &stored_digest)?;
+                db.execute(
+                    "UPDATE acp_profile SET next_review_id=?1 WHERE singleton=1",
+                    [review_id],
                 )
                 .map_err(crate::sql_error)?;
                 versions.insert(pref_key(*id), (revision, false));

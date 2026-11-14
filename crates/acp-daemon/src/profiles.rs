@@ -63,6 +63,19 @@ struct HandoffGet {
     project: String,
     task_id: String,
 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReviewQueueParams {
+    scope: Scope,
+    after_id: i64,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReviewInspectParams {
+    scope: Scope,
+    id: i64,
+    revision: i64,
+}
 pub fn storage_error(e: acp_write::Error) -> Error {
     match e {
         acp_write::Error::Unauthorized => Error::Unauthorized,
@@ -73,6 +86,7 @@ pub fn storage_error(e: acp_write::Error) -> Error {
         acp_write::Error::OwnerMismatch => Error::OwnerMismatch,
         acp_write::Error::StaleGeneration => Error::StaleGeneration,
         acp_write::Error::ScopeMismatch => Error::ScopeMismatch,
+        acp_write::Error::ReviewMismatch => Error::ReviewMismatch,
         acp_write::Error::Capacity => Error::Capacity,
         acp_write::Error::StorageFull => Error::StorageFull,
         acp_write::Error::OutcomeUnknown => Error::OutcomeUnknown,
@@ -300,7 +314,11 @@ impl Profiles {
         }
         if matches!(
             method,
-            "profile.preferences.list" | "profile.preferences.get" | "profile.handoff.get"
+            "profile.preferences.list"
+                | "profile.preferences.get"
+                | "profile.review.queue"
+                | "profile.review.inspect"
+                | "profile.handoff.get"
         ) {
             let (store, roots) = self.read()?;
             let check_scope = |scope: &Scope| -> Result<()> {
@@ -345,6 +363,38 @@ impl Profiles {
                             _ => Error::Unavailable,
                         },
                     )?)
+                }
+                "profile.review.queue" => {
+                    let p: ReviewQueueParams = super::decode(params)?;
+                    if p.after_id < 0 {
+                        return Err(Error::InvalidRequest);
+                    }
+                    check_scope(&p.scope)?;
+                    serde_json::to_value(
+                        store
+                            .operator_review_queue(&p.scope, p.after_id)
+                            .map_err(|_| Error::Unavailable)?,
+                    )
+                }
+                "profile.review.inspect" => {
+                    let p: ReviewInspectParams = super::decode(params)?;
+                    if p.id <= 0 || p.revision <= 0 {
+                        return Err(Error::InvalidRequest);
+                    }
+                    check_scope(&p.scope)?;
+                    let inspect =
+                        store
+                            .operator_review_inspect(&p.scope, p.id)
+                            .map_err(|e| match e {
+                                acp_store::Error::PreferenceNotFound => Error::NotFound,
+                                _ => Error::Unavailable,
+                            })?;
+                    // The caller names the exact revision it inspected; a moved
+                    // record is a conflict, never a silently different preview.
+                    if inspect.record.revision != p.revision {
+                        return Err(Error::Conflict);
+                    }
+                    serde_json::to_value(inspect)
                 }
                 _ => {
                     let p: HandoffGet = super::decode(params)?;

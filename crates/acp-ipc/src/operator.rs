@@ -14,6 +14,8 @@ pub async fn control(location: &Location, method: &str, params: Value) -> Result
             | "profile.write.disable"
             | "profile.preferences.list"
             | "profile.preferences.get"
+            | "profile.review.queue"
+            | "profile.review.inspect"
             | "profile.handoff.get"
     ) {
         return Err(Error::Unsupported);

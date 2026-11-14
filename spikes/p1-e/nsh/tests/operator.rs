@@ -220,8 +220,27 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
         .unwrap();
     assert_eq!(page["records"][0]["status"], "confirmed");
     assert_eq!(page["records"][1]["status"], "rejected");
+    // The UI-initiated confirm must persist a truthful Desktop channel label,
+    // not a fabricated CLI attribution (D5; review moderate finding).
+    let inspect = f
+        .call(
+            "profile.review.inspect",
+            json!({"scope":{"kind":"project","name":"alpha"},"id":1,"revision":2}),
+        )
+        .unwrap();
+    let decisions = inspect["decisions"].as_array().unwrap();
+    assert!(
+        decisions
+            .iter()
+            .any(|d| d["action"] == "confirm" && d["channel"] == "desktop"),
+        "UI confirm must record channel=desktop, got {decisions:?}"
+    );
+    assert!(
+        decisions.iter().all(|d| d["channel"] != "cli"),
+        "no UI decision may be misattributed to cli"
+    );
     let request: operator::Mutation = serde_json::from_value(json!({
-        "version":1,"binding":f.info()["binding"],"operation_id":"headless-handoff",
+        "version":2,"binding":f.info()["binding"],"operation_id":"headless-handoff",
         "command":{"command":"put_handoff","project":"alpha","task_id":"shared",
             "objective":"Saved synthetic history","completed":"","next_action":"Inspect current facts",
             "validation_json":"[{\"check\":\"synthetic\",\"status\":\"NOT_RUN\"}]",

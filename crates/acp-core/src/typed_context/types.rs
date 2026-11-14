@@ -64,6 +64,14 @@ enums! {
     ReviewState { Suggested, Confirmed, Rejected, Deprecated, Unreviewed, Accepted }
     SourceState { Fresh, Stale, Unavailable, Unknown, Malformed, UnsupportedSchema }
     Origin { AgentReported, DaemonObserved, IndependentlyVerified, LegacyUnknown }
+}
+#[allow(clippy::derivable_impls)]
+impl Default for Origin {
+    fn default() -> Self {
+        Self::AgentReported
+    }
+}
+enums! {
     Applicability { Match, NoMatch, Unknown, Invalid }
     Outcome { Selected, Masked, Excluded, Unknown, Conflicted }
     ConflictCategory {

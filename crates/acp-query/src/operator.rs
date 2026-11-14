@@ -83,8 +83,26 @@ pub struct Review {
     pub authority: Authority,
     #[arg(long)]
     pub expected_revision: i64,
+    /// Lowercase hex digest of the exact proposal the operator inspected.
+    #[arg(long)]
+    pub proposal_digest: String,
     #[arg(long)]
     pub confirm: bool,
+}
+#[derive(Args)]
+pub struct ReviewQueueArgs {
+    #[command(flatten)]
+    pub scope: ScopeArgs,
+    #[arg(long, default_value = "0")]
+    pub after_id: i64,
+}
+#[derive(Args)]
+pub struct ReviewInspectArgs {
+    pub id: i64,
+    #[command(flatten)]
+    pub scope: ScopeArgs,
+    #[arg(long)]
+    pub revision: i64,
 }
 #[derive(Args)]
 pub struct Suggest {
@@ -98,6 +116,9 @@ pub struct Suggest {
     pub value: String,
     #[arg(long)]
     pub source: String,
+    /// Asserted provenance label only; it verifies nothing by itself.
+    #[arg(long, value_parser = ["agent_reported","daemon_observed","independently_verified","legacy_unknown"])]
+    pub origin: String,
 }
 #[derive(Args)]
 pub struct Register {
@@ -167,11 +188,19 @@ pub async fn preferences(location: &Location, command: Preferences) -> Result<Va
     };
     acp_ipc::operator::control(location, method, params).await
 }
+pub async fn review_queue(location: &Location, p: ReviewQueueArgs) -> Result<Value> {
+    let params = json!({"scope":p.scope.scope()?,"after_id":p.after_id});
+    acp_ipc::operator::control(location, "profile.review.queue", params).await
+}
+pub async fn review_inspect(location: &Location, p: ReviewInspectArgs) -> Result<Value> {
+    let params = json!({"scope":p.scope.scope()?,"id":p.id,"revision":p.revision});
+    acp_ipc::operator::control(location, "profile.review.inspect", params).await
+}
 async fn submit(location: &Location, a: Authority, command: Command) -> Result<Value> {
     acp_ipc::operator::mutate(
         location,
         &Mutation {
-            version: 1,
+            version: 2,
             binding: Binding {
                 profile_id: a.profile_id,
                 generation: a.generation,
@@ -197,6 +226,8 @@ pub async fn register(location: &Location, p: Register) -> Result<Value> {
 }
 pub async fn suggest(location: &Location, p: Suggest) -> Result<Value> {
     let scope = p.scope.scope()?;
+    let origin: Origin =
+        serde_json::from_value(Value::String(p.origin)).map_err(|_| Error::InvalidRequest)?;
     submit(
         location,
         p.authority,
@@ -205,6 +236,7 @@ pub async fn suggest(location: &Location, p: Suggest) -> Result<Value> {
             key: p.key,
             value: p.value,
             source: p.source,
+            origin,
             expected: Expected::Absent,
         },
     )
@@ -217,25 +249,35 @@ pub async fn review(location: &Location, p: Review, action: &str) -> Result<Valu
     let scope = p.scope.scope()?;
     let expected = Expected::Revision(p.expected_revision);
     let id = p.id;
+    let proposal_digest = p.proposal_digest;
+    let channel = Channel::Cli;
     let command = match action {
         "confirm" => Command::ConfirmPreference {
             id,
             scope,
+            proposal_digest,
+            channel,
             expected,
         },
         "reject" => Command::RejectPreference {
             id,
             scope,
+            proposal_digest,
+            channel,
             expected,
         },
         "deprecate" => Command::DeprecatePreference {
             id,
             scope,
+            proposal_digest,
+            channel,
             expected,
         },
         "delete" => Command::DeletePreference {
             id,
             scope,
+            proposal_digest,
+            channel,
             expected,
         },
         _ => return Err(Error::InvalidRequest),

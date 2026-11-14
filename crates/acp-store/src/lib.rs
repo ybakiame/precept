@@ -273,7 +273,7 @@ mod tests {
             for ddl in profile::DDL {
                 db.execute_batch(ddl).unwrap()
             }
-            db.execute_batch("PRAGMA user_version=1;INSERT INTO acp_profile VALUES(1,'00000000000000000000000000000000','11111111111111111111111111111111',0,1,0)").unwrap();
+            db.execute_batch("PRAGMA user_version=1;INSERT INTO acp_profile VALUES(1,'00000000000000000000000000000000','11111111111111111111111111111111',0,1,0,1)").unwrap();
         }
         let s = SqliteStore::open(&p).unwrap();
         s.db.pragma_update(None, "query_only", false).unwrap();

@@ -16,7 +16,7 @@ fn fresh() -> (tempfile::TempDir, Profile) {
 }
 fn request(p: &Profile, id: &str, command: Command) -> Request {
     Request {
-        version: 1,
+        version: 2,
         binding: p.binding(),
         operation_id: id.into(),
         command,
@@ -28,8 +28,23 @@ fn suggest(scope: Scope) -> Command {
         key: "formatter".into(),
         value: "synthetic".into(),
         source: "fixture".into(),
+        origin: acp_core::operator::Origin::AgentReported,
         expected: Expected::Absent,
     }
+}
+/// The exact digest of the synthetic proposal `suggest()` inserts.
+fn proposal(scope: &Scope) -> String {
+    acp_core::operator::digest_hex(&acp_core::operator::proposal_digest(
+        scope,
+        match scope {
+            Scope::Project { name } => Some(name.as_str()),
+            Scope::Global => None,
+        },
+        "formatter",
+        "synthetic",
+        acp_core::operator::Origin::AgentReported,
+        "fixture",
+    ))
 }
 fn project_scope(name: &str) -> Scope {
     Scope::Project { name: name.into() }
@@ -68,20 +83,28 @@ fn inserted(p: &Profile, op: &str, scope: Scope) -> i64 {
         .unwrap()
 }
 fn transition(id: i64, scope: Scope, revision: i64, action: usize) -> Command {
+    let proposal_digest = proposal(&scope);
+    let channel = acp_core::operator::Channel::Cli;
     match action {
         0 => Command::ConfirmPreference {
             id,
             scope,
+            proposal_digest,
+            channel,
             expected: Expected::Revision(revision),
         },
         1 => Command::RejectPreference {
             id,
             scope,
+            proposal_digest,
+            channel,
             expected: Expected::Revision(revision),
         },
         _ => Command::DeprecatePreference {
             id,
             scope,
+            proposal_digest,
+            channel,
             expected: Expected::Revision(revision),
         },
     }
@@ -96,6 +119,7 @@ fn dump(db: &Connection) -> Vec<Vec<Vec<Value>>> {
         "SELECT * FROM preferences ORDER BY id",
         "SELECT * FROM handoffs ORDER BY project,task_id",
         "SELECT * FROM acp_receipts ORDER BY commit_sequence",
+        "SELECT * FROM acp_review_decisions ORDER BY id",
     ]
     .iter()
     .map(|q| {
@@ -410,6 +434,144 @@ fn confirming_peers_is_atomic_and_scope_exact() {
     validated(&p);
 }
 #[test]
+fn decision_history_records_exact_transitions_demotions_and_erasure() {
+    let (_t, p) = ready();
+    let scope = project_scope("alpha");
+    let first = inserted(&p, "first", scope.clone());
+    let second = inserted(&p, "second", scope.clone());
+    let mut w = p.writer().unwrap();
+    let one = w
+        .execute(&request(
+            &p,
+            "confirm-first",
+            transition(first, scope.clone(), 1, 0),
+        ))
+        .unwrap();
+    let two = w
+        .execute(&request(
+            &p,
+            "confirm-second",
+            transition(second, scope.clone(), 1, 0),
+        ))
+        .unwrap();
+    let history = |db: &Connection| -> Vec<(i64, i64, String, i64, i64, i64, String)> {
+        let mut stmt = db
+            .prepare("SELECT id,preference_id,action,from_revision,to_revision,receipt_commit_sequence,channel FROM acp_review_decisions ORDER BY id")
+            .unwrap();
+        stmt.query_map([], |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+            ))
+        })
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap()
+    };
+    assert_eq!(
+        history(&w.db),
+        vec![
+            (
+                1,
+                first,
+                "confirm".into(),
+                1,
+                2,
+                one.commit_sequence,
+                "cli".into()
+            ),
+            (
+                2,
+                first,
+                "demote".into(),
+                2,
+                3,
+                two.commit_sequence,
+                "cli".into()
+            ),
+            (
+                3,
+                second,
+                "confirm".into(),
+                1,
+                2,
+                two.commit_sequence,
+                "cli".into()
+            ),
+        ]
+    );
+    let next: i64 =
+        w.db.query_row("SELECT next_review_id FROM acp_profile", [], |r| r.get(0))
+            .unwrap();
+    assert_eq!(next, 4);
+    schema::verify(&w.db).unwrap();
+    // An explicit deprecation chains from the confirm decision's to_revision.
+    let three = w
+        .execute(&request(
+            &p,
+            "deprecate-second",
+            transition(second, scope.clone(), 2, 2),
+        ))
+        .unwrap();
+    assert_eq!(
+        history(&w.db).last().unwrap(),
+        &(
+            4,
+            second,
+            "deprecate".into(),
+            2,
+            3,
+            three.commit_sequence,
+            "cli".into()
+        )
+    );
+    schema::verify(&w.db).unwrap();
+    // A substituted proposal is refused before any row, counter or receipt moves.
+    let third = inserted(&p, "third", scope.clone());
+    let mut substituted = transition(third, scope.clone(), 1, 0);
+    if let Command::ConfirmPreference {
+        proposal_digest, ..
+    } = &mut substituted
+    {
+        *proposal_digest = "0".repeat(64);
+    }
+    let before = dump(&w.db);
+    assert_eq!(
+        w.execute(&request(&p, "substituted", substituted)),
+        Err(Error::ReviewMismatch)
+    );
+    assert_eq!(dump(&w.db), before);
+    // Erasure removes the decision history with the record; receipts remain.
+    let erased = w
+        .execute(&request(
+            &p,
+            "delete-first",
+            Command::DeletePreference {
+                id: first,
+                scope: scope.clone(),
+                proposal_digest: proposal(&scope),
+                channel: acp_core::operator::Channel::Cli,
+                expected: Expected::Revision(3),
+            },
+        ))
+        .unwrap();
+    assert!(history(&w.db).iter().all(|row| row.1 != first));
+    // The refused substitution committed nothing: one receipt per commit.
+    assert_eq!(
+        w.db.query_row("SELECT count(*) FROM acp_receipts", [], |r| r
+            .get::<_, i64>(0))
+            .unwrap(),
+        erased.commit_sequence
+    );
+    schema::verify(&w.db).unwrap();
+    validated(&p);
+}
+#[test]
 fn scopes_cas_and_binding_denials_do_not_change_any_logical_row() {
     let (_t, p) = ready();
     let id = inserted(&p, "suggest", project_scope("alpha"));
@@ -491,6 +653,8 @@ fn deletion_preserves_receipts_and_never_reuses_ids() {
         Command::DeletePreference {
             id,
             scope: Scope::Global,
+            proposal_digest: proposal(&Scope::Global),
+            channel: acp_core::operator::Channel::Cli,
             expected: Expected::Revision(1),
         },
     );
@@ -717,6 +881,23 @@ fn malformed_requests_and_text_bounds_are_sanitized_noops() {
         w.execute(&request(&p, "oversized", command)),
         Err(Error::InvalidCommand)
     );
+    // The retired v1 envelope and non-canonical digests are refused, not read.
+    let mut legacy = request(&p, "legacy", suggest(Scope::Global));
+    legacy.version = 1;
+    assert_eq!(w.execute(&legacy), Err(Error::InvalidCommand));
+    for bad in ["0".repeat(63), "A".repeat(64), "g".repeat(64)] {
+        let mut command = transition(1, Scope::Global, 1, 0);
+        if let Command::ConfirmPreference {
+            proposal_digest, ..
+        } = &mut command
+        {
+            *proposal_digest = bad;
+        }
+        assert_eq!(
+            w.execute(&request(&p, "bad-digest", command)),
+            Err(Error::InvalidCommand)
+        );
+    }
     assert_eq!(dump(&w.db), before);
 }
 #[test]
@@ -923,6 +1104,8 @@ fn erased_receipts_deleted_ids_and_metadata_drift_never_enable_reuse() {
                 Command::DeletePreference {
                     id,
                     scope: Scope::Global,
+                    proposal_digest: proposal(&Scope::Global),
+                    channel: acp_core::operator::Channel::Cli,
                     expected: Expected::Revision(1),
                 },
             ))
@@ -1012,4 +1195,98 @@ fn prepublication_failure_removes_only_its_owned_staging_artifacts() {
     assert_eq!(fs::read_dir(t.path()).unwrap().count(), 1);
     let p = Profile::create(&target).unwrap();
     validated(&p);
+}
+
+#[test]
+fn writer_produced_decision_chain_passes_strict_verification() {
+    let (t, p) = ready();
+    let r = p
+        .writer()
+        .unwrap()
+        .execute(&request(&p, "suggest-1", suggest(Scope::Global)))
+        .unwrap();
+    let id = r.affected[0].record_id.parse::<i64>().unwrap();
+    let cmd = Command::ConfirmPreference {
+        id,
+        scope: Scope::Global,
+        proposal_digest: proposal(&Scope::Global),
+        channel: acp_core::operator::Channel::Cli,
+        expected: Expected::Revision(1),
+    };
+    p.writer()
+        .unwrap()
+        .execute(&request(&p, "confirm-1", cmd))
+        .unwrap();
+    validated(&p);
+    // Deleting the decision rows breaks the live-revision invariant.
+    let db = rusqlite::Connection::open(&p.path).unwrap();
+    db.execute(
+        "DELETE FROM acp_review_decisions WHERE preference_id=?1",
+        [id],
+    )
+    .unwrap();
+    drop(db);
+    assert!(SqliteStore::open(&p.path).is_err());
+    let _ = t;
+}
+
+#[test]
+fn writer_confirm_then_deprecate_chain_verifies_and_missing_last_decision_is_refused() {
+    let (t, p) = ready();
+    let r = p
+        .writer()
+        .unwrap()
+        .execute(&request(&p, "suggest-1", suggest(Scope::Global)))
+        .unwrap();
+    let id = r.affected[0].record_id.parse::<i64>().unwrap();
+    let digest = proposal(&Scope::Global);
+    p.writer()
+        .unwrap()
+        .execute(&request(
+            &p,
+            "confirm-1",
+            Command::ConfirmPreference {
+                id,
+                scope: Scope::Global,
+                proposal_digest: digest.clone(),
+                channel: acp_core::operator::Channel::Cli,
+                expected: Expected::Revision(1),
+            },
+        ))
+        .unwrap();
+    p.writer()
+        .unwrap()
+        .execute(&request(
+            &p,
+            "deprecate-1",
+            Command::DeprecatePreference {
+                id,
+                scope: Scope::Global,
+                proposal_digest: digest,
+                channel: acp_core::operator::Channel::Cli,
+                expected: Expected::Revision(2),
+            },
+        ))
+        .unwrap();
+    // confirm(1->2) then deprecate(2->3): deprecated at revision 3, two decisions.
+    validated(&p);
+    let db = rusqlite::Connection::open(&p.path).unwrap();
+    let (status, revision): (String, i64) = db
+        .query_row(
+            "SELECT status,revision FROM preferences WHERE id=?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!((status.as_str(), revision), ("deprecated", 3));
+    // Removing only the LAST decision leaves the chain ending at revision 2 while
+    // the live row is deprecated at revision 3: strict verification must refuse.
+    db.execute(
+        "DELETE FROM acp_review_decisions WHERE preference_id=?1 AND action='deprecate'",
+        [id],
+    )
+    .unwrap();
+    drop(db);
+    assert!(SqliteStore::open(&p.path).is_err());
+    let _ = t;
 }

@@ -3,8 +3,21 @@ use crate::{Error, Result, SqliteStore};
 use acp_core::operator::*;
 use rusqlite::OptionalExtension;
 
+/// One column list for every exact preference read, including review provenance.
+const PREFERENCE_COLUMNS: &str =
+    "id,project,pref_key,value,source,status,revision,origin,proposal_digest,created_at,updated_at";
+
+fn malformed(index: usize, column: &str) -> rusqlite::Error {
+    rusqlite::Error::InvalidColumnType(index, column.to_owned(), rusqlite::types::Type::Text)
+}
+fn hex_digest(row: &rusqlite::Row<'_>, index: usize, column: &str) -> rusqlite::Result<String> {
+    let blob: Vec<u8> = row.get(index)?;
+    let bytes: [u8; 32] = blob.try_into().map_err(|_| malformed(index, column))?;
+    Ok(digest_hex(&bytes))
+}
 fn preference(row: &rusqlite::Row<'_>) -> rusqlite::Result<PreferenceRecord> {
     let project: Option<String> = row.get(1)?;
+    let origin: String = row.get(7)?;
     Ok(PreferenceRecord {
         id: row.get(0)?,
         scope: project.map_or(Scope::Global, |name| Scope::Project { name }),
@@ -13,7 +26,39 @@ fn preference(row: &rusqlite::Row<'_>) -> rusqlite::Result<PreferenceRecord> {
         source: row.get(4)?,
         status: row.get(5)?,
         revision: row.get(6)?,
+        origin: serde_json::from_value(serde_json::Value::String(origin))
+            .map_err(|_| malformed(7, "origin"))?,
+        proposal_digest: hex_digest(row, 8, "proposal_digest")?,
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
     })
+}
+fn decision(row: &rusqlite::Row<'_>) -> rusqlite::Result<ReviewDecisionRecord> {
+    let action: String = row.get(1)?;
+    let channel: String = row.get(6)?;
+    Ok(ReviewDecisionRecord {
+        preference_id: row.get(0)?,
+        action: serde_json::from_value(serde_json::Value::String(action))
+            .map_err(|_| malformed(1, "action"))?,
+        from_revision: row.get(2)?,
+        to_revision: row.get(3)?,
+        proposal_digest: hex_digest(row, 4, "proposal_digest")?,
+        receipt_commit_sequence: row.get(5)?,
+        channel: serde_json::from_value(serde_json::Value::String(channel))
+            .map_err(|_| malformed(6, "channel"))?,
+        decided_at: row.get(7)?,
+    })
+}
+/// Exact scope admission shared by every operator read; never a union of scopes.
+fn scoped<'a>(store: &SqliteStore, scope: &'a Scope) -> Result<(&'static str, Option<&'a str>)> {
+    match scope {
+        Scope::Global => Ok(("global", None)),
+        Scope::Project { name } if crate::profile::name_valid(name) => {
+            super::project_record(&store.db, name)?;
+            Ok(("project", Some(name.as_str())))
+        }
+        _ => Err(Error::InvalidRecord),
+    }
 }
 impl SqliteStore {
     pub fn operator_preferences(&self, scope: &Scope, after_id: i64) -> Result<PreferencePage> {
@@ -21,15 +66,8 @@ impl SqliteStore {
             return Err(Error::InvalidRecord);
         }
         self.snapshot(|metadata| {
-            let (kind, project) = match scope {
-                Scope::Global => ("global", None),
-                Scope::Project { name } if crate::profile::name_valid(name) => {
-                    super::project_record(&self.db, name)?;
-                    ("project", Some(name.as_str()))
-                }
-                _ => return Err(Error::InvalidRecord),
-            };
-            let mut stmt = self.db.prepare("SELECT id,project,pref_key,value,source,status,revision FROM preferences WHERE scope=?1 AND project IS ?2 AND id>?3 ORDER BY id LIMIT 13").map_err(|_|Error::ReadFailed)?;
+            let (kind, project) = scoped(self, scope)?;
+            let mut stmt = self.db.prepare(&format!("SELECT {PREFERENCE_COLUMNS} FROM preferences WHERE scope=?1 AND project IS ?2 AND id>?3 ORDER BY id LIMIT 13")).map_err(|_|Error::ReadFailed)?;
             let mut records = stmt.query_map((kind, project, after_id), preference)
                 .map_err(|_|Error::ReadFailed)?.collect::<std::result::Result<Vec<_>,_>>()
                 .map_err(|_|Error::InvalidRecord)?;
@@ -43,17 +81,50 @@ impl SqliteStore {
             return Err(Error::InvalidRecord);
         }
         self.snapshot(|metadata| {
-            let (kind, project) = match scope {
-                Scope::Global => ("global", None),
-                Scope::Project { name } if crate::profile::name_valid(name) => {
-                    super::project_record(&self.db, name)?;
-                    ("project", Some(name.as_str()))
-                }
-                _ => return Err(Error::InvalidRecord),
-            };
-            let record = self.db.query_row("SELECT id,project,pref_key,value,source,status,revision FROM preferences WHERE scope=?1 AND project IS ?2 AND id=?3", (kind,project,id), preference)
+            let (kind, project) = scoped(self, scope)?;
+            let record = self.db.query_row(&format!("SELECT {PREFERENCE_COLUMNS} FROM preferences WHERE scope=?1 AND project IS ?2 AND id=?3"), (kind,project,id), preference)
                 .optional().map_err(|_|Error::ReadFailed)?.ok_or(Error::PreferenceNotFound)?;
             Ok(PreferencePreview { binding:metadata.binding,record })
+        })
+    }
+    /// Pending review only. Paging is not a snapshot; the watermark discloses drift.
+    pub fn operator_review_queue(&self, scope: &Scope, after_id: i64) -> Result<ReviewQueue> {
+        if after_id < 0 {
+            return Err(Error::InvalidRecord);
+        }
+        self.snapshot(|metadata| {
+            let (kind, project) = scoped(self, scope)?;
+            let mut stmt = self.db.prepare(&format!("SELECT {PREFERENCE_COLUMNS} FROM preferences WHERE scope=?1 AND project IS ?2 AND status='suggested' AND id>?3 ORDER BY id LIMIT 13")).map_err(|_|Error::ReadFailed)?;
+            let mut records = stmt.query_map((kind, project, after_id), preference)
+                .map_err(|_|Error::ReadFailed)?.collect::<std::result::Result<Vec<_>,_>>()
+                .map_err(|_|Error::InvalidRecord)?;
+            let next_after_id = (records.len() > 12).then(|| records[11].id);
+            records.truncate(12);
+            Ok(ReviewQueue { binding: metadata.binding, commit_sequence: metadata.commit_sequence, records, next_after_id })
+        })
+    }
+    /// Exact record, bounded recent history and the projected peer-demotion set.
+    /// The authoritative demotion set is still computed inside the write transaction.
+    pub fn operator_review_inspect(&self, scope: &Scope, id: i64) -> Result<ReviewInspect> {
+        if id <= 0 {
+            return Err(Error::InvalidRecord);
+        }
+        self.snapshot(|metadata| {
+            let (kind, project) = scoped(self, scope)?;
+            let record = self.db.query_row(&format!("SELECT {PREFERENCE_COLUMNS} FROM preferences WHERE scope=?1 AND project IS ?2 AND id=?3"), (kind,project,id), preference)
+                .optional().map_err(|_|Error::ReadFailed)?.ok_or(Error::PreferenceNotFound)?;
+            let mut stmt = self.db.prepare("SELECT preference_id,action,from_revision,to_revision,proposal_digest,receipt_commit_sequence,channel,decided_at FROM acp_review_decisions WHERE scope=?1 AND project IS ?2 AND preference_id=?3 ORDER BY id DESC LIMIT 8").map_err(|_|Error::ReadFailed)?;
+            let decisions = stmt.query_map((kind, project, id), decision)
+                .map_err(|_|Error::ReadFailed)?.collect::<std::result::Result<Vec<_>,_>>()
+                .map_err(|_|Error::InvalidRecord)?;
+            let mut stmt = self.db.prepare("SELECT id,revision FROM preferences WHERE scope=?1 AND project IS ?2 AND status='confirmed' AND pref_key=?3 AND id<>?4 ORDER BY id LIMIT 12").map_err(|_|Error::ReadFailed)?;
+            let peer_demotions = stmt.query_map((kind, project, record.key.as_str(), id), |row| {
+                Ok(PeerDemotion { id: row.get(0)?, revision: row.get(1)? })
+            }).map_err(|_|Error::ReadFailed)?.collect::<std::result::Result<Vec<_>,_>>()
+                .map_err(|_|Error::InvalidRecord)?;
+            let peer_demotion_total: i64 = self.db.query_row("SELECT COUNT(*) FROM preferences WHERE scope=?1 AND project IS ?2 AND status='confirmed' AND pref_key=?3 AND id<>?4", (kind, project, record.key.as_str(), id), |row| row.get(0))
+                .map_err(|_|Error::ReadFailed)?;
+            Ok(ReviewInspect { binding: metadata.binding, commit_sequence: metadata.commit_sequence, record, decisions, peer_demotions, peer_demotion_total })
         })
     }
     pub fn operator_handoff(&self, project: &str, task: &str) -> Result<HandoffPreview> {

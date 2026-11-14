@@ -17,7 +17,8 @@ pub const PROFILE: &str = r#"CREATE TABLE acp_profile (
       CHECK (length(generation) = 32 AND generation NOT GLOB '*[^0-9a-f]*'),
     owner_epoch INTEGER NOT NULL CHECK (owner_epoch >= 0),
     next_preference_id INTEGER NOT NULL CHECK (next_preference_id > 0),
-    commit_sequence INTEGER NOT NULL CHECK (commit_sequence >= 0)
+    commit_sequence INTEGER NOT NULL CHECK (commit_sequence >= 0),
+    next_review_id INTEGER NOT NULL CHECK (next_review_id > 0)
 )"#;
 pub const PROJECTS: &str = r#"CREATE TABLE projects (
     name TEXT NOT NULL PRIMARY KEY CHECK (length(name) BETWEEN 1 AND 64),
@@ -37,6 +38,9 @@ pub const PREFERENCES: &str = r#"CREATE TABLE preferences (
     revision INTEGER NOT NULL CHECK (revision > 0),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
+    origin TEXT NOT NULL
+      CHECK (origin IN ('agent_reported', 'daemon_observed', 'independently_verified', 'legacy_unknown')),
+    proposal_digest BLOB NOT NULL CHECK (length(proposal_digest) = 32),
     CHECK (
       (scope = 'global' AND project IS NULL) OR
       (scope = 'project' AND project IS NOT NULL)
@@ -69,20 +73,43 @@ pub const RECEIPTS: &str = r#"CREATE TABLE acp_receipts (
     result_json TEXT NOT NULL
       CHECK (length(result_json) BETWEEN 1 AND 65536)
 )"#;
-pub const DDL: [&str; 6] = [
+pub const DDL: [&str; 8] = [
     PROFILE,
     PROJECTS,
     PREFERENCES,
     PREFS_LOOKUP,
     HANDOFFS,
     RECEIPTS,
+    REVIEW_DECISIONS,
+    REVIEW_LOOKUP,
 ];
+pub const REVIEW_DECISIONS: &str = r#"CREATE TABLE acp_review_decisions (
+    id INTEGER PRIMARY KEY CHECK (id > 0),
+    scope TEXT NOT NULL CHECK (scope IN ('global', 'project')),
+    project TEXT REFERENCES projects(name) ON DELETE RESTRICT,
+    preference_id INTEGER NOT NULL CHECK (preference_id > 0),
+    action TEXT NOT NULL
+      CHECK (action IN ('confirm', 'reject', 'deprecate', 'demote', 'delete')),
+    from_revision INTEGER NOT NULL CHECK (from_revision > 0),
+    to_revision INTEGER NOT NULL CHECK (to_revision > 0),
+    proposal_digest BLOB NOT NULL CHECK (length(proposal_digest) = 32),
+    receipt_commit_sequence INTEGER NOT NULL CHECK (receipt_commit_sequence > 0),
+    channel TEXT NOT NULL CHECK (channel IN ('cli', 'desktop', 'tui')),
+    decided_at TEXT NOT NULL,
+    CHECK (
+      (scope = 'global' AND project IS NULL) OR
+      (scope = 'project' AND project IS NOT NULL)
+    )
+)"#;
+pub const REVIEW_LOOKUP: &str = r#"CREATE INDEX review_lookup
+    ON acp_review_decisions(scope, project, preference_id, id)"#;
 pub use acp_core::operator::{Binding, Receipt, RecordVersion};
 #[derive(Clone)]
 pub struct Metadata {
     pub binding: Binding,
     pub next_preference_id: i64,
     pub commit_sequence: i64,
+    pub next_review_id: i64,
 }
 pub fn name_valid(s: &str) -> bool {
     !s.is_empty()
@@ -280,12 +307,15 @@ pub fn inspect(db: &Connection) -> Result<()> {
     Ok(())
 }
 fn rows(db: &Connection, sql: &str) -> Result<Vec<Vec<Value>>> {
+    rows_capped(db, sql, 4096)
+}
+fn rows_capped(db: &Connection, sql: &str, cap: usize) -> Result<Vec<Vec<Value>>> {
     let mut stmt = db.prepare(sql).map_err(|_| Error::InvalidRecord)?;
     let n = stmt.column_count();
     let mut result = Vec::new();
     let mut cursor = stmt.query([]).map_err(|_| Error::InvalidRecord)?;
     while let Some(row) = cursor.next().map_err(|_| Error::InvalidRecord)? {
-        if result.len() >= 4096 {
+        if result.len() >= cap {
             return Err(Error::InvalidRecord);
         }
         result.push(
@@ -340,7 +370,7 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
     valid(rows(db, "PRAGMA foreign_key_check")?.is_empty())?;
     let meta = rows(
         db,
-        "SELECT singleton,profile_id,generation,owner_epoch,next_preference_id,commit_sequence FROM acp_profile",
+        "SELECT singleton,profile_id,generation,owner_epoch,next_preference_id,commit_sequence,next_review_id FROM acp_profile",
     )?;
     valid(meta.len() == 1)?;
     let m = &meta[0];
@@ -351,6 +381,7 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
     let epoch = integer(&m[3])?;
     let next = positive(&m[4])?;
     let seq = integer(&m[5])?;
+    let next_review = positive(&m[6])?;
     valid(epoch >= 0 && (0..=4096).contains(&seq))?;
     let mut live = BTreeMap::new();
     let mut max_id = 0;
@@ -364,9 +395,13 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
             positive(&r[2])?,
         );
     }
+    let mut pref_digests: BTreeMap<i64, Vec<u8>> = BTreeMap::new();
+    let mut pref_revisions: BTreeMap<i64, i64> = BTreeMap::new();
+    let mut pref_bindings: BTreeMap<i64, (String, Option<String>)> = BTreeMap::new();
+    let mut pref_statuses: BTreeMap<i64, String> = BTreeMap::new();
     for r in rows(
         db,
-        "SELECT id,scope,project,pref_key,value,status,source,revision,created_at,updated_at FROM preferences",
+        "SELECT id,scope,project,pref_key,value,status,source,revision,created_at,updated_at,origin,proposal_digest FROM preferences",
     )? {
         let id = positive(&r[0])?;
         max_id = max_id.max(id);
@@ -380,9 +415,56 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
         str_valid(&r[6], 512, true)?;
         valid(["suggested", "confirmed", "rejected", "deprecated"].contains(&string(&r[5])?))?;
         valid(timestamp_valid(string(&r[8])?) && timestamp_valid(string(&r[9])?))?;
+        let origin = string(&r[10])?;
+        valid(
+            [
+                "agent_reported",
+                "daemon_observed",
+                "independently_verified",
+                "legacy_unknown",
+            ]
+            .contains(&origin),
+        )?;
+        let digest = match &r[11] {
+            Value::Blob(b) if b.len() == 32 => b.clone(),
+            _ => return Err(Error::InvalidRecord),
+        };
+        let scope_enum = if scope == "global" {
+            acp_core::operator::Scope::Global
+        } else {
+            acp_core::operator::Scope::Project {
+                name: string(&r[2])?.to_owned(),
+            }
+        };
+        let origin_enum: acp_core::operator::Origin =
+            serde_json::from_value(serde_json::Value::String(origin.to_owned()))
+                .map_err(|_| Error::InvalidRecord)?;
+        let expected = acp_core::operator::proposal_digest(
+            &scope_enum,
+            if scope == "project" {
+                Some(string(&r[2])?)
+            } else {
+                None
+            },
+            string(&r[3])?,
+            string(&r[4])?,
+            origin_enum,
+            string(&r[6])?,
+        );
+        valid(digest == expected)?;
+        pref_digests.insert(id, digest);
+        let pref_rev = positive(&r[7])?;
+        pref_revisions.insert(id, pref_rev);
+        let project = if r[2] == Value::Null {
+            None
+        } else {
+            Some(string(&r[2])?.to_owned())
+        };
+        pref_bindings.insert(id, (scope.to_owned(), project));
+        pref_statuses.insert(id, string(&r[5])?.to_owned());
         live.insert(
             ("preference".into(), String::new(), id.to_string()),
-            positive(&r[7])?,
+            pref_rev,
         );
     }
     for r in rows(
@@ -411,6 +493,7 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
         );
     }
     let mut history: BTreeMap<(String, String, String), RecordVersion> = BTreeMap::new();
+    let mut receipts_by_seq: Vec<Receipt> = Vec::new();
     let receipts = rows(
         db,
         "SELECT operation_id,generation,request_digest,commit_sequence,result_json FROM acp_receipts ORDER BY commit_sequence",
@@ -434,6 +517,7 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
                 && !receipt.affected.is_empty()
                 && receipt.affected.len() <= 1024,
         )?;
+        receipts_by_seq.push(receipt.clone());
         let mut previous = None;
         for version in receipt.affected {
             let key = version.key();
@@ -481,6 +565,80 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
         }
     }
     valid(live.is_empty() && next > max_id && (seq != 0 || next == 1))?;
+    let decisions = rows_capped(
+        db,
+        "SELECT id,scope,project,preference_id,action,from_revision,to_revision,proposal_digest,receipt_commit_sequence,channel,decided_at FROM acp_review_decisions ORDER BY id",
+        8192,
+    )?;
+    let mut max_review_id = 0i64;
+    // Per preference: (revision the next decision must start from, status the
+    // decision chain has produced so far). A live row's final revision and
+    // status must both be explained by this chain; a suggestion with no
+    // decision stays `suggested` at revision 1.
+    let mut decision_state: BTreeMap<i64, (i64, String)> = BTreeMap::new();
+    for r in &decisions {
+        let did = positive(&r[0])?;
+        max_review_id = max_review_id.max(did);
+        let scope = string(&r[1])?;
+        let project = if r[2] == Value::Null {
+            None
+        } else {
+            Some(string(&r[2])?)
+        };
+        valid(
+            (scope == "global" && project.is_none())
+                || (scope == "project" && project.is_some_and(name_valid)),
+        )?;
+        let pref_id = positive(&r[3])?;
+        valid(pref_digests.contains_key(&pref_id))?;
+        // The decision must name the exact scope/project of its preference;
+        // otherwise precise operator history queries would lose the row.
+        let (pref_scope, pref_project) = &pref_bindings[&pref_id];
+        valid(scope == pref_scope && project.map(str::to_owned) == *pref_project)?;
+        let action = string(&r[4])?;
+        valid(["confirm", "reject", "deprecate", "demote", "delete"].contains(&action))?;
+        let from = positive(&r[5])?;
+        let to = positive(&r[6])?;
+        valid(to == from + 1)?;
+        let d_digest = match &r[7] {
+            Value::Blob(b) if b.len() == 32 => b.clone(),
+            _ => return Err(Error::InvalidRecord),
+        };
+        valid(d_digest == pref_digests[&pref_id])?;
+        let rseq = positive(&r[8])?;
+        valid(rseq <= seq)?;
+        let referenced = &receipts_by_seq[(rseq - 1) as usize];
+        valid(referenced.affected.iter().any(|v| {
+            v.kind == "preference"
+                && v.record_id == pref_id.to_string()
+                && v.revision == to
+                && !v.deleted
+        }))?;
+        valid(["cli", "desktop", "tui"].contains(&string(&r[9])?))?;
+        valid(timestamp_valid(string(&r[10])?))?;
+        // Replay the writer's status machine over the ordered decision chain.
+        let entry = decision_state
+            .entry(pref_id)
+            .or_insert((1, "suggested".to_owned()));
+        valid(from == entry.0)?;
+        let next_status = match action {
+            "confirm" if entry.1 == "suggested" => "confirmed",
+            "reject" if entry.1 == "suggested" => "rejected",
+            "deprecate" | "demote" if entry.1 == "confirmed" => "deprecated",
+            _ => return Err(Error::InvalidRecord),
+        };
+        entry.0 = to;
+        entry.1 = next_status.to_owned();
+    }
+    for (pref_id, revision) in &pref_revisions {
+        let (expected_rev, expected_status) = decision_state
+            .get(pref_id)
+            .map(|(to, status)| (*to, status.clone()))
+            .unwrap_or((1, "suggested".to_owned()));
+        valid(*revision == expected_rev)?;
+        valid(pref_statuses[pref_id] == expected_status)?;
+    }
+    valid(next_review > max_review_id && (seq != 0 || next_review == 1))?;
     Ok(Metadata {
         binding: Binding {
             profile_id: id.into(),
@@ -489,6 +647,7 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
         },
         next_preference_id: next,
         commit_sequence: seq,
+        next_review_id: next_review,
     })
 }
 #[cfg(test)]

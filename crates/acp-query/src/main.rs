@@ -23,6 +23,10 @@ enum Query {
         project: String,
         task: String,
     },
+    /// Pending suggested preferences only, with a commit-sequence watermark.
+    ReviewQueue(operator::ReviewQueueArgs),
+    /// Exact record, bounded decision history and projected peer demotions.
+    ReviewInspect(operator::ReviewInspectArgs),
     ProjectRegister(operator::Register),
     PreferenceSuggest(operator::Suggest),
     PreferenceConfirm(operator::Review),
@@ -73,6 +77,8 @@ async fn run(args: Args) -> acp_ipc::Result<serde_json::Value> {
             .await;
         }
         Query::ProjectRegister(p) => return operator::register(&args.location, p).await,
+        Query::ReviewQueue(p) => return operator::review_queue(&args.location, p).await,
+        Query::ReviewInspect(p) => return operator::review_inspect(&args.location, p).await,
         Query::PreferenceSuggest(p) => return operator::suggest(&args.location, p).await,
         Query::PreferenceConfirm(p) => return operator::review(&args.location, p, "confirm").await,
         Query::PreferenceReject(p) => return operator::review(&args.location, p, "reject").await,
