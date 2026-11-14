@@ -13,13 +13,24 @@ use std::{
     time::{Duration, Instant},
 };
 pub fn exe(name: &str) -> PathBuf {
-    std::env::current_exe()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join(format!("{name}{}", std::env::consts::EXE_SUFFIX))
+    let file = format!("{name}{}", std::env::consts::EXE_SUFFIX);
+    // Standard cargo: the test binary lives in <target>/<profile>/deps/, so the
+    // product binary is two levels up. This also honors a custom target dir.
+    let current = std::env::current_exe().unwrap();
+    if let Some(deps) = current.parent()
+        && deps.file_name().is_some_and(|n| n == "deps")
+        && let Some(target) = deps.parent()
+    {
+        let candidate = target.join(&file);
+        if candidate.exists() {
+            return candidate;
+        }
+    }
+    // Shared-target cargo forks run the test binary outside deps/ but still write
+    // product binaries to the workspace ./target/debug; resolve from the source tree.
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/debug")
+        .join(file)
 }
 pub fn private_bytes(path: &Path, bytes: &[u8]) {
     let mut f = acp_ipc::transport::new_private(path).unwrap();
