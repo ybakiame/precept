@@ -915,6 +915,107 @@ fn all_read_roles_keep_the_independent_registered_root_binding() {
         Err(Error::UnsafeRuntime)
     );
     assert_eq!(logical(&f.db), before);
+    let mut command = suggest();
+    if let Command::SuggestPreference { scope, .. } = &mut command {
+        *scope = Scope::Project {
+            name: "alpha".into(),
+        };
+    }
+    assert_eq!(
+        f.daemon.mutate(&b, "changed-registered-root", command),
+        Err(Error::UnsafeRuntime)
+    );
+    assert_eq!(logical(&f.db), before);
+}
+
+#[test]
+fn project_review_decisions_refuse_a_root_lost_after_inspection_without_writing() {
+    for action in ["confirm", "reject", "deprecate", "delete"] {
+        let f = Fixture::created(false);
+        let binding = f.daemon.enable();
+        f.register(&binding, "alpha");
+        let scope = Scope::Project {
+            name: "alpha".into(),
+        };
+        let mut proposal = suggest();
+        if let Command::SuggestPreference { scope: target, .. } = &mut proposal {
+            *target = scope.clone();
+        }
+        f.daemon.mutate(&binding, "stage", proposal).unwrap();
+        let digest = preview_digest(&f, &scope, 1);
+        let revision = if action == "deprecate" {
+            f.daemon
+                .mutate(
+                    &binding,
+                    "confirm",
+                    Command::ConfirmPreference {
+                        id: 1,
+                        scope: scope.clone(),
+                        proposal_digest: digest.clone(),
+                        channel: Channel::Desktop,
+                        expected: Expected::Revision(1),
+                    },
+                )
+                .unwrap();
+            2
+        } else {
+            1
+        };
+        f.daemon
+            .control(
+                "profile.review.inspect",
+                json!({"scope":scope,"id":1,"revision":revision}),
+            )
+            .unwrap();
+        let command = match action {
+            "confirm" => Command::ConfirmPreference {
+                id: 1,
+                scope,
+                proposal_digest: digest,
+                channel: Channel::Desktop,
+                expected: Expected::Revision(revision),
+            },
+            "reject" => Command::RejectPreference {
+                id: 1,
+                scope,
+                proposal_digest: digest,
+                channel: Channel::Desktop,
+                expected: Expected::Revision(revision),
+            },
+            "deprecate" => Command::DeprecatePreference {
+                id: 1,
+                scope,
+                proposal_digest: digest,
+                channel: Channel::Desktop,
+                expected: Expected::Revision(revision),
+            },
+            "delete" => Command::DeletePreference {
+                id: 1,
+                scope,
+                proposal_digest: digest,
+                channel: Channel::Desktop,
+                expected: Expected::Revision(revision),
+            },
+            _ => unreachable!(),
+        };
+        let root = f.temp.path().join("alpha");
+        let moved = f.temp.path().join("moved-alpha");
+        fs::rename(&root, &moved).unwrap();
+        let before = logical(&f.db);
+        assert_eq!(
+            f.daemon.mutate(&binding, "decision", command.clone()),
+            Err(Error::UnsafeRuntime),
+            "{action}"
+        );
+        assert_eq!(
+            logical(&f.db),
+            before,
+            "{action} must not change rows or receipts"
+        );
+        fs::rename(&moved, &root).unwrap();
+        // Refusal did not consume the operation ID or make the valid action stale.
+        f.daemon.mutate(&binding, "decision", command).unwrap();
+    }
 }
 
 #[test]

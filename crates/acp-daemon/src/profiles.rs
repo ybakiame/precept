@@ -301,6 +301,39 @@ impl Profiles {
                             hook();
                         }
                     }
+                    // Recheck the existing pinned root at transaction admission,
+                    // not only when the operator inspected the proposal.
+                    if let Some(name) = name {
+                        let unsafe_root = || acp_write::Error::UnsafeWorkspace;
+                        let pinned = s
+                            .roots
+                            .get(name)
+                            .or_else(|| self.expected.get(name))
+                            .ok_or_else(unsafe_root)?;
+                        let current = pinned.canonicalize().map_err(|_| unsafe_root())?;
+                        if current != *pinned || !current.is_dir() {
+                            return Err(unsafe_root());
+                        }
+                        let reader = s
+                            .selected
+                            .as_ref()
+                            .ok_or_else(unsafe_root)?
+                            .reader()
+                            .map_err(|_| unsafe_root())?;
+                        match reader.read_project(name) {
+                            Ok(project) => {
+                                let root =
+                                    project.root.canonicalize().map_err(|_| unsafe_root())?;
+                                if root != *pinned {
+                                    return Err(unsafe_root());
+                                }
+                            }
+                            // Registration and unregistered-scope errors remain
+                            // the writer's typed command validation.
+                            Err(acp_store::Error::UnknownProject) => (),
+                            Err(_) => return Err(unsafe_root()),
+                        }
+                    }
                     Ok(())
                 })
                 .map_err(storage_error)?;
