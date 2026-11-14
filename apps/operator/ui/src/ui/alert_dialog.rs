@@ -10,14 +10,17 @@ use std::rc::Rc;
 type LabelFn = Rc<dyn Fn() -> SharedString>;
 type StateFn = Rc<dyn Fn() -> bool>;
 type PressFn = Rc<dyn Fn()>;
+type ContentFn = Rc<dyn Fn() -> AnyElement>;
 
 /// A destructive-confirmation builder; create it with [`alert_dialog`].
 pub struct AlertDialog {
     model: Signal<Model>,
     title: LabelFn,
     description: Option<LabelFn>,
+    content: Option<ContentFn>,
     cancel: LabelFn,
     confirm: LabelFn,
+    confirm_disabled: StateFn,
     open: StateFn,
     on_cancel: Option<PressFn>,
     on_confirm: Option<PressFn>,
@@ -30,8 +33,10 @@ pub fn alert_dialog(model: Signal<Model>, title: impl Into<SharedString>) -> Ale
         model,
         title: Rc::new(move || title.clone()),
         description: None,
+        content: None,
         cancel: Rc::new(|| "Cancel".into()),
         confirm: Rc::new(|| "Confirm".into()),
+        confirm_disabled: Rc::new(|| false),
         open: Rc::new(|| false),
         on_cancel: None,
         on_confirm: None,
@@ -52,6 +57,19 @@ impl AlertDialog {
         self.cancel = Rc::new(move || label.clone());
         self
     }
+    /// A live content slot between the description and the actions (e.g. a
+    /// retype field). Rebuilt each time the dialog opens; its bindings read
+    /// their owner so the value stays current.
+    pub fn content_fn(mut self, content: impl Fn() -> AnyElement + 'static) -> Self {
+        self.content = Some(Rc::new(content));
+        self
+    }
+    /// The destructive commitment cannot fire while this holds (e.g. until the
+    /// exact ID is retyped). A disabled commitment refuses blind activation.
+    pub fn confirm_disabled(mut self, disabled: impl Fn() -> bool + 'static) -> Self {
+        self.confirm_disabled = Rc::new(disabled);
+        self
+    }
     /// The destructive commitment, named for its result (e.g. `Delete`).
     pub fn confirm(mut self, label: impl Into<SharedString>) -> Self {
         let label = label.into();
@@ -61,6 +79,21 @@ impl AlertDialog {
     /// A title that stays current (a localized decision).
     pub fn title_fn(mut self, title: impl Fn() -> SharedString + 'static) -> Self {
         self.title = Rc::new(title);
+        self
+    }
+    /// A description that stays current (a localized consequence).
+    pub fn description_fn(mut self, description: impl Fn() -> SharedString + 'static) -> Self {
+        self.description = Some(Rc::new(description));
+        self
+    }
+    /// A cancel label that stays current (a localized word).
+    pub fn cancel_fn(mut self, label: impl Fn() -> SharedString + 'static) -> Self {
+        self.cancel = Rc::new(label);
+        self
+    }
+    /// A commitment label that stays current (a localized result verb).
+    pub fn confirm_fn(mut self, label: impl Fn() -> SharedString + 'static) -> Self {
+        self.confirm = Rc::new(label);
         self
     }
     /// Whether the dialog is presented; the caller owns this state.
@@ -85,8 +118,10 @@ impl IntoElement for AlertDialog {
         let model = self.model;
         let title = self.title.clone();
         let description = self.description.clone();
+        let content = self.content.clone();
         let cancel = self.cancel.clone();
         let confirm = self.confirm.clone();
+        let confirm_disabled = self.confirm_disabled.clone();
         let open = self.open.clone();
         let on_cancel = self.on_cancel.clone();
         let on_confirm = self.on_confirm.clone();
@@ -104,6 +139,7 @@ impl IntoElement for AlertDialog {
             let title_text = title.clone();
             let cancel_text = cancel.clone();
             let confirm_text = confirm.clone();
+            let confirm_disabled = confirm_disabled.clone();
             let mut panel = view()
                 .w_full()
                 .max_w_80()
@@ -127,6 +163,9 @@ impl IntoElement for AlertDialog {
                         .text_color(move || palette(model).muted),
                 );
             }
+            if let Some(content) = content.clone() {
+                panel = panel.child(content());
+            }
             let cancel_button = super::button::button(model, "")
                 .label_fn(move || cancel_text())
                 .on_press(move || {
@@ -137,6 +176,7 @@ impl IntoElement for AlertDialog {
             let confirm_button = super::button::button(model, "")
                 .label_fn(move || confirm_text())
                 .variant(super::button::ButtonVariant::Danger)
+                .disabled(move || confirm_disabled())
                 .on_press(move || {
                     if let Some(cb) = &confirm_cb {
                         cb();

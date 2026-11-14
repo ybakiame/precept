@@ -330,11 +330,21 @@ fn console(model: Signal<Model>) -> impl IntoElement {
     on_key_with("alt+o", global, move |_| operator::open(model));
     on_key("mod+d", move |_| toggle_theme(model));
     on_key("mod+shift+c", move |_| copy_page(model));
+    // Alt+left/right navigate the review tabs while the operator review workspace
+    // is active; otherwise they keep paging the read-only console preferences.
     on_key_with("alt+ArrowRight", global, move |_| {
-        model.update(|m| m.page_by(1))
+        if model.get().operator.open {
+            operator::tab_by(model, 1);
+        } else {
+            model.update(|m| m.page_by(1));
+        }
     });
     on_key_with("alt+ArrowLeft", global, move |_| {
-        model.update(|m| m.page_by(-1))
+        if model.get().operator.open {
+            operator::tab_by(model, -1);
+        } else {
+            model.update(|m| m.page_by(-1));
+        }
     });
     #[cfg(not(target_arch = "wasm32"))]
     effect(move || {
