@@ -8,7 +8,8 @@ Authority: [S0 contract](operator-review-contract.md) section 10,
 [acceptance matrix](operator-review-acceptance-matrix.md) section 4 handoff criteria,
 accepted ADR-0004/0005/0006.
 
-Approval: repository owner `ybakiame`, 2026-11-14, via Issue #55 task session.
+Approval: repository owner `ybakiame`, 2026-11-14, confirmed in
+[Issue #55 comment](https://github.com/ybakiame/agent-control-plane/issues/55#issuecomment-6868785392).
 The full recommended set was presented with consequences; the owner approved all
 items without amendment. This document is the recorded reference required by Gate A.
 
