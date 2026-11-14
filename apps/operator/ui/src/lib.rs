@@ -148,6 +148,13 @@ fn switch_project(model: Signal<Model>, index: usize) {
 fn toggle_contrast(model: Signal<Model>) {
     model.update(|m| m.high_contrast = !m.high_contrast);
 }
+fn review_or_page(model: Signal<Model>, delta: i32) {
+    if model.get().operator.open {
+        operator::tab_by(model, delta);
+    } else {
+        model.update(|m| m.page_by(delta as isize));
+    }
+}
 fn toggle_theme(model: Signal<Model>) {
     let actual_dark = match model.get().color_mode {
         acp_operator_model::appearance::ColorMode::System => dark(),
@@ -332,20 +339,12 @@ fn console(model: Signal<Model>) -> impl IntoElement {
     on_key("mod+shift+c", move |_| copy_page(model));
     // Alt+left/right navigate the review tabs while the operator review workspace
     // is active; otherwise they keep paging the read-only console preferences.
-    on_key_with("alt+ArrowRight", global, move |_| {
-        if model.get().operator.open {
-            operator::tab_by(model, 1);
-        } else {
-            model.update(|m| m.page_by(1));
-        }
-    });
-    on_key_with("alt+ArrowLeft", global, move |_| {
-        if model.get().operator.open {
-            operator::tab_by(model, -1);
-        } else {
-            model.update(|m| m.page_by(-1));
-        }
-    });
+    // The TUI platform names arrows "ArrowLeft/ArrowRight"; the GTK desktop names
+    // them "Left/Right", so both spellings are registered.
+    on_key_with("alt+ArrowRight", global, move |_| review_or_page(model, 1));
+    on_key_with("alt+Right", global, move |_| review_or_page(model, 1));
+    on_key_with("alt+ArrowLeft", global, move |_| review_or_page(model, -1));
+    on_key_with("alt+Left", global, move |_| review_or_page(model, -1));
     #[cfg(not(target_arch = "wasm32"))]
     effect(move || {
         if std::env::var_os("ACP_UI_PROBE").is_some() {

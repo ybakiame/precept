@@ -283,20 +283,45 @@ impl Ui {
         self.text(text);
     }
     /// Activate a rendered button with keyboard only: focus a known anchor field
-    /// (an alt chord), Tab forward a fixed number of stops, then Enter. The shared
-    /// view tree gives the same stop order on Desktop and TUI; disabled and hidden
-    /// controls are skipped and the tab list is one roving stop. Anchoring on the
-    /// source field keeps the count independent of the surface-specific chrome
-    /// above it. The fixed counts below were validated against the real PTY
-    /// surface: four Tabs reach the first review-workspace content stop, five the
-    /// first queue row behind the load action.
-    fn activate(&mut self, anchor: &str, tabs: usize, marker: &str, text: &str) {
+    /// (an alt chord), Tab forward a fixed number of stops, then Enter. Disabled
+    /// and hidden controls are skipped and the tab list is one roving stop.
+    /// Anchoring on the source field keeps the count independent of the
+    /// surface-specific chrome above it. The two counts are calibrated separately
+    /// against each real surface, because the PTY/TUI and the GTK (Wayland)
+    /// desktop focus chains do not enumerate the same stops: from the source field
+    /// the TUI reaches the load action and the digest expand in four Tabs and the
+    /// first queue row in five, while the native desktop chain reaches each of
+    /// those targets in three. The desktop count is therefore passed explicitly
+    /// rather than derived from the TUI one by a fixed offset.
+    fn activate(
+        &mut self,
+        anchor: &str,
+        tty_tabs: usize,
+        desktop_tabs: usize,
+        marker: &str,
+        text: &str,
+    ) {
+        let tabs = match self {
+            Self::Desktop(_) => desktop_tabs,
+            Self::Tty(_) => tty_tabs,
+        };
         self.key(anchor);
         for _ in 0..tabs {
             self.key("tab");
         }
         self.key("enter");
         self.wait(marker, text);
+    }
+    /// Move the review tabs (Queue / Detail / History) by a relative delta with
+    /// the global alt+left/right review chord on both surfaces. The app registers
+    /// both the TUI ("alt+ArrowLeft/Right") and GTK desktop ("alt+Left/Right") key
+    /// spellings, so the same chord reaches the shared tab handler on either.
+    fn tab_nav(&mut self, delta: i32) {
+        let steps = delta.unsigned_abs();
+        let chord = if delta > 0 { "alt+right" } else { "alt+left" };
+        for _ in 0..steps {
+            self.key(chord);
+        }
     }
     fn wait(&self, marker: &str, text: &str) {
         match self {
@@ -631,27 +656,27 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     // Queue tab: load the suggested-only page. The load action is a rendered
     // button reached by the fixed Tab count from the source-field anchor (see
     // Ui::activate); the disabled First/Next paging controls are skipped.
-    ui.activate("alt+f", 4, "queue=1", "#4");
+    ui.activate("alt+f", 4, 3, "queue=1", "#4");
     ui.capture("review-queue", out);
     // Open the exact record from its queue row; Detail auto-selects and inspects.
-    ui.activate("alt+f", 5, "record_revision=1", "Show full digest");
+    ui.activate("alt+f", 5, 3, "record_revision=1", "Show full digest");
     ui.capture("review-detail", out);
-    // Navigate Queue / Detail / History with the alt+left/right review chords.
-    ui.key("alt+right");
+    // Exercise the same global Alt+left/right review chords on both surfaces.
+    ui.tab_nav(1);
     ui.wait(
         "review_tab=History",
         "No decisions recorded for this record",
     );
     ui.capture("review-history-empty", out);
-    ui.key("alt+left");
+    ui.tab_nav(-1);
     ui.wait("review_tab=Detail", "Show full digest");
-    ui.key("alt+left");
+    ui.tab_nav(-1);
     ui.wait("review_tab=Queue", "#4");
-    ui.key("alt+right");
+    ui.tab_nav(1);
     ui.wait("review_tab=Detail", "Show full digest");
     // The digest is a 16-hex prefix until an explicit expand reveals the whole.
     let digest4 = f.digest(id4);
-    ui.activate("alt+f", 4, "record_revision=1", "Collapse digest");
+    ui.activate("alt+f", 4, 3, "record_revision=1", "Collapse digest");
     ui.capture("review-digest-expanded", out);
     if let Ui::Tty(t) = &ui {
         assert!(
@@ -671,8 +696,8 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     for _ in 0..4 {
         ui.key("alt+shift+i");
     }
-    ui.activate("alt+f", 4, "record_revision=2", "Show full digest");
-    ui.key("alt+right");
+    ui.activate("alt+f", 4, 3, "record_revision=2", "Show full digest");
+    ui.tab_nav(1);
     ui.wait("review_tab=History", "Channel is client-asserted");
     ui.capture("review-history-confirm", out);
     let inspect = f
@@ -695,7 +720,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
             .any(|d| d["action"] == "confirm"),
         "history must show the confirm decision"
     );
-    ui.key("alt+left");
+    ui.tab_nav(-1);
     ui.wait(
         "review_tab=Detail",
         "Deprecation makes the record inactive in agent effective context.",
@@ -711,7 +736,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     for _ in 0..4 {
         ui.key("alt+shift+i");
     }
-    ui.activate("alt+f", 4, "record_revision=3", "Show full digest");
+    ui.activate("alt+f", 4, 3, "record_revision=3", "Show full digest");
     let inspect = f
         .query(&[
             "review-inspect",

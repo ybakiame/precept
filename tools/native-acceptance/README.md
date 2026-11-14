@@ -72,6 +72,14 @@ fields are accepted; Ctrl+1 is excluded. Captures use only that owned window via
 PrintWindow. Verify the PNGs visually; neither a probe nor a successful capture
 API return alone proves rendered content. GUI shutdown is an owned WM_CLOSE.
 
+The Windows worker maps every injected virtual key with `MapVirtualKeyW`
+(`MAPVK_VK_TO_VSC`) and explicitly marks Right/Left/Home/End as E0 extended keys
+on both press and release; the mapping API omits E0 for these navigation VKs.
+Without E0, WSLg delivers Alt+Right as Alt+KP_Right rather than the shortcut's
+Alt+Right. The review scenario exercises the actual Alt+arrow chords
+on both surfaces and requires History → Detail → Queue → Detail state changes;
+native Tab/arrow navigation is not a substitute for this shortcut regression.
+
 Windows may remember a Chinese IME separately for each window. As explicitly
 authorized for this acceptance task, before native Windows input the worker checks
 the owned window thread's layout and requests an **already installed** English

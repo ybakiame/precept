@@ -15,6 +15,16 @@ public static class AcpWindow {
  [DllImport("user32.dll")] public static extern int GetKeyboardLayoutList(int count, [Out] IntPtr[] layouts);
  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
  [DllImport("user32.dll")] public static extern void keybd_event(byte k, byte s, uint f, UIntPtr e);
+ [DllImport("user32.dll", EntryPoint="MapVirtualKeyW")] public static extern uint MapVirtualKey(uint code, uint mapType);
+ public static void SendKey(byte key, bool released) {
+  // WSLg/RDP forwards scan codes: zero loses key identity, and E0 distinguishes
+  // dedicated navigation keys from the numeric keypad.
+  uint scan = MapVirtualKey(key, 0); // MAPVK_VK_TO_VSC
+  // MapVirtualKey does not retain E0 for these generic navigation VKs.
+  bool extended = key == 0x23 || key == 0x24 || key == 0x25 || key == 0x27;
+  uint flags = (extended ? 1u : 0u) | (released ? 2u : 0u);
+  keybd_event(key, (byte)(scan & 0xff), flags, UIntPtr.Zero);
+ }
  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern short VkKeyScan(char c);
  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int left,top,right,bottom; }
  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
@@ -99,14 +109,14 @@ try {
         if ($command.action -in @('key','text')) { $layout=Ensure-English $h }
         switch ($command.action) {
             'key' {
-                if ($command.key -notmatch '^(alt\+shift\+[umerxlsvynzihwq]|alt\+[opkwft1-6abc]|alt\+(right|left)|ctrl\+[alrpq]|escape|enter|tab)$') { throw 'Key outside fixed synthetic vocabulary' }
+                if ($command.key -notmatch '^(alt\+shift\+[umerxlsvynzihwq]|alt\+[opkwft1-6abc]|alt\+(right|left)|ctrl\+[alrpq]|escape|enter|tab|right|left|home|end)$') { throw 'Key outside fixed synthetic vocabulary' }
                 $parts = $command.key -split '\+'
                 $last = $parts[-1]
-                $code = switch ($last) { 'escape' {27}; 'tab' {9}; 'enter' {13}; 'right' {39}; 'left' {37}; default { if ($last -notmatch '^[a-z0-9]$') { throw 'Unsupported synthetic key' }; [int][char]$last.ToUpperInvariant() } }
+                $code = switch ($last) { 'escape' {27}; 'tab' {9}; 'enter' {13}; 'right' {39}; 'left' {37}; 'home' {36}; 'end' {35}; default { if ($last -notmatch '^[a-z0-9]$') { throw 'Unsupported synthetic key' }; [int][char]$last.ToUpperInvariant() } }
                 $mods = @(); if ($parts -contains 'ctrl') {$mods += 17}; if ($parts -contains 'alt') {$mods += 18}; if ($parts -contains 'shift') {$mods += 16}
                 if ($command.key -eq 'ctrl+1' -or ($parts -contains 'win')) { throw 'Reserved key refused' }
-                try { foreach($m in $mods) { [AcpWindow]::keybd_event($m,0,0,[UIntPtr]::Zero) }; [AcpWindow]::keybd_event($code,0,0,[UIntPtr]::Zero); [AcpWindow]::keybd_event($code,0,2,[UIntPtr]::Zero) }
-                finally { [array]::Reverse($mods); foreach($m in $mods) { [AcpWindow]::keybd_event($m,0,2,[UIntPtr]::Zero) } }
+                try { foreach($m in $mods) { [AcpWindow]::SendKey($m,$false) }; [AcpWindow]::SendKey($code,$false); [AcpWindow]::SendKey($code,$true) }
+                finally { [array]::Reverse($mods); foreach($m in $mods) { [AcpWindow]::SendKey($m,$true) } }
             }
             'text' {
                 if ($command.text.Length -gt 1024 -or $command.text.Contains("`n") -or $command.text.Contains("`r")) { throw 'Synthetic field bound exceeded' }
@@ -115,8 +125,8 @@ try {
                     $scan = [int][AcpWindow]::VkKeyScan($c)
                     if ([int]$c -lt 32 -or [int]$c -gt 126 -or $scan -lt 0 -or ($scan -shr 8) -gt 1) { throw 'Only fixed ASCII synthetic fields supported' }
                     $shift = ($scan -band 256) -ne 0
-                    try { if ($shift) { [AcpWindow]::keybd_event(16,0,0,[UIntPtr]::Zero) }; [AcpWindow]::keybd_event(($scan -band 255),0,0,[UIntPtr]::Zero); [AcpWindow]::keybd_event(($scan -band 255),0,2,[UIntPtr]::Zero) }
-                    finally { if ($shift) { [AcpWindow]::keybd_event(16,0,2,[UIntPtr]::Zero) } }
+                    try { if ($shift) { [AcpWindow]::SendKey(16,$false) }; [AcpWindow]::SendKey(($scan -band 255),$false); [AcpWindow]::SendKey(($scan -band 255),$true) }
+                    finally { if ($shift) { [AcpWindow]::SendKey(16,$true) } }
                     Start-Sleep -Milliseconds 4
                 }
             }
