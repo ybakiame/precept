@@ -18,12 +18,20 @@ pub struct Desktop {
     out: std::path::PathBuf,
 }
 impl Desktop {
-    pub fn start(binary: &Path, args: &[String], nonce: &str, script: &str, out: &Path) -> Self {
+    pub fn start(
+        binary: &Path,
+        args: &[String],
+        nonce: &str,
+        script: &str,
+        out: &Path,
+        focus: &Path,
+    ) -> Self {
         let mut command = Command::new(binary);
         command
             .args(args)
             .env("ACP_UI_PROBE", "1")
             .env("ACP_UI_PROBE_ID", nonce)
+            .env("ACP_NATIVE_FOCUS_FILE", focus)
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::piped());
         #[cfg(unix)]
@@ -92,6 +100,9 @@ impl Desktop {
             after: 0,
             out: out.to_owned(),
         }
+    }
+    pub fn pid(&self) -> u32 {
+        self.gui.pid()
     }
     /// A bounded worker fault is a failed acceptance run, never a silent continue:
     /// the session is already unusable and no later action may adopt a stale reply.

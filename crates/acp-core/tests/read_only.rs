@@ -109,7 +109,13 @@ fn effective_context_omits_private_sources_for_project_and_global_fallbacks() {
     mem.prefs = [
         (1, Scope::Global, None, "global", "shared-global"),
         (2, Scope::Global, None, "override", "global-fallback"),
-        (3, Scope::Project, Some("alpha"), "override", "project-value"),
+        (
+            3,
+            Scope::Project,
+            Some("alpha"),
+            "override",
+            "project-value",
+        ),
     ]
     .into_iter()
     .map(|(id, scope, project, key, value)| Preference {

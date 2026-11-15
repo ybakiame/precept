@@ -1,4 +1,4 @@
-# S5 owned native acceptance driver
+# S3 owned native acceptance driver
 
 Repository maintenance only; not a product launcher, terminal emulator or transport.
 See the [frozen matrix](../../docs/p1/rust-only-integrated-acceptance.md) and
@@ -22,9 +22,11 @@ existing process-local MSVC/Cargo/Git environment. This creates a real PTY/ConPT
 feeds terminal keyboard sequences and handles the terminal's cursor query. Captures
 contain actual child VT output, a bounded parsed view, and restoration assertions.
 
-`ACP_S5_APPEARANCE=dark` repeats the same native scenario in dark appearance;
-the default is `light`. Other values are refused. Reports record the actual
-requested appearance; screenshot inspection remains a separate requirement.
+`ACP_S5_APPEARANCE=dark` selects the retained S2 baseline flow's initial appearance;
+the default is `light`. Other values are refused. The S3 presentation cells also
+select **both** Light and Dark through actual focused settings buttons in each
+locale, capturing compact and large layouts. Screenshot inspection remains an
+independent requirement; a state probe is not pixel-content verification.
 
 For `desktop`, append the absolute **Windows path** to `tools/native_window.ps1`.
 Windows runs a native HWND; Linux uses the existing WSLg `wayland-0` with X11 removed
@@ -113,13 +115,50 @@ No default DB, user auth, external project or model is accessed. Exact children
 are reaped before their owned temporary files are removed. A crash can leave owned
 temporary artifacts; never clean unrelated directories or retained credentials.
 
-The scenario covers create/grant/Busy, suggested/confirm/reject, exact record and
-saved Handoff, Unknown/retry, stale Conflict, Escape/project review invalidation,
-revocation/Unauthorized, five pages, Sessions, theme/locale/resize and disconnect.
-Per-page captures and content-free native probes supplement independent CLI state
-and receipt checks. Shared-model/process tests remain responsible for specific
-late completion and task/scope/target races; do not claim every race was injected
-through OS input. Stored NOT_RUN Handoff history is not fresh Git evidence.
+The default run retains the S2 create/grant/Busy, exact review/delete, saved
+Handoff, keyboard, locale and restoration flow, then runs independent fresh S3
+fixtures. A failed fixture is recorded and reaped without suppressing later
+independent cells. Stored NOT_RUN Handoff history is not fresh Git evidence.
+
+| S3 cells | Actual input and independent observation |
+| --- | --- |
+| Empty; project/global pending pages; stale-page disclosure | Observed native Tab focus then Enter on scoped queue/paging controls; CLI checks exact scope, ascending IDs, 12-row cap and commit watermark; a separate CLI commit between pages induces the rendered disclosure |
+| Exact row/provenance, Confirm/Reject/Deprecate/Delete, peer demotion, bounded history | Retained real Alt/Tab/Enter/Space flow; exact daemon inspect and decision/receipt checks; valid lifecycle history is at most two rows, never fabricated to reach eight |
+| Wrong ID, blind Enter, Escape/reopen, exact ID, deletion privacy | Native destructive modal and native initial-focus/retype probes; unchanged transaction sequence for refusals; deleted inspect is NotFound and observed delete receipt is identity-only |
+| Selection, scope, project, live source, draft source, target | Real selection/field/navigation/settings input invalidates inspected or prepared authority; independent CLI checks no transaction. Scope controls are concealed while prepared, so scope switching exercises a current exact inspection, not a fictional reachable prepared control |
+| Epoch, revocation, status/CAS | Independent CLI changes grant epoch, revokes between inspect/apply or rejects the prepared target; actual UI apply refuses and CLI proves no unintended transaction |
+| Generation binding | Contained relay changes only the generation in an actual UI mutation; the real daemon refuses Unauthorized before writer admission. This is process-level fault injection, not typing or an in-place generation change |
+| Delayed read after navigation | Relay holds a real inspect reply until actual project navigation, then releases it within the existing read deadline; UI discards the old inspected identity |
+| OutcomeUnknown, no automatic replay, exact replay, changed bytes, stale epoch | Relay consumes a real committed Confirm reply. A bounded 500 ms observation records exactly one submission/decision. Actual explicit retry hashes immutable params/operation ID, compares the original receipt and unchanged decision history; a contained changed-channel request returns real IdempotencyConflict; an independently advanced epoch refuses old retry |
+| EN/zh-CN × Light/Dark × compact/large | Real settings/language input and owned captures for every combination; no headless or callback substitute |
+
+`ledger.json` declares every required cell as PASS/FAIL/BLOCKED/NOT_RUN and
+references the single append-only `events.jsonl` stream by zero-based event range.
+Events contain monotonic elapsed milliseconds and UTC Unix milliseconds, actual
+chords, redacted text lengths, observed GUI probes **or** terminal frame text,
+CLI response hashes, capture-relative filenames and owned UI PID/nonce. They do
+not record tokens, private paths or field values. Cell `owned_ui_event` references
+the corresponding PID/nonce event. Full ledgers are checkpointed at cell
+begin/end/final only; event appends are flushed immediately and bounded to 32,768
+events, 2,048 per cell, 4 KiB per event and 8 MiB total.
+
+All cells start NOT_RUN; a started but unfinished cell remains FAIL. Missing
+observable native focus is BLOCKED, never a guessed platform Tab count or an
+automatic business-action retry. Overall success requires every declared cell
+PASS, normal clean-source before/after checks and successful retained baseline.
+`report.json` retains binary hashes and the per-cell summary. A failure preserves
+the partial ledger, event stream, previous captures, last terminal/probe output
+and a best-effort last owned frame before cleanup. Independent fixtures live in
+`s3-CELL/`; no failed exploratory artifact is overwritten.
+
+The driver creates a new private regular `state/focus.events` file inside each
+owned disposable root and passes `ACP_NATIVE_FOCUS_FILE` only to that direct UI
+child. The optional diagnostic sink is cached once by the UI, opens existing
+regular non-symlink/non-reparse files append-only, flushes fixed catalog-key
+focus events and refuses growth beyond 256 KiB. It creates no file, control,
+focus stop, product state or authority. Existing Windows scoped Enter/Space
+focus references are preserved. There is no normal-run file work, extra process,
+stderr/ConPTY redirection or detached observer thread.
 
 S2 review checks wait for fresh, action-specific probes: exact inspected ID/revision
 after an inspect, and `digest_expanded=true` after deliberate expansion. A previously

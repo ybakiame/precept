@@ -22,6 +22,7 @@ pub(super) fn word_action(
 ) -> impl IntoElement {
     ui::button(model, "")
         .label_fn(move || model.get().word(key).into())
+        .probe_key(move || format!("{key:?}"))
         .disabled(move || !enabled())
         .on_press(move || {
             #[cfg(not(target_arch = "wasm32"))]
