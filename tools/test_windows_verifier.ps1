@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $originalEnvironment = [Environment]::GetEnvironmentVariables('Process')
 function Restore-Environment($Saved) {
     foreach ($key in @([Environment]::GetEnvironmentVariables('Process').Keys)) {
-        if (-not $Saved.Contains($key)) { [Environment]::SetEnvironmentVariable($key, $null, 'Process') }
+        if (-not $Saved.Contains($key)) { [Environment]::SetEnvironmentVariable($key, [NullString]::Value, 'Process') }
     }
     foreach ($key in $Saved.Keys) { [Environment]::SetEnvironmentVariable($key, $Saved[$key], 'Process') }
 }
@@ -30,7 +30,14 @@ function Check-Case([string]$Name, [string]$Base, [bool]$Pass = $false, [bool]$E
     $environment = [Environment]::GetEnvironmentVariables('Process')
     try { & ./tools/windows_local_verify.ps1 -Suite Core -ReportDir $report -DiffBase $Base *> (Join-Path $root "$Name.log") }
     catch { $ok = $false; $failure = $_.Exception.Message }
-    finally { Restore-Environment $environment }
+    finally {
+        $after = [Environment]::GetEnvironmentVariables('Process')
+        $changed = @($after.Keys | Where-Object {
+            -not $environment.Contains($_) -or $after[$_] -cne $environment[$_]
+        }) + @($environment.Keys | Where-Object { -not $after.Contains($_) })
+        Restore-Environment $environment
+        if ($changed.Count) { throw "Helper did not restore caller process environment: $Name ($($changed -join ', '))" }
+    }
     if ($ok -ne $Pass) { throw "Unexpected helper outcome: $Name ($failure)" }
     if ((Test-Path $env:ACP_S5_TRACE) -ne $Pass) { throw "Cargo before valid branch diff: $Name" }
     if ($Name -eq 'committed-whitespace') {
@@ -41,7 +48,7 @@ function Check-Case([string]$Name, [string]$Base, [bool]$Pass = $false, [bool]$E
         $data = Get-Content -Raw -LiteralPath (Join-Path $report 'report.json') | ConvertFrom-Json
         if ($data.diff_base -ne $Base -or $data.gates[0].command[-1] -ne 'HEAD') { throw 'Missing exact diff command' }
     }
-    $results.Add(@{ name = $Name; status = 'PASS' })
+    $results.Add(@{ name = $Name; status = 'PASS'; caller_environment_restored = $true })
 }
 Push-Location -LiteralPath $repo
 try {
