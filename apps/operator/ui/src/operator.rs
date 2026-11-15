@@ -266,6 +266,11 @@ fn field(
         Msg::OperatorSource => "alt+f",
         _ => "alt+t",
     };
+    let pane = match key {
+        Msg::ProfilePath => Pane::Profile,
+        Msg::OperatorTask => Pane::Handoff,
+        _ => Pane::Preferences,
+    };
     on_key_with(
         shortcut,
         KeyOptions {
@@ -275,15 +280,21 @@ fn field(
         move |_| {
             if model.get().operator.open {
                 model.update(|m| {
-                    m.operator.pane = match key {
-                        Msg::ProfilePath => Pane::Profile,
-                        Msg::OperatorTask => Pane::Handoff,
-                        _ => Pane::Preferences,
-                    };
+                    m.operator.pane = pane;
                     m.operator.review = None;
                     m.operator.delete_arm = None;
                 });
-                reference.focus();
+                // Native Windows cannot focus a field before its pane is shown.
+                nsh_core::element::request_animation_frame(move |_| {
+                    if model.with(|m| {
+                        m.operator.open
+                            && m.operator.pane == pane
+                            && !m.operator.busy
+                            && !m.operator.outcome_unknown
+                    }) {
+                        reference.focus();
+                    }
+                });
             }
         },
     );
@@ -300,6 +311,12 @@ fn field(
                 .element_ref(&reference)
                 .label(move || model.get().word(key))
                 .value(move || get(&model.get().operator).to_owned())
+                .on_focus(move || {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    if std::env::var_os("ACP_UI_PROBE").is_some() {
+                        eprintln!("ACP_UI_FOCUS shortcut={shortcut}");
+                    }
+                })
                 .border_2()
                 .border_color(move || palette(model).border)
                 .bg(move || palette(model).panel)

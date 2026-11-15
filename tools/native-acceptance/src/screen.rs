@@ -38,13 +38,14 @@ impl Perform for Screen {
             return;
         }
         self.clamp();
-        // Overwriting the first cell of a wide glyph retires its continuation
-        // cell. A later diff repaint may skip that cell (the backend reads it as
-        // empty), so it must become a real space, not a dropped `None` that would
-        // collapse the words around it (e.g. after a zh-CN -> en locale switch).
-        if width == 1 && self.x + 1 < self.rows[0].len() && self.rows[self.y][self.x + 1].is_none()
-        {
-            self.rows[self.y][self.x + 1] = Some(' ');
+        // Retire either half of a wide glyph touched by a diff repaint. Cursor
+        // jumps over blank cells must not retain old text or collapse columns.
+        if self.x > 0 && self.rows[self.y][self.x].is_none() {
+            self.rows[self.y][self.x - 1] = Some(' ');
+        }
+        let end = self.x + width;
+        if end < self.rows[0].len() && self.rows[self.y][end].is_none() {
+            self.rows[self.y][end] = Some(' ');
         }
         self.rows[self.y][self.x] = Some(c);
         if width == 2 && self.x + 1 < self.rows[0].len() {
@@ -62,8 +63,8 @@ impl Perform for Screen {
         self.clamp();
     }
     fn csi_dispatch(&mut self, p: &Params, _: &[u8], _: bool, c: char) {
-        let a: Vec<_> = p.iter().map(|x| x[0] as usize).collect();
-        let n = a.first().copied().unwrap_or(0);
+        let mut params = p.iter();
+        let n = params.next().map_or(0, |p| usize::from(p[0]));
         let one = n.max(1);
         match c {
             'n' if n == 6 => self
@@ -71,7 +72,7 @@ impl Perform for Screen {
                 .push(format!("\x1b[{};{}R", self.y + 1, self.x + 1).into_bytes()),
             'H' | 'f' => {
                 self.y = one - 1;
-                self.x = a.get(1).copied().unwrap_or(1).max(1) - 1
+                self.x = params.next().map_or(1, |p| usize::from(p[0])).max(1) - 1
             }
             'A' => self.y = self.y.saturating_sub(one),
             'B' => self.y += one,
@@ -93,6 +94,20 @@ impl Perform for Screen {
                     2 => row.fill(Some(' ')),
                     _ => {}
                 }
+            }
+            'X' => {
+                self.clamp();
+                let row = &mut self.rows[self.y];
+                let start = if self.x > 0 && row[self.x].is_none() {
+                    self.x - 1
+                } else {
+                    self.x
+                };
+                let mut end = self.x.saturating_add(one).min(row.len());
+                if end < row.len() && row[end].is_none() {
+                    end += 1;
+                }
+                row[start..end].fill(Some(' '));
             }
             _ => {}
         }
@@ -124,5 +139,33 @@ mod tests {
         assert!(s.text().contains("写入授权"));
         p.advance(&mut s, b"\x1b[1;1HWrite\x1b[1;7Hgrant\x1b[1;13Hoff");
         assert!(s.text().contains("Write grant off"));
+    }
+    #[test]
+    fn conpty_erasure_and_cursor_jumps_replace_old_draft_text() {
+        let mut s = Screen::new(80, 3);
+        let mut p = vte::Parser::new();
+        p.advance(&mut s, b"\x1b[2;3Hsynthetic/old-draft-path");
+        p.advance(
+            &mut s,
+            b"\x1b[2;3H\x1b[78XPrepared\x1b[1Coperation;\x1b[1Cno\x1b[1Cwrite\x1b[1Csent\x1b[1Cyet",
+        );
+        assert_eq!(
+            s.text().lines().nth(1).unwrap().trim_end(),
+            "  Prepared operation; no write sent yet"
+        );
+        p.advance(&mut s, b"\x1b[6n");
+        assert_eq!(s.responses, vec![b"\x1b[2;40R".to_vec()]);
+    }
+    #[test]
+    fn partial_wide_glyph_erasure_and_overlay_preserve_visible_columns() {
+        let mut s = Screen::new(12, 3);
+        let mut p = vte::Parser::new();
+        p.advance(&mut s, "中文tail".as_bytes());
+        p.advance(&mut s, b"\x1b[1;2H\x1b[0X|");
+        assert_eq!(s.text().lines().next().unwrap().trim_end(), " |文tail");
+        p.advance(&mut s, b"\x1b[1;4H!");
+        assert_eq!(s.text().lines().next().unwrap().trim_end(), " | !tail");
+        p.advance(&mut s, "\x1b[2;1H中文\x1b[2;2H新".as_bytes());
+        assert_eq!(s.text().lines().nth(1).unwrap().trim_end(), " 新");
     }
 }

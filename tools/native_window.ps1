@@ -29,6 +29,14 @@ public static class AcpWindow {
  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int left,top,right,bottom; }
  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
  [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr dc, uint flags);
+ [DllImport("dwmapi.dll")] public static extern int DwmFlush();
+ public static bool HasColorVariation(IntPtr pixels, int stride, int width, int height) {
+  int first = Marshal.ReadInt32(pixels) & 0x00ffffff;
+  for (int y = 0; y < height; y++)
+   for (int x = 0; x < width; x++)
+    if ((Marshal.ReadInt32(pixels, y * stride + x * 4) & 0x00ffffff) != first) return true;
+  return false;
+ }
  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x,int y,int w,int z,uint flags);
  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h,uint m,IntPtr w,IntPtr l);
  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int x,y; }
@@ -196,12 +204,33 @@ try {
                 $rect=[AcpWindow+RECT]::new(); if (-not [AcpWindow]::GetWindowRect($h,[ref]$rect)) {throw 'Owned bounds unavailable'}
                 $w=$rect.right-$rect.left;$height=$rect.bottom-$rect.top
                 if ($w -lt 100 -or $w -gt 2000 -or $height -lt 100 -or $height -gt 1600) {throw 'Capture bounds refused'}
-                $bitmap=[Drawing.Bitmap]::new($w,$height);$graphics=[Drawing.Graphics]::FromImage($bitmap);$dc=$graphics.GetHdc()
-                try { if (-not [AcpWindow]::PrintWindow($h,$dc,2)) {throw 'Owned render capture failed'} }
-                finally {$graphics.ReleaseHdc($dc);$graphics.Dispose()}
-                $file=Join-Path $images $command.name
-                try {$bitmap.Save($file,[Drawing.Imaging.ImageFormat]::Png)}finally{$bitmap.Dispose()}
-                @{status='ok';rpc_id=$rid;file=$file} | ConvertTo-Json -Compress
+                $bitmap=[Drawing.Bitmap]::new($w,$height)
+                try {
+                    $graphics=[Drawing.Graphics]::FromImage($bitmap)
+                    try {
+                        $clock=[Diagnostics.Stopwatch]::StartNew();$attempts=0
+                        do {
+                            if ((Owned-Window) -ne $h -or [AcpWindow]::GetForegroundWindow() -ne $h) {throw 'Owned capture lost foreground'}
+                            $now=[AcpWindow+RECT]::new()
+                            if (-not [AcpWindow]::GetWindowRect($h,[ref]$now) -or $now.right-$now.left -ne $w -or $now.bottom-$now.top -ne $height) {throw 'Owned capture bounds changed'}
+                            if ([AcpWindow]::DwmFlush() -ne 0) {throw 'Owned composition unavailable'}
+                            $graphics.Clear([Drawing.Color]::Black);$dc=$graphics.GetHdc()
+                            try { if (-not [AcpWindow]::PrintWindow($h,$dc,2)) {throw 'Owned render capture failed'} }
+                            finally {$graphics.ReleaseHdc($dc)}
+                            $data=$bitmap.LockBits([Drawing.Rectangle]::new(0,0,$w,$height),[Drawing.Imaging.ImageLockMode]::ReadOnly,[Drawing.Imaging.PixelFormat]::Format32bppArgb)
+                            try {$rendered=[AcpWindow]::HasColorVariation($data.Scan0,$data.Stride,$w,$height)}
+                            finally {$bitmap.UnlockBits($data)}
+                            $attempts += 1
+                            if ($rendered) {break}
+                            if ($clock.ElapsedMilliseconds -ge 2000) {throw 'Owned capture did not render a nonuniform frame'}
+                            Start-Sleep -Milliseconds 16
+                        } while ($true)
+                    } finally {$graphics.Dispose()}
+                    if ((Owned-Window) -ne $h -or [AcpWindow]::GetForegroundWindow() -ne $h) {throw 'Owned capture lost foreground'}
+                    $file=Join-Path $images $command.name
+                    $bitmap.Save($file,[Drawing.Imaging.ImageFormat]::Png)
+                } finally {$bitmap.Dispose()}
+                @{status='ok';rpc_id=$rid;file=$file;frame_attempts=$attempts} | ConvertTo-Json -Compress
                 continue requests
             }
             'close' { [AcpWindow]::PostMessage($h,0x10,[IntPtr]::Zero,[IntPtr]::Zero) | Out-Null }

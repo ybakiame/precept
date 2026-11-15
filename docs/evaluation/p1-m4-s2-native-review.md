@@ -133,6 +133,27 @@ checks; these attempts are retained, not relabelled:
   preview-start anchor to the next frame and fences superseded navigation.
   The unchanged real-daemon review regression then passed; no assertion was
   weakened and no pointer activation was substituted with a chord.
+- Clean `be42a9267ff824065fa29487b9865523852ef59a`: both full host gate
+  helpers PASS, including 27 UI unit + 2 real-daemon tests; both driver gate sets
+  PASS (27 tests); source checker PASS (235 paths, 34 archives).
+  Linux PTY light/dark and WSLg light/dark completed the actual-input scenario.
+  However, the dark WSLg `review-zh-delete-refused.png` contained 307,200 opaque
+  black pixels. Its JSON PASS was not accepted as rendered evidence or relabelled.
+  The worker now waits for composition/nonuniform owned pixels within two seconds
+  and refuses blank output; a native C# buffer check proves uniform and alpha-only
+  rejection plus real RGB variation acceptance (`s2-capture-pixels.txt`).
+- `s2-conpty-be42a92-light`: FAIL at creation-preview observation. Actual ConPTY
+  bytes contained erase-character `CSI X` followed by cursor jumps over spaces;
+  the observer ignored erasure, retaining old path characters inside the status.
+  Add proper erasure and wide-glyph retirement rather than weakening the predicate.
+  Four focused VT tests pass, including the observed redraw and partial CJK cells.
+- `s2-hwnd-be42a92-light`: FAIL at queue activation; the assumed focus path invoked
+  Reconnect instead. Field shortcuts now defer focus until the selected pane's
+  visibility update, fence closed/busy/uncertain panes and log content-free real
+  focus events. The exact destructive-focus regression remains PASS.
+- `s2-wslg-frame1-dark` / `s2-pty-erasure1`: DEV_PASS with the new capture guard,
+  deferred field focus and VT erasure. The dark compact Chinese refusal PNG was
+  visually inspected and is rendered, not black. These are exploratory results.
 
 Historical S0/S1/S3/S5 reports retain their original revisions and scope. Hosted
 Actions, macOS, niri, mobile, real-model turns, installation/release, full IME and

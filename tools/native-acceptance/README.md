@@ -137,6 +137,17 @@ the synthetic grant, reloads selection/inspection in its new epoch, and exercise
 compact wrong-ID refusal without a preference write. TTY startup logs the actual
 owned PTY/ConPTY child PID; GUI startup logs the owned PID and title nonce.
 
+The fixed-flow VT observer handles ConPTY's erase-character (`CSI X`) before its
+cursor-jump spaces, and retires both halves of overwritten/erased wide glyphs.
+Otherwise old draft text can falsely obscure the actually rendered status.
+
+Owned captures use a two-second composition/nonuniform-frame readiness budget;
+the existing capture RPC deadline still bounds OS calls. Every attempt rechecks
+foreground/nonce/PID/bounds, clears the private bitmap, and uses only PrintWindow.
+Uniform or alpha-only blank frames are refused; no keyboard or mutation action
+is resent and there is no desktop-capture fallback. Color variation is not content
+proof: the PNGs still require visual inspection.
+
 A normal run requires clean source before and after and records the Git SHA plus
 actual driver/daemon/query/NSH SHA-256. `ACP_S5_DEVELOPMENT=1` explicitly labels
 exploratory runs DEV_PASS and allows dirty source; those are never final acceptance.

@@ -274,6 +274,9 @@ operations reveal the tab header or preview from measured layout on the next
 frame, not the document's end. Superseded navigation cannot move the viewport.
 Keyboard focus stays unchanged; retype edits, field focus and cancellation do
 not request that scrolling.
+An explicit field shortcut first switches/disarms its pane, then requests focus
+on the next frame only while that pane is still active and editable. Hidden
+native Windows fields cannot take focus before their visibility update.
 
 The destructive dialog keeps one native modal for each open interval. Only the
 boolean open state changes its structure; localized labels, validation and retype
