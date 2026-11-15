@@ -234,7 +234,7 @@ impl<'a> ContextResolver<'a> {
     pub fn context(&self, include_documents: bool) -> Result<Value> {
         let project = self.bound_project()?;
         let preferences: Vec<_> = self.resolve_preferences()?.into_iter().map(|p| json!({
-            "id":p.id,"key":p.key,"value":p.value,"scope":p.scope,"source":p.source,"status":p.status
+            "id":p.id,"key":p.key,"value":p.value,"scope":p.scope,"status":p.status
         })).collect();
         let mut repository = serde_json::to_value(self.worktree.inspect(&project, false)?)
             .map_err(|_| Error::InvalidRecord)?;

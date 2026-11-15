@@ -102,6 +102,53 @@ fn shared_v1_preferences_documents_and_forbidden_markers() {
         }
     }
 }
+
+#[test]
+fn effective_context_omits_private_sources_for_project_and_global_fallbacks() {
+    let (_temp, mut mem, _) = fixture();
+    mem.prefs = [
+        (1, Scope::Global, None, "global", "shared-global"),
+        (2, Scope::Global, None, "override", "global-fallback"),
+        (3, Scope::Project, Some("alpha"), "override", "project-value"),
+    ]
+    .into_iter()
+    .map(|(id, scope, project, key, value)| Preference {
+        id,
+        scope,
+        project: project.map(str::to_owned),
+        key: key.into(),
+        value: value.into(),
+        status: Status::Confirmed,
+        source: format!("PRIVATE_REVIEW_SOURCE_{id}"),
+    })
+    .collect();
+    for project in ["alpha", "beta"] {
+        for include_documents in [false, true] {
+            let context = mem
+                .resolver(project)
+                .unwrap()
+                .context(include_documents)
+                .unwrap();
+            let rows = context["preferences"].as_array().unwrap();
+            let effective: BTreeMap<_, _> = rows
+                .iter()
+                .map(|row| (row["key"].as_str().unwrap(), row["value"].as_str().unwrap()))
+                .collect();
+            assert_eq!(effective["global"], "shared-global");
+            assert_eq!(
+                effective["override"],
+                if project == "alpha" {
+                    "project-value"
+                } else {
+                    "global-fallback"
+                }
+            );
+            assert!(rows.iter().all(|row| row.get("source").is_none()));
+            assert!(!context.to_string().contains("PRIVATE_REVIEW_SOURCE"));
+        }
+    }
+    assert_eq!(mem.prefs[0].source, "PRIVATE_REVIEW_SOURCE_1");
+}
 #[test]
 fn shared_v1_denials_and_malformed_arguments() {
     let (_temp, mem, data) = fixture();

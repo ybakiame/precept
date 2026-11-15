@@ -204,6 +204,18 @@ remains a personal choice that the resolver masks by authority
 ([typed-context v1](typed-context-v1.md) conflict table); M4 adds no path by which
 a profile row changes a contract file, and no auto-scaffolding.
 
+S3 implementation gap: the conflict-masking rule above is implemented by the
+pure typed-context resolver, not the production `ContextResolver` used by IPC/MCP.
+The production route supplies repository documents and authority ordering but does
+not parse those documents into `ProjectContract` rules. Typed-resolver tests are
+not evidence of runtime masking; integrated acceptance must retain this gap rather
+than treating confirmation as contract approval or claiming automatic enforcement.
+
+Preference `source` is private operator inspection data. The effective-context
+projection omits it for every caller, including confirmed project preferences and
+global fallbacks. This does not redact the deliberately shared effective value or
+repository documents, and does not change exact operator inspection.
+
 Origins stay distinct and are never upgraded by moving them between layers. The
 closed set is `agent_reported`, `daemon_observed`, `independently_verified`,
 `legacy_unknown` (`crates/acp-core/src/typed_context/types.rs:66`). Finding to
