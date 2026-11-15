@@ -308,13 +308,19 @@ impl Ui {
         };
         let trace = std::env::var_os("ACP_S5_KEYBOARD_TRACE").is_some();
         self.key(anchor);
-        if trace {
-            self.capture(&format!("keyboard-{marker}-anchor"), out);
+        let trace_name = trace.then(|| {
+            marker
+                .chars()
+                .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+                .collect::<String>()
+        });
+        if let Some(name) = &trace_name {
+            self.capture(&format!("keyboard-{name}-anchor"), out);
         }
         for i in 0..tabs {
             self.key("tab");
-            if trace {
-                self.capture(&format!("keyboard-{marker}-tab-{}", i + 1), out);
+            if let Some(name) = &trace_name {
+                self.capture(&format!("keyboard-{name}-tab-{}", i + 1), out);
             }
         }
         self.key("enter");
