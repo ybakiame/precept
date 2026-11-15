@@ -1019,6 +1019,8 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
             }
         }
     });
+    // Display-none removes layout; visibility also removes native Win32 focus
+    // stops. A concealed pane must not leave its retained fields/actions tabbable.
     let content = view()
         .on_layout(move |_: &Bounds<Points>| {
             #[cfg(not(target_arch = "wasm32"))]
@@ -1156,7 +1158,7 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                             || model.get().operator.review.is_some()
                             || model.get().operator.outcome_unknown
                     },
-                    |s| s.hidden(),
+                    |s| s.hidden().invisible(),
                 )
                 .child(field(
                     model,
@@ -1221,7 +1223,7 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                             || model.get().operator.review.is_some()
                             || model.get().operator.outcome_unknown
                     },
-                    |s| s.hidden(),
+                    |s| s.hidden().invisible(),
                 )
                 .child(
                     view()
@@ -1395,7 +1397,7 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                             || model.get().operator.review.is_some()
                             || model.get().operator.outcome_unknown
                     },
-                    |s| s.hidden(),
+                    |s| s.hidden().invisible(),
                 )
                 .child(field(
                     model,
@@ -1454,7 +1456,7 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                         model.get().operator.review.is_some()
                             || model.get().operator.outcome_unknown
                     },
-                    |s| s.hidden(),
+                    |s| s.hidden().invisible(),
                 )
                 .child(review_workspace(model, delete_open)),
         )
@@ -1575,7 +1577,7 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
     // clipped/scrolled document that may place its insertion point off-screen.
     view()
         .flex_1()
-        .style_when(move || !model.get().operator.open, |s| s.hidden())
+        .style_when(move || !model.get().operator.open, |s| s.hidden().invisible())
         .child(scroll().element_ref(&scroll_ref).flex_1().child(content))
         .child(delete_dialog(model, delete_open, retype_ref))
 }
