@@ -353,7 +353,16 @@ impl Ui {
     fn capture(&mut self, name: &str, out: &Path) {
         match self {
             Self::Desktop(d) => d.capture(name, out),
-            Self::Tty(t) => t.capture(&out.join(format!("{name}.txt"))),
+            Self::Tty(t) => {
+                t.capture(&out.join(format!("{name}.txt")));
+                if name.starts_with("keyboard-") {
+                    fs::write(
+                        out.join(format!("{name}.vt")),
+                        &*t.raw.lock().unwrap(),
+                    )
+                    .unwrap();
+                }
+            }
         }
     }
     fn resize(&mut self, w: u16, h: u16) {
