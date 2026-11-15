@@ -262,6 +262,27 @@ Changing selection clears the previous inspect and digest expansion; History
 never displays a different selected ID. A delete commitment also requires the
 dialog to remain open, the current write grant, and the exact retyped ID.
 
+The records list is only a selector: Detail is the sole immutable-content
+inspector and owns the one confirm/reject/deprecate/delete action group. The old
+inline list inspector is removed rather than stacked above Detail. Receipts use
+one animated acknowledgement row, not another copy in the Profile summary.
+The active workspace owns one scroll region. Review content uses its own region
+instead of nesting inside the general shell scroll; the native dialog is a sibling
+of that region, never an offscreen child at the bottom of the scrolled document.
+Explicit tab changes, new inspect/queue results and newly prepared/uncertain
+operations reveal their content without changing keyboard focus. Retype edits,
+field focus and cancellation do not request that scrolling.
+
+The destructive dialog keeps one native modal for each open interval. Only the
+boolean open state changes its structure; localized labels, validation and retype
+text update their own bindings without remounting or restarting entrance motion.
+Its root fills the native modal layer. Initial focus is requested from the native
+`on_open` callback, after the input is mounted and modal focus scope is active,
+not from an earlier boolean-state effect. Probe-only lifecycle/size markers carry
+no proposal content.
+Escape dismisses only the active destructive tier and clears its retype/preview;
+the review workspace stays open. A later delete starts with an empty field.
+
 Detail preserves immutable key/value/source text in bounded escaped lines.
 Source/origin remain claims, the digest proves only byte equality, and preference
 confirmation never approves a repository ProjectContract. History's channel is

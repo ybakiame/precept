@@ -66,6 +66,16 @@ impl Tty {
         }
         panic!("terminal did not render expected synthetic state: {text}");
     }
+    pub fn wait_gone(&self, text: &str) {
+        let end = Instant::now() + Duration::from_secs(20);
+        while Instant::now() < end {
+            if !self.state.lock().unwrap().text().contains(text) {
+                return;
+            }
+            thread::sleep(Duration::from_millis(25));
+        }
+        panic!("terminal kept dismissed synthetic state: {text}");
+    }
     pub fn capture(&self, path: &Path) {
         std::fs::write(path, self.state.lock().unwrap().text()).unwrap();
     }
@@ -130,6 +140,7 @@ mod platform {
                     Ok(())
                 });
                 let child = cmd.spawn().unwrap();
+                eprintln!("OWNED_TTY_READY backend=PTY pid={}", child.id());
                 let reader = master.try_clone().unwrap();
                 (
                     Self {
@@ -274,6 +285,7 @@ mod platform {
                 CloseHandle(ow);
                 assert_ne!(ok, 0, "ConPTY child launch failed");
                 CloseHandle(info.hThread);
+                eprintln!("OWNED_TTY_READY backend=ConPTY pid={}", info.dwProcessId);
                 (
                     Self {
                         input: Arc::new(Mutex::new(File::from_raw_handle(iw))),

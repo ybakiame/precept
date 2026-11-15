@@ -221,7 +221,7 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
-    contains(&mut app, " · commit 2");
+    app.wait_for("commit 2").unwrap();
     // Queue tab loads the suggested-only page; the row opens the exact detail.
     app.press("Queue").unwrap();
     app.press("Inspect review queue").unwrap();
@@ -237,14 +237,14 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
         .unwrap();
     assert_eq!(f.inspect(1, 1)["record"]["status"], "suggested");
     app.press_key("alt+shift+v").unwrap();
-    contains(&mut app, " · commit 3");
+    app.wait_for("commit 3").unwrap();
     let confirmed_first = f.assert_decision(&first, "confirm", "desktop", 2, 3);
     // Suggest record #2 with the same key, then inspect it from the queue.
     app.press_key("alt+shift+s").unwrap();
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
-    contains(&mut app, " · commit 4");
+    app.wait_for("commit 4").unwrap();
     app.press("Queue").unwrap();
     app.press("Inspect review queue").unwrap();
     contains(&mut app, "#2 · editor · r1");
@@ -265,7 +265,7 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
-    contains(&mut app, " · commit 5");
+    app.wait_for("commit 5").unwrap();
     let confirmed_second = f.assert_decision(&second, "confirm", "desktop", 2, 5);
     let demoted = f.assert_decision(&confirmed_first, "demote", "desktop", 3, 5);
     assert_eq!(demoted["record"]["status"], "deprecated");
@@ -285,7 +285,7 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
-    contains(&mut app, " · commit 6");
+    app.wait_for("commit 6").unwrap();
     let deprecated_second = f.assert_decision(&confirmed_second, "deprecate", "desktop", 3, 6);
     assert_eq!(deprecated_second["record"]["status"], "deprecated");
     // Delete #2 through the destructive tier: a wrong retype refuses, the exact
@@ -317,7 +317,16 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
-    contains(&mut app, " · commit 7");
+    app.wait_for("commit 7").unwrap();
+    assert_eq!(
+        app.screen()
+            .texts()
+            .iter()
+            .filter(|text| text.contains("commit 7"))
+            .count(),
+        1,
+        "the acknowledged receipt is presented once"
+    );
     // Project preference receipts deliberately use a globally allocated ID
     // (empty receipt project), not the request's project-scoped read binding.
     assert!(!app.screen().shows("Retry identical request"));
@@ -367,7 +376,7 @@ fn terminal_channel_and_revoked_delete(f: &Fixture) {
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
-    contains(&mut app, " · commit 8");
+    app.wait_for("commit 8").unwrap();
     app.press("Queue").unwrap();
     app.press("Inspect review queue").unwrap();
     app.press("#3 · terminal-editor · r1").unwrap();
@@ -378,7 +387,7 @@ fn terminal_channel_and_revoked_delete(f: &Fixture) {
         .unwrap();
     assert_eq!(f.inspect(3, 1)["record"]["status"], "suggested");
     app.press_key("alt+shift+v").unwrap();
-    contains(&mut app, " · commit 9");
+    app.wait_for("commit 9").unwrap();
     let confirmed = f.assert_decision(&third, "confirm", "tui", 2, 9);
     app.press_key("alt+shift+l").unwrap();
     app.press("#3 · terminal-editor · confirmed · r2").unwrap();
@@ -393,13 +402,13 @@ fn terminal_channel_and_revoked_delete(f: &Fixture) {
         .unwrap();
     assert_eq!(f.inspect(3, 2)["record"]["status"], "confirmed");
     app.press_key("alt+shift+v").unwrap();
-    contains(&mut app, " · commit 10");
+    app.wait_for("commit 10").unwrap();
     f.assert_decision(&confirmed, "deprecate", "tui", 3, 10);
     app.press_key("alt+shift+s").unwrap();
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
-    contains(&mut app, " · commit 11");
+    app.wait_for("commit 11").unwrap();
     app.press("Queue").unwrap();
     app.press("Inspect review queue").unwrap();
     app.press("#4 · terminal-editor · r1").unwrap();
@@ -409,7 +418,7 @@ fn terminal_channel_and_revoked_delete(f: &Fixture) {
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
-    contains(&mut app, " · commit 12");
+    app.wait_for("commit 12").unwrap();
     f.assert_decision(&fourth, "reject", "tui", 2, 12);
     app.press_key("alt+shift+l").unwrap();
     app.press("#3 · terminal-editor · deprecated · r3").unwrap();
@@ -454,7 +463,7 @@ fn terminal_channel_and_revoked_delete(f: &Fixture) {
     assert_eq!(f.inspect(3, 3)["record"]["status"], "deprecated");
     app.type_text("Retype the exact ID", "3").unwrap();
     app.press_key("alt+shift+v").unwrap();
-    contains(&mut app, " · commit 13");
+    app.wait_for("commit 13").unwrap();
     assert!(!app.screen().shows("Retry identical request"));
     app.wait_for("Deleted. Content and decision history are gone; receipts remain identity-only.")
         .unwrap();
@@ -492,7 +501,7 @@ fn changed_root_refuses_reviewed_apply(f: &Fixture) {
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
-    contains(&mut app, " · commit 14");
+    app.wait_for("commit 14").unwrap();
     app.press("Queue").unwrap();
     app.press("Inspect review queue").unwrap();
     app.press("#5 · root-bound-review · r1").unwrap();

@@ -183,6 +183,14 @@ fn open_delete(model: Signal<Model>, delete_open: Signal<bool>) {
         m.operator.review = None;
     });
     delete_open.set(true);
+    #[cfg(not(target_arch = "wasm32"))]
+    if std::env::var_os("ACP_UI_PROBE").is_some() {
+        eprintln!(
+            "ACP_UI_DIALOG requested_open={} armed={}",
+            delete_open.get(),
+            model.with(|m| m.operator.delete_arm.is_some()),
+        );
+    }
 }
 fn disarm(model: Signal<Model>, delete_open: Signal<bool>) {
     delete_open.set(false);
@@ -732,7 +740,10 @@ fn delete_dialog(
         .cancel_fn(move || model.get().word(Msg::Cancel).into())
         .confirm_fn(move || model.get().word(Msg::ReviewDeleteConfirm).into())
         .confirm_disabled(move || !delete_armed(model))
-        .open(move || delete_open.get() && model.get().operator.delete_arm.is_some())
+        .open(move || {
+            delete_open.get() && model.with(|m| m.operator.open && m.operator.delete_arm.is_some())
+        })
+        .initial_focus(&retype_ref)
         .on_cancel(move || disarm(model, delete_open))
         .on_confirm(move || commit_delete(model, delete_open))
         .content_fn(move || {
@@ -797,6 +808,52 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
     // in the shared model so Desktop and TUI enforce one guard.
     let delete_open = signal(false);
     let retype_ref = element_ref();
+    let scroll_ref = element_ref();
+    let navigation = computed(move || {
+        model.with(|m| {
+            let o = &m.operator;
+            (
+                o.open,
+                o.review_tab,
+                o.inspect
+                    .as_ref()
+                    .map(|i| (i.record.id, i.record.revision, i.commit_sequence)),
+                o.queue
+                    .as_ref()
+                    .map(|q| (q.commit_sequence, q.next_after_id, q.records.len())),
+                o.review.is_some(),
+                o.outcome_unknown,
+            )
+        })
+    });
+    let previous_navigation = signal(None);
+    effect(move || {
+        let next = navigation.get();
+        let previous = untracked(|| previous_navigation.get());
+        previous_navigation.set(Some(next));
+        let (open, tab, inspect, queue, prepared, unknown) = next;
+        let changed = previous.is_none_or(
+            |(was_open, old_tab, old_inspect, old_queue, was_prepared, was_unknown)| {
+                !was_open
+                    || tab != old_tab
+                    || (inspect.is_some() && inspect != old_inspect)
+                    || (queue.is_some() && queue != old_queue)
+                    || (prepared && !was_prepared)
+                    || (unknown && !was_unknown)
+            },
+        );
+        if open
+            && changed
+            && (prepared
+                || unknown
+                || (tab == ReviewTab::Queue && queue.is_some())
+                || (tab != ReviewTab::Queue && inspect.is_some()))
+        {
+            // Reveal explicit navigation/read/prepare results, not typing or
+            // cancellation. Keep keyboard focus and destructive consent intact.
+            scroll_ref.scroll_to_end(false);
+        }
+    });
     for (key, action) in [
         ("alt+shift+u", "create"),
         ("alt+shift+m", "select"),
@@ -883,13 +940,6 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
             });
         }
     });
-    // Focus the retype field when the tier opens; keep the signal in sync with the
-    // model so a cleared arm (commit, drift, cancel) always closes the dialog.
-    effect(move || {
-        if delete_open.get() {
-            retype_ref.focus();
-        }
-    });
     effect(move || {
         if model.get().operator.delete_arm.is_none() {
             delete_open.set(false);
@@ -901,14 +951,7 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
     });
     let rows = computed(move || {
         let m = model.get();
-        (
-            m.locale,
-            m.operator.page,
-            m.operator.selected_id,
-            m.operator.info,
-            m.operator.review,
-            m.operator.serial,
-        )
+        (m.locale, m.operator.page)
     });
     effect(move || {
         #[cfg(not(target_arch = "wasm32"))]
@@ -917,7 +960,7 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
             let o = &m.operator;
             if o.open {
                 eprintln!(
-                    "ACP_NSH_OPERATOR selected={} grant={} busy={} review={} unknown={} rows={} record_revision={} receipt={} error={} handoff_revision={} review_tab={:?} queue={} inspect={} delete_armed={} digest_expanded={} inspected_id={} inspected_revision={} peer_total={}",
+                    "ACP_NSH_OPERATOR selected={} grant={} busy={} review={} unknown={} rows={} record_revision={} receipt={} error={} handoff_revision={} review_tab={:?} queue={} inspect={} delete_armed={} digest_expanded={} inspection_current={} inspected_id={} inspected_revision={} peer_total={} delete_retype_chars={} delete_ready={}",
                     o.info.as_ref().is_some_and(|i| i.selected),
                     o.info.as_ref().is_some_and(|i| i.write_enabled),
                     o.busy,
@@ -936,14 +979,19 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                     o.inspect.as_ref().map_or(0, |i| i.decisions.len()),
                     o.delete_arm.is_some(),
                     o.digest_expanded,
+                    m.operator_inspected(),
                     o.inspect.as_ref().map_or(0, |i| i.record.id),
                     o.inspect.as_ref().map_or(0, |i| i.record.revision),
-                    o.inspect.as_ref().map_or(0, |i| i.peer_demotion_total)
+                    o.inspect.as_ref().map_or(0, |i| i.peer_demotion_total),
+                    o.delete_arm
+                        .as_ref()
+                        .map_or(0, |a| a.retype.chars().count()),
+                    delete_armed(model),
                 );
             }
         }
     });
-    view()
+    let content = view()
         .on_layout(move |_: &Bounds<Points>| {
             #[cfg(not(target_arch = "wasm32"))]
             if model.get().operator.open && std::env::var_os("ACP_UI_PROBE").is_some() {
@@ -1017,12 +1065,6 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                 lines.push(m.word(Msg::OperatorBusy).into());
             }
             if let Some(r) = &o.receipt {
-                lines.push(format!(
-                    "{} {} · commit {}",
-                    m.word(Msg::OperatorLastReceipt),
-                    r.operation_id,
-                    r.commit_sequence
-                ));
                 // A deleted record leaves identity-only proof, never content.
                 if r.affected.iter().any(|a| a.deleted) {
                     lines.push(m.word(Msg::ReviewDeleted).into());
@@ -1253,7 +1295,7 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                         )),
                 )
                 .child(dynamic(move || {
-                    let (locale, page, selected, info, _, serial) = rows.get();
+                    let (locale, page) = rows.get();
                     let mut body = view().gap_2().flex_shrink_0();
                     let Some(page) = page else {
                         return body;
@@ -1266,8 +1308,6 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                     }
                     for r in page.records {
                         let id = r.id;
-                        let record = r.clone();
-                        let record2 = r.clone();
                         body = body.child(action(
                             model,
                             format!("#{} · {} · {} · r{}", id, r.key, r.status, r.revision),
@@ -1284,60 +1324,6 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                                 })
                             },
                         ));
-                        if selected == Some(id) {
-                            let mut lines = vec![format!(
-                                "Scope: {}",
-                                match &r.scope {
-                                    Scope::Global => "global".into(),
-                                    Scope::Project { name } => format!("project {name}"),
-                                }
-                            )];
-                            for (label, value) in
-                                [("key", &r.key), ("value", &r.value), ("source", &r.source)]
-                            {
-                                lines.push(format!("{label}:"));
-                                lines.extend(literal(value));
-                            }
-                            body = body.child(card(
-                                model,
-                                acp_operator_model::i18n::tr(locale, Msg::OperatorReview),
-                                lines,
-                            ));
-                            let write = info.as_ref().is_some_and(|i| i.write_enabled)
-                                && r.status == "suggested";
-                            body = body.child(
-                                view()
-                                    .flex_row()
-                                    .flex_wrap()
-                                    .gap_2()
-                                    .child(word_action(
-                                        model,
-                                        Msg::OperatorConfirm,
-                                        move || available(model) && write,
-                                        move || {
-                                            let m = model.get();
-                                            if m.operator.serial == serial
-                                                && m.operator.record() == Some(&record)
-                                            {
-                                                review(model, "confirm");
-                                            }
-                                        },
-                                    ))
-                                    .child(word_action(
-                                        model,
-                                        Msg::OperatorReject,
-                                        move || available(model) && write,
-                                        move || {
-                                            let m = model.get();
-                                            if m.operator.serial == serial
-                                                && m.operator.record() == Some(&record2)
-                                            {
-                                                review(model, "reject");
-                                            }
-                                        },
-                                    )),
-                            );
-                        }
                     }
                     body
                 }))
@@ -1552,7 +1538,13 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                     ));
             }
             body.child(text(m.word(Msg::OperatorCliGate)))
-        }))
+        }));
+    // The native modal belongs to the visible workspace root, never to the
+    // clipped/scrolled document that may place its insertion point off-screen.
+    view()
+        .flex_1()
+        .style_when(move || !model.get().operator.open, |s| s.hidden())
+        .child(scroll().element_ref(&scroll_ref).flex_1().child(content))
         .child(delete_dialog(model, delete_open, retype_ref))
 }
 
@@ -1560,8 +1552,8 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
 mod tests {
     use super::*;
     use acp_operator_model::operator::{
-        Binding, PeerDemotion, PreferenceRecord, ProfileInfo, ReviewInspect, ReviewQueue,
-        digest_hex, proposal_digest,
+        Binding, PeerDemotion, PreferencePage, PreferenceRecord, ProfileInfo, ReviewInspect,
+        ReviewQueue, digest_hex, proposal_digest,
     };
     use nsh_engine::{EngineConfig, Root};
     use std::time::Duration;
@@ -1695,6 +1687,18 @@ mod tests {
     #[component]
     fn QueueConsole() -> impl IntoElement {
         crate::console(signal(queue_model()))
+    }
+    #[component]
+    fn SelectedListConsole() -> impl IntoElement {
+        let mut m = queue_model();
+        m.operator.pane = Pane::Preferences;
+        m.operator.review_tab = ReviewTab::Detail;
+        m.operator.page = Some(PreferencePage {
+            binding: binding(),
+            records: vec![record(7, "suggested", 1)],
+            next_after_id: None,
+        });
+        crate::console(signal(m))
     }
     #[component]
     fn PeerConsole() -> impl IntoElement {
@@ -1902,9 +1906,18 @@ mod tests {
         app.wait_for("#7 · synthetic-key-7 · r1").unwrap();
         app.press_key("alt+shift+q").unwrap();
         app.wait_for("Delete global preference #7?").unwrap();
+        app.type_text("Retype the exact ID", "7").unwrap();
         app.press_key("Escape").unwrap();
         app.wait_for_gone("Delete global preference #7?", Duration::from_secs(5))
             .unwrap();
+        assert!(!app.screen().shows("Prepared operation; no write sent yet"));
+        app.press_key("alt+shift+q").unwrap();
+        app.wait_for("Delete global preference #7?").unwrap();
+        assert_eq!(
+            app.screen().input_text("Retype the exact ID").unwrap(),
+            Some("")
+        );
+        app.press_key("Enter").unwrap();
         assert!(!app.screen().shows("Prepared operation; no write sent yet"));
     }
 
@@ -2005,5 +2018,47 @@ mod tests {
         app.wait_for("Prepared operation; no write sent yet")
             .unwrap();
         assert!(app.screen().texts().join("").contains(&full));
+    }
+
+    #[test]
+    fn selected_list_uses_one_exact_inspector_and_one_set_of_decisions() {
+        let mut app = start::<SelectedListConsole>();
+        app.set_viewport(Size::new(px(640.0), px(480.0))).unwrap();
+        app.wait_for("#7 · synthetic-key-7 · suggested · r1")
+            .unwrap();
+        app.wait_for("Show full digest").unwrap();
+        assert!(!app.screen().shows("Review exact operation"));
+        assert_eq!(
+            app.screen()
+                .count("role:button[Confirm preference…]")
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            app.screen()
+                .count("role:button[Reject preference…]")
+                .unwrap(),
+            1
+        );
+        app.press("Confirm preference…").unwrap();
+        app.wait_for("Prepared operation; no write sent yet")
+            .unwrap();
+    }
+
+    #[test]
+    fn compact_delete_tier_keeps_retype_validation_and_explicit_apply() {
+        let mut app = start::<SelectedListConsole>();
+        app.set_viewport(Size::new(px(640.0), px(480.0))).unwrap();
+        app.press_key("alt+shift+q").unwrap();
+        app.wait_for("Delete global preference #7?").unwrap();
+        app.type_text("Retype the exact ID", "8").unwrap();
+        app.wait_for("The typed ID does not match").unwrap();
+        app.press_key("Enter").unwrap();
+        assert!(!app.screen().shows("Prepared operation; no write sent yet"));
+        app.press_key("alt+shift+v").unwrap();
+        assert!(!app.screen().shows("Prepared operation; no write sent yet"));
+        app.press_key("Escape").unwrap();
+        app.wait_for_gone("Delete global preference #7?", Duration::from_secs(5))
+            .unwrap();
     }
 }

@@ -401,57 +401,56 @@ pub(super) fn shell(
                                 )
                                 .child(task_input(model, task_ref))
                                 .child(preference_input(model, filter_ref))
+                                .child(operator::panel(model))
                                 .child(
-                                    scroll().flex_1().child(
-                                        view()
-                                            .gap_3()
-                                            .flex_shrink_0()
-                                            .child(
-                                                view()
-                                                    .style_when(
-                                                        move || !model.get().settings,
-                                                        |s| s.hidden(),
-                                                    )
-                                                    .child(settings::appearance(model)),
-                                            )
-                                            .child(
-                                                view()
-                                                    .style_when(
-                                                        move || !model.get().connection_editor,
-                                                        |s| s.hidden(),
-                                                    )
-                                                    .child(settings::connection(model)),
-                                            )
-                                            .child(
-                                                view()
-                                                    .style_when(
-                                                        move || !model.get().operator.open,
-                                                        |s| s.hidden(),
-                                                    )
-                                                    .child(operator::panel(model)),
-                                            )
-                                            .child(
-                                                view()
-                                                    .style_when(
-                                                        move || !model.get().sessions,
-                                                        |s| s.hidden(),
-                                                    )
-                                                    .child(sessions::panel(model)),
-                                            )
-                                            .child(
-                                                view()
-                                                    .style_when(
-                                                        move || {
-                                                            model.get().settings
-                                                                || model.get().sessions
-                                                                || model.get().operator.open
-                                                                || model.get().connection_editor
-                                                        },
-                                                        |s| s.hidden(),
-                                                    )
-                                                    .child(dynamic(move || page(model))),
-                                            ),
-                                    ),
+                                    scroll()
+                                        .flex_1()
+                                        .style_when(
+                                            move || model.get().operator.open,
+                                            |s| s.hidden(),
+                                        )
+                                        .child(
+                                            view()
+                                                .gap_3()
+                                                .flex_shrink_0()
+                                                .child(
+                                                    view()
+                                                        .style_when(
+                                                            move || !model.get().settings,
+                                                            |s| s.hidden(),
+                                                        )
+                                                        .child(settings::appearance(model)),
+                                                )
+                                                .child(
+                                                    view()
+                                                        .style_when(
+                                                            move || !model.get().connection_editor,
+                                                            |s| s.hidden(),
+                                                        )
+                                                        .child(settings::connection(model)),
+                                                )
+                                                .child(
+                                                    view()
+                                                        .style_when(
+                                                            move || !model.get().sessions,
+                                                            |s| s.hidden(),
+                                                        )
+                                                        .child(sessions::panel(model)),
+                                                )
+                                                .child(
+                                                    view()
+                                                        .style_when(
+                                                            move || {
+                                                                model.get().settings
+                                                                    || model.get().sessions
+                                                                    || model.get().operator.open
+                                                                    || model.get().connection_editor
+                                                            },
+                                                            |s| s.hidden(),
+                                                        )
+                                                        .child(dynamic(move || page(model))),
+                                                ),
+                                        ),
                                 )
                                 .child(
                                     text(move || {

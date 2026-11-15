@@ -22,6 +22,10 @@ existing process-local MSVC/Cargo/Git environment. This creates a real PTY/ConPT
 feeds terminal keyboard sequences and handles the terminal's cursor query. Captures
 contain actual child VT output, a bounded parsed view, and restoration assertions.
 
+`ACP_S5_APPEARANCE=dark` repeats the same native scenario in dark appearance;
+the default is `light`. Other values are refused. Reports record the actual
+requested appearance; screenshot inspection remains a separate requirement.
+
 For `desktop`, append the absolute **Windows path** to `tools/native_window.ps1`.
 Windows runs a native HWND; Linux uses the existing WSLg `wayland-0` with X11 removed
 and invokes the installed Windows PowerShell through WSL interop. Pass the script
@@ -80,6 +84,14 @@ Alt+Right. The review scenario exercises the actual Alt+arrow chords
 on both surfaces and requires History → Detail → Queue → Detail state changes;
 native Tab/arrow navigation is not a substitute for this shortcut regression.
 
+WSLg resize uses the app's own title bar (if repositioning is needed to fit the
+monitor work area) and bottom-right grip. Each drag checks window-at-pointer
+ownership before pressing and nonce/process/foreground ownership throughout,
+then releases the button and restores the pointer. A monitor too small for the
+required viewport is refused. Windows-host-only `SetWindowPos` is not a Wayland
+resize and is never a fallback. The driver requires the actual GTK `width`/`height`
+acknowledgement before accepting the resized state.
+
 Windows may remember a Chinese IME separately for each window. As explicitly
 authorized for this acceptance task, before native Windows input the worker checks
 the owned window thread's layout and requests an **already installed** English
@@ -116,6 +128,14 @@ a same-key peer demotion, checks actual decision revisions and `desktop`/`tui`
 channel labels through independent CLI reads, and refuses history inspection after
 deletion. A first decision chord without exact inspection performs only that read;
 preparation and application remain separate explicit inputs.
+For deletion, Desktop waits for native `on_open` with a mounted initial-focus
+reference, not merely an armed model flag. Input waits require fresh retype-length
+and readiness probes; no typed ID or proposal value is logged. Both shells cancel
+the destructive tier with Escape, retain the workspace and reopen with fresh consent.
+The locale pass re-reads retained content/history in zh-CN, then explicitly enables
+the synthetic grant, reloads selection/inspection in its new epoch, and exercises
+compact wrong-ID refusal without a preference write. TTY startup logs the actual
+owned PTY/ConPTY child PID; GUI startup logs the owned PID and title nonce.
 
 A normal run requires clean source before and after and records the Git SHA plus
 actual driver/daemon/query/NSH SHA-256. `ACP_S5_DEVELOPMENT=1` explicitly labels

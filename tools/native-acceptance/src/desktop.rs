@@ -137,6 +137,7 @@ impl Desktop {
         thread::sleep(Duration::from_millis(100));
     }
     pub fn text(&mut self, text: &str) {
+        self.after = self.lines.lock().unwrap().len();
         self.control(json!({"action":"text","text":text}));
         thread::sleep(Duration::from_millis(100));
     }
@@ -176,7 +177,23 @@ impl Desktop {
         std::fs::copy(native, out.join(format!("{name}.png"))).unwrap();
     }
     pub fn resize(&mut self, w: u16, h: u16) {
+        self.after = self.lines.lock().unwrap().len();
+        #[cfg(unix)]
+        let (geometry, already_sized) = {
+            let geometry = format!("width={w} height={h}");
+            let lines = self.lines.lock().unwrap();
+            let already = lines
+                .iter()
+                .rev()
+                .find(|s| s.starts_with("ACP_GTK backend="))
+                .is_some_and(|s| s.contains(&geometry));
+            (geometry, already)
+        };
         self.control(json!({"action":"resize","width":w,"height":h}));
+        #[cfg(unix)]
+        if !already_sized {
+            self.wait(&geometry);
+        }
         thread::sleep(Duration::from_millis(400));
     }
     pub fn close(&mut self) {

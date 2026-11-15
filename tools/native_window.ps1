@@ -31,6 +31,20 @@ public static class AcpWindow {
  [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr dc, uint flags);
  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x,int y,int w,int z,uint flags);
  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h,uint m,IntPtr w,IntPtr l);
+ [StructLayout(LayoutKind.Sequential)] public struct POINT { public int x,y; }
+ [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p);
+ [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
+ [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
+ [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr h,uint flags);
+ [DllImport("user32.dll")] public static extern void mouse_event(uint flags,uint dx,uint dy,uint data,UIntPtr extra);
+ [StructLayout(LayoutKind.Sequential)] public struct MONITORINFO { public uint size; public RECT monitor,work; public uint flags; }
+ [DllImport("user32.dll")] public static extern IntPtr MonitorFromWindow(IntPtr h,uint flags);
+ [DllImport("user32.dll", EntryPoint="GetMonitorInfoW")] public static extern bool GetMonitorInfo(IntPtr h,ref MONITORINFO info);
+ public static RECT WorkArea(IntPtr window) {
+  var info = new MONITORINFO(); info.size = (uint)Marshal.SizeOf(typeof(MONITORINFO));
+  if (!GetMonitorInfo(MonitorFromWindow(window,2),ref info)) throw new InvalidOperationException("Owned monitor unavailable");
+  return info.work;
+ }
 }
 '@
 $nonce = $null
@@ -83,6 +97,27 @@ function Ensure-English([IntPtr]$Window) {
     if ((Owned-Window) -ne $Window -or [AcpWindow]::GetForegroundWindow() -ne $Window) { throw 'Foreground changed during input-layout check' }
     return @{english=$true;switched=$switched}
 }
+function Invoke-OwnedDrag([IntPtr]$Window, [AcpWindow+POINT]$Point, [int]$Dx, [int]$Dy) {
+    $saved=[AcpWindow+POINT]::new()
+    if (-not [AcpWindow]::GetCursorPos([ref]$saved)) { throw 'Pointer unavailable' }
+    $pressed=$false
+    try {
+        if (-not [AcpWindow]::SetCursorPos($Point.x,$Point.y)) { throw 'Owned pointer move refused' }
+        if ((Owned-Window) -ne $Window -or [AcpWindow]::GetForegroundWindow() -ne $Window) { throw 'Foreground changed before drag' }
+        if ([AcpWindow]::GetAncestor([AcpWindow]::WindowFromPoint($Point),2) -ne $Window) { throw 'Owned drag target is occluded' }
+        [AcpWindow]::mouse_event(2,0,0,0,[UIntPtr]::Zero); $pressed=$true
+        Start-Sleep -Milliseconds 100
+        for($step=1; $step -le 12; $step++) {
+            if ((Owned-Window) -ne $Window -or [AcpWindow]::GetForegroundWindow() -ne $Window) { throw 'Foreground changed during drag' }
+            if (-not [AcpWindow]::SetCursorPos(($Point.x+[int]($Dx*$step/12)),($Point.y+[int]($Dy*$step/12)))) { throw 'Owned drag refused' }
+            Start-Sleep -Milliseconds 20
+        }
+        Start-Sleep -Milliseconds 100
+    } finally {
+        if ($pressed) { [AcpWindow]::mouse_event(4,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 100 }
+        [void][AcpWindow]::SetCursorPos($saved.x,$saved.y)
+    }
+}
 try {
 :requests while ($null -ne ($line = [Console]::ReadLine())) {
     # Every reply must name the request it answers; the driver refuses otherwise.
@@ -104,7 +139,7 @@ try {
         $h = Owned-Window
         $active = [AcpWindow]::GetForegroundWindow() -eq $h
         if ($command.action -eq 'observe') { @{status='ok';rpc_id=$rid;foreground=$active} | ConvertTo-Json -Compress; continue }
-        if ($command.action -in @('key','text','capture') -and -not $active) { @{status='foreground_required';rpc_id=$rid;nonce=$nonce} | ConvertTo-Json -Compress; continue }
+        if ($command.action -in @('key','text','capture','resize') -and -not $active) { @{status='foreground_required';rpc_id=$rid;nonce=$nonce} | ConvertTo-Json -Compress; continue }
         $layout=$null
         if ($command.action -in @('key','text')) { $layout=Ensure-English $h }
         switch ($command.action) {
@@ -133,7 +168,28 @@ try {
             'resize' {
                 $w=[int]$command.width;$height=[int]$command.height
                 if ($w -lt 640 -or $w -gt 1600 -or $height -lt 480 -or $height -gt 1000) { throw 'Synthetic resize out of bounds' }
-                if (-not [AcpWindow]::SetWindowPos($h,[IntPtr]::Zero,0,0,$w,$height,0x16)) { throw 'Owned resize refused' }
+                if ($remote) {
+                    # SetWindowPos resizes only WSLg's RDP host, not the GTK surface.
+                    # Drive the app's native bottom-right resize grip instead.
+                    $rect=[AcpWindow+RECT]::new()
+                    if (-not [AcpWindow]::GetWindowRect($h,[ref]$rect)) { throw 'Owned bounds unavailable' }
+                    $work=[AcpWindow]::WorkArea($h)
+                    if ($w -gt ($work.right-$work.left-16) -or $height -gt ($work.bottom-$work.top-16)) { throw 'Owned monitor cannot fit required viewport' }
+                    $left=[Math]::Min([Math]::Max($rect.left,$work.left+8),$work.right-$w-8)
+                    $top=[Math]::Min([Math]::Max($rect.top,$work.top+8),$work.bottom-$height-8)
+                    if ($left -ne $rect.left -or $top -ne $rect.top) {
+                        # Move via the owned app title bar so the required grip
+                        # destination is not silently clamped by the monitor edge.
+                        $point=[AcpWindow+POINT]::new(); $point.x=$rect.left+80; $point.y=$rect.top+18
+                        Invoke-OwnedDrag $h $point ($left-$rect.left) ($top-$rect.top)
+                        if (-not [AcpWindow]::GetWindowRect($h,[ref]$rect)) { throw 'Owned moved bounds unavailable' }
+                    }
+                    $dw=$w-($rect.right-$rect.left); $dh=$height-($rect.bottom-$rect.top)
+                    if ($dw -ne 0 -or $dh -ne 0) {
+                        $point=[AcpWindow+POINT]::new(); $point.x=$rect.right-4; $point.y=$rect.bottom-4
+                        Invoke-OwnedDrag $h $point $dw $dh
+                    }
+                } elseif (-not [AcpWindow]::SetWindowPos($h,[IntPtr]::Zero,0,0,$w,$height,0x16)) { throw 'Owned resize refused' }
             }
             'capture' {
                 if ($command.name -notmatch '^[a-z0-9-]+\.png$') { throw 'Invalid capture name' }

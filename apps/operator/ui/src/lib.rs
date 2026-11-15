@@ -291,6 +291,9 @@ fn console(model: Signal<Model>) -> impl IntoElement {
     }
     on_key("alt+0", move |_| {
         model.update(|m| {
+            m.operator.open = false;
+            m.operator.review = None;
+            m.operator.delete_arm = None;
             m.sessions = false;
             m.session.confirm_start = false;
             m.settings = !m.settings;
@@ -303,12 +306,20 @@ fn console(model: Signal<Model>) -> impl IntoElement {
         ..Default::default()
     };
     on_key_with("Escape", global, move |_| {
+        if model.with(|m| m.operator.open && m.operator.delete_arm.is_some()) {
+            model.update(|m| {
+                m.operator.delete_arm = None;
+                m.operator.review = None;
+            });
+            return;
+        }
         filter_ref.blur();
         task_ref.blur();
         model.update(|m| {
             m.cancel_read();
             m.operator.open = false;
             m.operator.review = None;
+            m.operator.delete_arm = None;
             m.settings = false;
             m.sessions = false;
             m.session.confirm_start = false;

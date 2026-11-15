@@ -384,6 +384,11 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         },
         std::env::consts::EXE_SUFFIX
     ));
+    let appearance = match std::env::var("ACP_S5_APPEARANCE").as_deref() {
+        Ok("dark") => "dark",
+        Ok("light") | Err(std::env::VarError::NotPresent) => "light",
+        _ => panic!("fixed appearance required"),
+    };
     let args = vec![
         "--runtime-dir".into(),
         f.runtime.to_str().unwrap().into(),
@@ -391,7 +396,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         f.alias.clone(),
         "--operator".into(),
         "--appearance".into(),
-        "light".into(),
+        appearance.into(),
     ];
     let mut ui = if surface == "desktop" {
         Ui::Desktop(Box::new(desktop::Desktop::start(
@@ -499,6 +504,13 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
             "--input",
             input.to_str().unwrap(),
         ],
+    );
+    // The review workspace renders below the preference records; give both
+    // surfaces enough height that the Queue/Detail/History content and the
+    // destructive tier stay inside the captured viewport. Restored below.
+    ui.resize(
+        if surface == "desktop" { 1080 } else { 160 },
+        if surface == "desktop" { 1000 } else { 90 },
     );
     ui.key("ctrl+r");
     ui.wait("phase=Ready", "alpha");
@@ -617,13 +629,6 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     );
     ui.key("alt+shift+r");
     ui.wait("selected=true grant=true busy=false", "Write grant active");
-    // The review workspace renders below the preference records; give both
-    // surfaces enough height that the Queue/Detail/History content and the
-    // destructive tier stay inside the captured viewport. Restored below.
-    ui.resize(
-        if surface == "desktop" { 1080 } else { 160 },
-        if surface == "desktop" { 1000 } else { 90 },
-    );
     // ---- S2 review workspace: Queue / Detail / History tabs, deprecate and the
     // destructive delete tier, driven by real chords on both surfaces. A dedicated
     // suggestion (#4) walks the whole lifecycle and demonstrates atomic demotion
@@ -709,13 +714,9 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     for _ in 0..4 {
         ui.key("alt+shift+i");
     }
-    ui.activate(
-        "alt+f",
-        4,
-        3,
-        "inspected_id=4 inspected_revision=2",
-        "Show full digest",
-    );
+    // A decision chord without a current inspect performs only that read.
+    ui.key("alt+shift+w");
+    ui.wait("inspected_id=4 inspected_revision=2", "Show full digest");
     ui.tab_nav(1);
     ui.wait("review_tab=History", "Channel is client-asserted");
     ui.capture("review-history-confirm", out);
@@ -755,13 +756,8 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     for _ in 0..4 {
         ui.key("alt+shift+i");
     }
-    ui.activate(
-        "alt+f",
-        4,
-        3,
-        "inspected_id=4 inspected_revision=3",
-        "Show full digest",
-    );
+    ui.key("alt+shift+q");
+    ui.wait("inspected_id=4 inspected_revision=3", "Show full digest");
     let inspect = f
         .query(&[
             "review-inspect",
@@ -828,11 +824,21 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     // refuse the delete; no write lands and the record stays present.
     let seq_before = f.commit_sequence();
     // Wrong retype: the tier shows the mismatch and Enter prepares nothing.
+    ui.resize(
+        if surface == "desktop" { 640 } else { 80 },
+        if surface == "desktop" { 480 } else { 30 },
+    );
     ui.key("alt+shift+q");
-    ui.wait("delete_armed=true", "Delete project alpha preference #4?");
-    ui.capture("review-delete-tier", out);
+    ui.wait(
+        "ACP_UI_DIALOG opened=true initial_focus=true focus_bound=true",
+        "Delete project alpha preference #4?",
+    );
+    ui.capture("review-delete-compact", out);
     ui.text("999");
-    ui.wait("delete_armed=true", "The typed ID does not match");
+    ui.wait(
+        "delete_retype_chars=3 delete_ready=false",
+        "The typed ID does not match",
+    );
     ui.key("enter");
     ui.capture("review-delete-refused", out);
     assert_eq!(
@@ -842,13 +848,22 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     );
     assert_eq!(f.record(id4)["status"], "deprecated");
     assert_eq!(f.record(id4)["revision"], 3);
-    // Cancel the refused tier (Tab to Cancel, Enter).
-    ui.key("tab");
-    ui.key("enter");
-    ui.wait("delete_armed=false", "Show full digest");
+    // Escape cancels only the destructive tier and discards its retype.
+    ui.key("escape");
+    match &ui {
+        Ui::Desktop(d) => d.wait("delete_armed=false"),
+        Ui::Tty(t) => t.wait_gone("Delete project alpha preference #4?"),
+    }
+    ui.resize(
+        if surface == "desktop" { 1080 } else { 160 },
+        if surface == "desktop" { 1000 } else { 90 },
+    );
     // Blind Enter on a fresh empty retype field also prepares nothing.
     ui.key("alt+shift+q");
-    ui.wait("delete_armed=true", "Delete project alpha preference #4?");
+    ui.wait(
+        "ACP_UI_DIALOG opened=true initial_focus=true focus_bound=true",
+        "Delete project alpha preference #4?",
+    );
     ui.key("enter");
     assert_eq!(
         f.commit_sequence(),
@@ -856,15 +871,20 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         "a blind Enter must not write"
     );
     assert_eq!(f.record(id4)["status"], "deprecated");
-    ui.key("tab");
-    ui.key("enter");
+    ui.key("escape");
     ui.wait("delete_armed=false", "Show full digest");
     // POSITIVE: arm with the exact ID and apply; only the exact retype prepares
     // and commits the delete.
     ui.key("alt+shift+q");
-    ui.wait("delete_armed=true", "Delete project alpha preference #4?");
+    ui.wait(
+        "ACP_UI_DIALOG opened=true initial_focus=true focus_bound=true",
+        "Delete project alpha preference #4?",
+    );
     ui.text("4");
-    ui.wait("delete_armed=true", "Deletion armed; apply to commit");
+    ui.wait(
+        "delete_retype_chars=1 delete_ready=true",
+        "Deletion armed; apply to commit",
+    );
     ui.capture("review-delete-armed", out);
     let n = f.commit_sequence() + 1;
     ui.key("alt+shift+v");
@@ -956,11 +976,72 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         if surface == "desktop" { 480 } else { 30 },
     );
     ui.capture("compact-zh", out);
+    // Inspect real retained content/history in zh-CN, then prove the compact
+    // destructive disclosure/refusal without another preference write.
+    ui.resize(
+        if surface == "desktop" { 1080 } else { 160 },
+        if surface == "desktop" { 1000 } else { 90 },
+    );
+    ui.key("alt+shift+l");
+    ui.wait("rows=3", "#1");
+    ui.key("alt+shift+i");
+    ui.key("alt+shift+w");
+    ui.wait(
+        "inspection_current=true inspected_id=1 inspected_revision=3",
+        "修订: 3",
+    );
+    ui.capture("review-zh-detail", out);
+    ui.tab_nav(1);
+    ui.wait("review_tab=History", "渠道由客户端声明");
+    ui.capture("review-zh-history", out);
+    ui.key("alt+shift+e");
+    ui.wait("review=true", "操作已准备，尚未发送写入");
+    ui.key("alt+shift+v");
+    ui.wait("selected=true grant=true busy=false", "写入授权有效");
+    // A grant-epoch change deliberately clears selection and inspection.
+    ui.key("alt+shift+l");
+    ui.wait("rows=3", "#1");
+    ui.key("alt+shift+i");
+    ui.key("alt+shift+w");
+    ui.wait(
+        "inspection_current=true inspected_id=1 inspected_revision=3",
+        "修订: 3",
+    );
+    ui.resize(
+        if surface == "desktop" { 640 } else { 80 },
+        if surface == "desktop" { 480 } else { 30 },
+    );
+    ui.key("alt+shift+q");
+    ui.wait(
+        "ACP_UI_DIALOG opened=true initial_focus=true focus_bound=true",
+        "偏好 #1？",
+    );
+    let zh_sequence = f.commit_sequence();
+    ui.text("999");
+    ui.wait(
+        "delete_retype_chars=3 delete_ready=false",
+        "输入的 ID 不匹配",
+    );
+    ui.key("enter");
+    ui.capture("review-zh-delete-refused", out);
+    assert_eq!(f.commit_sequence(), zh_sequence);
+    assert_eq!(f.record(1)["revision"], 3);
+    assert_eq!(f.record(1)["status"], "deprecated");
+    ui.key("escape");
+    match &ui {
+        Ui::Desktop(d) => d.wait("delete_armed=false"),
+        Ui::Tty(t) => t.wait_gone("偏好 #1？"),
+    }
     ui.resize(
         if surface == "desktop" { 1080 } else { 160 },
         if surface == "desktop" { 760 } else { 50 },
     );
     ui.key("ctrl+l");
+    ui.apply(
+        "alt+shift+x",
+        "selected=true grant=false busy=false",
+        "Write grant off",
+    );
     ui.key("alt+shift+r");
     ui.wait("selected=true grant=false busy=false", "Write grant off");
     f.stop_daemon();
@@ -1000,7 +1081,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         };
     assert!(development || git(&["status", "--porcelain"]).is_empty());
     let binaries: Vec<_> = [std::env::current_exe().unwrap(), Fixture::bin(&repo,"acp-daemon"),Fixture::bin(&repo,"acp-query"),nsh].iter().map(|path|json!({"name":path.file_name().unwrap().to_str().unwrap(),"sha256":format!("{:x}",Sha256::digest(fs::read(path).unwrap()))})).collect();
-    json!({"status":if development{"DEV_PASS"}else{"PASS"},"tested_git_sha":sha,"worktree_dirty":dirty,"platform":std::env::consts::OS,"arch":std::env::consts::ARCH,"surface":surface,"backend":backend,"binaries":binaries,"actions":["unselected Profile","explicit UI create","Busy","enable","exact suggestion/confirm/reject","committed lost reply and explicit same-request retry","Conflict","Escape/project review invalidation","saved exact-task Handoff NOT_RUN history","S2 review queue load and Queue/Detail/History tabs","exact inspect with digest prefix expand","wrong-digest CLI ReviewMismatch","confirm/deprecate via chords","destructive delete wrong-retype/blind-Enter refusal","exact-retype delete with identity-only receipt","deleted record keeps no content; empty queue","disable acknowledgement","revoked-grant Unauthorized","five pages/Sessions","theme/locale/resize","disconnect","clean child exit"],"rows":3,"historical_source_substitution":false})
+    json!({"status":if development{"DEV_PASS"}else{"PASS"},"tested_git_sha":sha,"worktree_dirty":dirty,"platform":std::env::consts::OS,"arch":std::env::consts::ARCH,"surface":surface,"appearance":appearance,"backend":backend,"binaries":binaries,"actions":["unselected Profile","explicit UI create","Busy","enable","exact suggestion/confirm/reject","committed lost reply and explicit same-request retry","Conflict","Escape/project review invalidation","saved exact-task Handoff NOT_RUN history","S2 review queue load and Queue/Detail/History tabs","exact inspect with digest prefix expand","wrong-digest CLI ReviewMismatch","confirm/deprecate via chords","destructive delete wrong-retype/blind-Enter refusal","exact-retype delete with identity-only receipt","deleted record keeps no content; empty queue","disable acknowledgement","revoked-grant Unauthorized","five pages/Sessions","theme/locale/resize","disconnect","clean child exit"],"rows":3,"historical_source_substitution":false})
 }
 fn main() {
     let a: Vec<_> = std::env::args().skip(1).collect();
