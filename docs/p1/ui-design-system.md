@@ -6,9 +6,10 @@ provided concept hierarchy. The actual five-page console now consumes this syste
 
 ## Foundation
 
-`shared/src/appearance.rs` defines primitive RGB and semantic background, panel,
-inset, text, muted, border, accent/on-accent, success, warning and error colors.
-`nsh/src/tokens.rs` adapts these same tokens to Desktop/TUI. No separate production
+`model/src/appearance.rs` (paths under `apps/operator`) defines primitive RGB and
+semantic background, panel, inset, text, muted, border, accent/on-accent, success,
+warning and error colors.
+`ui/src/tokens.rs` adapts these same tokens to Desktop/TUI. No separate production
 palette remains. Both modes of every theme and high contrast have computed tests
 for 4.5:1 text and 3:1 essential borders; measured values are in the evaluation.
 System mode follows NSH's reported appearance without editing OS settings.
@@ -54,7 +55,7 @@ Full IME/screen-reader verification and RTL are not claimed.
 
 ## Explicit target editing
 
-`shared/src/connection.rs` holds separate applied and draft configurations. Local
+`model/src/connection.rs` holds separate applied and draft configurations. Local
 IPC needs an absolute private runtime directory and endpoint. Windows WSL access
 needs an explicit distribution, owner, existing absolute Linux helper, Linux
 runtime and endpoint. Apply or Enter in an editor field validates and starts a

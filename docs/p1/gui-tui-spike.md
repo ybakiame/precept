@@ -7,7 +7,7 @@
 Status: exploratory only. Do not select a renderer based only on README claims or screenshots.
 
 Issue #14 implementation: [comparison and executed evidence](ui-spike-evaluation.md),
-[isolated prototypes and commands](../../spikes/p1-e/README.md), and
+[isolated prototypes and commands](../../apps/operator/README.md), and
 [Proposed ADR-0003](../adr/0003-ui-framework-selection.md). Framework selection remains open.
 
 ## Upstream references

@@ -14,7 +14,8 @@ TUI**, with one framework-neutral typed presentation model and Rust domain logic
 behind the existing daemon/local IPC boundary. Do not introduce GPUI/GPUI Kit,
 a hybrid renderer, Electron, React or a new runtime into the product application.
 
-Keep `spikes/p1-e/shared` and `spikes/p1-e/nsh` as the implemented baseline;
+Keep `apps/operator/model` and `apps/operator/ui` (formerly `spikes/p1-e/shared`
+and `spikes/p1-e/nsh`) as the implemented baseline;
 production packaging/location can be specified later. Historical Kit/hybrid
 benchmark directories remain experimental evidence, not competing product paths.
 J does not remove dependencies, move workspaces or redesign screens. Desktop/TUI

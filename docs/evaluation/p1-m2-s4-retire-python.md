@@ -1,5 +1,10 @@
 # P1-M2/S4 — Rust-only source and validation evidence
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved, including the pre-migration `spikes/p1-e` app
+> paths; the app now lives at `apps/operator`. Use
+> [Rust-only development](../p1/rust-only-development.md) for current commands.
+
 Authority: [Issue #48](https://github.com/ybakiame/agent-control-plane/issues/48),
 parent [#40](https://github.com/ybakiame/agent-control-plane/issues/40), accepted
 ADR-0006/0004 and retained daemon ownership in ADR-0005.

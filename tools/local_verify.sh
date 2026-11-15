@@ -49,13 +49,13 @@ else
   run_gate process-binaries cargo build --workspace --bins --locked
 fi
 if [[ $suite != core ]]; then
-  run_gate shared-fmt cargo fmt --manifest-path spikes/p1-e/shared/Cargo.toml -- --check
-  run_gate shared-clippy cargo clippy --manifest-path spikes/p1-e/shared/Cargo.toml --all-targets --features native --locked -- -D warnings
-  run_gate shared-tests cargo test --manifest-path spikes/p1-e/shared/Cargo.toml --features native --locked
-  run_gate nsh-fmt cargo fmt --manifest-path spikes/p1-e/nsh/Cargo.toml -- --check
-  run_gate nsh-build cargo build --manifest-path spikes/p1-e/nsh/Cargo.toml --features native,tui --bins --locked
-  run_gate nsh-clippy cargo clippy --manifest-path spikes/p1-e/nsh/Cargo.toml --all-targets --features native,tui --locked -- -D warnings
-  run_gate nsh-tests cargo test --manifest-path spikes/p1-e/nsh/Cargo.toml --all-targets --features native,tui --locked
+  run_gate shared-fmt cargo fmt --manifest-path apps/operator/model/Cargo.toml -- --check
+  run_gate shared-clippy cargo clippy --manifest-path apps/operator/model/Cargo.toml --all-targets --features native --locked -- -D warnings
+  run_gate shared-tests cargo test --manifest-path apps/operator/model/Cargo.toml --features native --locked
+  run_gate nsh-fmt cargo fmt --manifest-path apps/operator/ui/Cargo.toml -- --check
+  run_gate nsh-build cargo build --manifest-path apps/operator/ui/Cargo.toml --features native,tui --bins --locked
+  run_gate nsh-clippy cargo clippy --manifest-path apps/operator/ui/Cargo.toml --all-targets --features native,tui --locked -- -D warnings
+  run_gate nsh-tests cargo test --manifest-path apps/operator/ui/Cargo.toml --all-targets --features native,tui --locked
 fi
 run_gate diff git diff --check
 # No native window/PTY/model/hosted CI claim is inferred from these gates.

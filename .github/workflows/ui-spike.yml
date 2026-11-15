@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - 'spikes/p1-e/**'
+      - 'apps/operator/**'
       - 'crates/**'
       - 'tools/**'
       - '.github/workflows/ui-spike.yml'
@@ -24,7 +24,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: nsh-registry-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'spikes/p1-e/**/Cargo.lock') }}
+          key: nsh-registry-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'apps/operator/Cargo.lock') }}
       - name: Linux NSH build dependencies
         if: runner.os == 'Linux'
         run: |
@@ -32,14 +32,14 @@ jobs:
           sudo apt-get install -y clang libclang-dev cmake ninja-build pkg-config libgtk-4-dev libasound2-dev libssl-dev libxkbcommon-dev libwayland-dev
       - run: rustup show
       - run: cargo build --workspace --bins --locked
-      - run: cargo fmt --manifest-path spikes/p1-e/shared/Cargo.toml -- --check
-      - run: cargo clippy --manifest-path spikes/p1-e/shared/Cargo.toml --all-targets --features native --locked -- -D warnings
-      - run: cargo test --manifest-path spikes/p1-e/shared/Cargo.toml --features native --locked
-      - run: cargo fmt --manifest-path spikes/p1-e/nsh/Cargo.toml -- --check
-      - run: cargo build --manifest-path spikes/p1-e/nsh/Cargo.toml --features native,tui --bins --locked
-      - run: cargo clippy --manifest-path spikes/p1-e/nsh/Cargo.toml --all-targets --features native,tui --locked -- -D warnings
+      - run: cargo fmt --manifest-path apps/operator/model/Cargo.toml -- --check
+      - run: cargo clippy --manifest-path apps/operator/model/Cargo.toml --all-targets --features native --locked -- -D warnings
+      - run: cargo test --manifest-path apps/operator/model/Cargo.toml --features native --locked
+      - run: cargo fmt --manifest-path apps/operator/ui/Cargo.toml -- --check
+      - run: cargo build --manifest-path apps/operator/ui/Cargo.toml --features native,tui --bins --locked
+      - run: cargo clippy --manifest-path apps/operator/ui/Cargo.toml --all-targets --features native,tui --locked -- -D warnings
       - name: Shared NSH headless components and real native daemon integration (not GUI or TTY evidence)
-        run: cargo test --manifest-path spikes/p1-e/nsh/Cargo.toml --all-targets --features native,tui --locked
+        run: cargo test --manifest-path apps/operator/ui/Cargo.toml --all-targets --features native,tui --locked
   web:
     timeout-minutes: 30
     runs-on: ubuntu-latest
@@ -50,18 +50,18 @@ jobs:
           node-version: '24'
       - run: sudo apt-get update && sudo apt-get install -y clang llvm
       - run: rustup target add wasm32-unknown-unknown
-      - run: cargo build --manifest-path spikes/p1-e/nsh/Cargo.toml --target wasm32-unknown-unknown --lib --locked
+      - run: cargo build --manifest-path apps/operator/ui/Cargo.toml --target wasm32-unknown-unknown --lib --locked
       - name: Fetch exact upstream renderer
         run: |
-          git clone https://github.com/longbridge/nsh spikes/p1-e/vendor/nsh
-          git -C spikes/p1-e/vendor/nsh checkout 87c7e8da85d2f15a56107baa6f0fabb419b508b3
-      - run: node tools/package_ui_web.mjs spikes/p1-e/vendor/nsh spikes/p1-e/nsh/target/wasm32-unknown-unknown/debug/acp_nsh_spike.wasm spikes/p1-e/nsh/dist
-      - run: npm ci --prefix spikes/p1-e/tests
-      - run: node --test spikes/p1-e/tests/static-server.test.mjs
-      - run: npx --prefix spikes/p1-e/tests playwright install chromium --with-deps
-      - run: node spikes/p1-e/tests/web-smoke.mjs spikes/p1-e/nsh/dist spikes/p1-e/artifacts
+          git clone https://github.com/longbridge/nsh apps/operator/vendor/nsh
+          git -C apps/operator/vendor/nsh checkout 87c7e8da85d2f15a56107baa6f0fabb419b508b3
+      - run: node tools/package_ui_web.mjs apps/operator/vendor/nsh apps/operator/target/wasm32-unknown-unknown/debug/acp_operator_ui.wasm apps/operator/ui/dist
+      - run: npm ci --prefix apps/operator/tests
+      - run: node --test apps/operator/tests/static-server.test.mjs
+      - run: npx --prefix apps/operator/tests playwright install chromium --with-deps
+      - run: node apps/operator/tests/web-smoke.mjs apps/operator/ui/dist apps/operator/artifacts
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: nsh-offline-web
-          path: spikes/p1-e/artifacts
+          path: apps/operator/artifacts

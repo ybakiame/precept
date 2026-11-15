@@ -128,7 +128,7 @@ Build native workspace binaries first; NSH is a separate manifest:
 
 ```text
 cargo build --workspace --bins --locked
-cargo build --manifest-path spikes/p1-e/nsh/Cargo.toml --features native,tui --bins --locked
+cargo build --manifest-path apps/operator/ui/Cargo.toml --features native,tui --bins --locked
 ```
 
 Use a fresh owned synthetic checkout and an existing private Profile parent (0700

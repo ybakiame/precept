@@ -6,7 +6,7 @@
 
 Issue #14, base main `d92bcadddcf33963def536698268db4996b1c889`.
 Status: comparative prototype; [ADR-0003](../adr/0003-ui-framework-selection.md) is
-**Proposed**. [Commands and code](../../spikes/p1-e/README.md).
+**Proposed**. [Commands and code](../../apps/operator/README.md).
 
 ## Frozen inputs and boundary
 

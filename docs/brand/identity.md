@@ -54,7 +54,7 @@ Theme cards show a type sample, semantic color dots and a textual `>` selection
 marker. Appearance is independently Light / Dark / System, with a high-contrast
 override. System follows the appearance reported by the current NSH runtime; it
 does not modify OS settings or read another application's configuration.
-The pure shared token table is in `spikes/p1-e/shared/src/appearance.rs`.
+The pure shared token table is in `apps/operator/model/src/appearance.rs`.
 
 ### Measured opaque token contrast
 
@@ -91,7 +91,7 @@ and selection markers; a palette alone is not proof of monochrome accessibility.
 
 ## Language and assets
 
-The exhaustive typed catalog in `shared/src/i18n.rs` covers the actual console's
+The exhaustive typed catalog in `apps/operator/model/src/i18n.rs` covers the actual console's
 navigation, settings, state explanations, window controls and accessible labels.
 UI language changes at runtime without changing project/task data. Project names,
 preference keys/values and raw validation JSON keep their original language.

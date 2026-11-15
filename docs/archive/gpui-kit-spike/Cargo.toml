@@ -1,0 +1,24 @@
+# ARCHIVED: historical gpui-kit comparison spike (ADR-0003). Not a workspace
+# member and not built by any gate. Dependency names/paths were refreshed when
+# the app moved from spikes/p1-e to apps/operator; Cargo.lock is left as the
+# original historical resolution record and is intentionally not regenerated.
+[package]
+name = "acp-gpui-spike"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[features]
+hybrid = ["dep:nsh-platform-gpui", "dep:acp-operator-ui"]
+ui-tests = ["gpui-kit/test-support"]
+
+[dependencies]
+acp-operator-model = { path = "../../../apps/operator/model", features = ["native"] }
+gpui-kit = { git = "https://github.com/longbridge/gpui-kit", rev = "7591a35eced761e3613c01e71ff04c10129dae1a", features = ["gpui-fast"] }
+nsh-platform-gpui = { git = "https://github.com/longbridge/nsh", rev = "87c7e8da85d2f15a56107baa6f0fabb419b508b3", default-features = false, features = ["runtime-shaders"], optional = true }
+acp-operator-ui = { path = "../../../apps/operator/ui", features = ["ipc"], optional = true }
+
+[profile.dev]
+debug = 0

@@ -1,19 +1,21 @@
 # NSH console architecture (E4 / S3 operator extension)
 
-The implemented NSH Rust console uses separate Cargo manifests outside the root
-Rust workspace. [ADR-0003](../adr/0003-ui-framework-selection.md) now **accepts NSH**
-as the product Desktop/TUI direction; paths and behavior below are unchanged.
+The implemented NSH Rust console lives at `apps/operator`, one Cargo workspace
+outside the root Rust workspace with `model` and `ui` members.
+[ADR-0003](../adr/0003-ui-framework-selection.md) now **accepts NSH**
+as the product Desktop/TUI direction; behavior below is unchanged. Source paths
+are relative to `apps/operator` (`model` was `shared`, `ui` was `nsh`).
 [Product IA](../product-ui.md) describes later workflows, not implemented pages.
 Mobile and production writes remain deferred.
 
 ## Ownership and pages
 
-`shared::Model` owns the typed snapshot, selected project, exact queried task,
+`model::Model` owns the typed snapshot, selected project, exact queried task,
 filter, 12-row page, five sections, disclosure/evidence page, theme, request epoch
 and last successful live read time. Snapshots use `Arc`; framework signals do not
-clone a 10,000-row dataset on each read. `shared::presentation` formats the same
+clone a 10,000-row dataset on each read. `model::presentation` formats the same
 bounded display content for Desktop/TUI and the optional pinned benchmark.
-`nsh/src/components.rs` builds stable inputs/navigation around reactive page bodies.
+`ui/src/components.rs` builds stable inputs/navigation around reactive page bodies.
 There is no second desktop/TUI business model.
 
 | Page | Content |
@@ -103,8 +105,8 @@ an unregistered project/context failure does not falsely imply daemon disconnect
 Last operator response, current observed grant, waiting acknowledgement, failure,
 last acknowledged receipt and uncertain operation identity are separate states.
 
-`shared::operator` owns exact scoped records/revisions, binding, prepared review,
-immutable pending mutation and request guards. `nsh::operator` supplies retained
+`model::operator` owns exact scoped records/revisions, binding, prepared review,
+immutable pending mutation and request guards. `ui::operator` supplies retained
 inputs, ordinary semantic buttons, escaped full review content and keyboard entry
 points. Target/project/task/request/scope changes and changed exact records invalidate
 review/completions. Loading and uncertain outcome prevent duplicate/new submissions;

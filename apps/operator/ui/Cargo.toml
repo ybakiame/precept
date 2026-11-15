@@ -1,0 +1,49 @@
+[package]
+name = "acp-operator-ui"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[features]
+ipc = ["acp-operator-model/native"]
+native = ["ipc", "dep:nsh-platform-linux", "dep:nsh-platform-macos", "dep:nsh-platform-windows"]
+tui = ["ipc", "dep:nsh-platform-tui", "dep:ratatui-core", "dep:ratatui-crossterm", "dep:crossterm"]
+
+[dependencies]
+serde_json = "1"
+acp-operator-model = { path = "../model" }
+nsh-core = { git = "https://github.com/longbridge/nsh", rev = "87c7e8da85d2f15a56107baa6f0fabb419b508b3" }
+nsh-base = { git = "https://github.com/longbridge/nsh", rev = "87c7e8da85d2f15a56107baa6f0fabb419b508b3", default-features = false }
+nsh-platform-tui = { git = "https://github.com/longbridge/nsh", rev = "87c7e8da85d2f15a56107baa6f0fabb419b508b3", default-features = false, features = ["run-app"], optional = true }
+ratatui-core = { version = "=0.1.2", optional = true }
+ratatui-crossterm = { version = "=0.1.2", optional = true }
+crossterm = { version = "0.29", optional = true }
+
+[target.'cfg(target_os="linux")'.dependencies]
+nsh-platform-linux = { git = "https://github.com/longbridge/nsh", rev = "87c7e8da85d2f15a56107baa6f0fabb419b508b3", default-features = false, optional = true }
+[target.'cfg(target_os="macos")'.dependencies]
+nsh-platform-macos = { git = "https://github.com/longbridge/nsh", rev = "87c7e8da85d2f15a56107baa6f0fabb419b508b3", default-features = false, optional = true }
+[target.'cfg(target_os="windows")'.dependencies]
+nsh-platform-windows = { git = "https://github.com/longbridge/nsh", rev = "87c7e8da85d2f15a56107baa6f0fabb419b508b3", default-features = false, optional = true }
+
+[target.'cfg(target_arch="wasm32")'.dependencies]
+nsh-platform-web = { git = "https://github.com/longbridge/nsh", rev = "87c7e8da85d2f15a56107baa6f0fabb419b508b3", default-features = false }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt","net","time"] }
+acp-ipc = { path = "../../../crates/acp-ipc" }
+tempfile = "3"
+nsh-testing = { git = "https://github.com/longbridge/nsh", rev = "87c7e8da85d2f15a56107baa6f0fabb419b508b3", default-features = false }
+nsh-engine = { git = "https://github.com/longbridge/nsh", rev = "87c7e8da85d2f15a56107baa6f0fabb419b508b3", default-features = false }
+
+[[bin]]
+name = "acp-nsh-native"
+path = "src/main.rs"
+required-features = ["native"]
+[[bin]]
+name = "acp-nsh-tui"
+path = "src/tui.rs"
+required-features = ["tui"]
