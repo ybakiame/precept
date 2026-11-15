@@ -285,15 +285,15 @@ impl Ui {
     }
     /// Activate a rendered button using only its anchor chord, Tab stops and
     /// Enter/Space. Disabled and concealed controls are skipped.
-    /// Counts are calibrated independently on the real TUI, GTK and HWND focus
-    /// chains, not inferred from one backend: TUI load/digest need four stops and
-    /// a queue row five; GTK needs three; HWND load/digest need three and a queue
-    /// row four. Read-only UI Automation observation confirms HWND's load action
-    /// is the third stop and precedes the queue row; it never actuates a control.
+    /// Counts are calibrated independently on the real PTY, ConPTY, GTK and HWND
+    /// chains. Load/digest and queue-row stops respectively: PTY 3/4, ConPTY 4/5,
+    /// GTK 3/3, HWND 3/4. Read-only UI Automation confirms
+    /// HWND's load action precedes the queue row; VT traces retain the terminal's
+    /// actual per-stop focus attributes. Neither observer actuates a control.
     fn activate(
         &mut self,
         (anchor, activation): (&str, &str),
-        tty_tabs: usize,
+        tty_tabs: (usize, usize),
         desktop_tabs: (usize, usize),
         marker: &str,
         text: &str,
@@ -302,7 +302,8 @@ impl Ui {
         let tabs = match self {
             Self::Desktop(_) if cfg!(windows) => desktop_tabs.1,
             Self::Desktop(_) => desktop_tabs.0,
-            Self::Tty(_) => tty_tabs,
+            Self::Tty(_) if cfg!(windows) => tty_tabs.1,
+            Self::Tty(_) => tty_tabs.0,
         };
         let trace = std::env::var_os("ACP_S5_KEYBOARD_TRACE").is_some();
         self.key(anchor);
@@ -358,7 +359,7 @@ impl Ui {
                 if name.starts_with("keyboard-") {
                     fs::write(
                         out.join(format!("{name}.vt")),
-                        &*t.raw.lock().unwrap(),
+                        t.raw.lock().unwrap().as_slice(),
                     )
                     .unwrap();
                 }
@@ -688,12 +689,12 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     // Queue tab: load the suggested-only page. The load action is a rendered
     // button reached by the fixed Tab count from the source-field anchor (see
     // Ui::activate); the disabled First/Next paging controls are skipped.
-    ui.activate(("alt+f", "enter"), 4, (3, 3), "queue=1", "#4", out);
+    ui.activate(("alt+f", "enter"), (3, 4), (3, 3), "queue=1", "#4", out);
     ui.capture("review-queue", out);
     // Open the exact record from its queue row; Detail auto-selects and inspects.
     ui.activate(
         ("alt+f", "enter"),
-        5,
+        (4, 5),
         (3, 4),
         "inspected_id=4 inspected_revision=1",
         "Show full digest",
@@ -718,7 +719,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     let digest4 = f.digest(id4);
     ui.activate(
         ("alt+f", "space"),
-        4,
+        (3, 4),
         (3, 3),
         "digest_expanded=true",
         "Collapse digest",
