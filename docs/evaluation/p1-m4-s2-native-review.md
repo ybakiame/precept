@@ -382,10 +382,18 @@ local `ui/dist`. The browser result/PNGs are in `pr59-review-web-browser`;
 fixture was removed. These are author-run local checks, not independent review
 or hosted CI evidence.
 
-PR #58 was still Open/Draft when its review was read. Its structural precursor
-must be merged by the owner first; only after the base advances can #59's reduced
-diff/mergeability be rechecked. No self-merge, squash of #58, issue closure or S3
-acceptance is implied. Keep #59 Draft and #57/#52 open.
+The owner merged PR #58 as `14b201e052c6906896a713342decb1cb8d56d929` at
+2026-11-15T09:08:08Z. Main was then integrated into #59 without squashing, in
+`59a2062b007de933b06411dce7869f208d3e033b`. Main's tree matched the original
+precursor tree, and the feature's entire tracked tree was unchanged by that
+ancestry-only merge; no runtime rerun is attributed to it.
+
+The explicit updated-main comparison and uncached PR API agreed on base/merge-base
+`14b201e`, head `59a2062`, **45 remaining files**, `mergeable=true`,
+`mergeable_state=clean` and `draft=true`. The remaining scope is S2 and its review
+fixes, not a second namespace/archive migration. This satisfies the post-#58
+diff/mergeability check, not approval or a merge of #59. Keep #59 Draft and
+#57/#52 open; S3 remains separate.
 
 Historical S0/S1/S3/S5 reports retain their original revisions and scope. Hosted
 Actions, macOS, niri, mobile, real-model turns, installation/release, full IME and
