@@ -164,6 +164,41 @@ impl IntoElement for Button {
                 scale::radius::CONTROL,
             ),
         };
+        #[cfg(target_os = "windows")]
+        let keyboard_ref = {
+            // Win32's custom-view focus path does not activate press targets.
+            // Use the same focused-key lifecycle as nsh-base's other controls;
+            // no app-wide binding may take Enter/Space from an input or sibling.
+            let reference = element_ref();
+            let focused = signal(false);
+            reference.on_focus_in(move || focused.set(true));
+            reference.on_focus_out(move || focused.set(false));
+            let disabled = self.disabled.clone();
+            let loading = self.loading.clone();
+            let press = self.on_press.clone();
+            effect(move || {
+                if !focused.get() || disabled() || loading() {
+                    return;
+                }
+                for key in ["enter", "space"] {
+                    let press = press.clone();
+                    on_key_with(
+                        key,
+                        KeyOptions {
+                            when: nsh_core::keymap::When::NotEditing,
+                            for_focus: true,
+                            ..Default::default()
+                        },
+                        move |_| {
+                            if let Some(cb) = &press {
+                                cb();
+                            }
+                        },
+                    );
+                }
+            });
+            reference
+        };
         let b = base_button()
             .accessibility_label(move || Some(label()))
             .disabled(move || disabled() || loading_disabled())
@@ -185,6 +220,8 @@ impl IntoElement for Button {
                     cb();
                 }
             });
+        #[cfg(target_os = "windows")]
+        let b = b.element_ref(&keyboard_ref);
         let b = motion::feedback(b);
         let b = match size {
             ButtonSize::Small => b.px_2().py_0p5().min_h(px(scale::control::SM)),

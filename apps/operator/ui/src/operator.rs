@@ -1577,7 +1577,10 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
     // clipped/scrolled document that may place its insertion point off-screen.
     view()
         .flex_1()
-        .style_when(move || !model.get().operator.open, |s| s.hidden().invisible())
+        .style_when(
+            move || !model.get().operator.open,
+            |s| s.hidden().invisible(),
+        )
         .child(scroll().element_ref(&scroll_ref).flex_1().child(content))
         .child(delete_dialog(model, delete_open, retype_ref))
 }
