@@ -270,8 +270,10 @@ The active workspace owns one scroll region. Review content uses its own region
 instead of nesting inside the general shell scroll; the native dialog is a sibling
 of that region, never an offscreen child at the bottom of the scrolled document.
 Explicit tab changes, new inspect/queue results and newly prepared/uncertain
-operations reveal their content without changing keyboard focus. Retype edits,
-field focus and cancellation do not request that scrolling.
+operations reveal the tab header or preview from measured layout on the next
+frame, not the document's end. Superseded navigation cannot move the viewport.
+Keyboard focus stays unchanged; retype edits, field focus and cancellation do
+not request that scrolling.
 
 The destructive dialog keeps one native modal for each open interval. Only the
 boolean open state changes its structure; localized labels, validation and retype

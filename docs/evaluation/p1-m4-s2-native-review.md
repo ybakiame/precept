@@ -125,6 +125,14 @@ checks; these attempts are retained, not relabelled:
   unchanged revision/status/commit sequence, tier-only Escape and clean child exit.
   Native PNGs and parsed PTY frames were visually inspected. These remain dirty
   exploratory evidence, not the final clean-SHA gate.
+- Clean `9f6defcf7b2dd837cb6a3751f1238b9e4e23d70a` full gates: FAIL on both
+  hosts at the real review-component test's History pointer activation in the
+  1080×760 viewport. All preceding fmt/build/Clippy/root/shared gates, 27 UI unit
+  tests and the original UI IPC test passed. Scrolling to the document's end had
+  placed the tab under the fixed header. The fix defers a measured tab-header or
+  preview-start anchor to the next frame and fences superseded navigation.
+  The unchanged real-daemon review regression then passed; no assertion was
+  weakened and no pointer activation was substituted with a chord.
 
 Historical S0/S1/S3/S5 reports retain their original revisions and scope. Hosted
 Actions, macOS, niri, mobile, real-model turns, installation/release, full IME and

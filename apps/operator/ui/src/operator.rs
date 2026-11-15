@@ -809,6 +809,8 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
     let delete_open = signal(false);
     let retype_ref = element_ref();
     let scroll_ref = element_ref();
+    let review_origin = signal(px(0.0));
+    let preview_origin = signal(px(0.0));
     let navigation = computed(move || {
         model.with(|m| {
             let o = &m.operator;
@@ -849,9 +851,18 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                 || (tab == ReviewTab::Queue && queue.is_some())
                 || (tab != ReviewTab::Queue && inspect.is_some()))
         {
-            // Reveal explicit navigation/read/prepare results, not typing or
-            // cancellation. Keep keyboard focus and destructive consent intact.
-            scroll_ref.scroll_to_end(false);
+            // Reveal the tab header or preview after layout, not the document's
+            // end: long Detail content must not bury its own navigation.
+            nsh_core::element::request_animation_frame(move |_| {
+                if navigation.get() == next {
+                    let y = if prepared || unknown {
+                        preview_origin.get()
+                    } else {
+                        review_origin.get()
+                    };
+                    scroll_ref.scroll_to(nsh_core::geometry::Point::new(px(0.0), y), false);
+                }
+            });
         }
     });
     for (key, action) in [
@@ -1419,6 +1430,7 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
         )
         .child(
             view()
+                .on_layout(move |bounds: &Bounds<Points>| review_origin.set(bounds.origin.y))
                 .gap_2()
                 .style_when(
                     move || {
@@ -1431,7 +1443,10 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
         )
         .child(dynamic(move || {
             let m = model.get();
-            let mut body = view().gap_2().flex_shrink_0();
+            let mut body = view()
+                .on_layout(move |bounds: &Bounds<Points>| preview_origin.set(bounds.origin.y))
+                .gap_2()
+                .flex_shrink_0();
             if let Some(review) = &m.operator.review {
                 let mut lines = vec![m.word(Msg::OperatorPending).into(), review.method.clone()];
                 if let Some(mutation) = &review.mutation {
