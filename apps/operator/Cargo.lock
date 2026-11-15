@@ -533,6 +533,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 
 [[package]]
+name = "combine"
+version = "4.6.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4356eba6976435498d05a311ee9fc486da3bc81c200d3f0d7dd9703b41913f92"
+dependencies = [
+ "bytes",
+ "memchr",
+]
+
+[[package]]
 name = "compact_str"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -571,6 +581,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "core-foundation"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b2a6cd9ae233e7f62ba4e9353e81a88df7fc8a5987b8d445b4d90c879bd156f6"
+dependencies = [
+ "core-foundation-sys",
+ "libc",
+]
+
+[[package]]
 name = "core-foundation-sys"
 version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -581,6 +601,15 @@ name = "core_detect"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f8f80099a98041a3d1622845c271458a2d73e688351bf3cb999266764b81d48"
+
+[[package]]
+name = "core_maths"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77745e017f5edba1a9c1d854f6f3a52dac8a12dd5af5d2f54aecf61e43d80d30"
+dependencies = [
+ "libm",
+]
 
 [[package]]
 name = "cpufeatures"
@@ -890,6 +919,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "env_filter"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "900d271a03799a1ee8d1ca9b19893b48ca674a9284fefcfb85f05e74ed314217"
+dependencies = [
+ "log",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1017,6 +1055,29 @@ name = "foldhash"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
+
+[[package]]
+name = "fontconfig-parser"
+version = "0.5.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbc773e24e02d4ddd8395fd30dc147524273a83e54e0f312d986ea30de5f5646"
+dependencies = [
+ "roxmltree 0.20.0",
+]
+
+[[package]]
+name = "fontdb"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "457e789b3d1202543297a350643cf459f836cade38934e7a4cf6a39e7cde2905"
+dependencies = [
+ "fontconfig-parser",
+ "log",
+ "memmap2",
+ "slotmap",
+ "tinyvec",
+ "ttf-parser",
+]
 
 [[package]]
 name = "form_urlencoded"
@@ -1969,6 +2030,55 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3bd1574e617a9a6c1f8f8181bd7e841e1f20e4277607ef28945765188d6284d4"
 
 [[package]]
+name = "jni"
+version = "0.22.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5efd9a482cf3a427f00d6b35f14332adc7902ce91efb778580e180ff90fa3498"
+dependencies = [
+ "cfg-if",
+ "combine",
+ "jni-macros",
+ "jni-sys",
+ "log",
+ "simd_cesu8",
+ "thiserror 2.0.21",
+ "walkdir",
+ "windows-link",
+]
+
+[[package]]
+name = "jni-macros"
+version = "0.22.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a00109accc170f0bdb141fed3e393c565b6f5e072365c3bd58f5b062591560a3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "rustc_version",
+ "simd_cesu8",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "jni-sys"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c6377a88cb3910bee9b0fa88d4f42e1d2da8e79915598f65fb0c7ee14c878af2"
+dependencies = [
+ "jni-sys-macros",
+]
+
+[[package]]
+name = "jni-sys-macros"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38c0b942f458fe50cdac086d2f946512305e5631e720728f2a61aabcd47a6264"
+dependencies = [
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "jobserver"
 version = "0.1.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2138,6 +2248,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
+name = "memmap2"
+version = "0.9.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b0ca1155a9ecc25aa12e8313a119f32edf0255fea2f44839c4ac0a12b2ac157"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "memoffset"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2260,8 +2379,8 @@ dependencies = [
 
 [[package]]
 name = "nsh-base"
-version = "0.4.0"
-source = "git+https://github.com/longbridge/nsh?rev=87c7e8da85d2f15a56107baa6f0fabb419b508b3#87c7e8da85d2f15a56107baa6f0fabb419b508b3"
+version = "0.5.0"
+source = "git+https://github.com/longbridge/nsh?rev=b7f31a08478be262fd7b76ec856036fd5b8ffdb0#b7f31a08478be262fd7b76ec856036fd5b8ffdb0"
 dependencies = [
  "chrono",
  "html5ever",
@@ -2290,13 +2409,14 @@ dependencies = [
 
 [[package]]
 name = "nsh-core"
-version = "0.4.0"
-source = "git+https://github.com/longbridge/nsh?rev=87c7e8da85d2f15a56107baa6f0fabb419b508b3#87c7e8da85d2f15a56107baa6f0fabb419b508b3"
+version = "0.5.0"
+source = "git+https://github.com/longbridge/nsh?rev=b7f31a08478be262fd7b76ec856036fd5b8ffdb0#b7f31a08478be262fd7b76ec856036fd5b8ffdb0"
 dependencies = [
  "cap-std",
  "crc32fast",
  "flate2",
  "futures-util",
+ "gif",
  "httpdate",
  "imagesize 0.15.0",
  "libc",
@@ -2309,9 +2429,11 @@ dependencies = [
  "rust-i18n",
  "rustc-hash 2.1.3",
  "rustls",
+ "rustls-platform-verifier",
  "serde",
  "serde_json",
  "sha2",
+ "simplecss",
  "slab",
  "taffy",
  "tokio",
@@ -2328,10 +2450,11 @@ dependencies = [
 
 [[package]]
 name = "nsh-engine"
-version = "0.4.0"
-source = "git+https://github.com/longbridge/nsh?rev=87c7e8da85d2f15a56107baa6f0fabb419b508b3#87c7e8da85d2f15a56107baa6f0fabb419b508b3"
+version = "0.5.0"
+source = "git+https://github.com/longbridge/nsh?rev=b7f31a08478be262fd7b76ec856036fd5b8ffdb0#b7f31a08478be262fd7b76ec856036fd5b8ffdb0"
 dependencies = [
  "crossbeam-channel",
+ "env_filter",
  "libc",
  "log",
  "nsh-core",
@@ -2346,8 +2469,8 @@ dependencies = [
 
 [[package]]
 name = "nsh-macros"
-version = "0.4.0"
-source = "git+https://github.com/longbridge/nsh?rev=87c7e8da85d2f15a56107baa6f0fabb419b508b3#87c7e8da85d2f15a56107baa6f0fabb419b508b3"
+version = "0.5.0"
+source = "git+https://github.com/longbridge/nsh?rev=b7f31a08478be262fd7b76ec856036fd5b8ffdb0#b7f31a08478be262fd7b76ec856036fd5b8ffdb0"
 dependencies = [
  "imagesize 0.15.0",
  "proc-macro2",
@@ -2359,10 +2482,11 @@ dependencies = [
 
 [[package]]
 name = "nsh-platform-apple"
-version = "0.4.0"
-source = "git+https://github.com/longbridge/nsh?rev=87c7e8da85d2f15a56107baa6f0fabb419b508b3#87c7e8da85d2f15a56107baa6f0fabb419b508b3"
+version = "0.5.0"
+source = "git+https://github.com/longbridge/nsh?rev=b7f31a08478be262fd7b76ec856036fd5b8ffdb0#b7f31a08478be262fd7b76ec856036fd5b8ffdb0"
 dependencies = [
  "block2",
+ "cc",
  "dispatch2",
  "libc",
  "log",
@@ -2370,14 +2494,18 @@ dependencies = [
  "nsh-engine",
  "objc2",
  "objc2-app-kit",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
  "objc2-foundation",
+ "objc2-image-io",
  "objc2-ui-kit",
+ "serde_json",
 ]
 
 [[package]]
 name = "nsh-platform-linux"
-version = "0.4.0"
-source = "git+https://github.com/longbridge/nsh?rev=87c7e8da85d2f15a56107baa6f0fabb419b508b3#87c7e8da85d2f15a56107baa6f0fabb419b508b3"
+version = "0.5.0"
+source = "git+https://github.com/longbridge/nsh?rev=b7f31a08478be262fd7b76ec856036fd5b8ffdb0#b7f31a08478be262fd7b76ec856036fd5b8ffdb0"
 dependencies = [
  "crossbeam-channel",
  "gstreamer",
@@ -2398,8 +2526,8 @@ dependencies = [
 
 [[package]]
 name = "nsh-platform-macos"
-version = "0.4.0"
-source = "git+https://github.com/longbridge/nsh?rev=87c7e8da85d2f15a56107baa6f0fabb419b508b3#87c7e8da85d2f15a56107baa6f0fabb419b508b3"
+version = "0.5.0"
+source = "git+https://github.com/longbridge/nsh?rev=b7f31a08478be262fd7b76ec856036fd5b8ffdb0#b7f31a08478be262fd7b76ec856036fd5b8ffdb0"
 dependencies = [
  "block2",
  "crossbeam-channel",
@@ -2426,8 +2554,8 @@ dependencies = [
 
 [[package]]
 name = "nsh-platform-tui"
-version = "0.4.0"
-source = "git+https://github.com/longbridge/nsh?rev=87c7e8da85d2f15a56107baa6f0fabb419b508b3#87c7e8da85d2f15a56107baa6f0fabb419b508b3"
+version = "0.5.0"
+source = "git+https://github.com/longbridge/nsh?rev=b7f31a08478be262fd7b76ec856036fd5b8ffdb0#b7f31a08478be262fd7b76ec856036fd5b8ffdb0"
 dependencies = [
  "crossbeam-channel",
  "log",
@@ -2442,8 +2570,8 @@ dependencies = [
 
 [[package]]
 name = "nsh-platform-web"
-version = "0.4.0"
-source = "git+https://github.com/longbridge/nsh?rev=87c7e8da85d2f15a56107baa6f0fabb419b508b3#87c7e8da85d2f15a56107baa6f0fabb419b508b3"
+version = "0.5.0"
+source = "git+https://github.com/longbridge/nsh?rev=b7f31a08478be262fd7b76ec856036fd5b8ffdb0#b7f31a08478be262fd7b76ec856036fd5b8ffdb0"
 dependencies = [
  "log",
  "nsh-base",
@@ -2458,8 +2586,8 @@ dependencies = [
 
 [[package]]
 name = "nsh-platform-windows"
-version = "0.4.0"
-source = "git+https://github.com/longbridge/nsh?rev=87c7e8da85d2f15a56107baa6f0fabb419b508b3#87c7e8da85d2f15a56107baa6f0fabb419b508b3"
+version = "0.5.0"
+source = "git+https://github.com/longbridge/nsh?rev=b7f31a08478be262fd7b76ec856036fd5b8ffdb0#b7f31a08478be262fd7b76ec856036fd5b8ffdb0"
 dependencies = [
  "crossbeam-channel",
  "image",
@@ -2479,20 +2607,21 @@ dependencies = [
 
 [[package]]
 name = "nsh-testing"
-version = "0.4.0"
-source = "git+https://github.com/longbridge/nsh?rev=87c7e8da85d2f15a56107baa6f0fabb419b508b3#87c7e8da85d2f15a56107baa6f0fabb419b508b3"
+version = "0.5.0"
+source = "git+https://github.com/longbridge/nsh?rev=b7f31a08478be262fd7b76ec856036fd5b8ffdb0#b7f31a08478be262fd7b76ec856036fd5b8ffdb0"
 dependencies = [
  "crossbeam-channel",
  "log",
  "nsh-core",
  "nsh-engine",
  "regex",
+ "url",
 ]
 
 [[package]]
 name = "nsh-updater"
-version = "0.4.0"
-source = "git+https://github.com/longbridge/nsh?rev=87c7e8da85d2f15a56107baa6f0fabb419b508b3#87c7e8da85d2f15a56107baa6f0fabb419b508b3"
+version = "0.5.0"
+source = "git+https://github.com/longbridge/nsh?rev=b7f31a08478be262fd7b76ec856036fd5b8ffdb0#b7f31a08478be262fd7b76ec856036fd5b8ffdb0"
 dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",
@@ -2720,6 +2849,12 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
+
+[[package]]
+name = "openssl-probe"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e036b411754132fd6b74e94b74e9a13c5cf606fa93d1885c35860d3060820b1"
 
 [[package]]
 name = "option-operations"
@@ -3268,12 +3403,15 @@ version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b563218631706d614e23059436526d005b50ab5f2d506b55a17eb65c5eb83419"
 dependencies = [
+ "gif",
+ "image-webp",
  "log",
  "pico-args",
  "rgb",
  "svgtypes",
  "tiny-skia",
  "usvg",
+ "zune-jpeg",
 ]
 
 [[package]]
@@ -3308,6 +3446,12 @@ dependencies = [
  "smallvec",
  "str_indices",
 ]
+
+[[package]]
+name = "roxmltree"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c20b6793b5c2fa6553b250154b78d6d0db37e72700ae35fad9387a46f487c97"
 
 [[package]]
 name = "roxmltree"
@@ -3426,6 +3570,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustls-native-certs"
+version = "0.8.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a073f5dc7469f984c52ad2752b63b0807745133b6de880b7b64c1ac4c48aec4"
+dependencies = [
+ "openssl-probe",
+ "rustls-pki-types",
+ "schannel",
+ "security-framework",
+]
+
+[[package]]
 name = "rustls-pki-types"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3433,6 +3589,33 @@ checksum = "2f4925028c7eb5d1fcdaf196971378ed9d2c1c4efc7dc5d011256f76c99c0a96"
 dependencies = [
  "zeroize",
 ]
+
+[[package]]
+name = "rustls-platform-verifier"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1167586491e2b18b8bfbb293e8180ec17c201c4f076d7cb3070ca964e7598f98"
+dependencies = [
+ "core-foundation",
+ "core-foundation-sys",
+ "jni",
+ "log",
+ "once_cell",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-platform-verifier-android",
+ "rustls-webpki",
+ "security-framework",
+ "security-framework-sys",
+ "webpki-root-certs",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "rustls-platform-verifier-android"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eec689c0bc40ff2458a5977b6619cb718087084a18e02a131c599b62d05e1a5f"
 
 [[package]]
 name = "rustls-webpki"
@@ -3452,6 +3635,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
+name = "rustybuzz"
+version = "0.20.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd3c7c96f8a08ee34eff8857b11b49b07d71d1c3f4e88f8a88d4c9e9f90b1702"
+dependencies = [
+ "bitflags 2.13.2",
+ "bytemuck",
+ "core_maths",
+ "log",
+ "smallvec",
+ "ttf-parser",
+ "unicode-bidi-mirroring",
+ "unicode-ccc",
+ "unicode-properties",
+ "unicode-script",
+]
+
+[[package]]
 name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3467,10 +3668,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "schannel"
+version = "0.1.30"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cb23c424d8ee841bb4d813677ca237e2a610067d594fec130f87d6093495ab5"
+dependencies = [
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "security-framework"
+version = "3.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b7f4bc775c73d9a02cde8bf7b2ec4c9d12743edf609006c7facc23998404cd1d"
+dependencies = [
+ "bitflags 2.13.2",
+ "core-foundation",
+ "core-foundation-sys",
+ "libc",
+ "security-framework-sys",
+]
+
+[[package]]
+name = "security-framework-sys"
+version = "2.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ce2691df843ecc5d231c0b14ece2acc3efb62c0a398c7e1d875f3983ce020e3"
+dependencies = [
+ "core-foundation-sys",
+ "libc",
+]
 
 [[package]]
 name = "semver"
@@ -3629,6 +3862,16 @@ name = "simd-adler32"
 version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
+
+[[package]]
+name = "simd_cesu8"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11031e251abf8611c80f460e19dbdeb54a66db918e49c65a7065b46ac7aec520"
+dependencies = [
+ "rustc_version",
+ "simdutf8",
+]
 
 [[package]]
 name = "simdutf8"
@@ -4167,6 +4410,9 @@ name = "ttf-parser"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
+dependencies = [
+ "core_maths",
+]
 
 [[package]]
 name = "tungstenite"
@@ -4217,6 +4463,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c1cb5db39152898a79168971543b1cb5020dff7fe43c8dc468b0885f5e29df5"
 
 [[package]]
+name = "unicode-bidi-mirroring"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5dfa6e8c60bb66d49db113e0125ee8711b7647b5579dc7f5f19c42357ed039fe"
+
+[[package]]
+name = "unicode-ccc"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce61d488bcdc9bc8b5d1772c404828b17fc481c0a582b5581e95fb233aef503e"
+
+[[package]]
 name = "unicode-id"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4250,6 +4508,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "993ad287eb20e8ba755312801cfe1413e0f25d604075863acaddca10b04c1833"
 
 [[package]]
+name = "unicode-script"
+version = "0.5.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa04c955db05429d464c74d495c1ee677e1866e783a4c3747f9c0cef7756cabf"
+
+[[package]]
 name = "unicode-segmentation"
 version = "1.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4265,6 +4529,12 @@ dependencies = [
  "unicode-segmentation",
  "unicode-width",
 ]
+
+[[package]]
+name = "unicode-vo"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1d386ff53b415b7fe27b50bb44679e2cc4660272694b7b6f3326d8480823a94"
 
 [[package]]
 name = "unicode-width"
@@ -4290,6 +4560,7 @@ dependencies = [
  "percent-encoding",
  "rustls",
  "rustls-pki-types",
+ "rustls-platform-verifier",
  "ureq-proto",
  "utf8-zero",
  "webpki-roots 1.0.11",
@@ -4328,16 +4599,21 @@ dependencies = [
  "base64 0.22.1",
  "data-url",
  "flate2",
+ "fontdb",
  "imagesize 0.14.0",
  "kurbo",
  "log",
  "pico-args",
- "roxmltree",
+ "roxmltree 0.21.2",
+ "rustybuzz",
  "simplecss",
  "siphasher",
  "strict-num",
  "svgtypes",
  "tiny-skia-path",
+ "unicode-bidi",
+ "unicode-script",
+ "unicode-vo",
  "xmlwriter",
 ]
 
@@ -4463,6 +4739,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b1f9c3798725016c6ee5f2f57869ec0831e8bbc0ab0310a86e787e97f41389e"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "webpki-root-certs"
+version = "1.0.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "293198dcebfb821155b5092ab94b5a82ff180eddd7241df3bd6e66a4ffd1a585"
+dependencies = [
+ "rustls-pki-types",
 ]
 
 [[package]]

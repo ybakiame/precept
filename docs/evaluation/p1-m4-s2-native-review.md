@@ -154,6 +154,34 @@ checks; these attempts are retained, not relabelled:
 - `s2-wslg-frame1-dark` / `s2-pty-erasure1`: DEV_PASS with the new capture guard,
   deferred field focus and VT erasure. The dark compact Chinese refusal PNG was
   visually inspected and is rendered, not black. These are exploratory results.
+- Clean `148bfefdccaf1d663d39a282dd89efdcfa4cce3e`: Linux full gates,
+  driver gates (29 tests), source checks and PTY light/dark PASS. Windows smoke
+  still failed at queue keyboard activation. An owned Crossterm/ConPTY diagnostic
+  confirmed normal Tab/Enter modifiers and separate press/release events, so
+  keyboard delivery was not replaced with a callback or a different shortcut.
+  The attempted app-level `focusable` override was not supported by the component
+  builder and was removed; it is not a compatibility layer.
+
+## NSH source decision
+
+The old pin's Win32 Tab handler visits only text fields and its `Focus` command
+only calls `text_input::focus`. The required button keyboard path needs the
+upstream generic focus implementation, not more Tab-count guesses.
+
+[NSH v0.5.1](https://github.com/longbridge/nsh/releases/tag/v0.5.1) resolves to
+`224d9a795c7ac9d10d75750de9351adac5549675`; that release still has the input-only
+Win32 focus command. The owner chose a fixed upstream implementation rather than
+maintaining a local backport, conditional on its base being at least 0.5.
+[Upstream fix b7f31a0](https://github.com/longbridge/nsh/commit/b7f31a08478be262fd7b76ec856036fd5b8ffdb0)
+and its [parent manifest](https://github.com/longbridge/nsh/blob/57341a82ec66bb57f355c5f716dd3d7f038d6de8/Cargo.toml#L10)
+both declare workspace version **0.5.0** (Rust minimum 1.97).
+
+Active NSH crates and offline renderer packaging now share immutable
+`b7f31a08478be262fd7b76ec856036fd5b8ffdb0`; this is a 0.5-based upstream revision,
+**not** the 0.5.1 release tag. No cached SDK source, local SDK patch, alternate
+framework, product IPC/schema/permission or mutation contract is introduced.
+The existing real-daemon review regression passed on this revision before native
+acceptance. Historical spike/archive pins and their evidence remain unchanged.
 
 Historical S0/S1/S3/S5 reports retain their original revisions and scope. Hosted
 Actions, macOS, niri, mobile, real-model turns, installation/release, full IME and

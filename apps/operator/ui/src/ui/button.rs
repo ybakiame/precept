@@ -165,7 +165,6 @@ impl IntoElement for Button {
             ),
         };
         let b = base_button()
-            .focusable(true)
             .accessibility_label(move || Some(label()))
             .disabled(move || disabled() || loading_disabled())
             .disabled_style(|s| s.opacity(0.45))
