@@ -122,3 +122,161 @@ async fn revoke_closes_admissions_drains_and_preserves_admitted_committed_respon
         .acquire()
         .unwrap();
 }
+
+/// Checkpoint-controlled TOCTOU: real dispatch/framing/SQLite/filesystem, but an
+/// in-process duplex peer and cfg(test) hook, NOT a native/process acceptance run.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn s3_root_drift_between_initial_check_and_final_admission_refuses_review() {
+    for action in ["confirm", "reject", "deprecate", "delete"] {
+        let temp = tempfile::tempdir().unwrap();
+        let state = temp.path().join("state");
+        acp_ipc::transport::private_dir(&state, true).unwrap();
+        let db = state.join("profile.sqlite3");
+        acp_write::Profile::create(&db).unwrap();
+        let root = temp.path().join("alpha");
+        std::fs::create_dir(&root).unwrap();
+        let root = root.canonicalize().unwrap();
+        let displaced = temp.path().join("alpha-displaced");
+        let location = Location {
+            runtime_dir: temp.path().join("run"),
+            endpoint: "unused".into(),
+        };
+        let mut runtime = RuntimeLease::acquire(&location).unwrap();
+        let credentials = Arc::new(runtime.credentials(&["alpha".into()]).unwrap());
+        let grants = acp_ipc::session_lease::Registry::default();
+        let profiles = Arc::new(
+            profiles::Profiles::new(
+                location.clone(),
+                vec!["alpha".into()],
+                &[format!("alpha={}", root.to_str().unwrap())],
+                Some(&db),
+                grants.1.clone(),
+            )
+            .unwrap(),
+        );
+        let service = Service {
+            profiles: profiles.clone(),
+            projects: vec!["alpha".into()],
+            agent_config: None,
+            context_mcp: None,
+            context_lease_seconds: 300,
+            sessions: Default::default(),
+            grants,
+        };
+        let operator = credentials
+            .iter()
+            .find(|credential| credential.access == Access::Operator)
+            .unwrap();
+        let (mut operator, ack) = open(&service, credentials.clone(), operator).await;
+        assert_eq!(ack["ready"], true);
+        send(&mut operator, "info", "profile.info", json!({})).await;
+        let info = read_frame(&mut operator).await.unwrap()["result"].clone();
+        send(
+            &mut operator,
+            "enable",
+            "profile.write.enable",
+            json!({
+                "profile_id":info["binding"]["profile_id"],
+                "generation":info["binding"]["generation"],
+                "confirm":true
+            }),
+        )
+        .await;
+        let enabled = read_frame(&mut operator).await.unwrap()["result"].clone();
+        let credential =
+            acp_ipc::load_credential(&location, &location.runtime_dir.join("operator-write.cap"))
+                .unwrap();
+        let (mut writer, ack) = open(&service, credentials, &credential).await;
+        assert_eq!(ack["ready"], true);
+        let scope = json!({"kind":"project","name":"alpha"});
+        for (operation, command) in [
+            (
+                "register",
+                json!({"command":"register_project","name":"alpha","root":root,
+                    "expected":{"kind":"absent"}}),
+            ),
+            (
+                "suggest",
+                json!({"command":"suggest_preference","scope":scope,"key":"synthetic",
+                    "value":"synthetic","source":"synthetic","origin":"agent_reported",
+                    "expected":{"kind":"absent"}}),
+            ),
+        ] {
+            send(
+                &mut writer,
+                operation,
+                "profile.mutate",
+                json!({"version":2,"binding":enabled["binding"],
+                    "operation_id":operation,"command":command}),
+            )
+            .await;
+            assert_eq!(read_frame(&mut writer).await.unwrap()["error"], Value::Null);
+        }
+        send(
+            &mut operator,
+            "inspect",
+            "profile.review.inspect",
+            json!({"scope":scope,"id":1,"revision":1}),
+        )
+        .await;
+        let inspected = read_frame(&mut operator).await.unwrap()["result"].clone();
+        let digest = inspected["record"]["proposal_digest"].clone();
+        let revision = if action == "deprecate" {
+            send(
+                &mut writer,
+                "confirm",
+                "profile.mutate",
+                json!({"version":2,"binding":enabled["binding"],"operation_id":"confirm",
+                    "command":{"command":"confirm_preference","scope":scope,"id":1,
+                    "proposal_digest":digest,"channel":"cli",
+                    "expected":{"kind":"revision","revision":1}}}),
+            )
+            .await;
+            assert_eq!(read_frame(&mut writer).await.unwrap()["error"], Value::Null);
+            2
+        } else {
+            1
+        };
+        let before = std::fs::read(&db).unwrap();
+        let moved_root = root.clone();
+        let moved_destination = displaced.clone();
+        *profiles.before_begin.lock().unwrap() = Some(Arc::new(move || {
+            // The initial admission/root check has already succeeded. The final
+            // check must observe this change before starting the transaction.
+            std::fs::rename(&moved_root, &moved_destination).unwrap();
+        }));
+        send(
+            &mut writer,
+            "drift",
+            "profile.mutate",
+            json!({"version":2,"binding":enabled["binding"],"operation_id":"drift",
+                "command":{"command":format!("{action}_preference"),"scope":scope,"id":1,
+                "proposal_digest":digest,"channel":"desktop",
+                "expected":{"kind":"revision","revision":revision}}}),
+        )
+        .await;
+        assert_eq!(
+            read_frame(&mut writer).await.unwrap()["error"],
+            "UnsafeRuntime"
+        );
+        assert!(displaced.is_dir(), "the precise admission hook must run");
+        assert_eq!(std::fs::read(&db).unwrap(), before);
+        *profiles.before_begin.lock().unwrap() = None;
+        std::fs::rename(displaced, root).unwrap();
+        send(
+            &mut operator,
+            "fresh-inspect",
+            "profile.review.inspect",
+            json!({"scope":scope,"id":1,"revision":revision}),
+        )
+        .await;
+        let result = read_frame(&mut operator).await.unwrap();
+        assert_eq!(result["error"], Value::Null);
+        assert_eq!(result["result"]["record"]["revision"], revision);
+        send(&mut operator, "disable", "profile.write.disable", json!({})).await;
+        assert_eq!(
+            read_frame(&mut operator).await.unwrap()["error"],
+            Value::Null
+        );
+    }
+}
