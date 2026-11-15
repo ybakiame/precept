@@ -52,7 +52,7 @@ those broader criteria were met. No aggregate comparative score is asserted.
 | macOS | Historical P1-E CI native build/window smoke at its recorded SHA | Latest product/theme/session behavior and packaging not revalidated; no current macOS support claim |
 | English / Simplified Chinese | Shared catalogs, switching and scoped CJK paste evidence | Full IME composition, regional formatting and RTL not verified |
 | Accessibility | Token contrast, visible focus and scoped keyboard checks | Screen-reader/assistive-technology and complete accessibility certification NOT_RUN |
-| Mobile / browser | Historical experiments/typechecks only | Outside current product targets; no mobile release or authenticated browser UI |
+| Mobile / browser | Local offline Web smoke at its recorded S2 review SHA; mobile remains historical experiment/typecheck evidence | Outside current product targets; no mobile release or authenticated browser UI |
 | Packaging/performance | Local release/probe results at source-specific SHAs | Clean-machine distribution and repeated production startup/RSS budgets remain open |
 
 ### Current NSH source pin

@@ -329,6 +329,64 @@ and GUI/TTY reports on each host:
 | Windows | `acp-nsh-native.exe` | `4ae73a26833f909e82a8df44f3e67dd94c7069c9a1c2a72f99bde70a40555926` |
 | Windows | `acp-nsh-tui.exe` | `a25f994c723eda8a3f637093194e1ad83776b099ca0c8cec482f312c2920d593` |
 
+## PR #59 review follow-up — Web pin and ADR synchronization
+
+Review-fix code: **`22a8a2c8826f53fdb07aa935fb307d72ff9ab920`**. The original
+native matrix remains evidence for `4d757591`; no new native run is claimed for
+this CI/verifier/documentation-only change. Rust sources, manifests and lockfile
+are unchanged.
+
+The reviewed blocking defect was real: the Web workflow checked out `87c7e8d`
+while Cargo and the packager required `b7f31a0`. The workflow now fetches the same
+immutable revision and runs `node tools/check_source.mjs` immediately after its
+locked npm dependency install, before the Wasm build. That existing verifier
+compares the canonical Cargo `nsh-core` revision, all active NSH dependencies, the
+packager's enforced SHA and the Web workflow's renderer checkout. It performs
+validation only; no second resolver, SDK patch or historical-pin rewrite is added.
+
+ADR-0003 now names the selected 0.5-based revision, explicitly distinguishes it
+from stable v0.5.1, preserves `87c7e8d` as historical/pre-S2 evidence and links this
+source-decision report. Framework selection and product authority are unchanged.
+
+| Local check | Result |
+| --- | --- |
+| Source/link/YAML/NSH-pin verifier | PASS; 235 paths, 34 archives |
+| Disposable Git-fixture mutations | PASS; aligned inputs accepted; old workflow pin, mutable workflow ref, old packager pin and divergent Web-crate pin each refused |
+| Exact workflow renderer clone/checkout | PASS; `b7f31a08478be262fd7b76ec856036fd5b8ffdb0` |
+| Locked Wasm build and six-entry offline package | PASS |
+| Static-server confinement/MIME regression | PASS; 1 test |
+| Real offline NSH Wasm/browser smoke | PASS on clean `22a8a2c`; five pages, filter/detail, task validation, keyboard Tab/Enter, themes, resize and read-only operator |
+
+The local sequence used existing Node **26.13.1**, Chromium **157.0.8103.38** and
+LLVM 22 clang. The committed job specifies Node 24 and Playwright's downloaded
+Chromium; that hosted environment was **NOT_RUN**, not inferred from this local
+pass. Existing local compiler/browser prerequisites were reused rather than
+installing OS packages. No daemon connection, native IPC or browser gateway was
+used; the smoke observed zero external requests and blocked non-loopback traffic.
+Dark and compact/light actual-browser PNGs were visually inspected.
+
+```text
+npm ci --prefix apps/operator/tests
+node tools/check_source.mjs
+CARGO_NET_OFFLINE=true CARGO_BUILD_JOBS=2 CC_wasm32_unknown_unknown=/usr/lib/llvm22/bin/clang cargo build --manifest-path apps/operator/ui/Cargo.toml --target wasm32-unknown-unknown --lib --locked --offline
+git clone https://github.com/longbridge/nsh apps/operator/vendor/nsh
+git -C apps/operator/vendor/nsh checkout b7f31a08478be262fd7b76ec856036fd5b8ffdb0
+node tools/package_ui_web.mjs apps/operator/vendor/nsh apps/operator/target/wasm32-unknown-unknown/debug/acp_operator_ui.wasm artifacts/local-p1-m4/pr59-review-web-dist
+node --test apps/operator/tests/static-server.test.mjs
+CHROMIUM=/usr/sbin/chromium node apps/operator/tests/web-smoke.mjs artifacts/local-p1-m4/pr59-review-web-dist artifacts/local-p1-m4/pr59-review-web-browser
+```
+
+Fresh ignored output directories were used instead of overwriting an existing
+local `ui/dist`. The browser result/PNGs are in `pr59-review-web-browser`;
+`pr59-review-pin-cases.json` records isolated refusal cases. Their temporary Git
+fixture was removed. These are author-run local checks, not independent review
+or hosted CI evidence.
+
+PR #58 was still Open/Draft when its review was read. Its structural precursor
+must be merged by the owner first; only after the base advances can #59's reduced
+diff/mergeability be rechecked. No self-merge, squash of #58, issue closure or S3
+acceptance is implied. Keep #59 Draft and #57/#52 open.
+
 Historical S0/S1/S3/S5 reports retain their original revisions and scope. Hosted
 Actions, macOS, niri, mobile, real-model turns, installation/release, full IME and
 screen-reader certification are NOT_RUN and are not implied by these checks.
