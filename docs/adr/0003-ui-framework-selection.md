@@ -55,12 +55,30 @@ those broader criteria were met. No aggregate comparative score is asserted.
 | Mobile / browser | Historical experiments/typechecks only | Outside current product targets; no mobile release or authenticated browser UI |
 | Packaging/performance | Local release/probe results at source-specific SHAs | Clean-machine distribution and repeated production startup/RSS budgets remain open |
 
-NSH is pinned to development source `87c7e8da85d2f15a56107baa6f0fabb419b508b3`;
-release 0.4.0 lacked TUI. Linux brings GTK/GStreamer even with JS disabled, and
-Rust changes require rebuilds. Kit's dense virtualized table remains useful
-counterevidence; the hybrid adds focus/theme/lifecycle and renderer cost without a
-current product need. These are maintenance and release risks, not reasons to add
-a second renderer preemptively. Framework changes require a new measured ADR.
+### Current NSH source pin
+
+The product now pins immutable upstream revision
+[`b7f31a08478be262fd7b76ec856036fd5b8ffdb0`](https://github.com/longbridge/nsh/commit/b7f31a08478be262fd7b76ec856036fd5b8ffdb0).
+The fix and its parent both declare workspace version **0.5.0**. This is the
+owner-selected upstream desktop keyboard/focus revision, **not** the official
+stable **0.5.1** tag; no local SDK fork or cached-source patch is maintained.
+Active Cargo dependencies, offline renderer packaging and its workflow checkout
+must agree on this exact revision. The repository source verifier checks that
+agreement before the Web job builds.
+
+The [S2 source decision and native acceptance report](../evaluation/p1-m4-s2-native-review.md#nsh-source-decision)
+records why this revision was selected, source-specific local results and remaining
+limits. Those author-provided checks do not establish hosted CI, release or S3
+independent-host acceptance.
+
+**Historical/pre-S2 baseline:** `87c7e8da85d2f15a56107baa6f0fabb419b508b3`
+was the pre-S2 development pin; release 0.4.0 lacked TUI. Earlier reports retain that
+revision and their original scope; it is not the current product dependency.
+GTK platform dependencies and Rust rebuilds remain maintenance/release costs.
+Kit's dense virtualized table remains useful counterevidence; the hybrid adds
+focus/theme/lifecycle and renderer cost without a current product need.
+Framework changes require a new measured ADR, not a second renderer added
+preemptively.
 
 ## Consequences
 
