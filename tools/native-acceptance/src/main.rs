@@ -234,6 +234,7 @@ impl Ui {
                     "escape" => vec![27],
                     "enter" => vec![13],
                     "tab" => vec![9],
+                    "space" => vec![32],
                     "ctrl+a" => vec![1],
                     "ctrl+e" => vec![5],
                     "ctrl+u" => vec![21],
@@ -282,28 +283,25 @@ impl Ui {
         }
         self.text(text);
     }
-    /// Activate a rendered button with keyboard only: focus a known anchor field
-    /// (an alt chord), Tab forward a fixed number of stops, then Enter. Disabled
-    /// and hidden controls are skipped and the tab list is one roving stop.
-    /// Anchoring on the source field keeps the count independent of the
-    /// surface-specific chrome above it. The two counts are calibrated separately
-    /// against each real surface, because the PTY/TUI and the GTK (Wayland)
-    /// desktop focus chains do not enumerate the same stops: from the source field
-    /// the TUI reaches the load action and the digest expand in four Tabs and the
-    /// first queue row in five, while the native desktop chain reaches each of
-    /// those targets in three. The desktop count is therefore passed explicitly
-    /// rather than derived from the TUI one by a fixed offset.
+    /// Activate a rendered button using only its anchor chord, Tab stops and
+    /// Enter/Space. Disabled and concealed controls are skipped.
+    /// Counts are calibrated independently on the real TUI, GTK and HWND focus
+    /// chains, not inferred from one backend: TUI load/digest need four stops and
+    /// a queue row five; GTK needs three; HWND load/digest need three and a queue
+    /// row four. Read-only UI Automation observation confirms HWND's load action
+    /// is the third stop and precedes the queue row; it never actuates a control.
     fn activate(
         &mut self,
-        anchor: &str,
+        (anchor, activation): (&str, &str),
         tty_tabs: usize,
-        desktop_tabs: usize,
+        desktop_tabs: (usize, usize),
         marker: &str,
         text: &str,
         out: &Path,
     ) {
         let tabs = match self {
-            Self::Desktop(_) => desktop_tabs,
+            Self::Desktop(_) if cfg!(windows) => desktop_tabs.1,
+            Self::Desktop(_) => desktop_tabs.0,
             Self::Tty(_) => tty_tabs,
         };
         let trace = std::env::var_os("ACP_S5_KEYBOARD_TRACE").is_some();
@@ -323,7 +321,7 @@ impl Ui {
                 self.capture(&format!("keyboard-{name}-tab-{}", i + 1), out);
             }
         }
-        self.key("enter");
+        self.key(activation);
         self.wait(marker, text);
     }
     /// Move the review tabs (Queue / Detail / History) by a relative delta with
@@ -681,13 +679,13 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     // Queue tab: load the suggested-only page. The load action is a rendered
     // button reached by the fixed Tab count from the source-field anchor (see
     // Ui::activate); the disabled First/Next paging controls are skipped.
-    ui.activate("alt+f", 4, 3, "queue=1", "#4", out);
+    ui.activate(("alt+f", "enter"), 4, (3, 3), "queue=1", "#4", out);
     ui.capture("review-queue", out);
     // Open the exact record from its queue row; Detail auto-selects and inspects.
     ui.activate(
-        "alt+f",
+        ("alt+f", "enter"),
         5,
-        3,
+        (3, 4),
         "inspected_id=4 inspected_revision=1",
         "Show full digest",
         out,
@@ -710,9 +708,9 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     // The digest is a 16-hex prefix until an explicit expand reveals the whole.
     let digest4 = f.digest(id4);
     ui.activate(
-        "alt+f",
+        ("alt+f", "space"),
         4,
-        3,
+        (3, 3),
         "digest_expanded=true",
         "Collapse digest",
         out,
