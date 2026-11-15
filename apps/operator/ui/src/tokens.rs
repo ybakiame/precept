@@ -12,6 +12,9 @@ pub struct Palette {
     pub on_primary: AdaptiveColor,
     pub warning: AdaptiveColor,
     pub error: AdaptiveColor,
+    pub success: AdaptiveColor,
+    pub danger: AdaptiveColor,
+    pub on_danger: AdaptiveColor,
 }
 pub fn palette(model: Signal<Model>) -> Palette {
     let m = model.get();
@@ -33,8 +36,16 @@ pub fn palette(model: Signal<Model>) -> Palette {
         on_primary: c(p.on_accent),
         warning: c(p.warning),
         error: c(p.error),
+        success: c(p.success),
+        danger: c(p.danger),
+        on_danger: c(p.danger_foreground),
     }
 }
 pub fn compact() -> bool {
     TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed) || window().width.0 < 900.0
+}
+/// Mix two semantic colors per appearance (`t` toward `b`). Derives hover and
+/// pressed washes from tokens without introducing a raw color value.
+pub fn mix(a: AdaptiveColor, b: AdaptiveColor, t: f32) -> AdaptiveColor {
+    AdaptiveColor::new(a.light.mix(b.light, t), a.dark.mix(b.dark, t))
 }

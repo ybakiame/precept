@@ -10,6 +10,7 @@ mod operator;
 mod sessions;
 mod settings;
 mod tokens;
+mod ui;
 pub static DESKTOP_RUNTIME: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();
 fn runtime_lines(locale: acp_operator_model::i18n::Locale) -> Vec<String> {
     use acp_operator_model::i18n::{Msg, tr};
@@ -147,6 +148,13 @@ fn switch_project(model: Signal<Model>, index: usize) {
 fn toggle_contrast(model: Signal<Model>) {
     model.update(|m| m.high_contrast = !m.high_contrast);
 }
+fn review_or_page(model: Signal<Model>, delta: i32) {
+    if model.get().operator.open {
+        operator::tab_by(model, delta);
+    } else {
+        model.update(|m| m.page_by(delta as isize));
+    }
+}
 fn toggle_theme(model: Signal<Model>) {
     let actual_dark = match model.get().color_mode {
         acp_operator_model::appearance::ColorMode::System => dark(),
@@ -181,6 +189,11 @@ fn copy_page(model: Signal<Model>) {
 
 #[component]
 pub fn App() -> impl IntoElement {
+    // Debug-only design-system gallery; never reached from normal navigation.
+    #[cfg(not(target_arch = "wasm32"))]
+    if std::env::var_os("ACP_UI_GALLERY").is_some() {
+        return ui::gallery::gallery().into_element();
+    }
     #[cfg(feature = "ipc")]
     let inputs = INPUTS.get().cloned().unwrap_or_default();
     let mut initial = Model::loading();
@@ -229,7 +242,7 @@ pub fn App() -> impl IntoElement {
     let model = signal(initial);
     load(model);
     sessions::poll(model);
-    console(model)
+    console(model).into_element()
 }
 
 fn console(model: Signal<Model>) -> impl IntoElement {
@@ -278,6 +291,9 @@ fn console(model: Signal<Model>) -> impl IntoElement {
     }
     on_key("alt+0", move |_| {
         model.update(|m| {
+            m.operator.open = false;
+            m.operator.review = None;
+            m.operator.delete_arm = None;
             m.sessions = false;
             m.session.confirm_start = false;
             m.settings = !m.settings;
@@ -290,12 +306,20 @@ fn console(model: Signal<Model>) -> impl IntoElement {
         ..Default::default()
     };
     on_key_with("Escape", global, move |_| {
+        if model.with(|m| m.operator.open && m.operator.delete_arm.is_some()) {
+            model.update(|m| {
+                m.operator.delete_arm = None;
+                m.operator.review = None;
+            });
+            return;
+        }
         filter_ref.blur();
         task_ref.blur();
         model.update(|m| {
             m.cancel_read();
             m.operator.open = false;
             m.operator.review = None;
+            m.operator.delete_arm = None;
             m.settings = false;
             m.sessions = false;
             m.session.confirm_start = false;
@@ -324,12 +348,14 @@ fn console(model: Signal<Model>) -> impl IntoElement {
     on_key_with("alt+o", global, move |_| operator::open(model));
     on_key("mod+d", move |_| toggle_theme(model));
     on_key("mod+shift+c", move |_| copy_page(model));
-    on_key_with("alt+ArrowRight", global, move |_| {
-        model.update(|m| m.page_by(1))
-    });
-    on_key_with("alt+ArrowLeft", global, move |_| {
-        model.update(|m| m.page_by(-1))
-    });
+    // Alt+left/right navigate the review tabs while the operator review workspace
+    // is active; otherwise they keep paging the read-only console preferences.
+    // The TUI platform names arrows "ArrowLeft/ArrowRight"; the GTK desktop names
+    // them "Left/Right", so both spellings are registered.
+    on_key_with("alt+ArrowRight", global, move |_| review_or_page(model, 1));
+    on_key_with("alt+Right", global, move |_| review_or_page(model, 1));
+    on_key_with("alt+ArrowLeft", global, move |_| review_or_page(model, -1));
+    on_key_with("alt+Left", global, move |_| review_or_page(model, -1));
     #[cfg(not(target_arch = "wasm32"))]
     effect(move || {
         if std::env::var_os("ACP_UI_PROBE").is_some() {

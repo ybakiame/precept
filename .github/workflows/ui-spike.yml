@@ -48,15 +48,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - run: npm ci --prefix apps/operator/tests
+      - name: Verify Cargo, packager and workflow NSH pins before building
+        run: node tools/check_source.mjs
       - run: sudo apt-get update && sudo apt-get install -y clang llvm
       - run: rustup target add wasm32-unknown-unknown
       - run: cargo build --manifest-path apps/operator/ui/Cargo.toml --target wasm32-unknown-unknown --lib --locked
       - name: Fetch exact upstream renderer
         run: |
           git clone https://github.com/longbridge/nsh apps/operator/vendor/nsh
-          git -C apps/operator/vendor/nsh checkout 87c7e8da85d2f15a56107baa6f0fabb419b508b3
+          git -C apps/operator/vendor/nsh checkout b7f31a08478be262fd7b76ec856036fd5b8ffdb0
       - run: node tools/package_ui_web.mjs apps/operator/vendor/nsh apps/operator/target/wasm32-unknown-unknown/debug/acp_operator_ui.wasm apps/operator/ui/dist
-      - run: npm ci --prefix apps/operator/tests
       - run: node --test apps/operator/tests/static-server.test.mjs
       - run: npx --prefix apps/operator/tests playwright install chromium --with-deps
       - run: node apps/operator/tests/web-smoke.mjs apps/operator/ui/dist apps/operator/artifacts

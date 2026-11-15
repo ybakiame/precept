@@ -55,5 +55,24 @@ for (const file of files) {
     }
   }
 }
+// Cargo's core dependency is the authority; compare every active consumer, not
+// historical reports or archived manifests. This validates pins, never resolves them.
+const nshDependencies = [...readFileSync('apps/operator/ui/Cargo.toml', 'utf8')
+  .matchAll(/^(nsh-[\w-]+)\s*=\s*\{([^\n]+)\}\s*$/gm)]
+  .map(([, name, fields]) => ({ name, revision:fields.match(/\brev\s*=\s*"([0-9a-f]{40})"/)?.[1] }));
+const nshPin = nshDependencies.find(dependency => dependency.name === 'nsh-core')?.revision;
+requireCheck(!!nshPin, 'Missing immutable NSH Cargo core pin');
+for (const dependency of nshDependencies) {
+  requireCheck(!!nshPin && dependency.revision === nshPin, `NSH Cargo dependency pin mismatch: ${dependency.name}`);
+}
+const packagerPin = readFileSync('tools/package_ui_web.mjs', 'utf8')
+  .match(/^const pin = '([0-9a-f]{40})';$/m)?.[1];
+requireCheck(!!nshPin && packagerPin === nshPin, 'NSH packager pin differs from Cargo');
+const webWorkflow = parseDocument(readFileSync('.github/workflows/ui-spike.yml', 'utf8'), { uniqueKeys:true }).toJS();
+const rendererPins = (webWorkflow.jobs?.web?.steps || []).flatMap(step =>
+  [...(step.run || '').matchAll(/\bgit\s+-C\s+apps\/operator\/vendor\/nsh\s+checkout\s+(\S+)/g)]
+    .map(match => match[1]));
+requireCheck(!!nshPin && rendererPins.length === 1 && rendererPins[0] === nshPin,
+  'NSH workflow renderer pin differs from Cargo');
 if (failures.length) { console.error(failures.join('\n')); process.exitCode = 1; }
-else console.log(`PASS: ${files.length} source paths; zero tracked prototype executables/packaging; ${archive.size} explicit archives; active refs, local Markdown links and workflow YAML/targets checked`);
+else console.log(`PASS: ${files.length} source paths; zero tracked prototype executables/packaging; ${archive.size} explicit archives; active refs, local Markdown links, workflow YAML/targets and immutable NSH consumer pins checked`);

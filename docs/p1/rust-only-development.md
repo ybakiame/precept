@@ -100,7 +100,7 @@ node apps/operator/tests/web-smoke.mjs apps/operator/ui/dist apps/operator/artif
 ```
 
 `PINNED_NSH_CHECKOUT` must be an explicit checkout at
-`87c7e8da85d2f15a56107baa6f0fabb419b508b3`, including its renderer/license assets.
+`b7f31a08478be262fd7b76ec856036fd5b8ffdb0`, including its renderer/license assets.
 The packager refuses an existing output rather than mixing stale assets. The smoke
 uses a loopback-only static Node server, blocks external requests and exercises the
 actual Rust WASM app offline, keyboard and compact resize. It is not desktop evidence.

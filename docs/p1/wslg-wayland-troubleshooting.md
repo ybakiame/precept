@@ -142,4 +142,4 @@ Primary references: [GTK runtime/backend/renderer controls](https://docs.gtk.org
 [WSLg architecture](https://github.com/microsoft/wslg),
 [WSLg environment and mounts](https://github.com/microsoft/wslg/blob/main/samples/container/Containers.md),
 [niri documentation](https://niri-wm.github.io/niri/),
-[pinned NSH Linux backend](https://github.com/longbridge/nsh/tree/87c7e8da85d2f15a56107baa6f0fabb419b508b3/crates/nsh-platform-linux).
+[pinned NSH Linux backend](https://github.com/longbridge/nsh/tree/b7f31a08478be262fd7b76ec856036fd5b8ffdb0/crates/nsh-platform-linux).

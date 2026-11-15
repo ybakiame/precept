@@ -29,6 +29,8 @@ impl ThemeId {
                 warning: 0xffff00,
                 error: 0xffb0b0,
                 success: 0xaaffaa,
+                danger: 0xff9e9e,
+                danger_foreground: 0,
             };
         }
         match (self, dark) {
@@ -44,6 +46,8 @@ impl ThemeId {
                 warning: 0xf3cc86,
                 error: 0xffb4ab,
                 success: 0x9ee6be,
+                danger: 0xff9e93,
+                danger_foreground: 0x2a0a0a,
             },
             (Self::Instrument, false) => Colors {
                 background: 0xf1f5f2,
@@ -57,6 +61,8 @@ impl ThemeId {
                 warning: 0x805005,
                 error: 0xa32f30,
                 success: 0x246046,
+                danger: 0xb02a30,
+                danger_foreground: 0xffffff,
             },
             (Self::Ledger, false) => Colors {
                 background: 0xf4f0e7,
@@ -70,6 +76,8 @@ impl ThemeId {
                 warning: 0x805005,
                 error: 0xa32f30,
                 success: 0x3e6337,
+                danger: 0xb02a30,
+                danger_foreground: 0xffffff,
             },
             (Self::Ledger, true) => Colors {
                 background: 0x211f1b,
@@ -83,6 +91,8 @@ impl ThemeId {
                 warning: 0xf3cb86,
                 error: 0xffb4ab,
                 success: 0xabd2ac,
+                danger: 0xff9e93,
+                danger_foreground: 0x2a0a0a,
             },
             (Self::Harbor, true) => Colors {
                 background: 0x131c30,
@@ -96,6 +106,8 @@ impl ThemeId {
                 warning: 0xffd394,
                 error: 0xffb4bd,
                 success: 0x9ddfc1,
+                danger: 0xff9e93,
+                danger_foreground: 0x2a0a0a,
             },
             (Self::Harbor, false) => Colors {
                 background: 0xf2f4f9,
@@ -109,6 +121,8 @@ impl ThemeId {
                 warning: 0x7f4f00,
                 error: 0xa82e3f,
                 success: 0x236349,
+                danger: 0xb02a30,
+                danger_foreground: 0xffffff,
             },
         }
     }
@@ -126,6 +140,10 @@ pub struct Colors {
     pub warning: u32,
     pub error: u32,
     pub success: u32,
+    /// Destructive action fill (a danger button, an armed destructive control).
+    pub danger: u32,
+    /// Foreground on `danger`; also the danger border/text on a surface.
+    pub danger_foreground: u32,
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ColorMode {
@@ -164,7 +182,9 @@ mod tests {
                 for hc in [false, true] {
                     let p = theme.colors(dark, hc);
                     for bg in [p.background, p.panel, p.inset] {
-                        for fg in [p.text, p.muted, p.accent, p.warning, p.error, p.success] {
+                        for fg in [
+                            p.text, p.muted, p.accent, p.warning, p.error, p.success, p.danger,
+                        ] {
                             assert!(
                                 ratio(fg, bg) >= 4.5,
                                 "{theme:?} dark={dark} hc={hc} text {fg:x}/{bg:x}"
@@ -173,6 +193,12 @@ mod tests {
                         assert!(ratio(p.border, bg) >= 3.0, "{theme:?} boundary {bg:x}");
                     }
                     assert!(ratio(p.on_accent, p.accent) >= 4.5);
+                    assert!(
+                        ratio(p.danger_foreground, p.danger) >= 4.5,
+                        "{theme:?} dark={dark} hc={hc} danger_foreground {:x}/danger {:x}",
+                        p.danger_foreground,
+                        p.danger
+                    );
                 }
             }
         }

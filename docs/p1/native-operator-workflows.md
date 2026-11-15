@@ -88,11 +88,12 @@ confirming a preference discloses that same-key confirmed peers are deprecated.
 No default approval, implicit reconnect grant or background writes. Disable completes
 only after daemon acknowledgement. While busy, prevent duplicate submissions.
 
-Registration, deprecate/delete and Handoff put are **CLI-only for S3**: they require
-explicit root policy, destructive lifecycle or complex historical input review;
-the UI labels this gate and does not offer nonfunctional controls. It can inspect
-the exact task/revision through the new preview, alongside the existing Handoff page.
-This gate is not implementation of the full later ReviewDecision/provenance engine.
+The M2/S3 baseline kept registration, deprecate/delete and Handoff put CLI-only.
+M4/S2 ([Issue #57](https://github.com/ybakiame/agent-control-plane/issues/57))
+supersedes only the deprecate/delete gate: the shared native UI adds exact
+Queue/Detail/History inspection, peer disclosure, explicit deprecate/apply and
+exact-ID retype/delete/apply. Registration and Handoff put remain CLI-only.
+See the [current app keyboard flow](../../apps/operator/README.md#review-keyboard-flow).
 
 The shared model captures target/project/task/request epoch plus exact observed
 record and binding before review. Scope/record/target/project/task changes invalidate
@@ -158,11 +159,11 @@ also requires `--profile-id PROFILE_ID --generation GENERATION --owner-epoch EPO
 
 ```text
 acp-query project-register alpha CANONICAL_ROOT
-acp-query preference-suggest --scope project --project alpha --key editor --value synthetic --source operator
-acp-query preference-confirm ID --scope project --project alpha --expected-revision REVISION --confirm
-acp-query preference-reject ID --scope project --project alpha --expected-revision REVISION --confirm
-acp-query preference-deprecate ID --scope project --project alpha --expected-revision REVISION --confirm
-acp-query preference-delete ID --scope project --project alpha --expected-revision REVISION --confirm
+acp-query preference-suggest --scope project --project alpha --key editor --value synthetic --source operator --origin agent_reported
+acp-query preference-confirm ID --scope project --project alpha --expected-revision REVISION --proposal-digest FULL_PROPOSAL_DIGEST --confirm
+acp-query preference-reject ID --scope project --project alpha --expected-revision REVISION --proposal-digest FULL_PROPOSAL_DIGEST --confirm
+acp-query preference-deprecate ID --scope project --project alpha --expected-revision REVISION --proposal-digest FULL_PROPOSAL_DIGEST --confirm
+acp-query preference-delete ID --scope project --project alpha --expected-revision REVISION --proposal-digest FULL_PROPOSAL_DIGEST --confirm
 acp-query handoff-put alpha EXACT_TASK --expected-absent --input OWNED_INPUT_FILE
 acp-query handoff-put alpha EXACT_TASK --expected-revision REVISION --input OWNED_INPUT_FILE
 ```
@@ -175,9 +176,9 @@ changes the daemon allowlist. Preserve the original root bytes for receipt retry
 including when the registered directory later becomes unavailable.
 
 `--scope global` forbids `--project`. Inspect the exact current suggested record
-before confirm/reject; only confirmed records can be deprecated and only rejected/
-deprecated records deleted. An edited proposal is a new suggestion, not an in-place
-value change. Refresh exact revisions after any intervening write.
+before confirm/reject; only confirmed records can be deprecated. Deletion is a
+separate destructive operation bound to the exact current record, revision and
+digest, not another status transition. Refresh after any intervening write.
 
 The Handoff file is one strict bounded object, not an arbitrary mutation envelope:
 

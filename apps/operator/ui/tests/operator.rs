@@ -191,27 +191,33 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
             .is_empty()
     );
     app.press_key("alt+shift+v").unwrap();
-    contains(&mut app, " · commit 2");
+    app.wait_for("commit 2").unwrap();
     app.press_key("alt+shift+l").unwrap();
     app.wait_for("#1 · editor · suggested · r1").unwrap();
     app.press_key("alt+shift+i").unwrap();
     app.press_key("alt+shift+y").unwrap();
+    app.wait_for("Show full digest").unwrap();
+    assert!(!app.screen().shows("Prepared operation; no write sent yet"));
+    app.press_key("alt+shift+y").unwrap();
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
-    contains(&mut app, " · commit 3");
+    app.wait_for("commit 3").unwrap();
     app.press_key("alt+shift+s").unwrap();
     app.press_key("alt+shift+v").unwrap();
-    contains(&mut app, " · commit 4");
+    app.wait_for("commit 4").unwrap();
     app.press_key("alt+shift+l").unwrap();
     app.wait_for("#2 · editor · suggested · r1").unwrap();
     app.press_key("alt+shift+i").unwrap();
     app.press_key("alt+shift+i").unwrap();
     app.press_key("alt+shift+n").unwrap();
+    app.wait_for("Show full digest").unwrap();
+    assert!(!app.screen().shows("Prepared operation; no write sent yet"));
+    app.press_key("alt+shift+n").unwrap();
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
-    contains(&mut app, " · commit 5");
+    app.wait_for("commit 5").unwrap();
     let page = f
         .call(
             "profile.preferences.list",
