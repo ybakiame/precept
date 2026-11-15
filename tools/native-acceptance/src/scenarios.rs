@@ -622,8 +622,8 @@ fn presentation(s: &mut Session, zh: bool) {
         );
     }
 }
-pub fn run(surface: &str, out: &Path, script: &str) {
-    for id in [
+pub fn run(surface: &str, out: &Path, script: &str, only: Option<&str>) {
+    let cases = [
         "empty-queue",
         "project-paging",
         "global-paging",
@@ -645,7 +645,15 @@ pub fn run(surface: &str, out: &Path, script: &str) {
         "replay-stale-epoch",
         "en-light-dark-compact-large",
         "zh-light-dark-compact-large",
-    ] {
+    ];
+    assert!(
+        only.is_none_or(|id| cases.contains(&id)),
+        "unknown development scenario"
+    );
+    for id in cases {
+        if only.is_some_and(|selected| selected != id) {
+            continue;
+        }
         let mechanism = match id {
             "profile-generation-change"
             | "delayed-read-navigation"

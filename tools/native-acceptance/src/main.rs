@@ -467,7 +467,6 @@ impl Ui {
         use std::io::{Read, Seek, SeekFrom};
         let mut source = fs::File::open(focus).unwrap();
         let mut observed = String::new();
-        let mut first = None::<String>;
         for stop in 0..128 {
             source.seek(SeekFrom::End(0)).unwrap();
             self.key("tab");
@@ -486,18 +485,12 @@ impl Ui {
                     self.key("enter");
                     return;
                 }
-                if first.as_deref() == Some(catalog_key) {
-                    evidence::event(
-                        "missing-native-focus-target",
-                        json!({"catalog_key":key,"reason":"one-observed-focus-cycle"}),
-                    );
-                    std::panic::panic_any(scenarios::MissingFocus);
-                }
-                if first.is_none() {
-                    first = Some(catalog_key.into());
-                }
             }
         }
+        evidence::event(
+            "missing-native-focus-target",
+            json!({"catalog_key":key,"reason":"128-tab-observation-budget-exhausted"}),
+        );
         std::panic::panic_any(scenarios::MissingFocus);
     }
 }
@@ -1433,6 +1426,11 @@ fn main() {
         String::from_utf8(result.stdout).unwrap().trim().to_owned()
     };
     let development = std::env::var_os("ACP_S5_DEVELOPMENT").is_some();
+    let only = std::env::var("ACP_S3_CASE").ok();
+    assert!(
+        only.is_none() || development,
+        "case selection is development-only, never full acceptance"
+    );
     let sha = git(&["rev-parse", "HEAD"]);
     let dirty = !git(&["status", "--porcelain"]).is_empty();
     assert!(!dirty || development, "clean source required");
@@ -1470,18 +1468,27 @@ fn main() {
     std::panic::set_hook(Box::new(|_| {
         eprintln!("NATIVE_SCENARIO_FAILED detail=redacted; see ledger and owned captures")
     }));
-    let baseline = std::panic::catch_unwind(|| {
-        run(
-            &a[0],
-            &out,
-            a.get(2).map_or("", String::as_str),
-            development,
-        )
-    });
+    let baseline = if only.is_some() {
+        Ok(json!({"status":"NOT_RUN","reason":"explicit-development-case-selection"}))
+    } else {
+        std::panic::catch_unwind(|| {
+            run(
+                &a[0],
+                &out,
+                a.get(2).map_or("", String::as_str),
+                development,
+            )
+        })
+    };
     if baseline.is_err() {
         evidence::finish("FAIL");
     }
-    scenarios::run(&a[0], &out, a.get(2).map_or("", String::as_str));
+    scenarios::run(
+        &a[0],
+        &out,
+        a.get(2).map_or("", String::as_str),
+        only.as_deref(),
+    );
     assert_eq!(
         binary_fingerprints(&binary_paths),
         binaries,
@@ -1493,11 +1500,13 @@ fn main() {
         .as_array()
         .unwrap()
         .iter()
+        .filter(|c| only.as_ref().is_none_or(|id| c["id"] == *id))
         .all(|c| c["status"] == "PASS");
     let pass = baseline.is_ok() && complete && (development || clean_after);
     let result = json!({
-        "status":if !pass { "INCOMPLETE" } else if development { "DEV_PASS" } else { "PASS" },
+        "status":if !pass { "INCOMPLETE" } else if only.is_some() { "DEV_PARTIAL_PASS" } else if development { "DEV_PASS" } else { "PASS" },
         "tested_git_sha":sha,"worktree_dirty":dirty,"clean_after":clean_after,
+        "development_case":only,
         "surface":a[0],"platform":std::env::consts::OS,"arch":std::env::consts::ARCH,
         "binaries":binaries,"baseline":baseline.unwrap_or(json!({"status":"FAIL","detail":"see-partial-ledger"})),
         "ledger":"ledger.json","cells":ledger["cells"],

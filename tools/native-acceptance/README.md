@@ -28,6 +28,14 @@ select **both** Light and Dark through actual focused settings buttons in each
 locale, capturing compact and large layouts. Screenshot inspection remains an
 independent requirement; a state probe is not pixel-content verification.
 
+For a targeted **development-only** smoke, set `ACP_S5_DEVELOPMENT=1` and
+`ACP_S3_CASE=empty-queue` (or another S3 extension case ID). This deliberately skips
+the retained baseline and leaves every unselected cell NOT_RUN; success is labelled
+`DEV_PARTIAL_PASS`, never native acceptance PASS. Normal clean-source execution
+without the selector still requires the complete baseline and every declared cell.
+Focus traversal has a finite 128-Tab budget. Catalog labels are not unique focus
+identities: repeated labels cannot prove that the physical focus chain wrapped.
+
 For `desktop`, append the absolute **Windows path** to `tools/native_window.ps1`.
 Windows runs a native HWND; Linux uses the existing WSLg `wayland-0` with X11 removed
 and invokes the installed Windows PowerShell through WSL interop. Pass the script
