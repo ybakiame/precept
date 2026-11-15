@@ -183,6 +183,152 @@ framework, product IPC/schema/permission or mutation contract is introduced.
 The existing real-daemon review regression passed on this revision before native
 acceptance. Historical spike/archive pins and their evidence remain unchanged.
 
+## Final clean-source acceptance
+
+Runtime/test code: **`4d757591dac8150beafc60b869741b60cd6c8254`**, clean on
+both real Git checkouts. Evidence collection completed **2026-11-15T08:47:32Z**.
+The later delivery commit changes this report only; no native result is attributed
+to that documentation-only revision.
+
+### Remaining native focus repairs
+
+- Retained concealed panes now set both display-none and invisible. Win32 had
+  visited the hidden Handoff input after Suggest, despite its absent pixels.
+  Owned-window captures and read-only UI Automation focus observations isolated
+  that path; no UI Automation Invoke/SetFocus operation drove the scenario.
+- The pinned upstream implementation supplies generic Win32 focus/raw keys, not
+  default Enter/Space activation of press targets. The shared app `ui::Button`
+  now supplies standard Windows activation using the same focused-key lifecycle
+  as NSH base controls. Bindings exist only while that enabled, non-loading
+  control owns focus and never consume editing keys from an input or sibling.
+  This is app control behavior, not a cached SDK modification or a driver callback.
+- Native focus chains are independently calibrated: load/digest then queue-row
+  stop counts are PTY 3/4, ConPTY 4/5, GTK 3/3 and HWND 3/4. Optional PNG/VT
+  traces preserve actual per-stop observations; native tests still send OS keys.
+  Enter loads/selects and Space expands the immutable digest. No input retries,
+  guessed cross-backend offsets or stale-state success fallback were introduced.
+
+Earlier `d2198f5`/`571ba25` native failures remain in the local evidence, including
+hidden focus stops, missing native activation and the incorrectly shared row
+count. They are not final acceptance. The normal ConPTY key-delivery diagnostic,
+read-only focus observer and temporary Windows launcher were removed after use;
+their generated logs/caches remain ignored local artifacts.
+
+### Native Cargo and presentation gates
+
+| Check | Linux/WSL | Native Windows |
+| --- | --- | --- |
+| Root workspace fmt/build/Clippy/tests | PASS; 128 passed, 1 existing opt-in sample ignored | PASS; 129 passed, same 1 ignored |
+| Shared model fmt/Clippy/tests | PASS; 53 tests | PASS; 53 tests |
+| NSH fmt/build/Clippy/tests | PASS; 27 library + 2 real-daemon integration tests | PASS; 27 library + 2 real-daemon integration tests |
+| Driver fmt/Clippy/tests/build | PASS; 29 tests | PASS; 29 tests |
+| Branch/final whitespace checks | PASS | PASS |
+
+Clippy ran with `--all-targets -- -D warnings`; no regression assertion was
+weakened. Driver tests include four VT redraw/wide-cell regressions, 21 worker
+protocol/deadline/refusal regressions and four owned-process lifecycle regressions.
+The source/link/workflow checker passed: **235 source paths, 34 explicit archives**.
+
+Raw gate directories, relative to each checkout's `artifacts/local-p1-m4/`:
+`s2-linux-4d75759`, `s2-driver-linux-4d75759`, `s2-windows-4d75759` and
+`s2-driver-windows-4d75759`. Linux `source.txt`/`commands.txt` and Windows
+`report.json` retain exact revision, commands, flags and platform metadata.
+
+```text
+CARGO_NET_OFFLINE=true tools/local_verify.sh all artifacts/local-p1-m4/s2-linux-4d75759 d66d7c6f1dd60cf98238d5122111ed374efc4343
+tools/windows_local_verify.ps1 -Suite All -ReportDir artifacts/local-p1-m4/s2-windows-4d75759 -DiffBase d66d7c6f1dd60cf98238d5122111ed374efc4343
+cargo fmt --manifest-path tools/native-acceptance/Cargo.toml -- --check
+cargo clippy --manifest-path tools/native-acceptance/Cargo.toml --all-targets --locked -- -D warnings
+cargo test --manifest-path tools/native-acceptance/Cargo.toml --locked
+cargo build --manifest-path tools/native-acceptance/Cargo.toml --locked
+node tools/check_source.mjs
+```
+
+The final offline Wasm build and six-asset renderer package also passed with the
+same NSH pin (`s2-web-package-4d75759`), using the already installed LLVM 22 clang
+through process-local `CC_wasm32_unknown_unknown=/usr/lib/llvm22/bin/clang`.
+This is compile/package proof, not a browser-surface acceptance claim.
+
+### Actual native input and visible surfaces
+
+All eight reports name the code SHA above, `worktree_dirty=false`,
+`historical_source_substitution=false` and `status=PASS`. Direct Wayland reports
+`GdkWaylandDisplay` / `GskCairoRenderer`; DISPLAY was removed, not routed through
+X11 or niri. GUI sessions ran sequentially under nonce/PID/foreground protection.
+GUI ownership logs confirm GUI/worker reaping and their pipe reader/writer joins;
+terminal sessions exited cleanly.
+
+Native command entrypoints (absolute new report paths, listed below):
+
+```sh
+ACP_S5_APPEARANCE=light tools/native-acceptance/target/debug/acp-native-acceptance tui "$PWD/artifacts/local-p1-m4/s2-pty-independent-smoke"
+ACP_S5_APPEARANCE=dark tools/native-acceptance/target/debug/acp-native-acceptance tui "$PWD/artifacts/local-p1-m4/s2-pty-4d75759-dark"
+# Run for appearance=light and appearance=dark; windows_helper is the committed
+# tools/native_window.ps1 in the owner's real Windows checkout.
+GSK_RENDERER=cairo ACP_S5_APPEARANCE="$appearance" tools/native-acceptance/target/debug/acp-native-acceptance desktop "$PWD/artifacts/local-p1-m4/s2-wslg-independent-$appearance" "$windows_helper"
+```
+
+```powershell
+# From the real Windows checkout, for appearance=light and appearance=dark.
+$env:ACP_S5_APPEARANCE = $appearance
+.\tools\native-acceptance\target\debug\acp-native-acceptance.exe tui (Join-Path $PWD "artifacts\local-p1-m4\s2-conpty-4d75759-$appearance")
+.\tools\native-acceptance\target\debug\acp-native-acceptance.exe desktop (Join-Path $PWD "artifacts\local-p1-m4\s2-hwnd-4d75759-$appearance") (Join-Path $PWD 'tools\native_window.ps1')
+```
+
+Evidence directories below are relative to that host checkout's
+`artifacts/local-p1-m4/`. PIDs are the disposable UI children, not an adopted
+desktop/terminal session.
+
+| Surface | Appearance | Result | Owned UI PID / HWND nonce | Evidence directory |
+| --- | --- | --- | --- | --- |
+| Linux PTY | light | PASS | 435774 / no HWND | `s2-pty-independent-smoke` |
+| Linux PTY | dark | PASS | 436619 / no HWND | `s2-pty-4d75759-dark` |
+| WSLg Wayland | light | PASS | 436129 / `a43a2eaa8b85d708` | `s2-wslg-independent-light` |
+| WSLg Wayland | dark | PASS | 436478 / `a43a2de470bca36b` | `s2-wslg-independent-dark` |
+| Windows ConPTY | light | PASS | 35640 / no HWND | `s2-conpty-4d75759-light` |
+| Windows ConPTY | dark | PASS | 41128 / no HWND | `s2-conpty-4d75759-dark` |
+| Windows HWND | light | PASS | 37688 / `a43a2f1f42ee084f` | `s2-hwnd-4d75759-light` |
+| Windows HWND | dark | PASS | 32432 / `a43a2d1b7d313701` | `s2-hwnd-4d75759-dark` |
+
+The common scenario exercises explicit Profile creation/grant, Busy, current exact
+inspect, Queue/Detail/History through real Alt+left/right, full-digest expansion,
+same-key peer demotion, confirm/deprecate, real decision history, wrong digest,
+Conflict, committed lost reply with explicit immutable same-request replay,
+revocation and disconnect. Delete requires exact-ID retype and explicit apply;
+wrong `999` and blind Enter leave revision/status/commit sequence unchanged.
+Escape cancels only the destructive tier; reopening starts empty. Deleted content
+and decisions are NotFound while the identity-only receipt remains.
+
+English/zh-CN, 1080×1000/640×480 desktop and 160×90/80×30 terminal captures cover
+exact content/history and localized destructive impact/refusal. Owned PNGs and
+parsed terminal frames were inspected: full digest and real history are visible,
+the compact input is focused, mismatch text is readable and Delete is disabled.
+Dark localized captures contain rendered content, not the earlier black frame.
+Existing radius/type/spacing/alignment/token styling is preserved; focus,
+disabled, selected and error states are visible. No new motion was introduced;
+static captures do not certify hover/press animation timing or full accessibility.
+
+Each directory retains `report.json`, native probes or `terminal.vt`, captures,
+`receipt-proof.json` and independent CLI `review-history-proof.json`.
+History confirms r1→r2 / deprecate r2→r3 at commits 11/12, with the actual
+`desktop` or `tui` client-asserted channel; these are not reviewer identity claims.
+
+Binary SHA-256 values observed at native completion agree across the light/dark
+and GUI/TTY reports on each host:
+
+| Host | Binary | SHA-256 |
+| --- | --- | --- |
+| Linux | `acp-native-acceptance` | `d80817355840c4cc4daef4189992b2d29ec6721ae3fd48a954188680da7a726b` |
+| Linux | `acp-daemon` | `f4625a279ebd1ea2e4dce7730122b8e801dd8d1a625a38b9c7f492a5a6d925cb` |
+| Linux | `acp-query` | `132d4cac6d2c74f37dddd5c29c4bb796b211da941deb6c3daa209a4a60cbb73b` |
+| Linux | `acp-nsh-native` | `f237a8d843aae8153d65b0fc91cf7db0a7cb43b7d0a39f85e68c203adf8aaef2` |
+| Linux | `acp-nsh-tui` | `3b7c7dbde90dd66aa2c0102ae7914ae7de4cc9ad81954e8ea1a8f0d31313e8b0` |
+| Windows | `acp-native-acceptance.exe` | `4909e34314a69c674dcf7d7f1df02d31985834b6493f77eef8299246b39f23ee` |
+| Windows | `acp-daemon.exe` | `d84e01a6defcf68ae0722d75b9466429f5121e6d218c2dbc29863fd319978d84` |
+| Windows | `acp-query.exe` | `37e89851498591ebc6eb991f396616804b5f2307ac730432945696d085915850` |
+| Windows | `acp-nsh-native.exe` | `4ae73a26833f909e82a8df44f3e67dd94c7069c9a1c2a72f99bde70a40555926` |
+| Windows | `acp-nsh-tui.exe` | `a25f994c723eda8a3f637093194e1ad83776b099ca0c8cec482f312c2920d593` |
+
 Historical S0/S1/S3/S5 reports retain their original revisions and scope. Hosted
 Actions, macOS, niri, mobile, real-model turns, installation/release, full IME and
 screen-reader certification are NOT_RUN and are not implied by these checks.
