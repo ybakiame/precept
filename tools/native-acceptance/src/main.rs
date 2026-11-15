@@ -300,14 +300,22 @@ impl Ui {
         desktop_tabs: usize,
         marker: &str,
         text: &str,
+        out: &Path,
     ) {
         let tabs = match self {
             Self::Desktop(_) => desktop_tabs,
             Self::Tty(_) => tty_tabs,
         };
+        let trace = std::env::var_os("ACP_S5_KEYBOARD_TRACE").is_some();
         self.key(anchor);
-        for _ in 0..tabs {
+        if trace {
+            self.capture(&format!("keyboard-{marker}-anchor"), out);
+        }
+        for i in 0..tabs {
             self.key("tab");
+            if trace {
+                self.capture(&format!("keyboard-{marker}-tab-{}", i + 1), out);
+            }
         }
         self.key("enter");
         self.wait(marker, text);
@@ -667,7 +675,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     // Queue tab: load the suggested-only page. The load action is a rendered
     // button reached by the fixed Tab count from the source-field anchor (see
     // Ui::activate); the disabled First/Next paging controls are skipped.
-    ui.activate("alt+f", 4, 3, "queue=1", "#4");
+    ui.activate("alt+f", 4, 3, "queue=1", "#4", out);
     ui.capture("review-queue", out);
     // Open the exact record from its queue row; Detail auto-selects and inspects.
     ui.activate(
@@ -676,6 +684,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         3,
         "inspected_id=4 inspected_revision=1",
         "Show full digest",
+        out,
     );
     ui.wait("peer_total=1", "Deprecates 1 same-key confirmed records");
     ui.capture("review-detail", out);
@@ -694,7 +703,14 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     ui.wait("review_tab=Detail", "Show full digest");
     // The digest is a 16-hex prefix until an explicit expand reveals the whole.
     let digest4 = f.digest(id4);
-    ui.activate("alt+f", 4, 3, "digest_expanded=true", "Collapse digest");
+    ui.activate(
+        "alt+f",
+        4,
+        3,
+        "digest_expanded=true",
+        "Collapse digest",
+        out,
+    );
     ui.capture("review-digest-expanded", out);
     if let Ui::Tty(t) = &ui {
         assert!(
