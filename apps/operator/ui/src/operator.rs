@@ -440,11 +440,10 @@ fn queue_tab(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
     if queue.commit_sequence > m.operator.queue_watermark {
         let delta = queue.commit_sequence - m.operator.queue_watermark;
         body = body.child(
-            ui::badge(
-                model,
-                format!("{} · +{delta}", m.word(Msg::ReviewWatermark)),
-            )
-            .variant(ui::BadgeVariant::Warning),
+            // Keep the drift disclosure readable as a native text row.
+            text(format!("{} · +{delta}", m.word(Msg::ReviewWatermark)))
+                .text_size(px(ui::scale::text::CAPTION))
+                .text_color(move || palette(model).warning),
         );
     }
     if queue.records.is_empty() {
