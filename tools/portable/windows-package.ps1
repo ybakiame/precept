@@ -24,7 +24,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Assembly failed; retain private attempt directory' }
     $report = Join-Path $parent $Name
     $stage = Join-Path $report 'acp-windows-x86_64-prototype'
-    $zip = Join-Path $report 'acp-windows-x86_64-prototype.zip'
+    $source = Get-Content -LiteralPath (Join-Path $stage 'manifest.json') -Raw | ConvertFrom-Json
+    $zip = Join-Path $report ("acp-windows-x86_64-prototype-" + $source.source_sha.Substring(0,12) + ".zip")
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     [IO.Compression.ZipFile]::CreateFromDirectory($stage, $zip)
     # Extract into a NEW directory only. Inspect entries before any extraction.

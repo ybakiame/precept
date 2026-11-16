@@ -22,16 +22,20 @@ No target-directory glob or fake/test driver is shipped.
 ```powershell
 ./tools/portable/windows-package.ps1 -OutputParent artifacts/local-p1-m5 -Name zip-attempt-01
 ./tools/portable/windows-smoke.ps1 -PackageDir artifacts/local-p1-m5/zip-attempt-01/extracted -ReportDir artifacts/local-p1-m5/zip-attempt-01/smoke-01
+./tools/portable/windows-retention.ps1 -AttemptDir artifacts/local-p1-m5/zip-attempt-01 -SmokeName smoke-01
 ```
 
 Retain failed attempt directories; use a new name for the next run. Raw build logs
 and tool metadata can contain private developer paths and remain ignored. The ZIP
 contains only the explicit file inventory, provenance, notices and local instructions;
 no Node/PowerShell helper, Rust toolchain, snapshots, raw logs, credentials or data.
-The exact archive hash/file list live beside it. `manifest.json` identifies clean
+The ZIP name carries its source SHA suffix; the exact archive hash/file list live beside it. `manifest.json` identifies clean
 source SHA/tree, both locks, target/flags and builder. This is a reproducible recipe,
 not a deterministic-output, signed, completed-SBOM or complete-license claim.
 First-party grant/text and third-party obligations remain owner/review gates.
+Existing binaries can embed builder paths, including the compiled IPC runtime guard;
+archive metadata path checks do not prove path-free executable bytes. Keep all
+artifacts private until that separate exclusion is resolved without deleting guards.
 
 `windows-smoke.ps1` builds only the separate non-shipping harness and runs its
 focused lint/tests. It launches **extracted** product binaries against a new private

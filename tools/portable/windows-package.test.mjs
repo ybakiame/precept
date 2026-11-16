@@ -26,6 +26,7 @@ test('PE inspection reads actual named imports and rejects truncation, other arc
   for (const length of [0, 64, 200, 600]) assert.throws(() => peImports(pe().subarray(0, length)));
   const wrong = pe(); wrong.writeUInt16LE(0xaa64, 0x84); assert.throws(() => peImports(wrong));
   const unsafe = pe(); unsafe.write('../evil.dll\0', 640); assert.throws(() => peImports(unsafe));
+  const partialDescriptor = pe(); partialDescriptor.writeUInt32LE(0x11ff, 0x98 + 120); partialDescriptor.writeUInt32LE(20, 0x98 + 124); assert.throws(() => peImports(partialDescriptor));
   const unterminated = pe(); unterminated.writeUInt32LE(20, 0x98 + 124); assert.throws(() => peImports(unterminated));
 });
 test('output never adopts an existing directory or follows a symlink/junction parent', t => {

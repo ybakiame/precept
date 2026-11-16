@@ -64,6 +64,7 @@ export function peImports(bytes) {
     let terminated = false;
     for (let i = 0; i < Math.floor(size / stride); i++) {
       const at = offset(rva + i * stride);
+      requireValue(at + stride <= bytes.length, 'Truncated PE import descriptor');
       if (bytes.subarray(at, at + stride).every(x => x === 0)) { terminated = true; break; }
       if (delayed) requireValue(read32(at) === 1, 'Unsupported delay import address form');
       imports.push({ name: dllName(read32(at + nameOffset)), delayed });
