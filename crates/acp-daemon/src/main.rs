@@ -10,6 +10,8 @@ use std::{collections::HashSet, path::PathBuf, sync::Arc, time::Duration};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 #[cfg(test)]
 mod ownership_tests;
+#[cfg(test)]
+mod process_tests;
 mod profiles;
 mod worktree;
 #[derive(Parser)]
@@ -426,6 +428,8 @@ async fn run(args: Args) -> acp_ipc::Result<()> {
         args.database.as_deref(),
         grants.1.clone(),
     )?);
+    #[cfg(test)]
+    process_tests::install_checkpoint(&profiles);
     let roots = profiles.configured_roots();
     let sessions =
         acp_session::runtime::Supervisor::configured(args.agent_config.as_deref(), &roots)?;

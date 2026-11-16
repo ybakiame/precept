@@ -21,6 +21,39 @@ Independent human acceptance, GitHub Actions, clean-machine installation, macOS,
 mobile, full IME/assistive technology and real-user durability are **NOT_RUN**.
 Offline Web evidence is not native acceptance or an authenticated browser UI.
 
+## Review disposition — 2026-11-16
+
+The product owner retained the ProjectContract precedence requirement and chose
+a separate, contract-first integration task: [#65](https://github.com/ybakiame/agent-control-plane/issues/65).
+No parser is added or requirement waived by PR #61. M4 stays **BLOCKED** until
+production IPC/MCP enforcement and its affected S3 regressions are reviewed.
+Neither #60 nor parent #52 may be closed by this revision.
+
+For this M4 phase only, the owner explicitly permits two native Git checkouts on
+the same physical Windows/WSL2 installation instead of independent physical
+hosts. This is an approved environment exception, **not** independent-host proof
+or independent human acceptance. Other matrix, clean-SHA, foreground, ownership
+and native rendering requirements remain in force.
+
+The current Windows checkout is the operator-designated native Git repository
+and uses globally installed Windows Git. Its configured origin is preserved;
+explicit fetches from the WSL checkout do not change that configuration. No real
+Profile, authentication directory or external project is part of validation.
+
+The new `process_tests::s3_independent_daemon_admission_checkpoint` launches a
+separate **test-built** daemon process running the normal `run`/listener/peer/
+Profile/Writer path. The parent uses actual Unix-socket/named-pipe IPC, waits for
+the child PID's checkpoint between initial and final admission, displaces the
+synthetic root, and releases the child. Confirm/Reject/Deprecate/Delete must
+return `UnsafeRuntime` with byte-identical database and unchanged logical rows,
+receipts and decisions; restored-root exact inspection must match. Only `cfg(test)`
+contains the checkpoint and subprocess entry. This is contained independent
+process fault injection, not GUI keyboard evidence or an instrumented product
+daemon. The prior in-process result remains separately classified below.
+
+Final same-revision full gates and native matrix are pending this review revision;
+the historical A/B cohorts below are not recertified by the new test.
+
 ## Source cohorts
 
 | Cohort | Exact revision | Evidence |

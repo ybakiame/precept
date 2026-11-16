@@ -210,6 +210,9 @@ The production route supplies repository documents and authority ordering but do
 not parse those documents into `ProjectContract` rules. Typed-resolver tests are
 not evidence of runtime masking; integrated acceptance must retain this gap rather
 than treating confirmation as contract approval or claiming automatic enforcement.
+On 2026-11-16 the owner retained this requirement and assigned the separately
+reviewed integration boundary to [#65](https://github.com/ybakiame/agent-control-plane/issues/65).
+PR #61 remains an acceptance revision, not permission to invent a document parser.
 
 Preference `source` is private operator inspection data. The effective-context
 projection omits it for every caller, including confirmed project preferences and
