@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, path::PathBuf};
 
+pub mod contracts;
 pub mod documents;
 pub mod fingerprint;
 pub mod typed_context;
@@ -134,8 +135,16 @@ impl PermissionEvaluator for ReadOnlyPermissions {
         }
         match name {
             "get_effective_context" => {
-                if args.keys().any(|k| k != "include_documents") {
+                if args
+                    .keys()
+                    .any(|k| k != "include_documents" && k != "selector")
+                {
                     return Err(Error::InvalidArguments);
+                }
+                if let Some(selector) = args.get("selector") {
+                    serde_json::from_value::<contracts::SelectorQuery>(selector.clone())
+                        .map_err(|_| Error::InvalidArguments)?
+                        .validate()?;
                 }
                 let include_documents = match args.get("include_documents") {
                     None => false,
@@ -207,34 +216,33 @@ impl<'a> ContextResolver<'a> {
     }
     pub fn resolve_preferences(&self) -> Result<Vec<Preference>> {
         self.bound_project()?;
-        let mut candidates: Vec<_> = self
-            .preferences
-            .preferences(&self.project)?
-            .into_iter()
-            .filter(|p| {
-                p.status == Status::Confirmed
-                    && match p.scope {
-                        Scope::Global => p.project.is_none(),
-                        Scope::Project => p.project.as_deref() == Some(self.project.as_str()),
-                    }
-            })
-            .collect();
-        candidates.sort_by(|a, b| {
-            a.key
-                .cmp(&b.key)
-                .then_with(|| (a.scope == Scope::Global).cmp(&(b.scope == Scope::Global)))
-                .then_with(|| b.id.cmp(&a.id))
-        });
-        let mut effective = BTreeMap::new();
-        for p in candidates {
-            effective.entry(p.key.clone()).or_insert(p);
-        }
-        Ok(effective.into_values().collect())
+        Ok(legacy_preferences(confirmed_preferences(
+            &self.project,
+            self.preferences.preferences(&self.project)?,
+        )))
     }
     pub fn context(&self, include_documents: bool) -> Result<Value> {
+        self.prepare_context(include_documents, &contracts::SelectorQuery::default())?
+            .finish(&self.bound_project()?.root)
+    }
+    /// Assemble one live read. The daemon rechecks admission before finish(); the
+    /// source is checked again there. No raw typed explanation is ever projected.
+    pub fn prepare_context(
+        &self,
+        include_documents: bool,
+        selector: &contracts::SelectorQuery,
+    ) -> Result<PreparedContext> {
+        selector.validate()?;
         let project = self.bound_project()?;
-        let preferences: Vec<_> = self
-            .resolve_preferences()?
+        let snapshot = contracts::Snapshot::read(&project.root);
+        let projection = contracts::project(
+            &self.project,
+            self.preferences.preferences(&self.project)?,
+            &snapshot,
+            selector,
+        )?;
+        let preferences: Vec<_> = projection
+            .preferences
             .into_iter()
             .map(|p| {
                 json!({
@@ -248,11 +256,13 @@ impl<'a> ContextResolver<'a> {
             .as_object_mut()
             .ok_or(Error::InvalidRecord)?
             .remove("worktree_fingerprint");
-        Ok(
-            json!({"project":self.project,"authority":AUTHORITY,"preferences":preferences,
+        Ok(PreparedContext {
+            snapshot,
+            response: json!({"project":self.project,"authority":AUTHORITY,"preferences":preferences,
             "documents":self.documents.metadata(&project, include_documents)?,
-            "repository":repository,"warnings":WARNINGS}),
-        )
+            "repository":repository,"warnings":WARNINGS,
+            "contract_resolution":projection.contract_resolution,"effective_contracts":projection.effective_contracts}),
+        })
     }
     pub fn handoff(&self, task_id: &str) -> Result<Value> {
         let project = self.bound_project()?;
@@ -310,10 +320,59 @@ impl<'a> ContextResolver<'a> {
     }
     pub fn read(&self, name: &str, arguments: &Value) -> Result<Value> {
         match ReadOnlyPermissions.evaluate(name, arguments)? {
-            ReadRequest::Context { include_documents } => self.context(include_documents),
+            ReadRequest::Context { include_documents } => {
+                let selector = arguments
+                    .get("selector")
+                    .map(|v| serde_json::from_value::<contracts::SelectorQuery>(v.clone()))
+                    .transpose()
+                    .map_err(|_| Error::InvalidArguments)?
+                    .unwrap_or_default();
+                self.prepare_context(include_documents, &selector)?
+                    .finish(&self.bound_project()?.root)
+            }
             ReadRequest::Handoff { task_id } => self.handoff(&task_id),
         }
     }
+}
+
+pub struct PreparedContext {
+    snapshot: contracts::Snapshot,
+    response: Value,
+}
+impl PreparedContext {
+    pub fn finish(mut self, root: &std::path::Path) -> Result<Value> {
+        if !self.snapshot.unchanged(root) {
+            self.response["preferences"] = json!([]);
+            self.response["effective_contracts"] = json!([]);
+            self.response["contract_resolution"] = json!({"status":"source_changed"});
+        }
+        Ok(self.response)
+    }
+}
+fn confirmed_preferences(project: &str, preferences: Vec<Preference>) -> Vec<Preference> {
+    preferences
+        .into_iter()
+        .filter(|p| {
+            p.status == Status::Confirmed
+                && match p.scope {
+                    Scope::Global => p.project.is_none(),
+                    Scope::Project => p.project.as_deref() == Some(project),
+                }
+        })
+        .collect()
+}
+fn legacy_preferences(mut candidates: Vec<Preference>) -> Vec<Preference> {
+    candidates.sort_by(|a, b| {
+        a.key
+            .cmp(&b.key)
+            .then_with(|| (a.scope == Scope::Global).cmp(&(b.scope == Scope::Global)))
+            .then_with(|| b.id.cmp(&a.id))
+    });
+    let mut effective = BTreeMap::new();
+    for p in candidates {
+        effective.entry(p.key.clone()).or_insert(p);
+    }
+    effective.into_values().collect()
 }
 
 /// Typed operator serialization only; authority remains in the daemon.

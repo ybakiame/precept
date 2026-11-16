@@ -1,5 +1,12 @@
 # P1-M4/S3 — Integrated acceptance evidence ledger
 
+2026-11-16 P1-N follow-up: the owner approved the separate #65 design, and
+[PR #66's integration evidence](p1-n-project-contracts.md) records production
+contract enforcement at clean `435f4bd` on both native OS environments. This S3
+ledger preserves its original cohort verdict and failed/partial history below;
+it is not a claim that the new backend SHA reran the four-surface UI matrix.
+M4 remains blocked pending owner runtime review; both PRs remain Draft.
+
 ## Verdict
 
 **M4 BLOCKED.** Production `ContextResolver` does not consume structured
