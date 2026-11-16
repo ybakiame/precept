@@ -1,6 +1,7 @@
 # P1-N: repository ProjectContract integration proposal
 
-Status: **Proposed; owner boundary approval required before implementation.**
+Status: **D1–D4 accepted for implementation by the owner's 2026-11-16 11:02 UTC
+[design review](https://github.com/ybakiame/agent-control-plane/pull/66).**
 Authority: [Issue #65](https://github.com/ybakiame/agent-control-plane/issues/65),
 [PR #61 re-review](https://github.com/ybakiame/agent-control-plane/pull/61),
 [ADR-0004](../adr/0004-product-domain-trust.md) and
@@ -33,8 +34,9 @@ onboarding, contract editor, cache table, session snapshot or export is included
 
 ## 2. Owner decisions to freeze
 
-These are recommendations, **not accepted decisions**. Approving all four rows
-would freeze the concrete proposal below; alternatives require editing it first.
+All four recommended defaults below are frozen by the design review. This is
+approval to implement the boundary, not runtime acceptance or merge approval.
+The original contract-only proposal remains separately recorded at `c0b7042`.
 
 | Decision | Recommendation | Consequence / alternative |
 | --- | --- | --- |
@@ -160,7 +162,7 @@ Do not attach private preference source, review actor, rationale, decision recor
 or historical evidence to the resolver input used for agent projection. Synthetic
 adapter reference labels express local record identity, not provenance verification.
 
-Use the frozen pure resolver for each contract-bearing key, supplying all relevant
+Use the frozen pure resolver for each accepted-contract-bearing key, supplying all relevant
 confirmed project/global candidates so its legacy fallback, compatible
 intersection, uncertainty and conflict behavior remain authoritative. The adapter
 must not reimplement precedence. Compatible preferences remain eligible; disjoint
@@ -169,6 +171,12 @@ Unknown applicability blocks only its key. More-specific selectors are not stron
 authority. Unreviewed, suggested, rejected, deprecated and foreign-project data
 cannot enter effective output. No session constraints/policy boundaries or inferred
 repository observations are manufactured for this task.
+
+Review clarification: a key with only unreviewed or definitely nonmatching
+contracts keeps its exact legacy preference behavior, even when that valid Profile
+text is not representable by typed v1. Pending/no-match claims cannot create an
+effective-key refusal. Accepted rules with missing query labels remain unknown
+and therefore do affect their key.
 
 Profile text may be valid yet unrepresentable by typed v1. Preserve exact bytes:
 do not trim, replace, truncate or hash values into a new comparison language. For
