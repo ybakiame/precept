@@ -14,9 +14,10 @@ Parent [#52](https://github.com/ybakiame/agent-control-plane/issues/52) stays op
 No self-merge, contract waiver, document parser, new write authority, schema
 compatibility, production activation or release authorization is introduced.
 
-The exact root-admission checkpoint test uses **in-process** framing with real
-SQLite/filesystem state. A checkpoint-controlled independent daemon-process
-counterpart is **NOT_RUN**; this is not filled by relabelling a component PASS.
+The original exact root-admission checkpoint remains **in-process** evidence.
+Review cohort C adds a separately launched, test-built daemon using actual native
+IPC: its checkpoint regression is **PASS on Windows and Linux/WSL**, classified
+as contained process fault injection, not an instrumented product daemon or GUI.
 Independent human acceptance, GitHub Actions, clean-machine installation, macOS,
 mobile, full IME/assistive technology and real-user durability are **NOT_RUN**.
 Offline Web evidence is not native acceptance or an authenticated browser UI.
@@ -51,8 +52,96 @@ contains the checkpoint and subprocess entry. This is contained independent
 process fault injection, not GUI keyboard evidence or an instrumented product
 daemon. The prior in-process result remains separately classified below.
 
-Final same-revision full gates and native matrix are pending this review revision;
-the historical A/B cohorts below are not recertified by the new test.
+## Current complete review cohort C
+
+Final code/test revision: **`19942b6e8ba58e990e60095bf6440d572cda6123`**, tree
+**`d18ec29232cd266b51c3716e07c24b04c4d405b1`**. Both native checkouts were clean
+at this revision. All builds/tests finished before C's native sessions; no binary
+was rebuilt during a session. All four final reports record dirty=false,
+clean_after=true and unchanged binary fingerprints. Later evidence-only commits
+do not substitute a new tested binary revision. No A/B evidence is stitched into C.
+
+```text
+tools/local_verify.sh all artifacts/local-p1-m4/s3-19942b6-linux-gates 6aa3bd414ee9472537b46f370ffed87694ff3166
+tools/windows_local_verify.ps1 -Suite All -ReportDir artifacts/local-p1-m4/s3-19942b6-windows-gates -DiffBase 6aa3bd414ee9472537b46f370ffed87694ff3166
+cargo fmt --manifest-path tools/native-acceptance/Cargo.toml -- --check
+cargo build --manifest-path tools/native-acceptance/Cargo.toml --locked
+cargo clippy --manifest-path tools/native-acceptance/Cargo.toml --all-targets --locked -- -D warnings
+cargo test --manifest-path tools/native-acceptance/Cargo.toml --locked
+node tools/check_source.mjs
+```
+
+These ran in each respective repository root with process-local controls below.
+Native invocations used no development flag or selected-case filter:
+
+```text
+# Linux/WSL: WINDOWS_HELPER_PATH resolves to tools/native_window.ps1 in the designated Windows checkout.
+tools/native-acceptance/target/debug/acp-native-acceptance tui "$PWD/artifacts/local-p1-m4/s3-19942b6-pty"
+tools/native-acceptance/target/debug/acp-native-acceptance desktop "$PWD/artifacts/local-p1-m4/s3-19942b6-wslg" "$WINDOWS_HELPER_PATH"
+# Native Windows PowerShell:
+& .\tools\native-acceptance\target\debug\acp-native-acceptance.exe tui "$PWD\artifacts\local-p1-m4\s3-19942b6-conpty"
+& .\tools\native-acceptance\target\debug\acp-native-acceptance.exe desktop "$PWD\artifacts\local-p1-m4\s3-19942b6-hwnd" "$PWD\tools\native_window.ps1"
+```
+
+| Full gate at C | Linux/WSL | Native Windows |
+| --- | --- | --- |
+| Baseline diff / Workspace fmt, build, Clippy `-D warnings`, tests / final diff | PASS; **139 tests** | PASS; **140 tests** |
+| Shared model fmt, Clippy, tests with native feature | PASS; **53 tests** | PASS; **53 tests** |
+| NSH fmt, native+tui build, Clippy, tests including 10k rows and real IPC | PASS; **29 tests** | PASS; **29 tests** |
+| Native driver fmt, build, Clippy, tests | PASS; **29 tests** | PASS; **29 tests** |
+| Source inventory, links, workflows, immutable NSH pins | PASS; **240 paths / 34 archives** | PASS; **240 paths / 34 archives** |
+| Independent daemon admission checkpoint; all four review actions | PASS; process FI | PASS; process FI |
+
+Each Workspace run has two explicitly ignored entries: the existing performance
+test and the subprocess daemon entry, which the new parent regression actually
+launches four times. The latter is an entry point, not an additional claimed test
+PASS. The earlier Windows environment control-flow fixture remains its historical
+ten-case result, not a new Cargo/test claim at C.
+
+| Complete native surface at C | Automated cells | Baseline / final identity | Cleanup / restoration |
+| --- | --- | --- | --- |
+| Windows native HWND | **37/37 PASS** | PASS / PASS | 22/22 owned driver/window closures |
+| Direct WSLg native Wayland | **37/37 PASS** | PASS / PASS | 22/22 owned driver/window closures |
+| Windows ConPTY | **37/37 PASS** | PASS / PASS | 22/22 VT streams restore alternate screen |
+| Linux/WSL PTY | **37/37 PASS** | PASS / PASS | 22/22 VT streams restore alternate screen |
+
+This is **148 automated native cells**, not M4 PASS or independent human approval.
+Current GUI captures were inspected for exact immutable fields, destructive focus,
+wrong-ID refusal, visible queue-drift warning and all eight EN/zh-CN × Light/Dark ×
+compact/large combinations per GUI. Compact captures show the form and modal;
+detail/history can remain below the fold. This is not simultaneous visibility of
+all content or full accessibility/IME certification. Raw report `visual_review`
+stays NOT_RUN for independent inspection; this paragraph records scoped agent
+image inspection only.
+
+C's actual GTK observation is **`GdkWaylandDisplay` / `GskGLRenderer`**, mapped
+windows, after-paint events and acknowledged resize; DISPLAY is removed. The
+historical Cairo observations below do not describe C. No niri, X11/XWayland or
+Xvfb substitute was used. C uses the existing GTK 4.24.1, GCC 16.2.1, Windows
+10.0.26300.0, VCTools 14.51.36231, SDK 10.0.26100.0, Node v26.13.1,
+PowerShell 7.6.2/.NET 10.0.8 and global Windows Git 2.56.0.windows.4.
+
+Both compilers are repository-pinned **rustc 1.99.1**. Linux Cargo is **1.99.1**;
+Windows C's logged frontend is **Cargo 1.102.0 / huacnlee-cargo 0.103.0-1**.
+Windows's earlier `3f4c534` gate logged frontend 1.101.0 / 0.102.0-9. These are
+observed existing global tools, not installations by this task or a claim of
+stock Windows Cargo 1.99.1 acceptance. Exact host metadata stays in the private
+`s3-19942b6-{linux,windows}-driver/host.json` files. Controls were offline Cargo,
+four build jobs, existing LLVM22 on Linux process PATH and `RUSTFLAGS=-Cdebuginfo=0`
+with the existing Windows MSVC environment; no persistent setting changed.
+
+The input correction observes actual Desktop field focus after a non-activating
+Tab and the field shortcut, then types once. PTY/ConPTY and Desktop text use
+25 ms character pacing. Exact content, receipt, stale-state, foreground and
+ownership assertions are retained; no character, mutation or consent is retried.
+Rapid/bulk-paste input and IME composition are not certified by these flows.
+
+Private evidence: `artifacts/local-p1-m4/s3-19942b6-{linux,windows}-gates/`,
+`s3-19942b6-{linux,windows}-driver/`, and `s3-19942b6-{hwnd,wslg,conpty,pty}/` in
+the respective native checkouts. `s3-19942b6-evidence-index.json` in WSL hashes
+**928 native artifacts** and records binary identity, per-surface counts and
+cleanup/restoration. Windows raw evidence remains in the designated Windows
+checkout. Nothing from these ignored directories is uploaded.
 
 ## Source cohorts
 
@@ -62,14 +151,18 @@ the historical A/B cohorts below are not recertified by the new test.
 | Full gates | `55769ff27f935a1ce55ec32f4aafc63e80646ab6` | Both hosts' full Cargo, driver and source checks |
 | A: complete native matrix | `44b989f53b4cc22d6a93c6e306ee982feb5b2a9d` | Same clean tree `e2cde24778206d2ce4fde32e27f0886def0e0b37`; 37 automated cells per surface |
 | B: native disclosure correction | `57386fa02adfe8a37b662a9e516c2b3251a39aad` | Same tree `6f4465604f59f949294e50c57e6d271b4cf945a0`; affected UI checks and two queue cases per surface |
+| Review preflight | `75d40c4eb7222b711cd21b603370194b2402b161` | Branch-diff failed on an inherited trailing blank line; no full gate PASS |
+| Review exploratory full run | `3f4c5340c5287befd16f568a744a7b8beae40c27` | Full gates PASS on both OS environments; native failures/refusal preserved below |
+| C: final complete review | `19942b6e8ba58e990e60095bf6440d572cda6123` | Same clean tree `d18ec29232cd266b51c3716e07c24b04c4d405b1`; full gates and 37/37 on all four surfaces |
 
 Branch: `feat/p1-m4-s3-integrated-acceptance`. Documentation commits after these
 cohorts do not recertify binaries. Windows and Linux/WSL are genuine separate Git
 checkouts/native binaries on the same physical Windows/WSL2 installation—not
-independent physical machines or independently operated hosts. Windows fetched
-explicitly from WSL; its origin configuration and original stash were preserved.
+independent physical machines or independently operated hosts. Historical A/B
+Windows sync preserved its origin configuration and original stash; C explicitly
+fetched into the newly designated native repository and preserved its origin.
 
-Owner selected minimal smoke before completing four surfaces and no repeat of
+For historical A/B, owner selected minimal smoke before completing four surfaces and no repeat of
 unaffected product gates. Git object fingerprints record unchanged crates, model,
 test dependencies, root manifests/toolchain and verification helpers. A retains
 the full-gate evidence at `55769ff`; B reruns affected UI checks, not unchanged
@@ -80,7 +173,7 @@ each report `DEV_PARTIAL_PASS`, one selected cell and 36 NOT_RUN cells. They cov
 project drift and global paging on all four surfaces. A supplies the complete
 matrix; B supplies only the affected correction. All commits use `[skip ci]`.
 
-## Host and SDK provenance
+## Historical A/B host and SDK provenance
 
 | Item | Observed version/environment |
 | --- | --- |
@@ -104,7 +197,7 @@ disposable Profiles/roots/credentials/endpoints, never a real Profile or model.
 The zero-byte `/.rpi/.resource-lease` is preserved and precisely ignored; other
 `.rpi` files are not hidden.
 
-## Executed gates
+## Historical executed gates
 
 ```text
 tools/local_verify.sh all artifacts/local-p1-m4/s3-55769ff-linux-gates 6aa3bd414ee9472537b46f370ffed87694ff3166
@@ -150,7 +243,7 @@ Earlier targeted checks: one core privacy regression, eight process regressions
 and one admission unit per host, and ten Windows helper control-flow cases. The
 last uses actual Git/helper but a Cargo function stub—not a Cargo test result.
 
-## Native matrix
+## Historical A/B native matrix
 
 Normal complete invocation (no development selector):
 
@@ -265,7 +358,7 @@ Probes alone do not prove pixels: the stale badge demonstrated that distinction.
 | Operator reads vs independent live grant; agent/session denial | PASS, native daemon/CLI/IPC/session/MCP processes on both hosts |
 | Exactly two project-bound MCP tools; private source/history/provenance exclusion | PASS, actual IPC/MCP; independent expected confirmed fallback/override values; exact Operator inspect retains private fields |
 | Stale bindings, strict decode, foreign/unallowlisted/symlink/junction roots, revoke, second writer | PASS, real process suites and explicitly contained identity-corruption fixtures |
-| Precise root drift at final admission | Component FI PASS with real SQLite/filesystem; checkpoint-controlled independent daemon-process version NOT_RUN |
+| Precise root drift at final admission | Historical component FI PASS; C independent test-built daemon process FI PASS on Windows and Linux/WSL, actual native IPC and unchanged bytes/rows/receipts/decisions |
 | Fresh exact v1; digest vs CAS; transitions; atomic peers/receipts/history/deletion | PASS, strict store/writer units plus real CLI/IPC lifecycle/concurrency |
 | Queue/history/4096 ceiling, Capacity, Busy, replay/conflict | PASS, process queries, explicitly injected valid 4096-receipt fixture, writer/IPC units and real SQLite contention |
 | Confirmed-only, project/global fallback, historical Handoff PASS | PASS, core/MCP/process suites; historical evidence never becomes fresh verification |
@@ -307,14 +400,27 @@ source correction, not an independent re-review or human acceptance PASS.
 | `55769ff` | Bounded 37-cell ledger and opt-in content-free focus observation; existing controls/ConPTY handles preserved |
 | `44b989f` | Remove false physical-cycle inference from repeated labels; retain 128-Tab bound; development selector cannot claim full acceptance |
 | `57386fa` | Native queue drift becomes readable localized warning text, without changing queue/permission semantics or SDK |
+| `75d40c4` | Independent test-built daemon checkpoint over native IPC; owner decisions retain #65 blocker and explicitly allow same-physical-host environments |
+| `3f4c534` | Remove inherited trailing blank line; preserve failed branch preflight |
+| `19942b6` | Synchronize actual input focus and pace synthetic text; preserve exact assertions and avoid native sessions during builds |
 
 No local confirmation approves a ProjectContract. Agent, prompt, session, Handoff,
 unverified source/origin and client channel never self-authorize.
 
 ## Binary SHA-256
 
-Executables were not rebuilt during their native sessions. A/B distinguish
+Current C fingerprints are recorded in the private evidence index and table
+below. Executables were not rebuilt during C's native sessions. Historical A/B distinguish
 complete-run binaries from the corrected UI; other binaries remain unchanged.
+
+| C binary | Linux/WSL | Native Windows |
+| --- | --- | --- |
+| daemon | `883363045fc8821b229a8e4cabfc6128613bde9ba6101777bf2de2eb193a06da` | `000433387c5fb3e61c19ebb78b54404c0fd35da9c9d59394724c09c569050159` |
+| query | `212b80609606bbe6d184d3e5dc92644ecc8582d10099738485dc95b01d6e694f` | `57df17d22e3eed2805f6df4a328a34eee1e8f83b33799f21025eea7416d1e2f6` |
+| MCP | `baacb5d0f24b95c61874ba4855842cb559e083341827f841152770bc094a9ef6` | `cdab23a6a7015a10ce2ac541befb71879daf1dada02b6c92f52eb191fb4e60af` |
+| NSH Desktop | `98c74bc0af8732b64460a9b5dd9d5d248fea67d426b63f79e3c8cd56f62adefa` | `87ac827ef0740a2265abb1fa063c0f60ae842867016ae0db2f0b54759a5067f3` |
+| NSH TUI | `1616f8a0ebfb7d98700545c471461ea09c33bd24d4a6b6c489f87704f82684a4` | `7f94767ce9ddc9effe137e6314ae56f326fcacaec1386b66ab57ad7873860dcb` |
+| acceptance driver | `1ff38e3f134046ab79f9962d0f3c46730219021cb44a76fa24f624f3fa81d61d` | `3818c8974f5c54db20dd086ad3cf663e64a64e89f0199e801ec8083321c1feb2` |
 
 | Binary / cohort | Linux/WSL | Windows |
 | --- | --- | --- |
@@ -329,6 +435,18 @@ complete-run binaries from the corrected UI; other binaries remain unchanged.
 
 ## Failures retained
 
+- Review preflight `75d40c4` failed baseline whitespace on the report's inherited
+  trailing blank line; corrected in `3f4c534`. No suite was passed by suppressing it.
+- `3f4c534` complete gates passed on both OS environments, but native PTY ended
+  **19 PASS / 4 FAIL / 14 NOT_RUN**, and WSLg **20 PASS / 2 FAIL / 15 NOT_RUN**.
+  Exact fields visibly lost characters with bulk/4 ms input; original assertions
+  and images remain. C's focus synchronization and single-send pacing fix this
+  acceptance path, not rapid-input stress behavior.
+- `3f4c534` ConPTY logged all 37 cells PASS but exited 101 without a final report:
+  it was started before the remaining NSH gates ended, and the final binary check
+  observed a replaced TUI executable. It remains **INCOMPLETE**, not native PASS.
+  Its original ledger/log and `final-refusal-diagnosis.json` are retained. All C
+  native sessions start only after the respective builds/tests have completed.
 - Wrong initial WSL share: no test executed; corrected to observed Arch Linux.
 - Initial environment restore retained empty MSVC keys. Native probe established
   PowerShell `$null` coercion/.NET empty-variable behavior; corrected ten-case
@@ -362,7 +480,8 @@ legacy/Python runtime restoration or mock-to-native PASS conversion.
 ## Private local evidence
 
 These are local ignored path references, not uploaded artifacts or dead hosted
-repository links. WSL retains the final indexes and copies of Windows evidence.
+repository links. WSL retains historical indexes/copies of Windows A/B evidence;
+C Windows raw evidence remains in the designated native Windows checkout.
 The [driver README](../../tools/native-acceptance/README.md) documents invocation,
 isolation, diagnostics, ownership and evidence formats.
 
