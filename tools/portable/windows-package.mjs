@@ -1,6 +1,7 @@
 // Developer-only Windows portable prototype recipe. No install, activation or publish.
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -104,7 +105,7 @@ export function build(repo, parent, name, cargoProgram) {
   command('pwsh', ['-NoProfile', '-NonInteractive', '-File', path.join(repo, 'tools/portable/private-output.ps1'), '-Directory', report], repo);
   const stage = freshDirectory(report, 'acp-windows-x86_64-prototype');
   const manifest = { format: 1, prototype: true, public_distribution: false, source_sha: sha, source_tree: tree,
-    target, profile: 'release', nsh_revision: pin, builder: { os_build: process.getSystemVersion(), node: process.version,
+    target, profile: 'release', nsh_revision: pin, builder: { os_build: os.release(), node: process.version,
       vc_tools: process.env.VCToolsVersion ?? 'unknown', windows_sdk: process.env.WindowsSDKVersion ?? 'unknown',
       cargo: command(cargoProgram, ['--version'], repo), rustc: command('rustc', ['-Vv'], repo) },
     locks: {}, build_commands: [], binaries: [], limitations: ['Unsigned; not a release or reproducible-binary claim',
