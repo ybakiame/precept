@@ -78,11 +78,12 @@ struct Fixture {
 }
 impl Fixture {
     fn start(bins: PathBuf) -> Self {
-        let root = tempfile::Builder::new()
+        let parent = tempfile::Builder::new()
             .prefix("acp-m5-zip-")
             .tempdir()
             .unwrap()
             .keep();
+        let root = parent.join("private");
         transport::private_dir(&root, true).unwrap();
         transport::private_dir(&root.join("state"), true).unwrap();
         fs::create_dir(root.join("synthetic")).unwrap();
@@ -261,6 +262,24 @@ impl Mcp {
             .expect("packaged MCP deadline")
     }
 }
+fn modules(pid: u32, executable: &Path, out: &Path, worker: &str, surface: &str) {
+    let script = Path::new(worker)
+        .parent()
+        .unwrap()
+        .join("portable/loaded-modules.ps1");
+    let mut cmd = command(Path::new("pwsh.exe"));
+    cmd.args(["-NoProfile", "-NonInteractive", "-File"])
+        .arg(script)
+        .args(["-OwnedPid", &pid.to_string(), "-ExpectedExe"])
+        .arg(executable);
+    let (ok, value) = bounded(cmd);
+    assert!(ok && value.is_array(), "owned loaded-module inspection");
+    fs::write(
+        out.join(format!("{surface}-modules.json")),
+        serde_json::to_vec_pretty(&value).unwrap(),
+    )
+    .unwrap();
+}
 fn hashes(root: &Path) -> Vec<Value> {
     [
         "acp-daemon.exe",
@@ -307,6 +326,10 @@ async fn main() {
                 .any(|m| m["file"] == b["file"] && m["sha256"] == b["sha256"])
         );
     }
+    transport::private_dir(&bins, false).unwrap();
+    for b in &before {
+        drop(transport::open_private(&bins.join(b["file"].as_str().unwrap()), false).unwrap());
+    }
     let mut f = Fixture::start(bins.clone());
     // Keep the retained root private and out of public evidence. Only this file names it.
     transport::private_dir(&out, true).unwrap();
@@ -316,10 +339,21 @@ async fn main() {
     )
     .unwrap();
     let mut cells = Vec::new();
+    let mut record = |id: &str| {
+        cells.push(json!({"id":id,"status":"PASS"}));
+        fs::write(
+            out.join("progress.json"),
+            serde_json::to_vec_pretty(
+                &json!({"source_sha":manifest["source_sha"],"finished":false,"cells":cells}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    };
     let initial = f.ok(&["profile", "info"]);
     assert_eq!(initial["selected"], false);
     assert_eq!(initial["write_enabled"], false);
-    cells.push("no-implicit-profile");
+    record("no-implicit-profile");
     let mut collision = Fixture::daemon(&bins, &f.root, &f.location);
     let end = Instant::now() + Duration::from_secs(10);
     loop {
@@ -331,7 +365,7 @@ async fn main() {
         thread::sleep(Duration::from_millis(30));
     }
     f.ok(&["health"]);
-    cells.push("endpoint-collision-preserves-owner");
+    record("endpoint-collision-preserves-owner");
     let db = f.root.join("state/profile.sqlite3");
     f.ok(&["profile", "create", db.to_str().unwrap()]);
     assert!(!f.query(&["profile", "create", db.to_str().unwrap()]).0);
@@ -351,7 +385,7 @@ async fn main() {
         "synthetic",
         f.root.join("synthetic").to_str().unwrap(),
     ]);
-    cells.push("explicit-synthetic-profile-grant-register-no-overwrite");
+    record("explicit-synthetic-profile-grant-register-no-overwrite");
     let agent = load_credential(
         &f.location,
         &f.location.credential_path(Some("synthetic")).unwrap(),
@@ -371,7 +405,7 @@ async fn main() {
             .unwrap_err(),
         Error::Unauthorized
     );
-    cells.push("project-credential-cannot-write");
+    record("project-credential-cannot-write");
     let mut mcp = Mcp::start(&f);
     let list = mcp.request("tools/list", json!({}));
     let tools = list["result"]["tools"].as_array().unwrap();
@@ -393,12 +427,12 @@ async fn main() {
         json!({"name":"confirm_preference","arguments":{}}),
     );
     assert!(denied["error"].is_object());
-    cells.push("packaged-mcp-exact-two-read-tools-context-missing-handoff-write-refusal");
+    record("packaged-mcp-exact-two-read-tools-context-missing-handoff-write-refusal");
     drop(mcp);
     drop(client);
     f.ok(&["profile", "write", "disable"]);
     assert_eq!(f.ok(&["profile", "info"])["write_enabled"], false);
-    cells.push("write-grant-explicit-revocation");
+    record("write-grant-explicit-revocation");
     let focus = f.root.join("state/focus.events");
     fs::write(&focus, "").unwrap();
     let ui_args = vec![
@@ -411,12 +445,31 @@ async fn main() {
     {
         let mut ui = tty::Tty::start(&bins.join("acp-nsh-tui.exe"), &ui_args, &out, &focus);
         ui.wait("Agent Control Plane");
+        modules(
+            ui.pid(),
+            &bins.join("acp-nsh-tui.exe"),
+            &out,
+            &args[3],
+            "conpty",
+        );
         ui.capture(&out.join("conpty.txt"));
         ui.resize(100, 35);
         ui.wait("Agent Control Plane");
         ui.close();
+        let end = Instant::now() + Duration::from_secs(2);
+        loop {
+            let raw = ui.raw.lock().unwrap();
+            if raw.windows(8).any(|w| w == b"\x1b[?1049l")
+                && raw.windows(8).any(|w| w == b"\x1b[?2004l")
+            {
+                break;
+            }
+            drop(raw);
+            assert!(Instant::now() < end, "terminal restore sequences missing");
+            thread::sleep(Duration::from_millis(20));
+        }
     }
-    cells.push("packaged-conpty-render-resize-normal-restore");
+    record("packaged-conpty-render-resize-normal-restore");
     {
         let nonce = &acp_ipc::operator::operation_id().unwrap()[..16];
         let mut ui = desktop::Desktop::start(
@@ -427,20 +480,27 @@ async fn main() {
             &out,
             &focus,
         );
-        ui.wait_after("ACP_NSH_STATE", 0);
+        ui.wait_after("ACP_NSH_STATE phase=Ready", 0);
+        modules(
+            ui.pid(),
+            &bins.join("acp-nsh-native.exe"),
+            &out,
+            &args[3],
+            "hwnd",
+        );
         ui.resize(920, 640);
         ui.capture("hwnd", &out);
         ui.close();
     }
-    cells.push("packaged-hwnd-render-resize-normal-close");
+    record("packaged-hwnd-render-resize-normal-close");
     f.ok(&["health"]);
-    cells.push("ui-close-leaves-daemon-running");
+    record("ui-close-leaves-daemon-running");
     let state_before = Sha256::digest(fs::read(&db).unwrap());
     let operator =
         load_credential(&f.location, &f.location.credential_path(None).unwrap()).unwrap();
     let pid = f.daemon.0.id();
     f.stop();
-    cells.push("graceful-stop-cleans-owned-credentials-releases-runtime-lease");
+    record("graceful-stop-cleans-owned-credentials-releases-runtime-lease");
     f.daemon = Fixture::daemon(&bins, &f.root, &f.location);
     let end = Instant::now() + Duration::from_secs(10);
     while !f.query(&["profile", "info"]).0 {
@@ -449,8 +509,20 @@ async fn main() {
     }
     assert_eq!(f.ok(&["profile", "info"])["selected"], false);
     assert!(Client::connect(&f.location, &operator).await.is_err());
+    let pre_crash =
+        load_credential(&f.location, &f.location.credential_path(None).unwrap()).unwrap();
+    f.daemon.0.kill().unwrap();
+    f.daemon.0.wait().unwrap();
+    f.daemon = Fixture::daemon(&bins, &f.root, &f.location);
+    let end = Instant::now() + Duration::from_secs(10);
+    while !f.query(&["profile", "info"]).0 {
+        assert!(Instant::now() < end);
+        thread::sleep(Duration::from_millis(30));
+    }
+    assert_eq!(f.ok(&["profile", "info"])["selected"], false);
+    assert!(Client::connect(&f.location, &pre_crash).await.is_err());
     f.stop();
-    cells.push("restart-no-adoption-stale-credential-refused");
+    record("normal-and-crash-restart-no-adoption-stale-credential-refused");
     assert_eq!(state_before[..], Sha256::digest(fs::read(&db).unwrap())[..]);
     assert_eq!(
         fs::read(f.root.join("state/auth-retain.txt")).unwrap(),
@@ -461,6 +533,6 @@ async fn main() {
         b"SYNTHETIC RETAIN\n"
     );
     assert_eq!(before, hashes(&bins));
-    fs::write(out.join("smoke.json"), serde_json::to_vec_pretty(&json!({"source_sha":manifest["source_sha"],"source_tree":manifest["source_tree"],"platform":"Windows x86_64 developer host, NOT clean-target","binaries":before,"initial_daemon_pid":pid,"cells":cells.into_iter().map(|id|json!({"id":id,"status":"PASS"})).collect::<Vec<_>>(),"clean_target":"NOT_RUN","second_user":"NOT_RUN","ime_at":"NOT_RUN"})).unwrap()).unwrap();
+    fs::write(out.join("smoke.json"), serde_json::to_vec_pretty(&json!({"source_sha":manifest["source_sha"],"source_tree":manifest["source_tree"],"platform":"Windows x86_64 developer host, NOT clean-target","binaries":before,"initial_daemon_pid":pid,"cells":cells,"clean_target":"NOT_RUN","second_user":"NOT_RUN","ime_at":"NOT_RUN"})).unwrap()).unwrap();
     println!("PASS: owned packaged Windows smoke; clean-target NOT_RUN");
 }
