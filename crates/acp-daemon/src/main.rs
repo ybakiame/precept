@@ -52,12 +52,16 @@ struct OperatorContext {
     project: String,
     #[serde(default)]
     include_documents: bool,
+    #[serde(default)]
+    selector: acp_core::contracts::SelectorQuery,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AgentContext {
     #[serde(default)]
     include_documents: bool,
+    #[serde(default)]
+    selector: acp_core::contracts::SelectorQuery,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -236,28 +240,29 @@ impl Service {
                     .collect::<Vec<_>>()
             ));
         }
-        let (project, include, task) = match (request.method.as_str(), access) {
+        let (project, include, task, selector) = match (request.method.as_str(), access) {
             ("context.get", Access::Operator) => {
                 let p: OperatorContext = decode(params)?;
-                (p.project, p.include_documents, None)
+                (p.project, p.include_documents, None, p.selector)
             }
             ("context.get", Access::Agent { project }) => {
                 let p: AgentContext = decode(params)?;
-                (project, p.include_documents, None)
+                (project, p.include_documents, None, p.selector)
             }
             ("handoff.get", Access::Operator) => {
                 let p: OperatorHandoff = decode(params)?;
-                (p.project, false, Some(p.task_id))
+                (p.project, false, Some(p.task_id), Default::default())
             }
             ("handoff.get", Access::Agent { project }) => {
                 let p: AgentHandoff = decode(params)?;
-                (project, false, Some(p.task_id))
+                (project, false, Some(p.task_id), Default::default())
             }
             _ => return Err(Error::Unsupported),
         };
         if !self.projects.contains(&project) {
             return Err(Error::Unauthorized);
         }
+        selector.validate().map_err(|_| Error::InvalidRequest)?;
         if task.as_ref().is_some_and(|s| s.chars().count() > 120) {
             return Err(Error::InvalidRequest);
         }
@@ -283,7 +288,24 @@ impl Service {
         let result = if let Some(task) = task {
             resolver.handoff(&task)
         } else {
-            resolver.context(include)
+            let prepared = resolver
+                .prepare_context(include, &selector)
+                .map_err(|_| Error::Unavailable)?;
+            #[cfg(test)]
+            process_tests::before_context_finish();
+            // Recheck the selected/authorized root after assembly, then let the
+            // core re-read the bounded source. Lease publication checks follow.
+            let current = store
+                .read_project(&project)
+                .ok()
+                .and_then(|p| p.root.canonicalize().ok());
+            if current.as_ref() != roots.get(&project) {
+                if session_bound {
+                    self.sessions.invalidate_context(&project);
+                }
+                return Err(Error::UnsafeRuntime);
+            }
+            prepared.finish(current.as_ref().ok_or(Error::UnsafeRuntime)?)
         };
         result.map_err(|e| match e {
             acp_core::Error::HandoffNotFound | acp_core::Error::UnknownProject => Error::NotFound,

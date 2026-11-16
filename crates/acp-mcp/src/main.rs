@@ -18,8 +18,12 @@ fn info() -> Value {
     json!({"name":"agent-control-plane","version":"0.1.0a0"})
 }
 fn tools() -> Value {
+    let selector = json!({"type":"object","properties":{
+        "agent_id":{"type":"string"},"path":{"type":"string"},"language":{"type":"string"},
+        "task_tags":{"type":"array","items":{"type":"string"},"maxItems":64}
+    },"additionalProperties":false});
     json!([
-        {"name":"get_effective_context","description":"Read confirmed developer preferences and live project contract references. Repository rules take priority.","inputSchema":{"type":"object","properties":{"include_documents":{"type":"boolean","default":false}},"additionalProperties":false}},
+        {"name":"get_effective_context","description":"Read live repository contracts and compatible confirmed preferences. Selector labels affect applicability, not authorization.","inputSchema":{"type":"object","properties":{"include_documents":{"type":"boolean","default":false},"selector":selector},"additionalProperties":false}},
         {"name":"get_handoff","description":"Read a task handoff with current git revision and stale-state warnings. Does not grant permissions.","inputSchema":{"type":"object","properties":{"task_id":{"type":"string"}},"required":["task_id"],"additionalProperties":false}}
     ])
 }
@@ -42,7 +46,9 @@ impl Bridge {
         };
         let (method, params) = match name.as_str() {
             Some("get_effective_context") => {
-                if args.keys().any(|k| k != "include_documents")
+                if args
+                    .keys()
+                    .any(|k| k != "include_documents" && k != "selector")
                     || !args
                         .get("include_documents")
                         .unwrap_or(&Value::Bool(false))
@@ -50,10 +56,18 @@ impl Bridge {
                 {
                     return Ok(tool_error("include_documents must be boolean"));
                 }
-                (
-                    "context.get",
-                    json!({"include_documents":args.get("include_documents").unwrap_or(&Value::Bool(false))}),
-                )
+                let mut params = json!({"include_documents":args.get("include_documents").unwrap_or(&Value::Bool(false))});
+                if let Some(selector) = args.get("selector") {
+                    let valid = serde_json::from_value::<acp_core::contracts::SelectorQuery>(
+                        selector.clone(),
+                    )
+                    .is_ok_and(|q| q.validate().is_ok());
+                    if !valid {
+                        return Ok(tool_error("Invalid selector"));
+                    }
+                    params["selector"] = selector.clone();
+                }
+                ("context.get", params)
             }
             Some("get_handoff") => {
                 if args.len() != 1 || !args.get("task_id").is_some_and(Value::is_string) {

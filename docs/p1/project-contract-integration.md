@@ -8,9 +8,10 @@ Authority: [Issue #65](https://github.com/ybakiame/agent-control-plane/issues/65
 [typed-context v1](typed-context-v1.md). The review reference is the PR conversation;
 the controlling updated review is dated 2026-11-16 10:47 UTC.
 
-This is the issue's first deliverable, not a parser implementation, accepted file
-format, new Profile schema or permission grant. PR #61 remains Draft, with M4
-blocked on actual production enforcement. The owner intends to review and merge
+The original proposal was the issue's first deliverable. Follow-on commits
+implement this approved file format and boundary without a new Profile schema or
+permission grant. PR #61 remains Draft pending integration evidence and review.
+The owner intends to review and merge
 the dependent work together; nothing in this proposal authorizes automatic merge.
 
 ## 1. Audit and smallest integration boundary
@@ -243,9 +244,9 @@ only for a major UI milestone or material shared NSH behavior change. No NSH
 change is proposed here. Same-physical-machine Windows/WSL exception remains
 limited to M4; independent human/physical-host acceptance is not inferred.
 
-## 7. Current evidence and remaining work
+## 7. Original proposal-stage audit and remaining acceptance
 
-This proposal changes documentation only. Architecture audit on Linux/WSL used
+The original `c0b7042` proposal changed documentation only. Its Linux/WSL audit used
 unchanged product sources from `95a3905ae8bcded2084ad0af22edb918d55513b5`:
 
 - `cargo test -p acp-core --test typed_context --test read_only --locked --offline`:
@@ -255,8 +256,9 @@ unchanged product sources from `95a3905ae8bcded2084ad0af22edb918d55513b5`:
   proposal validation; local links, workflow targets and SDK pins checked.
 - `git diff --check`: PASS for the documentation delta.
 
-Their success does not establish parser or production IPC/MCP enforcement. Implementation,
-freshness fault injection and native Windows integration for #65 remain NOT_RUN
-until the boundary is approved and implemented. No hosted Actions/model calls,
+Those component results do not establish parser or production IPC/MCP enforcement.
+The accepted design is implemented in follow-on commits; their production-process
+and native-OS results must be recorded separately on a clean tested SHA before
+claiming integration acceptance. No hosted Actions/model calls,
 real Profile/auth/external checkout access, system configuration or production
 activation. PR #61, #60 and #52 remain open; no milestone is declared complete.

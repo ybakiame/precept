@@ -27,7 +27,7 @@ M2 integrated acceptance.
 
 | Component | Implemented responsibility | Must not own |
 | --- | --- | --- |
-| `crates/acp-core` | Legacy confirmed preference/Handoff resolver plus P1-L pure typed selector/conflict explanation; bounded document/fingerprint semantics through adapters | SQLite connections, UI, process execution, protocol transport or authorization grants |
+| `crates/acp-core` | Confirmed preference/Handoff resolver, bounded repository contract adapter and P1-L pure typed selector/conflict resolution; document/fingerprint adapters | SQLite connections, UI, process execution, protocol transport or authorization grants |
 | `crates/acp-store` | Explicit-path, strict read-only adapter for the fresh Rust-native Profile v1 | Writes, schema migration, legacy-format compatibility |
 | `crates/acp-ipc`, `acp-daemon` | Local capability/peer checks, scoped reads, live repository adapter, lease authority | TCP listener or caller-selected wider scope |
 | `crates/acp-session` | Optional configured native ACP child lifecycle and bounded observations | OS sandbox, arbitrary shell execution or credential login |
@@ -67,7 +67,7 @@ authority over a repository contract.
 | Data | Authority / source of truth | Local state and change path |
 | --- | --- | --- |
 | Personal preferences, including project-scoped personal choices | Human-reviewed user-local SQLite | Explicit operator action; never tracked profile files |
-| Project contracts | Repository-owned AGENTS/docs/accepted ADRs and reviewed engineering configuration | Live bounded reads; optional structured Markdown/YAML contracts are a future versioned format, not a new required directory |
+| Project contracts | Repository-owned AGENTS/docs/accepted ADRs and reviewed engineering configuration | Live bounded reads; optional exact Markdown source under the [accepted P1-N boundary](p1/project-contract-integration.md); no required directory or automatic prose interpretation |
 | Project registration | User-local SQLite plus explicit daemon launch allowlist | Registration is not permission to discover or share every project |
 | Suggestions and reviews | User-local SQLite proposal/review records (generalized model planned) | Approval binds exact content/version/scope; project proposals still need repository review |
 | Effective context | Derived view of current sources and review state | Optional cache must carry source versions and invalidation; never outranks source |
@@ -75,8 +75,9 @@ authority over a repository contract.
 | Session capability/lease | Daemon memory and owner-only runtime files | Ephemeral, rotated/revoked; no SQLite token persistence |
 | Provenance/evidence | Local minimal records with reporter/observer/verifier attribution (unified model planned) | No raw transcript or credential store; exported data requires explicit selection |
 
-Repository Markdown/YAML is an **adopted ownership pattern**, with exact path,
-parser/schema and export mechanics deferred to an implementation ADR/task. Existing
+Repository Markdown/YAML is an **adopted ownership pattern**. P1-N freezes one
+optional `ACP.contracts.md` source with versioned JSON metadata in Markdown;
+YAML parsing, export and onboarding are not included. Existing
 allowlisted documents stay valid. Onboarding only registers and previews; it must
 not scaffold, migrate, rewrite AGENTS.md or activate examples automatically.
 SQLite may index contract metadata/source digests; it must not become a hidden
@@ -114,20 +115,32 @@ completion of the full Rust-only runtime.
 
 ## Context resolution
 
-Today the resolver binds one registered project, rechecks its registration, reads
-live Git/allowlisted metadata and returns only confirmed preferences. A matching
+The resolver binds one registered project, rechecks its registration, reads
+live Git/allowlisted metadata and returns only compatible confirmed preferences. A matching
 project preference masks global; within the same scope/key the newest confirmed
 ID wins. Suggested/rejected/deprecated records are excluded. Document bodies are
 explicit opt-in. Handoff lookup is exact project/task and compares current
 HEAD/branch/worktree/fingerprint with historical state. Current source labels and
 validation JSON are not a complete structured provenance/conflict engine.
 
+P1-N integrates the [approved repository source](p1/project-contract-integration.md)
+through the production daemon context route and two-tool MCP bridge. The source is
+bounded and reread before returning context; malformed/unavailable/changed input
+refuses all effective preference/contract output. Accepted claims feed typed v1
+for affected keys; pending or definitely nonmatching claims preserve exact legacy
+fallback, including valid Profile text outside typed-v1 bounds. Optional selector
+labels never grant authorization. The agent receives only safe effective output
+and sanitized status, not the private typed explanation. Ordinary repository prose
+is still not parsed into contracts. This implementation remains under Draft review;
+local test evidence and milestone acceptance are separate decisions.
+
 Merged P1-L additionally implements an isolated, pure Rust typed resolver for
 selectors, source versions, masked rules, conflicts and unknown applicability using
 [ADR-0004](adr/0004-product-domain-trust.md) and its
 [v1 contract](p1/typed-context-v1.md). Callers supply already-bound values; this
-additive API has not replaced legacy MCP/IPC responses or persisted domain state.
-Future adapters must supply fresh authorized sources before presenting its output.
+API remains separate from persisted domain state. P1-N supplies fresh authorized
+contract inputs and projects a safe subset through existing MCP/IPC context; it
+does not serialize the whole operator explanation to agents.
 Authorization/security gates apply first. Current repository facts and accepted
 contracts outrank stored preferences or Handoff; facts describe what exists while
 contracts describe what is required. Code/ADR disagreement is surfaced for human

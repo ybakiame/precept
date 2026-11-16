@@ -63,6 +63,9 @@ fn strict_format_caps_fields_versions_and_nested_duplicate_keys() {
     }
     assert!(parse(&[255]).is_err());
     for field in ["agents", "paths", "languages", "task_tags"] {
+        let mut oversized = rule("r", "k", &["v"]);
+        oversized["selector"] = json!({field:vec!["v";65]});
+        assert!(parse(markdown(vec![oversized]).as_bytes()).is_err());
         for values in [json!([]), json!(["../bad"])] {
             if field != "paths" && values == json!(["../bad"]) {
                 continue;
@@ -317,4 +320,32 @@ fn malformed_queries_never_degrade_to_unrestricted_even_without_contracts() {
         let result = serde_json::from_value::<SelectorQuery>(query);
         assert!(result.is_err() || result.unwrap().validate().is_err());
     }
+}
+
+#[cfg(windows)]
+#[test]
+fn native_windows_reparse_source_is_refused_without_following_it() {
+    use std::os::windows::fs::MetadataExt;
+    let temp = tempfile::tempdir().unwrap();
+    let target = temp.path().join("owned-target");
+    fs::create_dir(&target).unwrap();
+    let root = temp.path().join("root");
+    fs::create_dir(&root).unwrap();
+    let link = root.join(SOURCE);
+    let status = std::process::Command::new("cmd.exe")
+        .args(["/D", "/C", "mklink", "/J"])
+        .arg(&link)
+        .arg(&target)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .unwrap();
+    assert!(status.success(), "owned synthetic junction creation");
+    assert_ne!(
+        fs::symlink_metadata(&link).unwrap().file_attributes() & 0x400,
+        0
+    );
+    assert_eq!(Snapshot::read(&root).status(), "invalid_source");
+    fs::remove_dir(&link).unwrap();
+    assert!(target.is_dir());
 }

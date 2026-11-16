@@ -53,6 +53,7 @@ dependencies = [
 name = "acp-mcp"
 version = "0.1.0"
 dependencies = [
+ "acp-core",
  "acp-ipc",
  "acp-store",
  "clap",

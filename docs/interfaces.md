@@ -22,8 +22,25 @@ credential and endpoint, with one bound project. Tool arguments cannot change sc
 
 | Tool | Inputs | Outputs | Side effects |
 | --- | --- | --- | --- |
-| `get_effective_context` | optional boolean `include_documents` | confirmed effective preferences, live bounded metadata and opt-in allowlisted documents, warnings | Read-only |
+| `get_effective_context` | optional boolean `include_documents`; optional `selector` object | compatible confirmed preferences, effective repository contracts, explicit resolution status, bounded metadata and opt-in allowlisted documents | Read-only |
 | `get_handoff` | exact string `task_id` | saved task/revision and historical checks, current Git state and drift warnings | Read-only |
+
+The optional `selector` contains only `agent_id`, `path`, `language`, `task_tags`.
+These are caller-supplied applicability labels, never authentication or permission
+grants. Missing labels are unknown for populated contract selectors; malformed
+queries fail rather than widen applicability. Project/root/session overrides are
+refused. Operator `context.get` supplies its authorized project separately; Agent
+`context.get` derives it from the capability and accepts the same optional selector.
+
+The [accepted ProjectContract boundary](p1/project-contract-integration.md) specifies
+the optional exact `ACP.contracts.md` source. It is enforced even when
+`include_documents` is false. `contract_resolution.status` distinguishes `ready`,
+`partial`, `not_configured`, `invalid_source`, `source_unavailable`, `source_changed`.
+Whole-source refusal returns empty `preferences` and `effective_contracts`; partial
+resolution suppresses affected unresolved keys only. Absence does not mean ordinary
+AGENTS/ADRs have no authority. Agent projections omit private preference source,
+review history, losing values and raw typed explanations. No repository files are
+created or modified by this read path.
 
 Implemented protocol subsets include initialize/initialized, ping, tools/list and
 tools/call for 2025-11-25, plus the 2026-07-28 stateless per-request metadata mode.
