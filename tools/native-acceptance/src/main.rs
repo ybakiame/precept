@@ -311,11 +311,24 @@ impl Ui {
         evidence::event("os-text", json!({"characters":text.chars().count()}));
         match self {
             Self::Desktop(d) => d.text(text),
-            Self::Tty(t) => t.send(text.as_bytes()),
+            Self::Tty(t) => t.text(text),
         }
     }
     fn field(&mut self, key: &str, text: &str) {
+        let focus_after = match self {
+            Self::Desktop(d) => Some(d.lines.lock().unwrap().len()),
+            Self::Tty(_) => None,
+        };
+        // A Tab before the focus chord ensures a real focus event even if this
+        // input was already focused. Snapshot before both keys: Tab itself may
+        // land on the requested field. Neither key activates a business action.
+        if focus_after.is_some() {
+            self.key("tab");
+        }
         self.key(key);
+        if let (Self::Desktop(d), Some(after)) = (&self, focus_after) {
+            d.wait_after(&format!("ACP_UI_FOCUS shortcut={key}"), after);
+        }
         match self {
             // Desktop ctrl+a selects all, so typing replaces the field content.
             Self::Desktop(_) => self.key("ctrl+a"),

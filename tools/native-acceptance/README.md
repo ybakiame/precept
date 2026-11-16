@@ -113,6 +113,15 @@ No installed English layout means refusal. This does not certify IME composition
 input; Chinese UI rendering remains a separate assertion. WSLg host layout is not
 changed by this native-Windows-only step.
 
+Synthetic text is sent once, one Unicode scalar per 25 ms on PTY/ConPTY and one
+fixed ASCII key per 25 ms on Desktop, rather than a bulk terminal paste or 4 ms
+GUI burst. Desktop field editing first observes the actual focus event after a
+non-activating Tab and the field shortcut; it does not infer readiness from a
+fixed Tab count. Exact content/receipt assertions remain unchanged. This validates
+human-paced keyboard flows, not rapid-input/paste/IME stress behavior. Complete
+all build/test gates before native runs: a later Cargo test build can replace a
+previously built UI binary, and final binary identity checks correctly refuse it.
+
 Each run creates only its own `acp-s5-*` temporary root, synthetic alpha/beta
 projects, private runtime and explicitly reviewed Profile. CLI-only setup is done
 with the native CLI. A bounded local authenticated relay consumes one **actual**

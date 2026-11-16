@@ -153,9 +153,12 @@ impl Desktop {
         thread::sleep(Duration::from_millis(100));
     }
     pub fn wait(&self, marker: &str) {
+        self.wait_after(marker, self.after);
+    }
+    pub fn wait_after(&self, marker: &str, after: usize) {
         let end = Instant::now() + Duration::from_secs(20);
         while Instant::now() < end {
-            if self.lines.lock().unwrap()[self.after..]
+            if self.lines.lock().unwrap()[after..]
                 .iter()
                 .any(|s| s.contains(marker))
             {

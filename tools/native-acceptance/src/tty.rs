@@ -56,6 +56,18 @@ impl Tty {
         self.os.write(b);
         thread::sleep(Duration::from_millis(80));
     }
+    /// Human-paced text, not a bulk paste/event-queue stress test. Keep each
+    /// UTF-8 scalar intact and give controlled inputs time to paint their value.
+    /// No character or business action is retried; exact field checks still run.
+    pub fn text(&mut self, text: &str) {
+        assert!(text.chars().count() <= 1024, "bounded synthetic input");
+        for character in text.chars() {
+            let mut bytes = [0; 4];
+            self.os.write(character.encode_utf8(&mut bytes).as_bytes());
+            thread::sleep(Duration::from_millis(25));
+        }
+        thread::sleep(Duration::from_millis(80));
+    }
     pub fn wait(&self, text: &str) {
         let end = Instant::now() + Duration::from_secs(20);
         while Instant::now() < end {
