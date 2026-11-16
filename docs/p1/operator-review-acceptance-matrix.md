@@ -68,6 +68,12 @@ the parent #52 shared Desktop/TUI goal and require the owner decision in
 
 Rules that define PASS, independent of environment:
 
+- For M4/S3 only, on 2026-11-16 the owner allowed native Windows and Linux/WSL
+  checkouts on one physical installation in place of independent physical hosts.
+  This exception does not waive the four surfaces, same clean SHA or independent
+  human review, and must not be described as independent-host evidence. See the
+  [S3 review disposition](../evaluation/p1-m4-s3-integrated-acceptance.md#review-disposition--2026-11-16).
+
 - Both hosts measure the same source: `.gitattributes` pins Unix LF, so a native
   Windows checkout is byte-equal to the Linux/WSL tree and each host's own
   `git status --porcelain` must be empty on the tested revision. A file copy or an

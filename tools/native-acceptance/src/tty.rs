@@ -14,8 +14,8 @@ pub struct Tty {
     out: std::path::PathBuf,
 }
 impl Tty {
-    pub fn start(binary: &Path, args: &[String], out: &Path) -> Self {
-        let (mut os, mut reader) = platform::Terminal::start(binary, args);
+    pub fn start(binary: &Path, args: &[String], out: &Path, focus: &Path) -> Self {
+        let (mut os, mut reader) = platform::Terminal::start(binary, args, focus);
         let state = Arc::new(Mutex::new(Screen::new(160, 50)));
         let raw = Arc::new(Mutex::new(Vec::new()));
         let writer = os.writer();
@@ -56,6 +56,18 @@ impl Tty {
         self.os.write(b);
         thread::sleep(Duration::from_millis(80));
     }
+    /// Human-paced text, not a bulk paste/event-queue stress test. Keep each
+    /// UTF-8 scalar intact and give controlled inputs time to paint their value.
+    /// No character or business action is retried; exact field checks still run.
+    pub fn text(&mut self, text: &str) {
+        assert!(text.chars().count() <= 1024, "bounded synthetic input");
+        for character in text.chars() {
+            let mut bytes = [0; 4];
+            self.os.write(character.encode_utf8(&mut bytes).as_bytes());
+            thread::sleep(Duration::from_millis(25));
+        }
+        thread::sleep(Duration::from_millis(80));
+    }
     pub fn wait(&self, text: &str) {
         let end = Instant::now() + Duration::from_secs(20);
         while Instant::now() < end {
@@ -88,6 +100,9 @@ impl Tty {
         self.send(&[17]);
         self.os.wait_restored();
     }
+    pub fn pid(&self) -> u32 {
+        self.os.pid()
+    }
 }
 #[cfg(unix)]
 mod platform {
@@ -107,7 +122,7 @@ mod platform {
         writer: Arc<Mutex<File>>,
     }
     impl Terminal {
-        pub fn start(bin: &Path, args: &[String]) -> (Self, File) {
+        pub fn start(bin: &Path, args: &[String], focus: &Path) -> (Self, File) {
             unsafe {
                 let (mut master, mut slave) = (0, 0);
                 assert_eq!(
@@ -129,6 +144,7 @@ mod platform {
                     .env("TERM", "xterm-256color")
                     .env("COLORTERM", "truecolor")
                     .env_remove("ACP_UI_PROBE")
+                    .env("ACP_NATIVE_FOCUS_FILE", focus)
                     .stdin(Stdio::from(slave.try_clone().unwrap()))
                     .stdout(Stdio::from(slave.try_clone().unwrap()))
                     .stderr(Stdio::from(slave.try_clone().unwrap()));
@@ -156,6 +172,9 @@ mod platform {
         }
         pub fn write(&mut self, b: &[u8]) {
             self.writer.lock().unwrap().write_all(b).unwrap();
+        }
+        pub fn pid(&self) -> u32 {
+            self.child.id()
         }
         pub fn writer(&self) -> Arc<Mutex<File>> {
             self.writer.clone()
@@ -215,7 +234,7 @@ mod platform {
         console: HPCON,
     }
     impl Terminal {
-        pub fn start(bin: &Path, args: &[String]) -> (Self, File) {
+        pub fn start(bin: &Path, args: &[String], focus: &Path) -> (Self, File) {
             unsafe {
                 let (mut ir, mut iw, mut or, mut ow) = (
                     std::ptr::null_mut(),
@@ -268,14 +287,32 @@ mod platform {
                 startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
                 startup.lpAttributeList = attributes;
                 let mut info = PROCESS_INFORMATION::default();
+                let mut environment: Vec<_> = std::env::vars_os()
+                    .filter(|(key, _)| {
+                        !key.to_string_lossy().eq_ignore_ascii_case("ACP_UI_PROBE")
+                            && !key
+                                .to_string_lossy()
+                                .eq_ignore_ascii_case("ACP_NATIVE_FOCUS_FILE")
+                    })
+                    .collect();
+                environment.push(("ACP_NATIVE_FOCUS_FILE".into(), focus.as_os_str().to_owned()));
+                environment.sort_by_key(|(key, _)| key.to_string_lossy().to_uppercase());
+                let mut environment_block = Vec::<u16>::new();
+                for (key, value) in environment {
+                    environment_block.extend(key.encode_wide());
+                    environment_block.push(b'=' as u16);
+                    environment_block.extend(value.encode_wide());
+                    environment_block.push(0);
+                }
+                environment_block.push(0);
                 let ok = CreateProcessW(
                     app.as_ptr(),
                     line.as_mut_ptr(),
                     std::ptr::null(),
                     std::ptr::null(),
                     0,
-                    EXTENDED_STARTUPINFO_PRESENT,
-                    std::ptr::null(),
+                    EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
+                    environment_block.as_ptr().cast(),
                     std::ptr::null(),
                     &startup.StartupInfo,
                     &mut info,
@@ -298,6 +335,9 @@ mod platform {
         }
         pub fn write(&mut self, b: &[u8]) {
             self.input.lock().unwrap().write_all(b).unwrap();
+        }
+        pub fn pid(&self) -> u32 {
+            unsafe { GetProcessId(self.process) }
         }
         pub fn writer(&self) -> Arc<Mutex<File>> {
             self.input.clone()

@@ -39,6 +39,9 @@ pub struct Button {
     loading: StateFn,
     on_press: Option<PressFn>,
     icon: Option<&'static str>,
+    // Explicit native-acceptance observer only; never a control or authority.
+    #[cfg(not(target_arch = "wasm32"))]
+    probe: Option<(std::path::PathBuf, String)>,
 }
 
 /// A default, medium button with a static label.
@@ -53,6 +56,8 @@ pub fn button(model: Signal<Model>, label: impl Into<SharedString>) -> Button {
         loading: Rc::new(|| false),
         on_press: None,
         icon: None,
+        #[cfg(not(target_arch = "wasm32"))]
+        probe: None,
     }
 }
 
@@ -92,6 +97,55 @@ impl Button {
     pub fn on_press(mut self, on_press: impl Fn() + 'static) -> Self {
         self.on_press = Some(Rc::new(on_press));
         self
+    }
+    /// Observe this existing focus stop in an explicitly owned acceptance run.
+    /// The caller supplies a closed catalog key, never a label or user content.
+    pub fn probe_key(self, key: impl FnOnce() -> String) -> Self {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let mut button = self;
+            static SINK: std::sync::LazyLock<Option<std::path::PathBuf>> =
+                std::sync::LazyLock::new(|| {
+                    std::env::var_os("ACP_NATIVE_FOCUS_FILE")
+                        .map(std::path::PathBuf::from)
+                        .filter(|path| safe_probe_file(path, 0))
+                });
+            if let Some(path) = SINK.as_ref() {
+                button.probe = Some((path.clone(), key()));
+            }
+            button
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = key;
+            self
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn safe_probe_file(path: &std::path::Path, additional: usize) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|m| {
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::fs::MetadataExt;
+            if m.file_attributes() & 0x400 != 0 {
+                return false;
+            }
+        }
+        m.is_file() && !m.file_type().is_symlink() && m.len() + additional as u64 <= 256 * 1024
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn emit_focus_probe(probe: &(std::path::PathBuf, String)) {
+    use std::io::Write;
+    let (path, key) = probe;
+    if safe_probe_file(path, key.len() + 1)
+        && let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(path)
+    {
+        let _ = writeln!(file, "{key}");
+        let _ = file.flush();
     }
 }
 
@@ -171,7 +225,13 @@ impl IntoElement for Button {
             // no app-wide binding may take Enter/Space from an input or sibling.
             let reference = element_ref();
             let focused = signal(false);
-            reference.on_focus_in(move || focused.set(true));
+            let probe = self.probe;
+            reference.on_focus_in(move || {
+                focused.set(true);
+                if let Some(probe) = &probe {
+                    emit_focus_probe(probe);
+                }
+            });
             reference.on_focus_out(move || focused.set(false));
             let disabled = self.disabled.clone();
             let loading = self.loading.clone();
@@ -199,6 +259,12 @@ impl IntoElement for Button {
             });
             reference
         };
+        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "windows")))]
+        let probe_ref = self.probe.map(|probe| {
+            let reference = element_ref();
+            reference.on_focus_in(move || emit_focus_probe(&probe));
+            reference
+        });
         let b = base_button()
             .accessibility_label(move || Some(label()))
             .disabled(move || disabled() || loading_disabled())
@@ -222,6 +288,12 @@ impl IntoElement for Button {
             });
         #[cfg(target_os = "windows")]
         let b = b.element_ref(&keyboard_ref);
+        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "windows")))]
+        let b = if let Some(reference) = probe_ref {
+            b.element_ref(&reference)
+        } else {
+            b
+        };
         let b = motion::feedback(b);
         let b = match size {
             ButtonSize::Small => b.px_2().py_0p5().min_h(px(scale::control::SM)),

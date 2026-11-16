@@ -5,22 +5,23 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $project = Split-Path -Parent $PSScriptRoot
-# Process-local toolchain only: no installations or user/system configuration edits.
-$rustBin = Join-Path $env:USERPROFILE '.cargo\bin'
-if (Test-Path $rustBin) { $env:Path = "$rustBin;$env:Path" }
-$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-if (Test-Path $vswhere) {
-    $visualStudio = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-    if ($visualStudio) {
-        $module = Join-Path $visualStudio 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll'
-        if (Test-Path $module) {
-            Import-Module $module
-            Enter-VsDevShell -VsInstallPath $visualStudio -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64' | Out-Null
-        }
-    }
-}
+$originalEnvironment = [Environment]::GetEnvironmentVariables('Process')
 Push-Location -LiteralPath $project
 try {
+    # Process-local toolchain only; restore caller environment even on setup failure.
+    $rustBin = Join-Path $env:USERPROFILE '.cargo\bin'
+    if (Test-Path $rustBin) { $env:Path = "$rustBin;$env:Path" }
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (Test-Path $vswhere) {
+        $visualStudio = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+        if ($visualStudio) {
+            $module = Join-Path $visualStudio 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll'
+            if (Test-Path $module) {
+                Import-Module $module
+                Enter-VsDevShell -VsInstallPath $visualStudio -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64' | Out-Null
+            }
+        }
+    }
     $dirty = & git status --porcelain
     if ($LASTEXITCODE -ne 0 -or $dirty) { throw 'Commit source changes before exact-SHA verification' }
     if ($DiffBase -notmatch '^[0-9a-fA-F]{40}$') { throw 'Baseline must be one existing full commit SHA' }
@@ -67,4 +68,15 @@ try {
         }
         Invoke-Gate 'diff' @('git','diff','--check')
     } finally { $metadata | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $report.FullName 'report.json') }
-} finally { Pop-Location }
+} finally {
+    Pop-Location
+    foreach ($key in @([Environment]::GetEnvironmentVariables('Process').Keys)) {
+        if (-not $originalEnvironment.Contains($key)) {
+            # PowerShell coerces $null to ""; .NET 9+ preserves empty variables.
+            [Environment]::SetEnvironmentVariable($key, [NullString]::Value, 'Process')
+        }
+    }
+    foreach ($key in $originalEnvironment.Keys) {
+        [Environment]::SetEnvironmentVariable($key, $originalEnvironment[$key], 'Process')
+    }
+}

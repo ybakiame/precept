@@ -30,3 +30,6 @@ __pycache__/
 /artifacts/local-p1-m2/
 
 /artifacts/local-p1-m4/
+
+# Local resource-arbitration lock, not product source; preserve it in place.
+/.rpi/.resource-lease

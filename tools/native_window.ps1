@@ -170,7 +170,8 @@ try {
                     $shift = ($scan -band 256) -ne 0
                     try { if ($shift) { [AcpWindow]::SendKey(16,$false) }; [AcpWindow]::SendKey(($scan -band 255),$false); [AcpWindow]::SendKey(($scan -band 255),$true) }
                     finally { if ($shift) { [AcpWindow]::SendKey(16,$true) } }
-                    Start-Sleep -Milliseconds 4
+                    # Pace synthetic text across UI frames; do not resend input.
+                    Start-Sleep -Milliseconds 25
                 }
             }
             'resize' {

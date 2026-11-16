@@ -440,11 +440,10 @@ fn queue_tab(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
     if queue.commit_sequence > m.operator.queue_watermark {
         let delta = queue.commit_sequence - m.operator.queue_watermark;
         body = body.child(
-            ui::badge(
-                model,
-                format!("{} · +{delta}", m.word(Msg::ReviewWatermark)),
-            )
-            .variant(ui::BadgeVariant::Warning),
+            // Keep the drift disclosure readable as a native text row.
+            text(format!("{} · +{delta}", m.word(Msg::ReviewWatermark)))
+                .text_size(px(ui::scale::text::CAPTION))
+                .text_color(move || palette(model).warning),
         );
     }
     if queue.records.is_empty() {
@@ -1015,6 +1014,30 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                         .as_ref()
                         .map_or(0, |a| a.retype.chars().count()),
                     delete_armed(model),
+                );
+                eprintln!(
+                    "ACP_NSH_REVIEW global={} selected_id={} queue_after={} queue_first={} queue_last={} queue_sequence={} queue_baseline={} queue_stale={} inspected_status={} inspected_origin={:?} history={}",
+                    o.global,
+                    o.selected_id.unwrap_or(0),
+                    o.queue_after_id,
+                    o.queue
+                        .as_ref()
+                        .and_then(|q| q.records.first())
+                        .map_or(0, |r| r.id),
+                    o.queue
+                        .as_ref()
+                        .and_then(|q| q.records.last())
+                        .map_or(0, |r| r.id),
+                    o.queue.as_ref().map_or(0, |q| q.commit_sequence),
+                    o.queue_watermark,
+                    o.queue
+                        .as_ref()
+                        .is_some_and(|q| q.commit_sequence > o.queue_watermark),
+                    o.inspect
+                        .as_ref()
+                        .map_or("none", |i| i.record.status.as_str()),
+                    o.inspect.as_ref().map(|i| i.record.origin),
+                    o.inspect.as_ref().map_or(0, |i| i.decisions.len()),
                 );
             }
         }

@@ -1,6 +1,8 @@
 //! Owned synthetic integration only. No profile discovery, model or user credentials.
 mod desktop;
+mod evidence;
 mod relay;
+mod scenarios;
 mod screen;
 mod tty;
 use serde_json::{Value, json};
@@ -20,6 +22,28 @@ impl Drop for Owned {
         let _ = self.0.wait();
     }
 }
+fn binary_fingerprints(paths: &[PathBuf]) -> Vec<Value> {
+    use std::io::Read;
+    let mut buffer = [0u8; 64 * 1024];
+    paths
+        .iter()
+        .map(|path| {
+            let mut file = fs::File::open(path).unwrap();
+            let mut hash = Sha256::new();
+            loop {
+                let count = file.read(&mut buffer).unwrap();
+                if count == 0 {
+                    break;
+                }
+                hash.update(&buffer[..count]);
+            }
+            json!({
+                "name":path.file_name().unwrap().to_str().unwrap(),
+                "sha256":format!("{:x}",hash.finalize())
+            })
+        })
+        .collect()
+}
 struct Fixture {
     root: tempfile::TempDir,
     repo: PathBuf,
@@ -28,6 +52,7 @@ struct Fixture {
     runtime: PathBuf,
     endpoint: String,
     alias: String,
+    focus: PathBuf,
     db: PathBuf,
 }
 impl Fixture {
@@ -57,6 +82,15 @@ impl Fixture {
             )
             .unwrap();
         }
+        let focus = root.path().join("state/focus.events");
+        let mut focus_options = fs::OpenOptions::new();
+        focus_options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            focus_options.mode(0o600);
+        }
+        focus_options.open(&focus).unwrap();
         let db = root.path().join("state/profile.sqlite3");
         let daemon = Self::launch(&repo, root.path(), &runtime, &endpoint, None);
         let mut f = Self {
@@ -68,6 +102,7 @@ impl Fixture {
             endpoint,
             alias,
             db,
+            focus,
         };
         let end = Instant::now() + Duration::from_secs(20);
         while !f.query(&["profile", "info"]).0 {
@@ -136,6 +171,15 @@ impl Fixture {
             .args(args)
             .output()
             .unwrap();
+        evidence::event(
+            "cli",
+            json!({
+                "command":args.first().copied().unwrap_or(""),
+                "success":result.status.success(),
+                "response_sha256":format!("{:x}", Sha256::digest(&result.stdout)),
+                "response_bytes":result.stdout.len()
+            }),
+        );
         assert!(
             result.stderr.is_empty(),
             "unexpected synthetic CLI diagnostic"
@@ -227,6 +271,7 @@ enum Ui {
 }
 impl Ui {
     fn key(&mut self, key: &str) {
+        evidence::event("os-key", json!({"chord":key}));
         match self {
             Self::Desktop(d) => d.key(key),
             Self::Tty(t) => {
@@ -262,13 +307,28 @@ impl Ui {
         }
     }
     fn text(&mut self, text: &str) {
+        // Never record field bytes, paths or proposal values.
+        evidence::event("os-text", json!({"characters":text.chars().count()}));
         match self {
             Self::Desktop(d) => d.text(text),
-            Self::Tty(t) => t.send(text.as_bytes()),
+            Self::Tty(t) => t.text(text),
         }
     }
     fn field(&mut self, key: &str, text: &str) {
+        let focus_after = match self {
+            Self::Desktop(d) => Some(d.lines.lock().unwrap().len()),
+            Self::Tty(_) => None,
+        };
+        // A Tab before the focus chord ensures a real focus event even if this
+        // input was already focused. Snapshot before both keys: Tab itself may
+        // land on the requested field. Neither key activates a business action.
+        if focus_after.is_some() {
+            self.key("tab");
+        }
         self.key(key);
+        if let (Self::Desktop(d), Some(after)) = (&self, focus_after) {
+            d.wait_after(&format!("ACP_UI_FOCUS shortcut={key}"), after);
+        }
         match self {
             // Desktop ctrl+a selects all, so typing replaces the field content.
             Self::Desktop(_) => self.key("ctrl+a"),
@@ -338,8 +398,20 @@ impl Ui {
     }
     fn wait(&self, marker: &str, text: &str) {
         match self {
-            Self::Desktop(d) => d.wait(marker),
-            Self::Tty(t) => t.wait(text),
+            Self::Desktop(d) => {
+                d.wait(marker);
+                evidence::event(
+                    "surface-observation",
+                    json!({"observer":"owned-GUI-probe","marker":marker,"pixels_require_independent_review":true}),
+                );
+            }
+            Self::Tty(t) => {
+                t.wait(text);
+                evidence::event(
+                    "surface-observation",
+                    json!({"observer":"actual-terminal-frame","visible_ui_text":text}),
+                );
+            }
         }
     }
     fn apply(&mut self, key: &str, marker: &str, text: &str) {
@@ -352,6 +424,17 @@ impl Ui {
         self.apply(key, &format!("receipt={n} "), &format!("commit {n}"));
     }
     fn capture(&mut self, name: &str, out: &Path) {
+        let suffix = match self {
+            Self::Desktop(_) => "png",
+            Self::Tty(_) => "txt",
+        };
+        let directory = out.file_name().unwrap().to_string_lossy();
+        let artifact = if directory.starts_with("s3-") {
+            format!("{directory}/{name}.{suffix}")
+        } else {
+            format!("{name}.{suffix}")
+        };
+        evidence::event("capture-attempt", json!({"artifact":&artifact}));
         match self {
             Self::Desktop(d) => d.capture(name, out),
             Self::Tty(t) => {
@@ -365,6 +448,10 @@ impl Ui {
                 }
             }
         }
+        evidence::event(
+            "capture",
+            json!({"artifact":artifact,"pixels_or_terminal_frame":true}),
+        );
     }
     fn resize(&mut self, w: u16, h: u16) {
         match self {
@@ -379,6 +466,47 @@ impl Ui {
         }
     }
 }
+impl Ui {
+    fn pid(&self) -> u32 {
+        match self {
+            Self::Desktop(d) => d.pid(),
+            Self::Tty(t) => t.pid(),
+        }
+    }
+    fn action(&mut self, key: &str, focus: &Path, anchor: Option<&str>) {
+        if let Some(anchor) = anchor {
+            self.key(anchor);
+        }
+        use std::io::{Read, Seek, SeekFrom};
+        let mut source = fs::File::open(focus).unwrap();
+        let mut observed = String::new();
+        for stop in 0..128 {
+            source.seek(SeekFrom::End(0)).unwrap();
+            self.key("tab");
+            observed.clear();
+            source.read_to_string(&mut observed).unwrap();
+            assert!(
+                source.metadata().unwrap().len() <= 256 * 1024,
+                "bounded focus observation"
+            );
+            for catalog_key in observed.lines() {
+                evidence::event(
+                    "native-focus",
+                    json!({"catalog_key":catalog_key,"tab_stop":stop}),
+                );
+                if catalog_key == key {
+                    self.key("enter");
+                    return;
+                }
+            }
+        }
+        evidence::event(
+            "missing-native-focus-target",
+            json!({"catalog_key":key,"reason":"128-tab-observation-budget-exhausted"}),
+        );
+        std::panic::panic_any(scenarios::MissingFocus);
+    }
+}
 fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Value {
     let repo = std::env::current_dir().unwrap();
     let git = |args: &[&str]| {
@@ -390,7 +518,10 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     let sha = git(&["rev-parse", "HEAD"]);
     let dirty = !git(&["status", "--porcelain"]).is_empty();
     assert!(!dirty || development, "clean source required");
-    fs::create_dir(out).expect("new report directory required");
+    evidence::begin(
+        "profile-owned-flow",
+        "actual-os-input + owned-daemon + independent-cli",
+    );
     let mut f = Fixture::new(repo.clone());
     let nonce = f.root.path().file_name().unwrap().to_string_lossy();
     let hash = nonce
@@ -427,10 +558,12 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
             &nonce,
             window_script,
             out,
+            &f.focus,
         )))
     } else {
-        Ui::Tty(tty::Tty::start(&nsh, &args, out))
+        Ui::Tty(tty::Tty::start(&nsh, &args, out, &f.focus))
     };
+    evidence::event("owned-ui", json!({"pid":ui.pid(),"nonce":nonce}));
     ui.key("alt+o");
     ui.wait(
         "selected=false grant=false busy=false",
@@ -507,6 +640,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         "Write grant active",
     );
     assert_eq!(f.query(&["profile", "info"]).1["write_enabled"], true);
+    evidence::finish("PASS");
     for name in ["alpha", "beta"] {
         let root = f.root.path().join(name).canonicalize().unwrap();
         f.mutate(
@@ -540,6 +674,10 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     ui.field("alt+w", "synthetic-value");
     ui.field("alt+f", "synthetic-source");
     ui.receipt("alt+shift+s", 4);
+    evidence::begin(
+        "exact-inspect-provenance",
+        "actual-os-input + independent-cli",
+    );
     assert_eq!(f.rows()[0]["status"], "suggested");
     ui.key("alt+shift+l");
     ui.wait("rows=1", "#1");
@@ -547,9 +685,41 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     ui.wait("record_revision=1", "#1");
     ui.key("alt+shift+y");
     ui.wait("inspected_id=1 inspected_revision=1", "Show full digest");
+    let exact = f.query(&[
+        "review-inspect",
+        "1",
+        "--scope",
+        "project",
+        "--project",
+        "alpha",
+        "--revision",
+        "1",
+    ]);
+    assert!(exact.0);
+    assert_eq!(exact.1["record"], f.record(1));
+    assert_eq!(
+        exact.1["record"]["scope"],
+        json!({"kind":"project","name":"alpha"})
+    );
+    assert_eq!(exact.1["record"]["key"], "editor");
+    assert_eq!(exact.1["record"]["value"], "synthetic-value");
+    assert_eq!(exact.1["record"]["source"], "synthetic-source");
+    assert_eq!(exact.1["record"]["origin"], "agent_reported");
+    assert!(exact.1["decisions"].as_array().unwrap().len() <= 8);
+    evidence::event(
+        "exact-immutable-inspection-cli-proof",
+        json!({
+            "id":1,"revision":1,"proposal_digest":exact.1["record"]["proposal_digest"],
+            "all_immutable_fields_equal":true,"scope":"project-alpha","history_bounded":true,
+            "native_render":false
+        }),
+    );
+    ui.capture("inspected-exact-immutable-provenance", out);
     ui.receipt("alt+shift+y", 5);
     assert_eq!(f.rows()[0]["status"], "confirmed");
     ui.capture("confirmed-exact-record", out);
+    evidence::finish("PASS");
+    evidence::begin("reject", "actual-os-input + independent-cli");
     ui.receipt("alt+shift+s", 6);
     ui.key("alt+shift+l");
     ui.wait("rows=2", "#2");
@@ -560,12 +730,20 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     ui.wait("inspected_id=2 inspected_revision=1", "Show full digest");
     ui.receipt("alt+shift+n", 7);
     assert_eq!(f.rows()[1]["status"], "rejected");
+    evidence::finish("PASS");
     fs::write(f.root.path().join("drop-next"), b"synthetic fault").unwrap();
     ui.apply("alt+shift+s", "unknown=true", "Outcome unknown");
     ui.capture("outcome-unknown", out);
     let before = f.rows();
     assert_eq!(before.len(), 3);
     assert!(!f.root.path().join("drop-next").exists());
+    thread::sleep(Duration::from_millis(500));
+    assert_eq!(
+        f.rows(),
+        before,
+        "unknown outcome must not automatically replay"
+    );
+    assert!(!f.root.path().join("replayed-receipt.json").exists());
     ui.key("alt+shift+z");
     ui.wait("receipt=8 ", "commit 8");
     assert_eq!(f.rows(), before);
@@ -596,6 +774,10 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     ui.key("alt+shift+y");
     ui.wait("inspected_id=3 inspected_revision=1", "Show full digest");
     ui.key("alt+shift+y");
+    evidence::begin(
+        "stale-revision",
+        "actual-os-input + independent-concurrent-cli",
+    );
     ui.wait("review=true", "Prepared operation");
     // S1 made `--proposal-digest` mandatory for every decision. Bind the exact
     // persisted digest of record #3 so the competing CLI reject names the same
@@ -621,6 +803,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     ui.wait("error=Conflict", "Conflict");
     assert_eq!(f.rows()[2]["status"], "rejected");
     ui.capture("stale-conflict", out);
+    evidence::finish("PASS");
     ui.key("alt+shift+r");
     ui.wait("selected=true grant=true busy=false", "Write grant active");
     ui.key("alt+shift+s");
@@ -666,6 +849,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     assert_eq!(id4, 4);
     assert_eq!(f.record(id4)["status"], "suggested");
     // The S1 digest gate is real: a wrong proposal digest is refused before any
+    evidence::begin("altered-digest", "independent-cli-only (not-native-typing)");
     // write, and the record stays suggested.
     let (ok, v) = f.try_mutate(
         "wrong-digest-confirm",
@@ -686,9 +870,14 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     assert!(!ok, "a wrong proposal digest must be refused");
     assert_eq!(v["error"], "ReviewMismatch");
     assert_eq!(f.record(id4)["status"], "suggested");
+    evidence::finish("PASS");
     // Queue tab: load the suggested-only page. The load action is a rendered
     // button reached by the fixed Tab count from the source-field anchor (see
     // Ui::activate); the disabled First/Next paging controls are skipped.
+    evidence::begin(
+        "tab-enter-space-alt",
+        "actual-os-input + owned-surface-render",
+    );
     ui.activate(("alt+f", "enter"), (3, 4), (3, 3), "queue=1", "#4", out);
     ui.capture("review-queue", out);
     // Open the exact record from its queue row; Detail auto-selects and inspects.
@@ -732,12 +921,64 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
             "expanded proposal digest not rendered"
         );
     }
+    evidence::finish("PASS");
     // Confirm the suggestion through the shared chord; it becomes confirmed.
+    evidence::begin("confirm-peer-demotion", "actual-os-input + independent-cli");
     let n = f.commit_sequence() + 1;
     ui.receipt("alt+shift+y", n);
     assert_eq!(f.record(id4)["status"], "confirmed");
+    assert_eq!(f.record(1)["status"], "deprecated");
+    let target_inspect = f.query(&[
+        "review-inspect",
+        "4",
+        "--scope",
+        "project",
+        "--project",
+        "alpha",
+        "--revision",
+        "2",
+    ]);
+    let peer_inspect = f.query(&[
+        "review-inspect",
+        "1",
+        "--scope",
+        "project",
+        "--project",
+        "alpha",
+        "--revision",
+        "3",
+    ]);
+    assert!(target_inspect.0 && peer_inspect.0);
+    let target_decision = target_inspect.1["decisions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["action"] == "confirm")
+        .unwrap();
+    let peer_decision = peer_inspect.1["decisions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["action"] == "demote")
+        .unwrap();
+    assert_eq!(target_decision["receipt_commit_sequence"], n);
+    assert_eq!(peer_decision["receipt_commit_sequence"], n);
+    fs::write(
+        out.join("atomic-peer-proof.json"),
+        serde_json::to_vec_pretty(&json!({
+            "target":target_decision,"peer":peer_decision,"shared_commit_sequence":n
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    evidence::event(
+        "atomic-peer-demotion-proof",
+        json!({"artifact":"atomic-peer-proof.json","native_render":false}),
+    );
     ui.capture("review-confirmed", out);
+    evidence::finish("PASS");
     // Deprecate the confirmed record: re-inspect it from the record list, read its
+    evidence::begin("history-bounded", "actual-os-input + independent-cli");
     // decision history, then prepare/apply the deprecate chord.
     ui.key("alt+shift+l");
     ui.wait("rows=4", "#4");
@@ -770,6 +1011,9 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
             .any(|d| d["action"] == "confirm"),
         "history must show the confirm decision"
     );
+    assert!(inspect["decisions"].as_array().unwrap().len() <= 8);
+    evidence::finish("PASS");
+    evidence::begin("deprecate", "actual-os-input + independent-cli");
     ui.tab_nav(-1);
     ui.wait(
         "review_tab=Detail",
@@ -780,6 +1024,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     assert_eq!(f.record(id4)["status"], "deprecated");
     assert_eq!(f.record(1)["status"], "deprecated");
     ui.capture("review-deprecated", out);
+    evidence::finish("PASS");
     // Delete through the destructive tier. Re-inspect the deprecated record first.
     ui.key("alt+shift+l");
     ui.wait("rows=4", "#4");
@@ -845,6 +1090,24 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     assert_eq!(demotion["channel"], channel);
     assert_eq!(demotion["from_revision"], 2);
     assert_eq!(demotion["to_revision"], 3);
+    assert!(inspect["decisions"].as_array().unwrap().len() <= 8);
+    let confirmed = inspect["decisions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["action"] == "confirm")
+        .unwrap();
+    assert_eq!(
+        demotion["receipt_commit_sequence"],
+        confirmed["receipt_commit_sequence"]
+    );
+    evidence::event(
+        "atomic-peer-demotion-cli-proof",
+        json!({
+            "target":4,"peer":1,"shared_commit_sequence":confirmed["receipt_commit_sequence"],
+            "client_asserted_channel":channel,"native_render":false
+        }),
+    );
     fs::write(
         out.join("review-history-proof.json"),
         serde_json::to_vec_pretty(&inspect["decisions"]).unwrap(),
@@ -853,6 +1116,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     // NEGATIVE: a wrong retyped ID and a blind Enter on the empty field must both
     // refuse the delete; no write lands and the record stays present.
     let seq_before = f.commit_sequence();
+    evidence::begin("delete-wrong-id", "actual-os-input + independent-cli");
     // Wrong retype: the tier shows the mismatch and Enter prepares nothing.
     ui.resize(
         if surface == "desktop" { 640 } else { 80 },
@@ -878,6 +1142,8 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     );
     assert_eq!(f.record(id4)["status"], "deprecated");
     assert_eq!(f.record(id4)["revision"], 3);
+    evidence::finish("PASS");
+    evidence::begin("delete-escape-reopen", "actual-os-input + independent-cli");
     // Escape cancels only the destructive tier and discards its retype.
     ui.key("escape");
     match &ui {
@@ -894,6 +1160,12 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         "ACP_UI_DIALOG opened=true initial_focus=true focus_bound=true",
         "Delete project alpha preference #4?",
     );
+    ui.wait(
+        "delete_retype_chars=0 delete_ready=false",
+        "Type the ID exactly to arm deletion",
+    );
+    evidence::finish("PASS");
+    evidence::begin("delete-blind-enter", "actual-os-input + independent-cli");
     ui.key("enter");
     assert_eq!(
         f.commit_sequence(),
@@ -903,6 +1175,8 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     assert_eq!(f.record(id4)["status"], "deprecated");
     ui.key("escape");
     ui.wait("delete_armed=false", "Show full digest");
+    evidence::finish("PASS");
+    evidence::begin("delete-exact-id", "actual-os-input + independent-cli");
     // POSITIVE: arm with the exact ID and apply; only the exact retype prepares
     // and commits the delete.
     ui.key("alt+shift+q");
@@ -922,7 +1196,31 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         &format!("receipt={n} "),
         "Deleted. Content and decision history are gone; receipts remain identity-only.",
     );
+    let delete_receipt: Value =
+        serde_json::from_slice(&fs::read(f.root.path().join("last-receipt.json")).unwrap())
+            .unwrap();
+    assert_eq!(delete_receipt["commit_sequence"], n);
+    assert_eq!(delete_receipt.as_object().unwrap().len(), 4);
+    let affected = delete_receipt["affected"].as_array().unwrap();
+    assert_eq!(affected.len(), 1);
+    assert_eq!(affected[0]["record_id"], "4");
+    assert_eq!(affected[0]["deleted"], true);
+    assert_eq!(affected[0].as_object().unwrap().len(), 5);
+    fs::write(
+        out.join("delete-receipt-proof.json"),
+        serde_json::to_vec_pretty(&delete_receipt).unwrap(),
+    )
+    .unwrap();
+    evidence::event(
+        "identity-only-delete-receipt",
+        json!({"artifact":"delete-receipt-proof.json","native_render":false}),
+    );
     ui.capture("review-deleted", out);
+    evidence::finish("PASS");
+    evidence::begin(
+        "deleted-content-history",
+        "actual-os-input + independent-cli",
+    );
     // The deleted record keeps no content or decision history; the queue is empty
     // and the row count returns to the three earlier records.
     let (ok, _) = f.query(&[
@@ -955,6 +1253,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         .1;
     assert!(queue["records"].as_array().unwrap().is_empty());
     assert_eq!(f.rows().len(), 3);
+    evidence::finish("PASS");
     // ---- end S2 review workspace ----
     // The tall viewport stays until the existing compact/restore resize below
     // returns the surface to its normal size; a height-only resize here redraws
@@ -1075,9 +1374,15 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     ui.key("alt+shift+r");
     ui.wait("selected=true grant=false busy=false", "Write grant off");
     f.stop_daemon();
+    evidence::begin("disconnect", "actual-os-input + owned-daemon-stop");
     ui.key("alt+shift+r");
     ui.wait("error=Unavailable", "Unavailable");
     ui.capture("disconnected", out);
+    evidence::finish("PASS");
+    evidence::begin(
+        "keyboard-restoration",
+        "actual-os-input + native-terminal-or-window-cleanup",
+    );
     ui.close();
     let backend =
         match &ui {
@@ -1109,9 +1414,9 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
                 if cfg!(windows) { "ConPTY" } else { "PTY" }
             }
         };
+    evidence::finish("PASS");
     assert!(development || git(&["status", "--porcelain"]).is_empty());
-    let binaries: Vec<_> = [std::env::current_exe().unwrap(), Fixture::bin(&repo,"acp-daemon"),Fixture::bin(&repo,"acp-query"),nsh].iter().map(|path|json!({"name":path.file_name().unwrap().to_str().unwrap(),"sha256":format!("{:x}",Sha256::digest(fs::read(path).unwrap()))})).collect();
-    json!({"status":if development{"DEV_PASS"}else{"PASS"},"tested_git_sha":sha,"worktree_dirty":dirty,"platform":std::env::consts::OS,"arch":std::env::consts::ARCH,"surface":surface,"appearance":appearance,"backend":backend,"binaries":binaries,"actions":["unselected Profile","explicit UI create","Busy","enable","exact suggestion/confirm/reject","committed lost reply and explicit same-request retry","Conflict","Escape/project review invalidation","saved exact-task Handoff NOT_RUN history","S2 review queue load and Queue/Detail/History tabs","exact inspect with digest prefix expand","wrong-digest CLI ReviewMismatch","confirm/deprecate via chords","destructive delete wrong-retype/blind-Enter refusal","exact-retype delete with identity-only receipt","deleted record keeps no content; empty queue","disable acknowledgement","revoked-grant Unauthorized","five pages/Sessions","theme/locale/resize","disconnect","clean child exit"],"rows":3,"historical_source_substitution":false})
+    json!({"status":if development{"DEV_PASS"}else{"PASS"},"tested_git_sha":sha,"worktree_dirty":dirty,"platform":std::env::consts::OS,"arch":std::env::consts::ARCH,"surface":surface,"appearance":appearance,"backend":backend,"historical_source_substitution":false})
 }
 fn main() {
     let a: Vec<_> = std::env::args().skip(1).collect();
@@ -1127,16 +1432,107 @@ fn main() {
     assert!(["desktop", "tui"].contains(&a[0].as_str()));
     let out = PathBuf::from(&a[1]);
     assert!(out.is_absolute());
-    let result = run(
+    let repo = std::env::current_dir().unwrap();
+    let git = |args: &[&str]| {
+        let result = Command::new("git").args(args).output().unwrap();
+        assert!(result.status.success(), "source metadata unavailable");
+        String::from_utf8(result.stdout).unwrap().trim().to_owned()
+    };
+    let development = std::env::var_os("ACP_S5_DEVELOPMENT").is_some();
+    let only = std::env::var("ACP_S3_CASE").ok();
+    assert!(
+        only.is_none() || development,
+        "case selection is development-only, never full acceptance"
+    );
+    let sha = git(&["rev-parse", "HEAD"]);
+    let dirty = !git(&["status", "--porcelain"]).is_empty();
+    assert!(!dirty || development, "clean source required");
+    let artifact_root = repo
+        .join("artifacts/local-p1-m4")
+        .canonicalize()
+        .expect("existing owned artifact root");
+    assert!(
+        out.parent()
+            .unwrap()
+            .canonicalize()
+            .unwrap()
+            .starts_with(&artifact_root),
+        "owned artifact tree required"
+    );
+    assert!(
+        !out.components()
+            .any(|part| matches!(part, std::path::Component::ParentDir)),
+        "literal new artifact path required"
+    );
+    fs::create_dir(&out).expect("new report directory required");
+    let nsh = repo.join("apps/operator/target/debug").join(format!(
+        "acp-nsh-{}{}",
+        if a[0] == "desktop" { "native" } else { "tui" },
+        std::env::consts::EXE_SUFFIX
+    ));
+    let binary_paths = [
+        std::env::current_exe().unwrap(),
+        Fixture::bin(&repo, "acp-daemon"),
+        Fixture::bin(&repo, "acp-query"),
+        nsh,
+    ];
+    let binaries = binary_fingerprints(&binary_paths);
+    evidence::init(&out, &a[0], &sha, json!(binaries));
+    std::panic::set_hook(Box::new(|_| {
+        eprintln!("NATIVE_SCENARIO_FAILED detail=redacted; see ledger and owned captures")
+    }));
+    let baseline = if only.is_some() {
+        Ok(json!({"status":"NOT_RUN","reason":"explicit-development-case-selection"}))
+    } else {
+        std::panic::catch_unwind(|| {
+            run(
+                &a[0],
+                &out,
+                a.get(2).map_or("", String::as_str),
+                development,
+            )
+        })
+    };
+    if baseline.is_err() {
+        evidence::finish("FAIL");
+    }
+    scenarios::run(
         &a[0],
         &out,
         a.get(2).map_or("", String::as_str),
-        std::env::var_os("ACP_S5_DEVELOPMENT").is_some(),
+        only.as_deref(),
     );
+    assert_eq!(
+        binary_fingerprints(&binary_paths),
+        binaries,
+        "binaries changed during native acceptance"
+    );
+    let clean_after = git(&["status", "--porcelain"]).is_empty();
+    let ledger = evidence::snapshot();
+    let complete = ledger["cells"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| only.as_ref().is_none_or(|id| c["id"] == *id))
+        .all(|c| c["status"] == "PASS");
+    let pass = baseline.is_ok() && complete && (development || clean_after);
+    let result = json!({
+        "status":if !pass { "INCOMPLETE" } else if only.is_some() { "DEV_PARTIAL_PASS" } else if development { "DEV_PASS" } else { "PASS" },
+        "tested_git_sha":sha,"worktree_dirty":dirty,"clean_after":clean_after,
+        "development_case":only,
+        "surface":a[0],"platform":std::env::consts::OS,"arch":std::env::consts::ARCH,
+        "binaries":binaries,"baseline":baseline.unwrap_or(json!({"status":"FAIL","detail":"see-partial-ledger"})),
+        "ledger":"ledger.json","cells":ledger["cells"],
+        "visual_review":"NOT_RUN (owned screenshots retained for independent inspection)",
+        "historical_source_substitution":false
+    });
     fs::write(
         out.join("report.json"),
         serde_json::to_vec_pretty(&result).unwrap(),
     )
     .unwrap();
     println!("{result}");
+    if !pass {
+        std::process::exit(1);
+    }
 }

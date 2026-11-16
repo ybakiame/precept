@@ -39,9 +39,12 @@ $env:CARGO_NET_OFFLINE = 'true'
 ```
 
 Linux helper modes: `core`, `ui`, `all`; Windows: `-Suite Core|UI|All`.
-Windows toolchain setup affects only the helper process. The UI mode first builds
-root binaries for the real-daemon integration test. All helpers run these extant
-Cargo commands as applicable:
+Windows toolchain setup is temporary: the helper restores the caller's process
+environment, including PATH and originally absent variables, on success and failure.
+`tools/test_windows_verifier.ps1` checks this with native Git and a Cargo control-flow
+stub; that fixture is not a Rust build/test result. The UI mode first builds root
+binaries for the real-daemon integration test. All helpers run these extant Cargo
+commands as applicable:
 
 Both helpers require an explicit full baseline commit. They refuse HEAD-equal,
 empty, missing, invalid, ambiguous and non-ancestor deltas, and first run

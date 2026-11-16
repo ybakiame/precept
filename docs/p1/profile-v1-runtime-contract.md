@@ -29,8 +29,8 @@ Keep the following product boundaries:
 
 A valid product Profile v1 has exactly these user objects:
 
-1. Tables: `acp_profile`, `projects`, `preferences`, `handoffs`, `acp_receipts`.
-2. Index: `prefs_lookup`.
+1. Tables: `acp_profile`, `projects`, `preferences`, `handoffs`, `acp_receipts`, `acp_review_decisions`.
+2. Indexes: `prefs_lookup`, `review_lookup`.
 3. No user-defined views, triggers, virtual tables, extra indexes, extra tables or unknown objects.
 4. `PRAGMA user_version=1`.
 5. Foreign-key enforcement is enabled on every writable connection. The read-only adapter also enables it and sets `query_only=ON` and `trusted_schema=OFF`.
@@ -306,7 +306,7 @@ CAS and receipt behavior:
 - Busy wait is bounded (initial target 100 ms); return sanitized `Busy` rather than retrying indefinitely. An uncertain commit/response is `OutcomeUnknown`; the caller retries the same operation ID, never a speculative new one.
 - No automatic retry, receipt pruning, hidden mutation or timestamp rewrite.
 
-Request DTO format is 1, with unknown fields denied. Decode and typed serialization
+Request DTO format is 2, with unknown fields denied. Decode and typed serialization
 are each bounded to 128 KiB UTF-8 bytes. Canonical hashing uses serde's fixed typed
 field order over the complete request (version, binding, operation ID, command);
 outer JSON key order/whitespace do not matter. `validation_json` is retained as a
