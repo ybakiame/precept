@@ -136,3 +136,11 @@ the two new S0 documents and roadmap alignment are in the branch delta. Rust,
 native Windows/WSL builds, installer trials and the 148-cell UI suite are **NOT_RUN
 for S0 by design**; no code/tooling changed. M5 stays open and the PR stays Draft,
 with `[skip ci]` commits and no automatic merge, release tag or public artifact.
+
+Initial clean proposal validation at
+**`3cc5097d8b7591433263803dca696f7a5fda09c5`** on Linux/WSL: baseline-to-HEAD
+`git diff --check` **PASS**; `node tools/check_source.mjs` **PASS**, 251 source paths /
+34 explicit archives (including local Markdown links, workflow targets and NSH pins).
+Only the two new documents were present in that commit. Final roadmap alignment,
+historical-report byte preservation and final clean-head checks are recorded with
+the exact delivery SHA in the Draft PR; none implies a product test rerun.
