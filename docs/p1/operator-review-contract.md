@@ -204,7 +204,7 @@ remains a personal choice that the resolver masks by authority
 ([typed-context v1](typed-context-v1.md) conflict table); M4 adds no path by which
 a profile row changes a contract file, and no auto-scaffolding.
 
-S3 implementation gap: the conflict-masking rule above is implemented by the
+Historical S3 baseline gap: the conflict-masking rule above was implemented by the
 pure typed-context resolver, not the production `ContextResolver` used by IPC/MCP.
 The production route supplies repository documents and authority ordering but does
 not parse those documents into `ProjectContract` rules. Typed-resolver tests are
@@ -213,6 +213,13 @@ than treating confirmation as contract approval or claiming automatic enforcemen
 On 2026-11-16 the owner retained this requirement and assigned the separately
 reviewed integration boundary to [#65](https://github.com/ybakiame/agent-control-plane/issues/65).
 PR #61 remains an acceptance revision, not permission to invent a document parser.
+
+P1-N's owner-approved [integration boundary](project-contract-integration.md) now
+supplies live structured contracts to that production route. The [separate local
+evidence](../evaluation/p1-n-project-contracts.md) records actual daemon/IPC/MCP
+masking and refusal at clean `435f4bd`; this does not rewrite S3's earlier evidence
+or grant milestone/merge approval. The original gap and implementation must be
+reviewed together before M4 closure.
 
 Preference `source` is private operator inspection data. The effective-context
 projection omits it for every caller, including confirmed project preferences and

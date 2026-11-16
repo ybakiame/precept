@@ -257,8 +257,9 @@ unchanged product sources from `95a3905ae8bcded2084ad0af22edb918d55513b5`:
 - `git diff --check`: PASS for the documentation delta.
 
 Those component results do not establish parser or production IPC/MCP enforcement.
-The accepted design is implemented in follow-on commits; their production-process
-and native-OS results must be recorded separately on a clean tested SHA before
-claiming integration acceptance. No hosted Actions/model calls,
+The accepted design is implemented in follow-on commits. The [integration
+report](../evaluation/p1-n-project-contracts.md) records production-process and
+native-OS results at clean `435f4bd`, separately from this original audit.
+Owner runtime review is still pending. No hosted Actions/model calls,
 real Profile/auth/external checkout access, system configuration or production
 activation. PR #61, #60 and #52 remain open; no milestone is declared complete.
