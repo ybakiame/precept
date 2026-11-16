@@ -73,7 +73,7 @@ export function peImports(bytes) {
 function command(program, args, cwd, logFile) {
   const result = spawnSync(program, args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, windowsHide: true });
   if (logFile) fs.writeFileSync(logFile, (result.stdout ?? '') + (result.stderr ?? ''), { flag: 'wx' });
-  requireValue(!result.error && result.status === 0, 'Developer command failed; inspect retained private build log');
+  requireValue(!result.error && result.status === 0, `Developer command failed: ${path.basename(program)} status=${result.status} code=${result.error?.code ?? 'exit'}; inspect retained private build log`);
   return result.stdout.trim();
 }
 function inventory(root) {
@@ -178,5 +178,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     requireValue(process.argv.length === 6, 'Usage: node windows-package.mjs REPO EXISTING_PARENT NEW_NAME CARGO');
     const result = build(...process.argv.slice(2));
     console.log(JSON.stringify({ source_sha: result.sha, source_tree: result.tree, status: 'ASSEMBLED_NOT_ZIPPED' }));
-  } catch { console.error('PACKAGING_REFUSED: inspect owned private logs; no install, cleanup or source fallback performed'); process.exitCode = 1; }
+  } catch (error) {
+    const detail = error.message.startsWith('Developer command failed:') ? error.message : (error.code ?? 'policy-or-input-check');
+    console.error(`PACKAGING_REFUSED: ${detail}; no install, cleanup or source fallback performed`); process.exitCode = 1;
+  }
 }

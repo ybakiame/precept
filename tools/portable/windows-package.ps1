@@ -16,6 +16,7 @@ try {
     if (-not $vs) { throw 'Existing x64 build tools required' }
     Import-Module (Join-Path $vs 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
     Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64' | Out-Null
+    $env:Path = "$toolchain;$env:Path"
     $env:CARGO_NET_OFFLINE = 'true'
     Remove-Item Env:CARGO_TARGET_DIR -ErrorAction SilentlyContinue
     $parent = (Resolve-Path -LiteralPath $OutputParent).Path
