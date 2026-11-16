@@ -18,7 +18,10 @@ merged PR #61 (`e286c2606ed94031bc85ecd46925f2f0b62b1838`) and PR #66
 [M5/S0 #68](https://github.com/ybakiame/agent-control-plane/issues/68), under
 [M5 #67](https://github.com/ybakiame/agent-control-plane/issues/67): a documentation-only
 [release boundary proposal](p1/release-readiness-plan.md) and
-[gap inventory](evaluation/p1-m5-s0-gap-inventory.md), awaiting owner acceptance.
+[gap inventory](evaluation/p1-m5-s0-gap-inventory.md), awaiting revised S0 review.
+Owner-confirmed initial direction: Windows x86_64 portable ZIP (HWND + ConPTY),
+standalone Linux x86_64 native Wayland + PTY, and macOS deferred. Other release
+defaults/floors remain recommendations to finalize with evidence at their gates.
 No release, support commitment or real-profile activation follows from engineering
 closure. M3 remains deferred and conditional.
 P1-K interoperability evidence is scoped separately below.
@@ -235,16 +238,23 @@ conditional; no speculative backup/import/restore/retention is bundled here.
 main `6d8000153107c67edfa5ff3bc77da15f196623d3` without behavior changes. Deliver
 the [candidate support and release plan](p1/release-readiness-plan.md) and
 [verifiable gap inventory](evaluation/p1-m5-s0-gap-inventory.md). Windows HWND and
-ConPTY, standalone Linux Wayland and PTY, and WSLg integration remain separately
-visible candidates; existing development PASS is not clean-install verification
-or an approved support commitment. Exact platform/feature/package/actor/budget and
-activation decisions await owner acceptance.
+ConPTY in a **portable ZIP only**, and standalone Linux x86_64 native Wayland and
+PTY are owner-confirmed initial candidate directions; **macOS is deferred**.
+WSLg remains separately labeled integration evidence, never standalone Linux
+certification. Begin Linux with one clean ordinary distro/compositor and both UI
+surfaces; no niri/XWayland/Xvfb requirement or large per-Issue compositor matrix.
+Linux `.tar.gz` and a maintained Windows 11 baseline are recommendations, not exact
+approved floors/formats. Choose exact versions/dependency layout in S1 from
+import/clean-target evidence; scope human IME/AT, numeric budgets, notices and
+audience/tag before the respective RC/release gate. These gaps do not block the S0
+documentation contract and no development PASS implies a support commitment.
 
-After that approval, propose independent S1 packaging, S2 human input/accessibility,
+After revised S0 approval, propose independent S1 packaging, S2 human input/accessibility,
 S3 security/performance and S4 clean-candidate Issues with real dependencies.
 Do not implement or open them automatically, replace the build system, assume an
 installer/OS baseline, introduce M3 work or authorize production state/distribution.
-Document-only S0 uses diff/source/link checks. Later tests follow change impact;
+Document-only S0 uses diff/source/link checks. G01–G20 are a risk/claim inventory,
+not twenty blocking checks per PR. Later tests follow change impact;
 the complete four-native-surface UI matrix runs once for a material shared NSH
 milestone or explicitly accepted RC UI gate, never automatically per Issue.
 M5 and any release/real-Profile go-no-go remain separate owner decisions.

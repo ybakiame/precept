@@ -5,12 +5,34 @@ parent [#67](https://github.com/ybakiame/agent-control-plane/issues/67).
 Auditor: Codex, author-run source/document review on Linux/WSL; not independent
 human, clean-machine or new product runtime acceptance. The companion
 [release-readiness proposal](../p1/release-readiness-plan.md) defines candidate
-targets C1–C8, gates G01–G20, owners/costs and pending decisions D1–D7.
+targets C1–C8, gate inventory G01–G20, owners/costs and the confirmed/pending
+portions of D1–D7.
 
 **Disposition:** S0 supplies an owner-reviewable contract; **M5 release readiness
 is not established**. No package was built/installed/published and no real Profile
-was opened. Support tiers and subsequent tasks remain proposals. Current product
-is Rust-only 0.0.x-rc synthetic engineering validation.
+was opened. The owner has confirmed Windows x86_64 portable ZIP, standalone Linux
+x86_64 native Wayland + PTY TUI, and macOS deferral. Exact support floors/claims,
+other recommended defaults and subsequent task details remain to be finalized
+with evidence. Current product is Rust-only 0.0.x-rc synthetic engineering validation.
+
+### Owner review amendment — 2026-11-16
+
+The [PR #69 review](https://github.com/ybakiame/agent-control-plane/pull/69) at
+`2b916280ddc352dce26fdcb8299e517c06b9c7f8` and the
+[Issue #68 decision record](https://github.com/ybakiame/agent-control-plane/issues/68#issuecomment-6916187539)
+confirm initial **Windows HWND + ConPTY in a portable-only ZIP**, **standalone
+Linux native Wayland Desktop + PTY TUI**, and **macOS deferred**. WSLg stays a
+separate integration environment, not standalone/compositor certification. No
+niri/XWayland/Xvfb dependency, Windows installer/service/elevation/PATH/registry
+mutation, scheduled task or auto-update is in this direction.
+
+The review recommends one Linux `.tar.gz`, a maintained Windows 11 candidate and
+one ordinary isolated clean standalone Linux distro/compositor. These exact floors,
+Linux package details, human IME/AT assignments, numeric budgets, license texts,
+tag/audience and release claims are **not newly owner-approved**. Finalize them
+with S1/RC evidence at the appropriate gate; they do not block finishing S0.
+G01–G20 are a risk/claim selection inventory, not twenty mandatory checks per PR.
+No packaging code or actual acceptance run is authorized by this amendment.
 
 ## 1. Source baseline, closure and evidence identities
 
@@ -34,8 +56,11 @@ closure is owner disposition, not a newly observed physical-host or human test.
 At this main, `git diff 19942b6 main -- apps/operator` is empty. The UI source is
 unchanged, but its linked core can differ; E1 remains E1, not a binary claim at
 main/E2/S0. E1 and E2 used genuine native Windows and WSL checkouts on one physical
-installation, under an **M4-only owner exception**. M5 host-independence policy
-needs D4; it is not silently inherited. Their Windows global Cargo frontend also
+installation, under an **M4-only owner exception**. For initial M5 engineering
+gates, the revised plan recommends isolated independently provisioned clean Windows
+and standalone Linux targets (VM or separate install); it does not force two
+physical machines or inherit that M4 exception. Concrete hosts/operators remain
+unassigned. Their Windows global Cargo frontend also
 differs from stock Cargo. Failed/partial E1 cohorts and older BLOCKED report text
 are preserved, rather than retroactively relabeled after issue closure.
 
@@ -59,7 +84,7 @@ upstream. Reading an implementation is source evidence, not a new execution PASS
 | [Rust workflow](../../.github/workflows/rust.yml), [UI workflow](../../.github/workflows/ui-spike.yml) | Root Linux/macOS/Windows and UI Windows/Ubuntu job definitions, Node checks, offline Web fixture | Definitions are not executed evidence; latest hosted Actions NOT_RUN. CI Linux dev packages omit some pinned upstream media requirements; no release job (G01/G08) |
 | [Web packager](../../tools/package_ui_web.mjs), [Web tests](../../apps/operator/tests/package.json) | Copies exact pinned renderer/WASM and one NSH Apache license; loopback synthetic fixture | No native distribution path, authentication gateway, complete notice ledger or production Web support (G11) |
 | [Acceptance driver](../../tools/native-acceptance/README.md), `tools/native-acceptance/Cargo.lock`, [Windows worker](../../tools/native_window.ps1) | Third locked workspace, bounded owned process/window nonce/foreground checks; temporary installed English layout for synthetic input | Test-only fakes/relays/probes; paced ASCII/UTF-8 is not IME/rapid-paste evidence; don't ship them or require PowerShell for product use (G13/G14/G17) |
-| `docs/deployment.md`, native installer/uninstaller/release scripts, root LICENSE/NOTICE, full license/SBOM manifest | **Not found in tracked baseline**; core Cargo license declarations exist; app license metadata incomplete | Design/notice/dependency gaps, not completed distribution or licensing review (G02/G09/G11) |
+| `docs/deployment.md`, native installer/uninstaller/release scripts, root LICENSE/NOTICE, full license/SBOM manifest | **Not found in tracked baseline**; core Cargo license declarations exist; app license metadata incomplete | Portable extraction/removal and notice/dependency evidence are missing (G02/G09/G11). Absence of a Windows installer is intentional under ZIP-only direction, not a requirement to add one |
 
 Pinned upstream inspected locally at exactly
 [`b7f31a08478be262fd7b76ec856036fd5b8ffdb0`](https://github.com/longbridge/nsh/tree/b7f31a08478be262fd7b76ec856036fd5b8ffdb0):
@@ -73,15 +98,15 @@ reason to install every optional upstream feature. No cache or dependency was ch
 
 | Area | Verified historical/source fact | Current release state / required next proof |
 | --- | --- | --- |
-| Windows HWND + ConPTY | E1 x86_64, OS 10.0.26300.0, MSVC tools 14.51.36231 / SDK 10.0.26100.0; scoped native input/render/restoration | NOT_RUN on clean stable Windows; minimum OS/terminal/runtime unknown; D1 then G01–G03/G12–G17 |
-| Native Linux/Wayland + PTY | Backend/TTY source exists; E1 uses Arch **inside WSL**, GTK 4.24.1, kernel 6.18.58.1-microsoft-standard-WSL2 | Standalone distro/compositor/minimum libc acceptance NOT_RUN; no X11 substitute; D1/D4 then G02/G08/G12/G17 |
+| Windows HWND + ConPTY | Owner-confirmed portable ZIP candidate; E1 x86_64, OS 10.0.26300.0, MSVC tools 14.51.36231 / SDK 10.0.26100.0; scoped native input/render/restoration | Clean ZIP extraction/start NOT_RUN; maintained Windows 11 is a recommendation, exact OS/terminal/runtime floor awaits S1 evidence; applicable G01–G03/G12–G17 |
+| Native Linux/Wayland + PTY | Owner-confirmed standalone x86_64 candidate; backend/TTY source exists; E1 uses Arch **inside WSL**, GTK 4.24.1, kernel 6.18.58.1-microsoft-standard-WSL2 | Both GUI/TUI need one clean standalone distro/compositor first; exact GTK/libc/terminal unchosen; `.tar.gz` recommended. NOT_RUN; no X11 substitute; applicable G02/G08/G12/G17 |
 | WSLg | E1 actual GdkWaylandDisplay/GskGLRenderer and actual acknowledged resize; not niri | Separate integration, not standalone Linux certification; clean WSL/Windows version combination NOT_RUN |
 | Cross-OS reads | Source allows bounded explicit Windows→WSL owner reads | Exact packaged binary/path/endpoint combination NOT_RUN; no transferred grant or filesystem sharing by implication (G19) |
-| Platforms beyond x86_64 Windows/Linux | Manifests/old CI include macOS; older mobile/Web experiments remain distinct | Current macOS/mobile/other-arch tests NOT_RUN; proposed exclusion is not automatic proof of unsupported technology |
+| Platforms beyond x86_64 Windows/Linux | Owner deferred macOS from first candidate; manifests/old CI include it; older mobile/Web experiments remain distinct | Current macOS/mobile/other-arch tests NOT_RUN; no Apple Silicon support claim or inference of technical impossibility; mobile/authenticated Web remain outside initial scope |
 | Resource/performance | 1 MiB frame, 16 peers, 32 requests/peer, 2 s frame timeout; 16 KiB source; 4096 commit capacity; E1 10k component presentation | No approved cold/warm/RSS/idle/p95 budgets or clean release-profile measurements (G18); do not equate a synthetic row count with Profile write capacity |
 | Keyboard/IME/accessibility | E1 physical/native synthetic keyboard, theme/locale and scoped screenshots; input deliberately switches away from Chinese IME | Human IME compose/cancel, bulk paste, AT tools and scaling/font matrix NOT_RUN; owner must name reviewer/scope (G13–G17) |
 | Integrity/privacy | Native auth/ownership/source failure gates pass at E2; no automatic telemetry/listener | Packaged permissions, crash dumps, log limits/redaction, no-cache/offline behavior and notices NOT_RUN (G03/G08/G10/G11) |
-| Lifecycle | Explicit current-v1 creation and daemon ownership exist; no migration or compatibility fallback | Installer/remove/clean-machine preservation NOT_RUN. Backup/restore/retention is conditional M3 only; no speculative prerequisite |
+| Lifecycle | Explicit current-v1 creation and daemon ownership exist; no migration or compatibility fallback | Portable extract/remove/clean-target state preservation NOT_RUN; Windows installer is excluded. Backup/restore/retention is conditional M3 only; no speculative prerequisite |
 
 The exact manifest/feature combination and development runtime can have a wider
 dependency closure than CI package lists suggest. Before choosing a Linux archive
@@ -92,9 +117,12 @@ on the user's everyday machine during S0.
 
 ## 4. Prioritized disposition and owner handoff
 
-1. **Boundary blockers (D1–D7 / G20):** pick precise candidate targets, support
-   claims, bundle shape, human/clean-target owners, budgets and go/no-go authority.
-   Recommendations and alternatives are concrete in the plan, not self-approved.
+1. **Confirmed direction and staged choices (D1–D7 / G20):** Windows portable ZIP,
+   Linux standalone native Wayland/PTY and macOS deferral are recorded as actual
+   decisions. Finalize exact floors/package dependencies in S1, human tasks/actors
+   and numeric budgets before relevant RC runs, and license/tag/audience before
+   their release gate. Do not hold S0 for these unmeasured details or self-approve
+   remaining defaults; scope each task by applicable gates.
 2. **Packaging blockers (G01/G02/G08/G09/G11):** native layout, loader closure,
    clean offline startup/removal, version consistency and license texts are absent
    or unverified. Start one bounded S1 platform task only after owner acceptance.
@@ -103,7 +131,8 @@ on the user's everyday machine during S0.
    TUI. Fix actual failures in narrow S2 PRs, not a speculative redesign.
 4. **Release-build gaps (G03–G07/G10/G18/G19):** reuse contracts but execute targeted
    packaged security/process/performance checks in S3. M4 historical PASS is baseline
-   only. M5 clean-host independence requires a fresh owner decision.
+   only. Assign the isolated clean Windows and standalone Linux targets/operator;
+   no two-physical-machine requirement or M4 exception carryover is inferred.
 5. **Final RC (G20):** S4 depends on the selected S1/S2/S3 gates and one clean
    candidate identity. Required FAIL/BLOCKED/NOT_RUN prevents engineering PASS;
    publishing and real Profile activation need a separate owner decision even then.

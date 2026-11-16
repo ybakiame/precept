@@ -1,6 +1,7 @@
 # P1-M5/S0 — candidate support and release-readiness contract
 
-Status: **Proposed for owner approval; documentation only.** Authority:
+Status: **Initial platform direction confirmed; revised S0 contract awaiting
+review; documentation only.** Authority:
 [S0 #68](https://github.com/ybakiame/agent-control-plane/issues/68),
 [M5 #67](https://github.com/ybakiame/agent-control-plane/issues/67),
 [ADR-0003](../adr/0003-ui-framework-selection.md),
@@ -15,41 +16,55 @@ real Profile, public binary, release tag or support commitment. The companion
 [gap inventory](../evaluation/p1-m5-s0-gap-inventory.md) maps source and exact prior
 evidence to the gates below. Historical reports retain their original verdicts.
 
+The [2026-11-16 owner review](https://github.com/ybakiame/agent-control-plane/pull/69)
+and [recorded platform decision](https://github.com/ybakiame/agent-control-plane/issues/68#issuecomment-6916187539)
+confirm **Windows x86_64 portable ZIP only**, **standalone Linux x86_64 native
+Wayland Desktop + PTY TUI**, and **macOS deferred**. Both Windows HWND Desktop and
+ConPTY TUI remain in scope. These are candidate directions, not clean-install
+PASS, supported-release claims or authorization to package/publish/use real data.
+Other defaults below remain recommendations to finalize at the applicable gate.
+
 ## 1. Support vocabulary and proposed targets
 
 These labels describe different axes, not an automatic promotion ladder:
 
-- **Candidate:** proposed work scope; owner has not committed support.
+- **Candidate:** work direction may be owner-confirmed, while measured floors,
+  clean-target verification and a support commitment remain separate.
 - **Proven in development:** a named historical native check passed at its SHA.
 - **Clean-install verified:** the eventual approved package ran on a recorded clean
   target without the developer's caches/toolchain; currently NOT_RUN everywhere.
 - **Support commitment:** an explicit owner choice of OS versions, architecture,
   features, limits and maintenance scope after evidence; currently none.
-- **Excluded from initial candidate:** a proposed product decision, not a claim
-  that missing tests establish technical impossibility or upstream non-support.
+- **Deferred/excluded from initial candidate:** a product scope decision, labeled
+  as confirmed or recommended below; no inference of technical impossibility from
+  missing tests.
 
-| ID / surface | Proposal | Existing development evidence | Missing release boundary |
+| ID / surface | Decision / scope status | Existing development evidence | Missing release boundary |
 | --- | --- | --- | --- |
-| C1 Windows x86_64 Desktop / HWND | Primary candidate | E1 native keyboard/modal/theme/resize at `19942b6`; E2 backend at `435f4bd` | Minimum stable OS version, loader/runtime closure, install and human IME/AT |
-| C2 Windows x86_64 TUI / ConPTY | First-class candidate alongside C1 | E1 real ConPTY and restoration | Supported terminal/version, paste/composition/scaling, clean launch/exit |
-| C3 standalone Linux x86_64 Desktop / native Wayland | Candidate requiring its own evidence | Linux backend source exists; **no standalone distro native acceptance** in E1/E2 | Select one distro/libc/compositor baseline; dependencies, native rendering/input and clean installation |
-| C4 standalone Linux x86_64 TUI / PTY | First-class candidate alongside C3 | E1 is a WSL PTY run, not a standalone host | Select terminal/distro; standalone PTY restoration and dependency closure |
-| C5 WSLg direct native Wayland + WSL PTY | Separately named integration candidate | E1 `GdkWaylandDisplay` / `GskGLRenderer`, resize, PTY; E2 WSL backend | Supported Windows/WSL/distro combination and clean VM/installation; cannot certify C3/C4 |
-| C6 Windows GUI → WSL daemon reads | Bounded integration candidate | Existing typed read-only WSL helper/source and earlier scoped evidence | Same-version Windows/Linux packages and explicit read-only cross-boundary smoke; no WSL writes or managed execution |
-| C7 macOS / other CPU architectures | Recommend exclude from first RC claims | Historical older macOS evidence / source targets only | Current tests NOT_RUN; not unsupported by inference |
-| C8 mobile / authenticated browser UI | Recommend outside M5 initial scope | Historical experiments; current offline Web fixture only | No product release path or current certification |
+| C1 Windows x86_64 Desktop / HWND | **Owner-confirmed initial candidate; portable ZIP only** | E1 native keyboard/modal/theme/resize at `19942b6`; E2 backend at `435f4bd` | Exact stable OS floor, loader/runtime closure, clean ZIP extraction/start and human IME/AT |
+| C2 Windows x86_64 TUI / ConPTY | **Owner-confirmed initial candidate alongside C1**, same ZIP direction | E1 real ConPTY and restoration | Supported terminal/version, paste/composition/scaling, clean launch/exit |
+| C3 standalone Linux x86_64 Desktop / native Wayland | **Owner-confirmed initial candidate**; begin with one clean ordinary distro/compositor | Linux backend source exists; **no standalone distro native acceptance** in E1/E2 | Exact distro/libc/GTK/compositor floor and archive closure; actual native rendering/input/resize |
+| C4 standalone Linux x86_64 TUI / PTY | **Owner-confirmed initial candidate alongside C3** | E1 is a WSL PTY run, not a standalone host | Terminal/distro selection; standalone PTY restoration and TUI dependency closure |
+| C5 WSLg direct native Wayland + WSL PTY | Retain as separately labeled integration target | E1 `GdkWaylandDisplay` / `GskGLRenderer`, resize, PTY; E2 WSL backend | Exact Windows/WSL/distro claim and clean evidence if selected; never substitutes for C3/C4 |
+| C6 Windows GUI → WSL daemon reads | Read-only integration when applicable to a claim | Existing typed read-only WSL helper/source and earlier scoped evidence | Paired package/path/endpoint smoke only when claimed; no WSL writes or managed execution |
+| C7 macOS / other CPU architectures | **macOS owner-deferred from first candidate**; no other architecture selected | Historical older macOS evidence / source targets only | Current tests NOT_RUN; no macOS/Apple Silicon support or technical-impossibility claim |
+| C8 mobile / authenticated browser UI | Remain outside this initial candidate scope | Historical experiments; current offline Web fixture only | No mobile or authenticated browser release claim |
 
 No niri, X11/XWayland or Xvfb prerequisite or acceptance substitution is proposed.
-Use one owner-selected ordinary standalone Wayland environment for C3, not a new
-compositor matrix. WSLg needs an available native Wayland session, not compositor
+Begin with one clean ordinary standalone Wayland environment for C3 and test both
+GUI and PTY TUI there. Exact distro/compositor selection follows S1 evidence;
+expand compositor claims only when tested, without a large compositor matrix per
+small Issue. WSLg needs an available native Wayland session, not compositor
 launch by the application. Missing host access is NOT_RUN/BLOCKED, not PASS.
 
 ### Grounded prerequisites, not guessed minimums
 
 The only measured CPU family is x86_64. The Windows development record identifies
 OS `10.0.26300.0`; it does **not** establish a Windows 10/11 minimum or a clean
-stable-channel baseline. Leave that floor **unfrozen** until owner selection and S1
-API/loader validation. Likewise no minimum Linux distro, glibc, kernel, WSL or
+stable-channel baseline. The review recommends a currently maintained **Windows 11
+x86_64 candidate**; that is not a confirmed exact OS build/minimum. Leave the floor
+**unfrozen** until S1 API/import and clean-target evidence selects it. Likewise no
+minimum Linux distro, glibc, kernel, WSL or
 terminal version can be extracted from one Arch/WSL development host.
 
 The approved NSH pin is **`b7f31a08478be262fd7b76ec856036fd5b8ffdb0`**, upstream
@@ -75,16 +90,23 @@ adding any user SQLite prerequisite. Test Latin/CJK font fallback on clean targe
 
 ## 2. Proposed minimum distribution envelope
 
-Recommend **one versioned local archive per chosen OS/architecture, containing
-Desktop and TUI together**, plus the three runtime tools. This retains both primary
-surfaces without a new package manager/service framework. Linux TUI dependency
+**Confirmed Windows shape: one versioned portable ZIP**, with HWND Desktop,
+ConPTY TUI and the existing daemon/query/MCP tools. ZIP extraction must need no
+installer, Windows service, elevation, PATH edit, scheduled task, auto-update or
+persistent registry modification. Product removal preserves Profile/auth/unknown
+files; this choice is not permission to produce or publish a package during S0.
+
+**Recommended Linux shape, not yet an owner-selected format: one versioned portable
+`.tar.gz` per chosen architecture**, with native Wayland Desktop, PTY TUI and the
+same runtime tools plus manifest/hashes/notices and documented libraries. Do not
+start DEB/RPM/AppImage work before dependency audit and approval. Linux TUI dependency
 independence is a gate, not an assumption from feature names. Inspect each executable;
 if TUI unnecessarily requires GUI libraries, report the smallest build/package split
 for approval before changing the envelope.
 
 | Contents | Proposed role / boundary |
 | --- | --- |
-| `acp-daemon`, `acp-query`, `acp-mcp` (`.exe` on Windows) | Explicit native service, operator CLI and two-tool stdio bridge; same candidate revision |
+| `acp-daemon`, `acp-query`, `acp-mcp` (`.exe` on Windows) | Explicit native daemon process, operator CLI and two-tool stdio bridge; same candidate revision, no OS service registration |
 | `acp-nsh-native`, `acp-nsh-tui` | Shared product model, separate surface entrypoints; no direct SQLite or auto-started daemon |
 | Version/source manifest, SHA-256 list, instructions, license/notice texts | Exact Git SHA/tree, toolchain/target, lockfile digests, NSH pin, build flags and dependency provenance |
 | Platform dependency files only after inventory | Copy only approved redistributable runtime assets; exact per-file list, no developer cache/target-directory glob |
@@ -95,16 +117,17 @@ The offline Web packager is a synthetic fixture tool, not a native installer or
 authenticated browser gateway. Optional vendor agents and their authentication
 remain external; no download/login/model call is required by this minimum envelope.
 
-Alternatives for owner D3: separate Desktop and TUI archives reduce headless
-dependencies but duplicate manifests/testing; an OS installer adds integration and
-uninstall obligations before evidence exists. Prefer the archive first; no installer
-format, signing, auto-update, cloud feed or telemetry is selected by S0.
+Separate Desktop/TUI archives are a Linux alternative only if dependency evidence
+justifies a reviewed split; do not silently separate or demote TUI. Windows installer
+formats are outside the confirmed portable-only direction. Linux OS-specific
+installers are not selected. No signing, cloud feed or telemetry is selected here.
 
 ### Startup, state separation and removal
 
 1. Operator selects a private **local** runtime directory, endpoint and allowlisted
    project roots. Start the daemon explicitly; no service registration, login task,
-   persistent PATH edit, automatic privilege elevation or broad root discovery.
+   persistent PATH/registry edit, scheduled task, auto-update, automatic privilege
+   elevation or broad root discovery.
 2. Start with no selected Profile or an explicitly selected validated fresh v1.
    Profile create/select/write-enable remain separate deliberate operator actions;
    packaging must never call them implicitly or adopt/reset an existing database.
@@ -157,8 +180,12 @@ dependency/font/runtime files. A lockfile is not a completed license or SBOM aud
 
 ## 3. Traceable release gates
 
-Gate definitions below are **proposed required gates for chosen targets**, not
-newly executed tests. Historical PASS in E1/E2 stays attached to those SHAs.
+G01–G20 are an **inventory for selecting applicable gates by support claim, phase
+and actual risk**, not twenty automatic blocking checks per Issue/PR. A later task
+records selected gate IDs, target/claim, method and acceptance threshold before
+running them; a required selected gate cannot be silently waived. Unselected
+inventory entries do not block a documentation-only S0 or an unrelated patch.
+Historical PASS in E1/E2 stays attached to those SHAs.
 Current candidate results are NOT_RUN unless a prerequisite already blocks them.
 S = focused/static, M = one platform/process or bounded human session, L = clean
 environment/dependency investigation or multi-surface human work. These are
@@ -166,22 +193,27 @@ complexity estimates, not elapsed measurements or delivery promises.
 
 Actors: **O** = product owner `ybakiame` (scope/go-no-go); **E** = assigned engineer
 (Codex may implement/run synthetic tests); **H** = separately identified human
-reviewer; **T** = owner-provided clean-target operator. H/T are **unassigned** until
-owner acceptance. A GitHub COMMENT using the author account is not independent
+reviewer; **T** = clean-target operator. Concrete H/T assignments are still
+unconfirmed. For initial engineering gates, recommend independently provisioned,
+isolated clean Windows and **standalone** Linux targets (VMs or separate installs);
+two physical machines are not an automatic requirement. This does not inherit M4's
+shared Windows/WSL exception or count WSL as standalone Linux. An independent human
+task reviewer is needed at later claimed human-use/release gates, not to finish S0.
+A GitHub COMMENT using the author account is not independent
 human test evidence. Every future artifact records actual actor, host, method,
 clean SHA/tree, binary/package hashes, result and limitations; keep raw data private.
 
 | Gate | Feature / method / host | Actor | Historical evidence / future artifact | Candidate state | Cost |
 | --- | --- | --- | --- | --- | --- |
 | G01 | Exact locked build and shipped binaries; each selected OS/arch | E | E1/E2; build manifest, import/dependency closure and hashes | NOT_RUN | M |
-| G02 | No-toolchain/no-cache offline extract/install/start; clean Windows, standalone Linux and C5 separately if claimed | E+T | No prior clean-install evidence; target image/package/dependency log | BLOCKED: targets/package unchosen | L |
+| G02 | No-toolchain/no-cache offline ZIP extraction/start on Windows; standalone Linux archive launch; C5 separately if claimed | E+T | No prior clean-install evidence; isolated target image/package/dependency log | BLOCKED: exact targets/dependency closure unverified | L |
 | G03 | Native private executable/IPC/capability permissions, second-user and unsafe-root denials | E+T | E2 cooperative/native negatives; packaged ACL/permission process report | NOT_RUN | M |
 | G04 | Fresh exact v1, no-overwrite/refusal, sole writer, lease/epoch/grant/revoke/CAS/replay | E | E2 Workspace; release-build real daemon/CLI/process report | NOT_RUN | M |
 | G05 | ProjectContract trust, malformed/unavailable/changed fail-closed, selector isolation, private-field exclusions | E | E2 actual IPC/MCP + test-daemon FI; release response/adversarial report | NOT_RUN | M |
 | G06 | Exactly two read-only MCP tools, bound projects; session revoke before publication; no automatic model/agent start | E | E2; packaged process/stdio/lease report, no provider needed | NOT_RUN | M |
 | G07 | Normal stop, crash/restart, endpoint collision, owned cleanup and retained state; every packaged OS | E+T | E1/E2 scoped process evidence; exit/lock/credential/restoration report | NOT_RUN | M |
 | G08 | Offline runtime closure including media/plugin/font assets and no silent network; GUI/TUI individually | E+T | Source inventory only; clean-target import trace and disconnected run | NOT_RUN | L |
-| G09 | Remove only product files; retain Profile/auth/unknown files; occupied/unsafe paths refuse | E+T | No native uninstaller; synthetic file-ledger comparison | NOT_RUN | M |
+| G09 | Remove only listed portable product files; retain Profile/auth/unknown files; occupied/unsafe paths refuse | E+T | Archive file list + synthetic retention comparison; no Windows uninstaller required | NOT_RUN | M |
 | G10 | Safe startup/errors/panic/crash diagnostics, byte/time caps, no implicit upload | E+H | Sanitized errors exist; adversarial sentinel/redaction and dump-policy audit | NOT_RUN | M |
 | G11 | Version/tag semantics, checksums, builder/source provenance, license/notice completeness | E+O | Three lockfiles/pin exist; package manifest and reviewed notice ledger | BLOCKED: D6/notice gaps | M |
 | G12 | HWND and **standalone** native Wayland mapping/render/resize on selected clean targets; WSLg separately | E+T | E1 WSLg/HWND only; actual backend/renderer + owned captures | NOT_RUN | L |
@@ -192,7 +224,7 @@ clean SHA/tree, binary/package hashes, result and limitations; keep raw data pri
 | G17 | PTY/ConPTY normal/error/cancel terminal restore, resize and consumed shortcuts | E+H | E1 22 streams per TTY; packaged native VT/frame + human inspection | NOT_RUN | M |
 | G18 | Cold/warm startup, RSS/CPU/idle/stop, bounded queue/source/near-4096 Profile reads and 10k presentation stress | E+T | E1 10k component checks; E2 source/IPC caps; repeated release-build measurements | BLOCKED: numeric budgets/hosts unapproved | M |
 | G19 | C6 explicit Windows→WSL read targets, daemon absence, unsafe binding and mutation/session denial | E+T | Existing helper source/scoped older tests; paired package native integration | NOT_RUN | M |
-| G20 | Final clean candidate provenance, all required gate dispositions and owner decision | O+H+T | New RC evidence ledger referencing scoped prior results | BLOCKED: D1–D7 and preceding gates | L |
+| G20 | Final clean candidate provenance, claim-selected required gate dispositions and owner decision | O+H+T | New RC evidence ledger referencing scoped prior results | BLOCKED: applicable RC evidence/go-no-go pending | L |
 
 Before performance acceptance, E proposes cold/warm sample count, workload,
 percentiles and numeric memory/latency/idle budgets against the selected host;
@@ -204,21 +236,23 @@ Observe capacity refusal honestly; do not add compaction or weaken integrity che
 
 ## 4. Owner decisions and go/no-go authority
 
-| Decision | Recommendation for approval | Required confirmation |
+| Decision | Confirmed direction / recommended default | What remains and when to finalize |
 | --- | --- | --- |
-| D1 targets/minimums | C1/C2 primary; C3/C4 real standalone candidates; C5 separate integration; C6 reads only | Choose exact stable OS/distro/arch/terminal/Wayland/WSL baselines; no implied broad support or M4 host-exception carryover |
-| D2 minimum features | Existing native explicit Profile/review/Handoff/context workflows, both UI surfaces and two-tool MCP | Select claimed workflows and known limits; vendor managed sessions remain separately opted in, no vendor certification |
-| D3 packaging | One portable versioned archive per selected OS with Desktop + TUI + three runtime tools | Accept archive vs split vs installer; approve runtime dependency/permission policy after S1 audit |
-| D4 test ownership/hosts | Synthetic VM/clean target controlled by T; named H for human tasks | Supply/assign targets and actors; decide host independence for M5 explicitly, not by inheriting M4's exception |
-| D5 security/human/performance scope | G01–G20 for chosen claims; IME/paste and explicit AT disposition before a human-use RC claim | Approve test tasks, AT/platform coverage and numerical budgets; an untested required gate blocks PASS |
-| D6 version/provenance/notices | Preserve 0.0.x-rc positioning; choose exact prerelease tag and synchronize displayed/package versions later | Resolve crate 0.1.0 vs product/MCP version metadata and own/third-party notices; no tag/signing/update action now |
-| D7 activation/distribution | O retains separate release and real-data go/no-go decisions after S4 | Explicit audience, support commitment and authorization; M5 engineering PASS alone cannot activate production or publish |
+| D1 targets/minimums | **Confirmed:** C1–C4 x86_64 candidate surfaces; macOS deferred. WSLg remains separate and C6 reads only when applicable | **Recommended/to finalize in S1:** maintained Windows 11 candidate and one clean standalone Linux distro/compositor. Exact OS build, GTK/libc/terminal/WSL floors need import/clean-target evidence, not guesses; no full support claim |
+| D2 minimum features | **Recommended:** existing reviewed Profile/review/context/Handoff workflows, both UI surfaces, explicit daemon/CLI and exactly two readonly MCP tools | Finalize precise shipped feature claims in the relevant S1 scope. No onboarder/recovery promise, remote writes or vendor-model certification; existing explicit opt-ins remain |
+| D3 packaging | **Confirmed Windows:** portable ZIP only, no installer/service/PATH/elevation/scheduled task/auto-update/persistent registry edit. **Recommended Linux:** one portable `.tar.gz` with both surfaces + three runtime tools | Finalize Linux archive/dependency layout during S1; if TUI cannot avoid GTK, report exact linkage conflict for owner review **before** splitting. No DEB/RPM/AppImage by default |
+| D4 test ownership/hosts | **Recommended:** isolated independently provisioned clean Windows and standalone Linux targets, VM or separate installation; no forced two-physical-machine rule | Assign exact targets/operator in S1; identify independent H only before claimed human-use/release tasks. No M4 exception carryover and no human reviewer prerequisite for S0 |
+| D5 security/human/performance scope | **Review direction:** G01–G20 inventory, select by risk/claim per task. **Recommended:** explicit IME/paste/AT and performance scope before RC | Finalize task/actor/tool, sample counts, numeric budgets and pass/fail thresholds **before their RC acceptance run**. Do not invent thresholds in S0 or require every inventory row on each PR |
+| D6 version/provenance/notices | Preserve existing 0.0.x-rc positioning. **Recommended:** reconcile crate/MCP/package identifiers in S1/S4; verified first-party license decision and third-party distribution ledger before public packages | Exact RC identifier/tag, license text/notice policy and publication remain unapproved; resolve them before the relevant package/distribution gate. Manifest metadata alone is insufficient |
+| D7 activation/distribution | **Retained authority:** owner separately decides public distribution and real-profile activation after measured S4; no automatic approval from S0/M5 engineering PASS | RC audience, support commitment, release tag/publish and real-data authorization remain unapproved. This table does not grant any of them |
 
 O may accept a narrower **candidate claim** with documented untested surfaces
 before implementation; E cannot relabel a failed required gate or silently remove
 TUI/Wayland. Full accessibility or IME support needs corresponding evidence, not
 English input or color checks. H records observations, E records tests, O decides
-claims and activation. No pending decision authorizes work outside S0.
+claims and activation. Unknown exact floors, human assignments or numerical budgets
+do not prevent finishing the S0 documentation contract; surface them at their
+respective S1/RC gate. No pending/default recommendation authorizes work outside S0.
 
 ## 5. Proposed slices after S0 acceptance
 
@@ -228,7 +262,7 @@ per concrete gap where possible.
 
 | Slice | Depends on | Bounded deliverable / gates |
 | --- | --- | --- |
-| S1 package inventory and assembly | Approved D1–D4/D6 | Choose one platform first, then the other; resolve runtime closure/licenses/version manifest, archive/extract/stop/remove on clean synthetic target (G01–G03/G07–G11). No OS service/auto-update |
+| S1 package inventory and assembly | Revised S0 accepted and a separately scoped S1 task; confirmed platform/Windows ZIP direction | Expose and finalize relevant D1–D4/D6 choices from import/dependency/clean-target evidence; portable Windows ZIP, recommended Linux `.tar.gz`, both surfaces. Select applicable G01–G03/G07–G11; no installer/service/auto-update |
 | S2 native human-use gaps | Approved D1/D2/D4/D5; runnable S1 package for packaged acceptance | Timebox baseline human tasks, fix only observed keyboard/paste/IME/AT/scaling issues, affected-surface smoke (G12–G17). No redesign or toolkit upgrade by default |
 | S3 release process/security/performance | Approved budgets/claims; S1 release-profile binaries | G03–G08/G10/G18/G19 real process/adversarial/measurement work; do not repeat unrelated UI cases or speculate M3 recovery |
 | S4 clean candidate and owner review | S1 and required S2/S3 gates; one clean RC SHA | G20 and approved clean-target checks; reference earlier scoped evidence accurately. A materially changed shared UI or explicitly accepted RC UI gate triggers one complete native matrix |
