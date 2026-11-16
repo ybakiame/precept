@@ -148,7 +148,11 @@ impl Fixture {
     }
     fn ok(&self, args: &[&str]) -> Value {
         let (ok, v) = self.query(args);
-        assert!(ok, "synthetic operator request refused");
+        assert!(
+            ok,
+            "synthetic operator request refused: {} {}",
+            args[0], v["error"]
+        );
         v
     }
     fn mutation(&self, args: &[&str]) -> Value {
@@ -414,7 +418,12 @@ async fn main() {
     f.mutation(&[
         "project-register",
         "synthetic",
-        f.root.join("synthetic").to_str().unwrap(),
+        f.root
+            .join("synthetic")
+            .canonicalize()
+            .unwrap()
+            .to_str()
+            .unwrap(),
     ]);
     record("explicit-synthetic-profile-grant-register-no-overwrite");
     let agent = load_credential(
