@@ -354,6 +354,37 @@ async fn main() {
     assert_eq!(initial["selected"], false);
     assert_eq!(initial["write_enabled"], false);
     record("no-implicit-profile");
+    let unsafe_root = f.root.join("unsafe-runtime");
+    fs::create_dir(&unsafe_root).unwrap();
+    let mut acl = command(Path::new("pwsh.exe"));
+    acl.args(["-NoProfile", "-NonInteractive", "-File"])
+        .arg(
+            Path::new(&args[3])
+                .parent()
+                .unwrap()
+                .join("portable/unsafe-runtime.ps1"),
+        )
+        .arg("-Directory")
+        .arg(&unsafe_root);
+    assert!(bounded(acl).0);
+    let mut unsafe_daemon = command(&bins.join("acp-daemon.exe"));
+    unsafe_daemon
+        .arg("--runtime-dir")
+        .arg(&unsafe_root)
+        .args(["--endpoint", "synthetic-unsafe"]);
+    assert!(!bounded(unsafe_daemon).0);
+    assert!(!unsafe_root.join("operator.cap").exists());
+    let file_root = f.root.join("file-runtime");
+    fs::write(&file_root, "RETAIN").unwrap();
+    let mut file_daemon = command(&bins.join("acp-daemon.exe"));
+    file_daemon
+        .arg("--runtime-dir")
+        .arg(&file_root)
+        .args(["--endpoint", "synthetic-file"]);
+    assert!(!bounded(file_daemon).0);
+    assert_eq!(fs::read(&file_root).unwrap(), b"RETAIN");
+    f.ok(&["health"]);
+    record("unsafe-acl-and-file-runtime-refused-without-owner-disruption");
     let mut collision = Fixture::daemon(&bins, &f.root, &f.location);
     let end = Instant::now() + Duration::from_secs(10);
     loop {
@@ -406,6 +437,20 @@ async fn main() {
         Error::Unauthorized
     );
     record("project-credential-cannot-write");
+    let mut wrong = command(&bins.join("acp-mcp.exe"));
+    wrong
+        .arg("--runtime-dir")
+        .arg(&f.location.runtime_dir)
+        .args([
+            "--endpoint",
+            &f.location.endpoint,
+            "--project",
+            "synthetic",
+            "--capability-file",
+        ])
+        .arg(f.location.runtime_dir.join("operator.cap"));
+    assert!(!bounded(wrong).0);
+    record("mcp-refuses-operator-credential");
     let mut mcp = Mcp::start(&f);
     let list = mcp.request("tools/list", json!({}));
     let tools = list["result"]["tools"].as_array().unwrap();
