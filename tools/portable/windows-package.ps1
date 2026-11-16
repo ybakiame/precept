@@ -38,7 +38,7 @@ try {
     $extracted = Join-Path $report 'extracted'
     if (Test-Path -LiteralPath $extracted) { throw 'Extraction collision refused' }
     [IO.Compression.ZipFile]::ExtractToDirectory($zip, $extracted)
-    & node --input-type=module -e 'import {verifyInventory} from "./tools/portable/windows-package.mjs"; import fs from "node:fs"; verifyInventory(process.argv[1],JSON.parse(fs.readFileSync(process.argv[2])));' $extracted (Join-Path $report 'archive-inventory.json')
+    & node (Join-Path $PSScriptRoot 'windows-package.mjs') --verify $extracted (Join-Path $report 'archive-inventory.json')
     if ($LASTEXITCODE -ne 0) { throw 'Extracted archive mismatch' }
     @{ archive_sha256 = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant(); archive_bytes = (Get-Item -LiteralPath $zip).Length; extract_inventory = 'PASS'; clean_target = 'NOT_RUN'; developer_host = $true } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $report 'package-result.json')
     Write-Output 'PASS: unpublished ZIP assembled and extracted; clean-target acceptance NOT_RUN'

@@ -48,3 +48,18 @@ test('inventory refuses changed bytes, unlisted credentials and aliased executab
 test('shipping contract is exactly five product entrypoints', () => {
   assert.deepEqual([...binaries].sort(), ['acp-daemon.exe','acp-mcp.exe','acp-nsh-native.exe','acp-nsh-tui.exe','acp-query.exe']);
 });
+
+test('removal preflights every file, refuses forged paths, retains Profile/auth/unknown files', async t => {
+  const {removeOwnedProduct} = await import('./windows-package.mjs');
+  const root = fixture(t);
+  const names = [...binaries, 'manifest.json','dependency-notices.json','README.txt','LICENSE-STATUS.txt','SHA256SUMS.txt'];
+  const files = names.map(name => { fs.writeFileSync(path.join(root, name), 'product'); return {file:name, sha256:digest(Buffer.from('product'))}; });
+  for (const name of ['profile.sqlite3','operator.cap','unknown.txt']) fs.writeFileSync(path.join(root, name), 'retain');
+  assert.throws(() => removeOwnedProduct(root, [...files, {file:'../operator.cap',sha256:digest(Buffer.from('retain'))}]));
+  const changed = path.join(root, 'README.txt'); fs.writeFileSync(changed, 'changed');
+  assert.throws(() => removeOwnedProduct(root, files));
+  assert.ok(fs.existsSync(path.join(root, binaries[0]))); // No partial removal before preflight.
+  fs.writeFileSync(changed, 'product'); removeOwnedProduct(root, files);
+  assert.deepEqual(fs.readdirSync(root).sort(), ['operator.cap','profile.sqlite3','unknown.txt']);
+  for (const name of fs.readdirSync(root)) assert.equal(fs.readFileSync(path.join(root, name), 'utf8'), 'retain');
+});

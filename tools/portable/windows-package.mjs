@@ -9,7 +9,8 @@ import { fileURLToPath } from 'node:url';
 export const binaries = ['acp-daemon.exe', 'acp-query.exe', 'acp-mcp.exe', 'acp-nsh-native.exe', 'acp-nsh-tui.exe'];
 export const pin = 'b7f31a08478be262fd7b76ec856036fd5b8ffdb0';
 export const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
-function requireValue(value, message) { if (!value) throw Error(message); }
+class PolicyError extends Error {}
+function requireValue(value, message) { if (!value) throw new PolicyError(message); }
 export function regular(file) {
   const info = fs.lstatSync(file);
   requireValue(info.isFile() && !info.isSymbolicLink() && info.nlink === 1, 'Expected unaliased regular file');
@@ -93,6 +94,26 @@ function inventory(root) {
 export function verifyInventory(root, expected) {
   requireValue(JSON.stringify(inventory(root)) === JSON.stringify(expected), 'Archive inventory mismatch');
 }
+// Explicit verification/removal tooling for an owned prototype, never product data cleanup.
+export function removeOwnedProduct(root, files) {
+  const allowed = /^(acp-(daemon|query|mcp|nsh-native|nsh-tui)\.exe|manifest\.json|dependency-notices\.json|README\.txt|LICENSE-STATUS\.txt|SHA256SUMS\.txt|notices\/[a-f0-9]{64}\.txt)$/;
+  requireValue(Array.isArray(files) && files.length >= 10 && files.length <= 10000, 'Invalid removal inventory');
+  requireValue(binaries.every(name => files.some(f => f.file === name)), 'Incomplete removal inventory');
+  const seen = new Set();
+  for (const f of files) {
+    requireValue(allowed.test(f.file) && !seen.has(f.file.toLowerCase()) && /^[a-f0-9]{64}$/.test(f.sha256), 'Unsafe removal member');
+    seen.add(f.file.toLowerCase());
+    for (let dir = path.dirname(path.join(root, f.file));; dir = path.dirname(dir)) {
+      requireValue(fs.lstatSync(dir).isDirectory() && !fs.lstatSync(dir).isSymbolicLink(), 'Removal alias refused');
+      if (dir === path.dirname(dir)) break;
+    }
+    const file = path.join(root, f.file);
+    regular(file);
+    requireValue(digest(fs.readFileSync(file)) === f.sha256, 'Changed product file retained');
+  }
+  // Preflight every member before the first unlink. Unknown files are never enumerated for deletion.
+  for (const f of files) fs.unlinkSync(path.join(root, f.file));
+}
 function cargo(program, args, repo, report, label) {
   return command(program, args, repo, path.join(report, label + '.log'));
 }
@@ -118,7 +139,7 @@ export function build(repo, parent, name, cargoProgram) {
   for (const [label, manifestFile, packages, features] of [
     ['core', 'Cargo.toml', ['acp-daemon', 'acp-query', 'acp-mcp'], []],
     ['operator', 'apps/operator/Cargo.toml', ['acp-operator-ui'], ['--features', 'native,tui']]]) {
-    const targetDir = path.join(report, label + '-target');
+    const targetDir = path.join(report, 'build-target');
     const args = ['build', '--manifest-path', manifestFile, '--release', '--locked', '--target', target,
       '--target-dir', targetDir, '--message-format=json', ...packages.flatMap(p => ['-p', p]), '--bins', ...features];
     manifest.build_commands.push({ workspace: label, args: args.map(a => a === targetDir ? '<owned-build-target>' : a) });
@@ -128,10 +149,14 @@ export function build(repo, parent, name, cargoProgram) {
     for (const artifact of artifacts) {
       const name = path.basename(artifact.executable);
       if (!binaries.includes(name)) continue;
-      regular(artifact.executable);
+      // Cargo hard-links its own final output to deps/ inside this new private target.
+      // Never ship that link: read the completed artifact and create a distinct archive file.
+      const input = fs.lstatSync(artifact.executable);
+      requireValue(input.isFile() && !input.isSymbolicLink(), 'Cargo output is not a regular executable');
       requireValue(path.resolve(artifact.executable).startsWith(path.resolve(targetDir) + path.sep), 'Unexpected Cargo output location');
       const bytes = fs.readFileSync(artifact.executable), pe = peImports(bytes);
-      fs.copyFileSync(artifact.executable, path.join(stage, name), fs.constants.COPYFILE_EXCL);
+      fs.writeFileSync(path.join(stage, name), bytes, { flag: 'wx' });
+      regular(path.join(stage, name));
       manifest.binaries.push({ file: name, sha256: digest(bytes), size: bytes.length, ...pe });
     }
   }
@@ -176,11 +201,19 @@ export function build(repo, parent, name, cargoProgram) {
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
+    if (process.argv[2] === '--verify' || process.argv[2] === '--remove-owned-product') {
+      requireValue(process.argv.length === 5, 'Inventory command arguments required');
+      const files = JSON.parse(fs.readFileSync(process.argv[4], 'utf8'));
+      if (process.argv[2] === '--verify') verifyInventory(process.argv[3], files);
+      else removeOwnedProduct(process.argv[3], files);
+      console.log('PASS: explicit owned inventory operation');
+      process.exit(0);
+    }
     requireValue(process.argv.length === 6, 'Usage: node windows-package.mjs REPO EXISTING_PARENT NEW_NAME CARGO');
     const result = build(...process.argv.slice(2));
     console.log(JSON.stringify({ source_sha: result.sha, source_tree: result.tree, status: 'ASSEMBLED_NOT_ZIPPED' }));
   } catch (error) {
-    const detail = error.message.startsWith('Developer command failed:') ? error.message : (error.code ?? 'policy-or-input-check');
+    const detail = error instanceof PolicyError ? error.message : (error.code ?? error.name);
     console.error(`PACKAGING_REFUSED: ${detail}; no install, cleanup or source fallback performed`); process.exitCode = 1;
   }
 }
