@@ -383,4 +383,3 @@ isolation, diagnostics, ownership and evidence formats.
 **Disposition:** scoped privacy, harness and native-disclosure defects are corrected
 with the evidence above. Runtime masking and unexecuted evidence classes remain
 visible to owner review; this ledger does not authorize M4 PASS or closing #52.
-
