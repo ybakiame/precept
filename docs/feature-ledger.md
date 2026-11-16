@@ -36,13 +36,13 @@ vocabulary; "Unevaluated" means no owner decision exists yet.
 | Session lifecycle and resumable work state (goal/done/doing/todo) | Shipped | Adapt | P | Historical Handoff observations, not fresh verification |
 | Frozen constraint snapshots and handoff bundles | Shipped | Adapt | P | Recheck current sources/permissions on resume; checksum wording only |
 | SHA-256 evidence chain | Shipped | Defer | Q | Needs separate ADR: canonicalization, anchors, privacy, independent verification. Not event truth or tamper proof |
-| PreToolUse hook enforcement across nine harnesses (`check_tool_call`) | Shipped | Unevaluated | Evaluation issue first | Largest open gap; touches trust surface (deny semantics, fail-open vs fail-closed, writes into harness configs). Likely ADR before any brief |
+| PreToolUse hook enforcement across nine harnesses (`check_tool_call`) | Shipped | Unevaluated | Evaluation issue [#62](https://github.com/ybakiame/agent-control-plane/issues/62) first | Largest open gap; touches trust surface (deny semantics, fail-open vs fail-closed, writes into harness configs). Likely ADR before any brief |
 | `export_native` pointer blocks, `check_export_drift`, `revoke_native` | Shipped | Unevaluated, conflicts with "never rewrite AGENTS.md" | Decide at N | Either Reject, or Adapt to operator-presented suggestion text only |
 | Broad 25-tool MCP surface (agent writes, sessions, evidence mutation) | Shipped | Reject | — | MCP retains exactly two project-bound read-only tools; any proposal-only API needs its own ADR |
 | Streamable HTTP daemon listener | Shipped | Reject | — | Local IPC only; no network listener |
 | GPUI desktop stack and portable packaging | Shipped | Reject | — | NSH Desktop/TUI retained (ADR-0003) |
 | Bilingual UI (English/简体中文) | Shipped | Adapt | R | NSH locales exist; release-gate acceptance belongs to R |
-| Documentation-integrity direction (doc claims vs repo state, drift detection, freshness evidence) | Not started | Unevaluated | AC spike first; ACP brief only after N and Q | Claim model validated in AC; ACP brief drafts no code before contract-file and evidence foundations land |
+| Documentation integrity (doc claims vs repo state, drift detection, JSON freshness report) | **Spike validated**, merged in AC [PR #2](https://github.com/ybakiame/agent-control/pull/2) (`ee1ed9d`); evaluation `docs/spike-doc-drift.md` | **Adopt with conditions** | **Brief S** / [Issue #64](https://github.com/ybakiame/agent-control-plane/issues/64), gated on N and Q | **Manifest format decided: TOML** (`[[claims]]`, scalar coercion, `deny_unknown_fields`). Conditions: stable anchors replace line numbers; per-vendor warning-channel tests; `command_runs` timeout + cheap-command allowlist; registration tooling; `doc:id` namespacing; per-document anchor caching. Baseline 18/18 fresh, all injected rot detected, JSON consumed directly by a gate script; first run caught a real TOML `code_checks` bug |
 
 ## AC sunset criteria
 
