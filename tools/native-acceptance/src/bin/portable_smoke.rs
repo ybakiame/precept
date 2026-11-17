@@ -30,12 +30,8 @@ impl Drop for Owned {
 }
 fn command(binary: &Path) -> Command {
     let mut cmd = Command::new(binary);
-    // No inherited preview, endpoint, external project or agent auth hints.
-    for (key, _) in std::env::vars_os() {
-        if key.to_string_lossy().starts_with("ACP_") {
-            cmd.env_remove(key);
-        }
-    }
+    // No inherited ACP_* control (any case: Windows names are case-insensitive).
+    acp_native_acceptance::environment::clear_inherited_acp(&mut cmd);
     cmd
 }
 fn bounded(mut cmd: Command) -> (bool, Value) {

@@ -139,7 +139,8 @@ impl Fixture {
         db: Option<&Path>,
     ) -> Owned {
         let mut c = Command::new(Self::bin(repo, "acp-daemon"));
-        c.arg("--runtime-dir")
+        acp_native_acceptance::environment::clear_inherited_acp(&mut c)
+            .arg("--runtime-dir")
             .arg(runtime)
             .arg("--endpoint")
             .arg(endpoint);
@@ -163,14 +164,16 @@ impl Fixture {
         )
     }
     fn query_at(&self, runtime: &Path, endpoint: &str, args: &[&str]) -> (bool, Value) {
-        let result = Command::new(Self::bin(&self.repo, "acp-query"))
-            .arg("--runtime-dir")
-            .arg(runtime)
-            .arg("--endpoint")
-            .arg(endpoint)
-            .args(args)
-            .output()
-            .unwrap();
+        let result = acp_native_acceptance::environment::clear_inherited_acp(&mut Command::new(
+            Self::bin(&self.repo, "acp-query"),
+        ))
+        .arg("--runtime-dir")
+        .arg(runtime)
+        .arg("--endpoint")
+        .arg(endpoint)
+        .args(args)
+        .output()
+        .unwrap();
         evidence::event(
             "cli",
             json!({

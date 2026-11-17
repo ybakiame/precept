@@ -17,6 +17,7 @@ VC++ redistributable was installed only inside the discarded sandbox.
 | First-party license | **Apache-2.0**, copyright holder `ybakiame` | Root `LICENSE` (verbatim canonical text, SHA-256 `cfc7749b…3d30`), `NOTICE`, README section, license field on the two operator crates; shipped as `ACP/LICENSE.txt` and `ACP/notices/NOTICE.txt` |
 | `acp-ipc` builder path | **Remove the compiled-in build-checkout rule** and keep the generic `.git` ancestor refusal | `7a19db2`, plus the regression tests that rule never had |
 | Clean target | **Windows Sandbox** instead of uninstalling VC++ on the daily machine; Windows N editions out of scope for the target audience | `windows-sandbox.ps1` + `sandbox-acceptance.ps1` |
+| OS scope | The tested clean target is **Windows 11 Enterprise, Windows Sandbox image build 26100**. Older Windows versions are outside the current validation and support claim; no broader compatibility is asserted, and no additional OS run is required for S1-A | This report |
 
 ## Source and method
 
@@ -161,8 +162,8 @@ the README gave users no way to satisfy it. The README now documents a PowerShel
 and the Sandbox run executes exactly that snippet. A product-side helper that creates the
 private directory is a possible later usability improvement, not done here.
 
-Limits: one Sandbox image (build 26100) on this host's hardware and vGPU, not a separate
-physical installation or OS matrix; Windows PowerShell 5.1 acceptance instead of the Rust
+Limits: one Sandbox image (Windows 11 Enterprise build 26100) on this host's hardware and
+vGPU, not a separate physical installation; Windows PowerShell 5.1 acceptance instead of the Rust
 harness (the TUI resize, terminal-restore sequences and module-ledger hashes are covered
 by the host smoke only); no second user.
 
@@ -204,13 +205,13 @@ The separate synthetic Profile, auth-labeled and unknown files kept their hashes
 | Selected gate | Result / practical limit |
 | --- | --- |
 | G01 | PASS: same-clean-SHA locked five-binary build, sanitized inputs, `ACP/` layout, **builder-path-free binaries** (hard gate); signing/release claims NOT_RUN |
-| G02 | **PASS (disposable clean target)**: Windows Sandbox build 26100, with and without the prerequisite, extraction/verify/start/connect/stop/remove (12 PASS). A separate physical installation and an OS-version matrix are NOT_RUN |
+| G02 | **PASS (disposable clean target)**: Windows 11 Enterprise Sandbox build 26100, with and without the prerequisite, extraction/verify/start/connect/stop/remove (12 PASS). Scope is that target only; older Windows is outside the current validation/support claim. A separate physical installation was NOT_RUN |
 | G03 | PASS: protected output, executable/credential checks, unsafe ACL/path refusal, credential-role separation; actual second-user attack NOT_RUN |
 | G04/G05/G06 targeted | PASS at the packaged create/grant/register/revoke and MCP/refusal boundary |
 | G07 | PASS: collision, graceful stop/lease release, crash/normal restart, stale credential refusal |
 | G08 | PASS: PE imports, recorded prerequisite, missing-prerequisite failure and post-install load on the clean target; offline/no-network operation passed with Sandbox networking disabled. Font/GPU breadth beyond one host remains NOT_RUN |
 | G09 | PASS on host and clean target: exact removal, empty-directory cleanup, Profile/auth/unknown retention |
-| G11 | PASS: provenance, Apache-2.0 first-party license and NOTICE, narrowed notice ledger; **BLOCKED** third-party notice review (21 without text), signing and publication |
+| G11 | **PARTIAL — BLOCKED for public distribution.** PASS: source/toolchain/lock/binary/archive provenance, verbatim first-party Apache-2.0 `LICENSE` and `NOTICE` shipped and hash-checked, narrowed notice ledger. Open: **21 third-party entries lack crate-local notice text and are pending review**; signing and publication undecided; explicit owner confirmation of the first-party grant requested in PR review. Accurately recorded, this does not block merging a private prototype |
 
 ## Validation commands
 
@@ -252,8 +253,6 @@ Linux/WSLg, a physical clean installation, hosted Actions, models.
 
 ## Required follow-up, not release authorization
 
-- Before any OS-support claim: repeat the Sandbox acceptance on at least one older
-  supported Windows (10 1809+/22H2) installation or image; this run covers build 26100.
 - Review the 21 third-party entries without notice text and the remaining notice
   obligations, then decide on signing.
 - Investigate the 4 pre-existing Linux operator UI test failures separately.

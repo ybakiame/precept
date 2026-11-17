@@ -1,3 +1,4 @@
+use acp_native_acceptance::environment::clear_inherited_acp;
 use acp_native_acceptance::process::OwnedProcess;
 use acp_native_acceptance::worker::WorkerRpc;
 use serde_json::{Value, json};
@@ -27,7 +28,8 @@ impl Desktop {
         focus: &Path,
     ) -> Self {
         let mut command = Command::new(binary);
-        command
+        // No inherited ACP_* control (e.g. ACP_UI_GALLERY) reaches the product.
+        clear_inherited_acp(&mut command)
             .args(args)
             .env("ACP_UI_PROBE", "1")
             .env("ACP_UI_PROBE_ID", nonce)
