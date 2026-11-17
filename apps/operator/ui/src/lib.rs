@@ -434,6 +434,20 @@ fn console(model: Signal<Model>) -> impl IntoElement {
                         .map_or(0, |c| c.executables.len()),
                     current.session.confirm_start
                 );
+                let lease = current.session.context.unwrap_or_default();
+                eprintln!(
+                    "ACP_NSH_CONTEXT share={} enabled={} active={} context_calls={} handoff_calls={} stop_reason={:?}",
+                    current.session.share_context,
+                    lease.enabled,
+                    lease.active,
+                    lease.context_calls,
+                    lease.handoff_calls,
+                    current
+                        .session
+                        .view
+                        .as_ref()
+                        .and_then(|v| v.stop_reason.as_deref())
+                );
             }
             eprintln!(
                 "ACP_NSH_STATE phase={:?} selected={} rows={} queried_chars={} filter_chars={} section={:?} page={} detail={} dark={} contrast={} elapsed={:.6}",

@@ -30,6 +30,20 @@ pub struct SessionModel {
     pub error: Option<String>,
     pub event_page: usize,
     pub permission_review: Option<String>,
+    /// Per-start opt-in to share read-only project context. Off by default and
+    /// reset after every Start request or abandoned review.
+    pub share_context: bool,
+    /// Daemon-reported context lease of the observed session.
+    pub context: Option<ContextLease>,
+}
+/// The daemon's `session.context` observation: `absent → active → revoked/expired`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContextLease {
+    pub enabled: bool,
+    pub active: bool,
+    pub context_calls: u64,
+    pub handoff_calls: u64,
 }
 /// Authority captured when a session control is rendered, never rebound on click.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -43,6 +57,8 @@ pub struct SessionScope {
 pub struct Observation {
     pub capabilities: Capabilities,
     pub view: Option<View>,
+    /// Present on refresh only (`session.context`).
+    pub context: Option<ContextLease>,
 }
 impl SessionModel {
     pub fn receive(&mut self, project: &str, result: Result<Observation, &str>) {
@@ -85,8 +101,10 @@ impl SessionModel {
                 {
                     self.prompt.clear();
                     self.confirm_start = false;
+                    self.share_context = false;
                     self.event_page = 0;
                     self.permission_review = None;
+                    self.context = None;
                 }
                 if !o.capabilities.executables.contains(&self.executable) {
                     self.confirm_start = false;
@@ -106,6 +124,9 @@ impl SessionModel {
                 }) {
                     self.permission_review = None;
                 }
+                if o.context.is_some() {
+                    self.context = o.context;
+                }
                 self.capabilities = Some(o.capabilities);
                 self.view = o.view;
                 self.error = None;
@@ -113,8 +134,10 @@ impl SessionModel {
             _ => {
                 self.view = None;
                 self.capabilities = None;
+                self.context = None;
                 self.prompt.clear();
                 self.confirm_start = false;
+                self.share_context = false;
                 self.permission_review = None;
                 self.error = Some("Session unavailable or access refused".into());
             }
@@ -158,7 +181,11 @@ pub fn observation(capabilities: Value, view: Value) -> Result<Observation, &'st
         return Err("Unsupported session version");
     }
     let view = serde_json::from_value(view).map_err(|_| "Invalid session state")?;
-    Ok(Observation { capabilities, view })
+    Ok(Observation {
+        capabilities,
+        view,
+        context: None,
+    })
 }
 
 /// One session request against the daemon at `location`, returning the raw
@@ -214,7 +241,21 @@ pub(crate) async fn session_raw(
     } else {
         result
     };
-    Ok(serde_json::json!({"capabilities": capabilities, "view": view}))
+    // A refresh also reports the daemon's context lease (read-only). Without an
+    // observed session there is no lease (the daemon answers null, which the IPC
+    // client treats as an error), so it is only read for an existing session.
+    let context = if method == "session.refresh" && !view.is_null() {
+        client
+            .request(
+                "session.context",
+                serde_json::json!({"session_api_version":SESSION_API,"project":project}),
+            )
+            .await
+            .map_err(|_| "Session unavailable")?
+    } else {
+        Value::Null
+    };
+    Ok(serde_json::json!({"capabilities": capabilities, "view": view, "context": context}))
 }
 
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
@@ -264,12 +305,81 @@ impl crate::native::Inputs {
             .cloned()
             .ok_or("Invalid session state")?;
         let view = raw.get("view").cloned().ok_or("Invalid session state")?;
-        observation(capabilities, view)
+        let mut observed = observation(capabilities, view)?;
+        observed.context = match raw.get("context") {
+            None | Some(Value::Null) => None,
+            Some(lease) => {
+                Some(serde_json::from_value(lease.clone()).map_err(|_| "Invalid session state")?)
+            }
+        };
+        Ok(observed)
     }
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn context_sharing_is_an_explicit_per_start_opt_in_and_lease_is_strict() {
+        let m = SessionModel::default();
+        assert!(!m.share_context && m.context.is_none());
+        let cap = Capabilities {
+            session_api_version: SESSION_API,
+            protocol_version: 1,
+            executables: vec!["ctx".into()],
+            resume_supported: false,
+        };
+        let view = |id: &str| View {
+            session_api_version: SESSION_API,
+            project: "alpha".into(),
+            session_id: id.into(),
+            executable: "ctx".into(),
+            ..Default::default()
+        };
+        let lease = ContextLease {
+            enabled: true,
+            active: true,
+            context_calls: 1,
+            handoff_calls: 0,
+        };
+        let mut m = SessionModel {
+            share_context: true,
+            ..Default::default()
+        };
+        m.receive(
+            "alpha",
+            Ok(Observation {
+                capabilities: cap.clone(),
+                view: Some(view("one")),
+                context: Some(lease),
+            }),
+        );
+        assert_eq!(m.context, Some(lease));
+        assert!(
+            !m.share_context,
+            "a new observed session never keeps a pending opt-in"
+        );
+        // A non-refresh reply (no lease field) keeps the last observed lease.
+        m.receive(
+            "alpha",
+            Ok(Observation {
+                capabilities: cap.clone(),
+                view: Some(view("one")),
+                context: None,
+            }),
+        );
+        assert_eq!(m.context, Some(lease));
+        // A different session drops the previous lease.
+        m.receive(
+            "alpha",
+            Ok(Observation {
+                capabilities: cap,
+                view: Some(view("two")),
+                context: None,
+            }),
+        );
+        assert_eq!(m.context, None);
+        assert!(serde_json::from_value::<ContextLease>(serde_json::json!({"enabled":true,"active":true,"context_calls":0,"handoff_calls":0,"token":"x"})).is_err());
+    }
     #[cfg(feature = "native")]
     #[test]
     fn wsl_and_synthetic_inputs_cannot_invoke_session_mutation() {
@@ -308,6 +418,7 @@ mod tests {
             Ok(Observation {
                 capabilities: cap.clone(),
                 view: Some(view.clone()),
+                context: None,
             }),
         );
         assert_eq!(m.view, Some(view.clone()));
@@ -318,6 +429,7 @@ mod tests {
             Ok(Observation {
                 capabilities: cap.clone(),
                 view: Some(old),
+                context: None,
             }),
         );
         assert_eq!(m.view, Some(view.clone()));
@@ -333,6 +445,7 @@ mod tests {
             Ok(Observation {
                 capabilities: cap.clone(),
                 view: Some(next.clone()),
+                context: None,
             }),
         );
         m.permission_review = Some("permission-1".into());
@@ -343,6 +456,7 @@ mod tests {
             Ok(Observation {
                 capabilities: cap.clone(),
                 view: Some(next),
+                context: None,
             }),
         );
         assert!(m.permission_review.is_none());
@@ -353,6 +467,7 @@ mod tests {
             Ok(Observation {
                 capabilities: cap,
                 view: Some(view),
+                context: None,
             }),
         );
         assert!(m.view.is_none());
@@ -456,6 +571,7 @@ mod scope_tests {
                 Ok(Observation {
                     capabilities: c.clone(),
                     view: Some(v.clone()),
+                    context: None,
                 }),
             )
         };
@@ -508,6 +624,7 @@ mod scope_tests {
             Ok(Observation {
                 capabilities: capabilities.clone(),
                 view: Some(view.clone()),
+                context: None,
             })
         };
         m.receive("alpha", observation(&view));
@@ -537,6 +654,7 @@ mod scope_tests {
             Ok(Observation {
                 capabilities: old,
                 view: Some(view),
+                context: None,
             }),
         );
         assert!(m.view.is_none());
@@ -621,6 +739,7 @@ mod scope_tests {
                     session_id: "observed".into(),
                     ..Default::default()
                 }),
+                context: None,
             })
         };
         assert!(m.complete_session(epoch, "alpha", &connection, 0, true, result()));

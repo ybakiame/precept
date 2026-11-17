@@ -114,6 +114,7 @@ pub fn linux_binaries(wsl: &Wsl) -> Value {
         "acp-query",
         "acp-wsl-bridge",
         "acp-fake-agent",
+        "acp-mcp",
     ];
     let paths: Vec<String> = names.iter().map(|n| wsl.bin(n)).collect();
     let mut args = vec!["--"];
@@ -166,9 +167,13 @@ impl Remote {
         let config = format!("{base}/agents.json");
         wsl.write(
             &config,
-            json!({"version":1,"programs":[{"id":"fake","executable":wsl.bin("acp-fake-agent"),"args":["permission"],"env":{}}]})
-                .to_string()
-                .as_bytes(),
+            json!({"version":1,"programs":[
+                {"id":"ctx","executable":wsl.bin("acp-fake-agent"),"args":["mcp"],"env":{}},
+                {"id":"fake","executable":wsl.bin("acp-fake-agent"),"args":["permission"],"env":{}},
+                {"id":"slow","executable":wsl.bin("acp-fake-agent"),"args":["mcp-cancel"],"env":{}}
+            ]})
+            .to_string()
+            .as_bytes(),
         );
         wsl.ok("/usr/bin/chmod", &["0600", &config]);
         let alpha = wsl.ok("/usr/bin/realpath", &[&format!("{base}/alpha")]);
@@ -204,6 +209,10 @@ impl Remote {
                     &root,
                     "--agent-config",
                     &config,
+                    // Trusted read-only context bridge; sharing still needs a
+                    // per-start operator opt-in.
+                    "--context-mcp",
+                    &self.wsl.bin("acp-mcp"),
                 ],
             )
             .stdin(Stdio::null())
@@ -577,14 +586,21 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
         "actual-os-input + wsl-process",
     );
     ui.key("alt+6");
-    ui.wait("configured=1", "fake");
+    ui.wait("configured=3", "ctx");
     ui.capture("wsl-sessions", out);
+    // 1) `fake` without context sharing: the opt-in is off by default.
+    ui.action("SessionExecutable1", &focus, None);
     ui.key("alt+7");
     ui.wait("confirm=true", "Confirm start");
+    ui.wait("ACP_NSH_CONTEXT share=false", "off");
     timed("session-start", || {
         ui.key("alt+8");
         ui.wait("state=Some(Ready) alive=true", "Ready");
     });
+    ui.wait(
+        "ACP_NSH_CONTEXT share=false enabled=false active=false",
+        "not shared",
+    );
     let agents = r.wsl.pids("acp-fake-agent");
     assert_eq!(agents.len(), 1, "agent process runs inside WSL");
     let helper = r.wsl.pids("acp-wsl-bridge");
@@ -628,6 +644,67 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     assert!(
         r.wsl.pids("acp-fake-agent").is_empty(),
         "agent stopped in WSL"
+    );
+
+    // 2) `ctx` with the separately confirmed opt-in: an active lease the agent
+    //    uses through the trusted context bridge; Stop revokes it.
+    ui.action("SessionExecutable0", &focus, None);
+    ui.key("alt+7");
+    ui.wait("confirm=true", "Confirm start");
+    ui.wait("ACP_NSH_CONTEXT share=false", "off");
+    ui.key("alt+g");
+    ui.wait("ACP_NSH_CONTEXT share=true", "ON");
+    ui.capture("wsl-context-opt-in", out);
+    ui.key("alt+8");
+    ui.wait("state=Some(Ready) alive=true", "Ready");
+    ui.wait("share=false enabled=true active=true", "active");
+    ui.key("alt+j");
+    ui.text("use the shared context");
+    ui.key("alt+9");
+    ui.wait("active=true context_calls=1 handoff_calls=1", "active");
+    ui.wait("state=Some(Completed) alive=true", "Completed");
+    ui.capture("wsl-context-lease-used", out);
+    ui.key("alt+x");
+    ui.wait("enabled=true active=false", "revoked");
+    ui.wait("alive=false", "Stopped");
+    evidence::event(
+        "context-lease",
+        json!({"opt_in":"alt+g","active_before_stop":true,"calls":{"context":1,"handoff":1},"revoked_on_stop":true}),
+    );
+
+    // 3) Cancel of a RUNNING turn from the GUI, with an active lease: the turn
+    //    ends as cancelled, the agent stays alive and the lease is revoked.
+    ui.action("SessionExecutable2", &focus, None);
+    ui.key("alt+7");
+    ui.wait("ACP_NSH_CONTEXT share=false", "off");
+    ui.key("alt+g");
+    ui.wait("ACP_NSH_CONTEXT share=true", "ON");
+    ui.key("alt+8");
+    ui.wait("share=false enabled=true active=true", "active");
+    ui.key("alt+j");
+    ui.text("wait for cancellation");
+    ui.key("alt+9");
+    ui.wait("state=Some(Running) alive=true", "Running");
+    timed("cancel-running-turn", || {
+        ui.key("alt+q");
+        ui.wait("enabled=true active=false", "revoked");
+    });
+    ui.wait("stop_reason=Some(\"cancelled\")", "cancelled");
+    ui.capture("wsl-cancelled", out);
+    assert_eq!(
+        r.wsl.pids("acp-fake-agent").len(),
+        1,
+        "Cancel ends the turn, not the agent"
+    );
+    ui.key("alt+x");
+    ui.wait("alive=false", "Stopped");
+    assert!(
+        r.wsl.pids("acp-fake-agent").is_empty(),
+        "agent stopped in WSL"
+    );
+    evidence::event(
+        "cancel",
+        json!({"running_turn_cancelled":true,"stop_reason":"cancelled","lease_revoked":true,"agent_kept_until_stop":true}),
     );
     evidence::finish("PASS");
 

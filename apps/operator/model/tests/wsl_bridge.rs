@@ -51,6 +51,7 @@ struct Daemon {
     root: Root,
     runtime: PathBuf,
     endpoint: String,
+    argv: Vec<std::ffi::OsString>,
 }
 impl Drop for Daemon {
     fn drop(&mut self) {
@@ -65,14 +66,23 @@ impl Daemon {
     /// `agent`: an explicit private agent config with the deterministic fake
     /// agent in permission mode (never a real coding agent).
     fn start_with(agent: bool) -> Self {
+        if agent {
+            Self::start_configured(&[("fake", &["permission"])], false, None)
+        } else {
+            Self::start_configured(&[], false, None)
+        }
+    }
+    /// Explicit agent programs (deterministic fake agent modes), optional trusted
+    /// context bridge (`acp-mcp`) and lease TTL.
+    fn start_configured(programs: &[(&str, &[&str])], context: bool, ttl: Option<u64>) -> Self {
         let root = Root::new();
         std::fs::create_dir(root.0.join("alpha")).unwrap();
         std::fs::write(root.0.join("alpha/AGENTS.md"), "Synthetic contract\n").unwrap();
         acp_ipc::transport::private_dir(&root.0.join("state"), true).unwrap();
         let runtime = root.0.join("runtime");
         let endpoint = runtime.join("control.sock").to_str().unwrap().to_owned();
-        let mut command = Command::new(bin("acp-daemon"));
-        if agent {
+        let mut extra: Vec<std::ffi::OsString> = Vec::new();
+        if !programs.is_empty() {
             use std::os::unix::fs::OpenOptionsExt;
             let config = root.0.join("agents.json");
             let mut file = std::fs::OpenOptions::new()
@@ -81,10 +91,22 @@ impl Daemon {
                 .mode(0o600)
                 .open(&config)
                 .unwrap();
-            let programs = json!({"version":1,"programs":[{"id":"fake","executable":bin("acp-fake-agent"),"args":["permission"],"env":{}}]});
-            file.write_all(programs.to_string().as_bytes()).unwrap();
-            command.arg("--agent-config").arg(config);
+            let list: Vec<Value> = programs
+                .iter()
+                .map(|(id, args)| json!({"id":id,"executable":bin("acp-fake-agent"),"args":args,"env":{}}))
+                .collect();
+            file.write_all(json!({"version":1,"programs":list}).to_string().as_bytes())
+                .unwrap();
+            extra.extend(["--agent-config".into(), config.into()]);
         }
+        if context {
+            extra.extend(["--context-mcp".into(), bin("acp-mcp").into()]);
+        }
+        if let Some(ttl) = ttl {
+            extra.extend(["--context-lease-seconds".into(), ttl.to_string().into()]);
+        }
+        let mut command = Command::new(bin("acp-daemon"));
+        command.args(&extra);
         let child = command
             .arg("--runtime-dir")
             .arg(&runtime)
@@ -108,12 +130,33 @@ impl Daemon {
             .stderr(Stdio::null())
             .spawn()
             .expect("build the root workspace binaries first");
+        let argv = command.get_args().map(ToOwned::to_owned).collect();
         let d = Self {
             child,
             root,
             runtime,
             endpoint,
+            argv,
         };
+        d.ready();
+        d
+    }
+    /// Graceful stop (SIGINT, as Ctrl+C) and an explicit relaunch of the same command.
+    fn restart(&mut self) {
+        let _ = Command::new("kill")
+            .args(["-INT", &self.child.id().to_string()])
+            .status();
+        assert!(self.child.wait().unwrap().success(), "graceful daemon exit");
+        self.child = Command::new(bin("acp-daemon"))
+            .args(&self.argv)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        self.ready();
+    }
+    fn ready(&self) {
+        let d = self;
         let start = Instant::now();
         while !d.runtime.join("operator.cap").exists() || !Path::new(&d.endpoint).exists() {
             assert!(
@@ -122,7 +165,6 @@ impl Daemon {
             );
             std::thread::sleep(Duration::from_millis(20));
         }
-        d
     }
     fn helper(&self) -> Command {
         let mut c = Command::new(HELPER);
@@ -151,6 +193,30 @@ impl Daemon {
             String::from_utf8_lossy(&out.stdout),
             String::from_utf8_lossy(&out.stderr)
         );
+    }
+    /// CLI-only saved Handoff `shared`, as the synthetic context the agent reads.
+    fn put_handoff(&self, b: &Binding) {
+        let input = self.root.0.join("handoff.json");
+        std::fs::write(&input, json!({"objective":"Saved synthetic history","completed":"","next_action":"Inspect current repository facts","validation_json":"[{\"status\":\"NOT_RUN\",\"check\":\"synthetic\"}]","snapshot":{"base_sha":"","branch":"","state":"unknown","fingerprint":null}}).to_string()).unwrap();
+        let out = Command::new(bin("acp-query"))
+            .arg("--runtime-dir")
+            .arg(&self.runtime)
+            .args([
+                "--endpoint",
+                &self.endpoint,
+                "handoff-put",
+                "alpha",
+                "shared",
+                "--expected-absent",
+                "--input",
+            ])
+            .arg(&input)
+            .args(["--profile-id", &b.profile_id, "--generation", &b.generation])
+            .args(["--owner-epoch", &b.owner_epoch.to_string()])
+            .args(["--operation-id", "s1b-handoff"])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "CLI-only handoff put");
     }
     /// Every token byte sequence a capability file in the runtime holds.
     fn tokens(&self) -> Vec<String> {
@@ -856,5 +922,174 @@ fn health_reports_daemon_reachability_over_the_live_bridge() {
             "Local daemon unavailable or access refused"
         ))
     );
+    c.close(Duration::from_secs(5));
+}
+
+/// Session helpers over a bridge client for one project.
+struct Sessions<'a>(&'a Client);
+impl Sessions<'_> {
+    fn call(&self, method: &str, fields: Value) -> Result<Value, CallError> {
+        self.0.call(
+            Op::Session {
+                project: "alpha".into(),
+                method: method.into(),
+                fields,
+            },
+            Duration::from_secs(30),
+        )
+    }
+    /// Polls refresh until `pred(view, context)` holds; returns the last refresh.
+    fn until(&self, what: &str, pred: impl Fn(&Value, &Value) -> bool) -> Value {
+        let end = Instant::now() + Duration::from_secs(20);
+        loop {
+            let v = self.call("session.refresh", json!({})).unwrap();
+            if pred(&v["view"], &v["context"]) {
+                return v;
+            }
+            assert!(Instant::now() < end, "{what}: {v}");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+    fn start(&self, executable: &str, share: bool) -> String {
+        let mut fields = json!({"executable":executable,"confirmed":true});
+        if share {
+            fields["share_context"] = true.into();
+        }
+        self.call("session.start", fields).unwrap();
+        let v = self.until("ready", |v, _| {
+            v["state"] == "ready" && v["process_alive"] == true
+        });
+        v["view"]["session_id"].as_str().unwrap().to_owned()
+    }
+    fn stop(&self, id: &str) {
+        self.call("session.stop", json!({"session_id":id})).unwrap();
+        self.until("stopped", |v, _| v["process_alive"] == false);
+    }
+}
+
+#[test]
+fn context_lease_opt_in_cancel_failure_and_restart_through_the_bridge() {
+    let mut d = Daemon::start_configured(
+        &[
+            ("crash", &["mcp-crash"]),
+            ("ctx", &["mcp"]),
+            ("plain", &["permission"]),
+            ("slow", &["mcp-cancel"]),
+        ],
+        true,
+        None,
+    );
+    let c = d.client();
+    let b = writable(&d, &c);
+    d.put_handoff(&b);
+    let s = Sessions(&c);
+    // Default: no opt-in, no lease, no MCP servers given to the agent.
+    let id = s.start("plain", false);
+    let v = s.call("session.refresh", json!({})).unwrap();
+    assert_eq!(
+        (
+            v["context"]["enabled"].clone(),
+            v["context"]["active"].clone()
+        ),
+        (json!(false), json!(false))
+    );
+    s.stop(&id);
+    // Explicit opt-in: an active lease the agent actually uses; Stop revokes it.
+    let id = s.start("ctx", true);
+    let v = s.call("session.refresh", json!({})).unwrap();
+    assert_eq!(
+        (
+            v["context"]["enabled"].clone(),
+            v["context"]["active"].clone()
+        ),
+        (json!(true), json!(true))
+    );
+    s.call(
+        "session.prompt",
+        json!({"session_id":id,"prompt":"use the shared context"}),
+    )
+    .unwrap();
+    let v = s.until("context used", |v, c| {
+        v["state"] == "completed"
+            && c["context_calls"].as_u64() >= Some(1)
+            && c["handoff_calls"].as_u64() >= Some(1)
+    });
+    assert_eq!(v["context"]["active"], true);
+    s.stop(&id);
+    s.until("revoked on stop", |_, c| c["active"] == false);
+    // Cancel of a RUNNING turn succeeds, ends the turn and revokes the lease.
+    let id = s.start("slow", true);
+    s.call(
+        "session.prompt",
+        json!({"session_id":id,"prompt":"wait for cancel"}),
+    )
+    .unwrap();
+    s.until("running", |v, c| {
+        v["state"] == "running" && c["active"] == true
+    });
+    s.call("session.cancel", json!({"session_id":id})).unwrap();
+    let v = s.until("cancelled", |v, _| {
+        v["state"] == "completed" && v["stop_reason"] == "cancelled"
+    });
+    assert_eq!(v["context"]["active"], false, "Cancel revokes the lease");
+    assert_eq!(
+        v["view"]["process_alive"], true,
+        "Cancel ends the turn, not the agent"
+    );
+    s.stop(&id);
+    // Child failure revokes the lease.
+    let id = s.start("crash", true);
+    s.call("session.prompt", json!({"session_id":id,"prompt":"crash"}))
+        .unwrap();
+    let v = s.until("failed", |v, _| v["process_alive"] == false);
+    assert_eq!(
+        v["context"]["active"], false,
+        "child failure revokes the lease"
+    );
+    // Daemon restart: no lease or session survives, and only the standard
+    // per-launch credentials exist in the runtime.
+    let _id = s.start("ctx", true);
+    c.close(Duration::from_secs(5));
+    d.restart();
+    let c = d.client();
+    // No Profile adoption after restart: sessions are unavailable until the
+    // operator selects the Profile explicitly; then no session or lease survives.
+    assert_eq!(
+        Sessions(&c).call("session.refresh", json!({})),
+        Err(CallError::Remote("Session unavailable"))
+    );
+    let path = d.root.0.join("state/profile.sqlite3");
+    control(&c, "profile.select", json!({"path": path})).unwrap();
+    let v = Sessions(&c).call("session.refresh", json!({})).unwrap();
+    assert!(v["view"].is_null() && v["context"].is_null(), "{v}");
+    let mut caps: Vec<String> = std::fs::read_dir(&d.runtime)
+        .unwrap()
+        .filter_map(|e| e.ok()?.file_name().into_string().ok())
+        .filter(|n| n.ends_with(".cap"))
+        .collect();
+    caps.sort();
+    assert_eq!(
+        caps,
+        ["agent-alpha.cap", "operator.cap"],
+        "no leftover lease credential"
+    );
+    c.close(Duration::from_secs(5));
+}
+
+#[test]
+fn context_lease_expires_while_the_session_runs() {
+    let d = Daemon::start_configured(&[("slow", &["mcp-cancel"])], true, Some(2));
+    let c = d.client();
+    writable(&d, &c);
+    let s = Sessions(&c);
+    let id = s.start("slow", true);
+    s.until("active", |_, c| c["active"] == true);
+    std::thread::sleep(Duration::from_secs(3));
+    let v = s.until("expired", |_, c| c["active"] == false);
+    assert_eq!(
+        v["view"]["process_alive"], true,
+        "expiry revokes context, not the agent"
+    );
+    s.stop(&id);
     c.close(Duration::from_secs(5));
 }

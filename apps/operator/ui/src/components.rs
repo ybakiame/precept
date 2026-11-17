@@ -14,6 +14,21 @@ pub(super) fn action(
         .disabled(move || !enabled())
         .on_press(callback)
 }
+/// A labelled action whose focus stop reports a closed catalog key (e.g. an
+/// index), never its label or other user/daemon content.
+pub(super) fn keyed_action(
+    model: Signal<Model>,
+    label: impl Into<String>,
+    key: &'static str,
+    index: usize,
+    enabled: impl Fn() -> bool + 'static,
+    callback: impl Fn() + 'static,
+) -> impl IntoElement {
+    ui::button(model, label.into())
+        .probe_key(move || format!("{key}{index}"))
+        .disabled(move || !enabled())
+        .on_press(callback)
+}
 pub(super) fn word_action(
     model: Signal<Model>,
     key: Msg,
