@@ -211,6 +211,10 @@ Cell 'explicit-synthetic-profile-grant-register' {
     "created, repeat refused, write enabled, registered $canonical"
 }
 Cell 'mcp-exactly-two-read-tools-and-context' {
+    # .NET Framework writes Console.InputEncoding's preamble to child stdin on start; on a
+    # UTF-8 (65001) console that is a BOM. Record it, then use BOM-less UTF-8.
+    Log "console input encoding $([Console]::InputEncoding.WebName) cp=$([Console]::InputEncoding.CodePage) preamble=$([Console]::InputEncoding.GetPreamble().Length)"
+    [Console]::InputEncoding = New-Object Text.UTF8Encoding $false
     $psi = New-Object Diagnostics.ProcessStartInfo (Join-Path $bin 'acp-mcp.exe')
     $psi.Arguments = '--runtime-dir "' + $runtime + '" --endpoint ' + $endpoint + ' --project synthetic --capability-file "' + (Join-Path $runtime 'agent-synthetic.cap') + '"'
     $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true; $psi.RedirectStandardInput = $true; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
