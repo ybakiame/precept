@@ -676,10 +676,26 @@ pub async fn main() {
         ui.resize(920, 640);
         ui.key("alt+3");
         ui.wait("section=Preferences");
-        ui.capture("wayland", &out);
+        // Sidebar "Sessions" (Default button) at rest, then under the pointer.
+        // The hover wash must stay a slight tint of the dark rest fill so its
+        // light label stays readable (regression: an inverted mix made it ~text).
+        let rest = ui.capture_sample("wayland", &out, 150, 280);
+        ui.hover(150, 280);
+        let hover = ui.capture_sample("wayland-hover", &out, 150, 280);
+        ui.unhover();
+        let luma = |c: [u8; 3]| (299 * c[0] as u32 + 587 * c[1] as u32 + 114 * c[2] as u32) / 1000;
+        fs::write(
+            out.join("hover.json"),
+            serde_json::to_vec_pretty(&json!({"rest":rest,"hover":hover})).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            luma(hover) < 110 && luma(hover).abs_diff(luma(rest)) <= 40,
+            "hover wash must stay near the rest fill: rest={rest:?} hover={hover:?}"
+        );
         ui.close();
     }
-    record("packaged-wayland-render-resize-navigate-normal-close");
+    record("packaged-wayland-render-resize-navigate-hover-normal-close");
     record("libraries-from-user-distribution-only");
     f.ok(&["health"]);
     record("ui-close-leaves-daemon-running");
