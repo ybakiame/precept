@@ -131,7 +131,7 @@ Cell 'zip-hash-extract-new-dir-manifest-verify' {
     Need (@(Get-ChildItem -LiteralPath $bin -File).Count -eq 5) 'bin must hold exactly five executables'
     # The shipped README must document exactly what this acceptance executes.
     $readme = Get-Content -LiteralPath (Join-Path $acp 'README.txt') -Raw
-    foreach ($needle in 'https://aka.ms/vc14/vc_redist.x64.exe', '$acl.SetOwner($me); $acl.SetAccessRuleProtection($true, $false)', "FileSystemRule".Replace('FileSystemRule', 'FileSystemAccessRule($me, ''FullControl'', ''ContainerInherit,ObjectInherit'', ''None'', ''Allow'')')) {
+    foreach ($needle in 'https://aka.ms/vc14/vc_redist.x64.exe', '$acl.SetOwner($me); $acl.SetAccessRuleProtection($true, $false)', 'FileSystemAccessRule($me, ''FullControl'', ''ContainerInherit,ObjectInherit'', ''None'', ''Allow'')') {
         Need ($readme.Contains($needle)) "README lacks: $needle"
     }
     "$(@($manifest.files).Count) files verified"
