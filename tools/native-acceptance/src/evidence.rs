@@ -70,8 +70,12 @@ fn flush(l: &Ledger) {
     .unwrap();
 }
 pub fn init(out: &Path, surface: &str, sha: &str, binaries: Value) {
+    init_with(out, surface, sha, binaries, CELLS);
+}
+/// Same ledger with an explicit declared cell catalog (e.g. the S1-B WSL mode).
+pub fn init_with(out: &Path, surface: &str, sha: &str, binaries: Value, declared: &[&str]) {
     let start = Instant::now();
-    let cells: Vec<_> = CELLS
+    let cells: Vec<_> = declared
         .iter()
         .map(|id| json!({"id":id,"status":"NOT_RUN","mechanism":null,"event_range":null}))
         .collect();
@@ -162,7 +166,7 @@ pub fn event(kind: &str, observation: Value) {
                     l.value["cells"][index]["owned_ui_event"] = json!(l.event_count);
                 }
             }
-            let event = json!({"index":l.event_count,"cell":l.active.map(|index|CELLS[index]),"time":stamp(l.start),"kind":kind,"observation":observation});
+            let event = json!({"index":l.event_count,"cell":l.active.map(|index|l.value["cells"][index]["id"].clone()),"time":stamp(l.start),"kind":kind,"observation":observation});
             let bytes = serde_json::to_vec(&event).unwrap();
             assert!(bytes.len() <= 4096 && l.stream_bytes + bytes.len() < 8 * 1024 * 1024, "bounded event stream exhausted");
             l.stream.write_all(&bytes).unwrap();

@@ -12,6 +12,13 @@ pub(super) fn apply(model: Signal<Model>) {
     let mut apply = false;
     model.update(|m| apply = m.apply_connection());
     if apply {
+        // Leaving WSL closes its bridge (never the WSL daemon); off the UI thread.
+        #[cfg(feature = "ipc")]
+        if model.get().connection.target != Target::Wsl {
+            spawn(async {
+                let _ = blocking(acp_operator_model::bridge::close_active).await;
+            });
+        }
         load(model);
     }
 }

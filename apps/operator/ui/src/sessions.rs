@@ -18,8 +18,10 @@ pub(super) fn open(model: Signal<Model>) {
 }
 fn enabled(model: Signal<Model>) -> bool {
     let m = model.get();
+    // Local and WSL targets share the daemon-owned session policy; agents run
+    // wherever that daemon runs (inside WSL for the WSL target).
     m.phase == Phase::Ready
-        && m.connection.target == Target::Local
+        && matches!(m.connection.target, Target::Local | Target::Wsl)
         && m.selected_project.is_some()
         && !m.session.busy
 }
@@ -93,8 +95,57 @@ fn start_review(model: Signal<Model>) {
             .as_ref()
             .is_none_or(|v| !v.process_alive)
     {
-        model.update(|m| m.session.confirm_start = true);
+        // Every review starts with context sharing off; it is a separate opt-in.
+        model.update(|m| {
+            m.session.confirm_start = true;
+            m.session.share_context = false;
+        });
     }
+}
+/// Keyboard choice of the configured program (Alt E): next in the daemon's list.
+/// Only without a live agent; it abandons any pending Start review and opt-in.
+fn cycle_executable(model: Signal<Model>) {
+    let m = model.get();
+    if !m.sessions || !enabled(model) || m.session.view.as_ref().is_some_and(|v| v.process_alive) {
+        return;
+    }
+    let Some(list) = m
+        .session
+        .capabilities
+        .as_ref()
+        .map(|c| c.executables.clone())
+    else {
+        return;
+    };
+    if list.is_empty() {
+        return;
+    }
+    let next = list
+        .iter()
+        .position(|e| *e == m.session.executable)
+        .map_or(0, |i| (i + 1) % list.len());
+    model.update(|m| {
+        m.session.executable = list[next].clone();
+        m.session.confirm_start = false;
+        m.session.share_context = false;
+    });
+}
+/// Explicit, separately confirmed per-start opt-in; only inside a Start review.
+fn toggle_share(model: Signal<Model>) {
+    if model.get().sessions && enabled(model) && model.get().session.confirm_start {
+        model.update(|m| m.session.share_context = !m.session.share_context);
+    }
+}
+/// The one Start request: `share_context` is sent only when opted in, and the
+/// opt-in is consumed by this request.
+fn start_request(model: Signal<Model>) {
+    let m = model.get();
+    let mut fields = json!({"executable":m.session.executable,"confirmed":true});
+    if m.session.share_context {
+        fields["share_context"] = true.into();
+    }
+    request(model, "session.start", fields);
+    model.update(|m| m.session.share_context = false);
 }
 fn review_auth_retry(model: Signal<Model>) {
     if model.get().sessions && enabled(model) {
@@ -105,12 +156,7 @@ fn review_auth_retry(model: Signal<Model>) {
 }
 fn confirm_start(model: Signal<Model>) {
     if enabled(model) && model.get().session.confirm_start {
-        let exe = model.get().session.executable;
-        request(
-            model,
-            "session.start",
-            json!({"executable":exe,"confirmed":true}),
-        );
+        start_request(model);
     }
 }
 fn command(model: Signal<Model>, method: &'static str, mut fields: Value) {
@@ -302,6 +348,8 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
         }
     });
     on_key_with("alt+u", global, move |_| review_auth_retry(model));
+    on_key_with("alt+g", global, move |_| toggle_share(model));
+    on_key_with("alt+e", global, move |_| cycle_executable(model));
     on_key_with("alt+8", global, move |_| {
         if model.get().sessions {
             confirm_start(model);
@@ -373,7 +421,9 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
             let _ = summary.get();
             let m = model.get_untracked();
             let mut body = view().gap_2().flex_shrink_0();
-            if m.connection.target != Target::Local || m.phase != Phase::Ready {
+            if !matches!(m.connection.target, Target::Local | Target::Wsl)
+                || m.phase != Phase::Ready
+            {
                 return body.child(text(m.word(Msg::SessionDisabled)));
             }
             if let Some(c) = &m.session.capabilities {
@@ -383,10 +433,10 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                         c.protocol_version, c.session_api_version, "unsupported"
                     )))
                     .child(view().flex_row().flex_wrap().gap_1().children(
-                        c.executables.iter().map(move |label| {
+                        c.executables.iter().enumerate().map(move |(index, label)| {
                             let selected = label.clone();
                             let applied = label.clone();
-                            components::action(
+                            components::keyed_action(
                                 model,
                                 format!(
                                     "{}{}",
@@ -397,11 +447,14 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                                     },
                                     label
                                 ),
+                                "SessionExecutable",
+                                index,
                                 move || enabled(model),
                                 move || {
                                     model.update(|m| {
                                         m.session.executable = applied.clone();
                                         m.session.confirm_start = false;
+                                        m.session.share_context = false;
                                     })
                                 },
                             )
@@ -440,20 +493,29 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                         model,
                         Msg::ConfirmStart,
                         move || enabled(model),
-                        move || {
-                            let exe = model.get().session.executable;
-                            request(
-                                model,
-                                "session.start",
-                                json!({"executable":exe,"confirmed":true}),
-                            );
-                        },
+                        move || start_request(model),
+                    ))
+                    .child(text(m.word(if m.session.share_context {
+                        Msg::ContextShareOn
+                    } else {
+                        Msg::ContextShareOff
+                    })))
+                    .child(word_action(
+                        model,
+                        Msg::ToggleContextShare,
+                        move || enabled(model),
+                        move || toggle_share(model),
                     ))
                     .child(word_action(
                         model,
                         Msg::AbortStart,
                         || true,
-                        move || model.update(|m| m.session.confirm_start = false),
+                        move || {
+                            model.update(|m| {
+                                m.session.confirm_start = false;
+                                m.session.share_context = false;
+                            })
+                        },
                     ));
             } else {
                 body = body.child(word_action(
@@ -480,6 +542,25 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                         format!("{} · {}", m.word(state_word(&v.state)), v.session_id),
                         format!("{}: {}", m.word(Msg::ActiveExecutable), v.executable),
                         format!("{}: {}", m.word(Msg::ProcessAlive), v.process_alive),
+                        match m.session.context {
+                            Some(c) if c.enabled => format!(
+                                "{}: {} · {}: {} / {}",
+                                m.word(Msg::ContextLeaseLabel),
+                                m.word(if c.active {
+                                    Msg::LeaseActive
+                                } else {
+                                    Msg::LeaseRevoked
+                                }),
+                                m.word(Msg::ContextCallCounts),
+                                c.context_calls,
+                                c.handoff_calls
+                            ),
+                            _ => format!(
+                                "{}: {}",
+                                m.word(Msg::ContextLeaseLabel),
+                                m.word(Msg::LeaseNotShared)
+                            ),
+                        },
                         format!("{}: {} · ACP v1", m.word(Msg::AgentVersion), v.agent),
                         format!(
                             "{}: {}",

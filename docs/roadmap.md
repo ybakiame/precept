@@ -234,6 +234,13 @@ conditional; no speculative backup/import/restore/retention is bundled here.
 
 ## Stage 6 — P1-M5 release readiness / Issue #67 (S0 active)
 
+**Progress (2026-11-17):** S1-A Windows portable ZIP ([#70](https://github.com/ybakiame/agent-control-plane/issues/70))
+merged in [PR #71](https://github.com/ybakiame/agent-control-plane/pull/71). Owner decision: the **primary**
+workflow is the Windows HWND GUI operating a daemon inside WSL2 — S1-B
+[#73](https://github.com/ybakiame/agent-control-plane/issues/73) delivers full Operator/Sessions parity over the persistent
+`acp-wsl-bridge` ([evidence](evaluation/p1-m5-s1b-windows-wsl-operator.md)). WSLg + Weston Linux GUI/TUI and the
+Linux `.tar.gz` follow as the secondary S1-C [#72](https://github.com/ybakiame/agent-control-plane/issues/72).
+
 [S0 #68](https://github.com/ybakiame/agent-control-plane/issues/68) audits merged
 main `6d8000153107c67edfa5ff3bc77da15f196623d3` without behavior changes. Deliver
 the [candidate support and release plan](p1/release-readiness-plan.md) and

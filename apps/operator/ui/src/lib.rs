@@ -242,7 +242,43 @@ pub fn App() -> impl IntoElement {
     let model = signal(initial);
     load(model);
     sessions::poll(model);
+    #[cfg(feature = "ipc")]
+    wsl_watch(model);
     console(model).into_element()
+}
+
+/// Live WSL link status every 2 s for a WSL target: a lost bridge (distribution
+/// stopped, helper exited) or an unreachable daemon is shown without waiting
+/// for a user action. It never starts a bridge or a process, and only updates
+/// the display-only `wsl_link` field (page phase, data and guards are untouched).
+#[cfg(feature = "ipc")]
+fn wsl_watch(model: Signal<Model>) {
+    use acp_operator_model::connection::Target;
+    spawn(async move {
+        loop {
+            timer(std::time::Duration::from_secs(2)).await;
+            let connection = model.get_untracked().connection.clone();
+            if connection.target != Target::Wsl {
+                if model.get_untracked().wsl_link.is_some() {
+                    model.update(|m| m.wsl_link = None);
+                }
+                continue;
+            }
+            let probe = connection.clone();
+            let status = blocking(move || {
+                acp_operator_model::native::Inputs::from_connection(&probe)
+                    .ok()
+                    .and_then(|inputs| inputs.wsl_link_status())
+            })
+            .await
+            .unwrap_or(None);
+            if model.get_untracked().connection == connection
+                && model.get_untracked().wsl_link != status
+            {
+                model.update(|m| m.wsl_link = status);
+            }
+        }
+    });
 }
 
 fn console(model: Signal<Model>) -> impl IntoElement {
@@ -361,6 +397,10 @@ fn console(model: Signal<Model>) -> impl IntoElement {
         if std::env::var_os("ACP_UI_PROBE").is_some() {
             let current = model.get();
             eprintln!(
+                "ACP_UI_WSL link={:?} failure={:?}",
+                current.wsl_link, current.read_failure
+            );
+            eprintln!(
                 "ACP_UI_SESSION target={:?} draft={:?} invalid={} settings={} locale={:?} theme={:?} mode={:?} denied={}",
                 current.connection.target,
                 current.connection_draft.target,
@@ -394,6 +434,21 @@ fn console(model: Signal<Model>) -> impl IntoElement {
                         .map_or(0, |c| c.executables.len()),
                     current.session.confirm_start
                 );
+                let lease = current.session.context.unwrap_or_default();
+                eprintln!(
+                    "ACP_NSH_CONTEXT exe={} share={} enabled={} active={} context_calls={} handoff_calls={} stop_reason={:?}",
+                    current.session.executable,
+                    current.session.share_context,
+                    lease.enabled,
+                    lease.active,
+                    lease.context_calls,
+                    lease.handoff_calls,
+                    current
+                        .session
+                        .view
+                        .as_ref()
+                        .and_then(|v| v.stop_reason.as_deref())
+                );
             }
             eprintln!(
                 "ACP_NSH_STATE phase={:?} selected={} rows={} queried_chars={} filter_chars={} section={:?} page={} detail={} dark={} contrast={} elapsed={:.6}",
@@ -423,7 +478,8 @@ mod tests {
         let mut app = nsh_testing::Headless::start(EngineConfig::new(Root::of::<App>())).unwrap();
         app.wait_for("Project: alpha").unwrap();
         app.press_key("alt+6").unwrap();
-        app.wait_for("Choose a native local Daemon target and an allowlisted project. Windows→WSL stays read-only.").unwrap();
+        app.wait_for("Choose a native local or WSL Daemon target and an allowlisted project.")
+            .unwrap();
         app.press_key("mod+shift+s").unwrap();
         assert!(!app.screen().shows("Confirm start on this checkout"));
         app.press_key("mod+shift+c").unwrap();

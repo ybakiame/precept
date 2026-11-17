@@ -183,7 +183,10 @@ impl Model {
         }
     }
     pub fn operator_guard(&self) -> Option<Guard> {
-        (self.connection.target == Target::Local && self.connection.validate()).then(|| Guard {
+        // Local and WSL targets get identical epoch/connection/source fences.
+        (matches!(self.connection.target, Target::Local | Target::Wsl)
+            && self.connection.validate())
+        .then(|| Guard {
             epoch: self.epoch,
             connection: self.connection.clone(),
             project: self.selected_project.clone(),
@@ -695,10 +698,18 @@ impl Model {
             }
             Ok(())
         });
+        // A retry of the pending uncertain mutation that produced no daemon
+        // decision ("Unavailable": nothing was submitted, e.g. a lost WSL bridge
+        // or a stopped daemon) settles nothing: the uncertainty and the exact
+        // request are kept for a later identical retry.
+        let unsubmitted_retry = request.mutation.is_some()
+            && self.operator.outcome_unknown
+            && self.operator.pending.as_ref() == Some(request)
+            && result.as_ref().err() == Some(&"Unavailable");
         self.operator.error = result.err().map(str::to_owned);
         if self.operator.error.is_some() {
             self.operator.outcome_unknown = request.mutation.is_some()
-                && self.operator.error.as_deref() == Some("OutcomeUnknown");
+                && (self.operator.error.as_deref() == Some("OutcomeUnknown") || unsubmitted_retry);
             if !self.operator.outcome_unknown {
                 self.operator.pending = None;
                 self.operator.clear_review_snapshots();
@@ -725,43 +736,97 @@ impl Model {
     }
 }
 
+/// Stable UI error vocabulary for daemon results; shared by the local client
+/// and the WSL bridge helper so both targets report identically.
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+pub(crate) fn operator_error(e: acp_ipc::Error) -> &'static str {
+    match e {
+        acp_ipc::Error::Busy => "Busy",
+        acp_ipc::Error::Capacity => "Capacity",
+        acp_ipc::Error::Conflict => "Conflict",
+        acp_ipc::Error::OutcomeUnknown => "OutcomeUnknown",
+        acp_ipc::Error::Unauthorized | acp_ipc::Error::UnsafeRuntime => "Unauthorized",
+        acp_ipc::Error::RestartRequired => "RestartRequired",
+        acp_ipc::Error::StaleGeneration => "StaleGeneration",
+        acp_ipc::Error::OwnerMismatch => "OwnerMismatch",
+        acp_ipc::Error::IdempotencyConflict => "IdempotencyConflict",
+        acp_ipc::Error::InvalidRequest => "InvalidRequest",
+        acp_ipc::Error::InvalidTransition => "InvalidTransition",
+        acp_ipc::Error::ReviewMismatch => "ReviewMismatch",
+        _ => "Unavailable",
+    }
+}
+
+/// One Operator read/control request or one OperatorWrite mutation against the
+/// daemon at `location`. Authorization stays entirely daemon-side.
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+pub(crate) async fn operator_at(
+    location: &acp_ipc::Location,
+    method: &str,
+    params: Value,
+    mutation: Option<&Mutation>,
+) -> Result<Value, &'static str> {
+    use acp_ipc::operator;
+    match mutation {
+        Some(mutation) => operator::mutate(location, mutation).await,
+        None => operator::control(location, method, params).await,
+    }
+    .map_err(operator_error)
+}
+
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 impl crate::native::Inputs {
     pub fn operator_call(&self, request: &Review) -> Result<Value, &'static str> {
-        use acp_ipc::{Location, operator};
-        if self.wsl_distribution.is_some() || self.runtime_dir.is_none() {
-            return Err("Unauthorized");
+        use crate::bridge::{CallError, Op};
+        if self.wsl_distribution.is_some() {
+            // Operator requests are explicit user actions, so they may restart a
+            // lost bridge (e.g. the identical retry after OutcomeUnknown). Session
+            // polling never does. Nothing is submitted if the bridge cannot start.
+            let Ok(bridge) = self.wsl_bridge(true) else {
+                return Err("Unavailable");
+            };
+            let (op, timeout) = match &request.mutation {
+                Some(mutation) => (
+                    Op::Mutate {
+                        mutation: Box::new(mutation.clone()),
+                    },
+                    std::time::Duration::from_secs(30),
+                ),
+                None => (
+                    Op::Control {
+                        method: request.method.clone(),
+                        params: request.params.clone(),
+                    },
+                    std::time::Duration::from_secs(15),
+                ),
+            };
+            return bridge.call(op, timeout).map_err(|e| match e {
+                CallError::Remote(code) => code,
+                // Delivered (or possibly delivered) but unanswered: a mutation's
+                // effect is unknown. Only an explicit identical retry may settle it.
+                CallError::Lost | CallError::Timeout if request.mutation.is_some() => {
+                    "OutcomeUnknown"
+                }
+                _ => "Unavailable",
+            });
         }
-        let location = Location {
-            runtime_dir: self.runtime_dir.clone().ok_or("Unauthorized")?,
+        let Some(runtime_dir) = self.runtime_dir.clone() else {
+            return Err("Unauthorized");
+        };
+        let location = acp_ipc::Location {
+            runtime_dir,
             endpoint: self.endpoint.clone().ok_or("Unauthorized")?,
         };
-        let result = tokio::runtime::Builder::new_current_thread()
+        tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|_| "Unavailable")?
-            .block_on(async {
-                if let Some(mutation) = &request.mutation {
-                    operator::mutate(&location, mutation).await
-                } else {
-                    operator::control(&location, &request.method, request.params.clone()).await
-                }
-            });
-        result.map_err(|e| match e {
-            acp_ipc::Error::Busy => "Busy",
-            acp_ipc::Error::Capacity => "Capacity",
-            acp_ipc::Error::Conflict => "Conflict",
-            acp_ipc::Error::OutcomeUnknown => "OutcomeUnknown",
-            acp_ipc::Error::Unauthorized | acp_ipc::Error::UnsafeRuntime => "Unauthorized",
-            acp_ipc::Error::RestartRequired => "RestartRequired",
-            acp_ipc::Error::StaleGeneration => "StaleGeneration",
-            acp_ipc::Error::OwnerMismatch => "OwnerMismatch",
-            acp_ipc::Error::IdempotencyConflict => "IdempotencyConflict",
-            acp_ipc::Error::InvalidRequest => "InvalidRequest",
-            acp_ipc::Error::InvalidTransition => "InvalidTransition",
-            acp_ipc::Error::ReviewMismatch => "ReviewMismatch",
-            _ => "Unavailable",
-        })
+            .block_on(operator_at(
+                &location,
+                &request.method,
+                request.params.clone(),
+                request.mutation.as_ref(),
+            ))
     }
 }
 
@@ -826,12 +891,27 @@ mod tests {
     #[test]
     fn no_implicit_grant_or_cross_target_writes() {
         let mut m = model();
+        let local = m.connection.clone();
+        // Synthetic data and an incomplete WSL connection never get Operator access.
         for target in [Target::Synthetic, Target::Wsl] {
             m.connection.target = target;
             assert!(!m.operator_review("confirm", "synthetic-op"));
             assert!(m.operator_read("profile.info").is_none());
         }
-        m.connection.target = Target::Local;
+        // An explicit, valid WSL connection gets the same guarded Operator surface.
+        m.connection = crate::connection::Connection {
+            target: Target::Wsl,
+            distribution: "Synthetic Linux".into(),
+            user: "operator".into(),
+            helper: "/synthetic/acp-wsl-bridge".into(),
+            wsl_runtime: "/synthetic/runtime".into(),
+            wsl_endpoint: "/synthetic/runtime/control.sock".into(),
+            ..Default::default()
+        };
+        assert!(m.operator_guard().is_some());
+        assert!(m.operator_read("profile.info").is_some());
+        m.operator.busy = false;
+        m.connection = local;
         m.operator.info.as_mut().unwrap().write_enabled = false;
         assert!(!m.operator_review("confirm", "synthetic-op"));
         assert!(m.operator_review("enable", "synthetic-op"));
@@ -839,6 +919,33 @@ mod tests {
         let request = m.operator_confirm().unwrap();
         assert_eq!(request.method, "profile.write.enable");
         assert!(request.mutation.is_none());
+    }
+    #[test]
+    fn an_unsubmitted_retry_keeps_the_uncertainty_and_the_exact_request() {
+        let mut m = model();
+        assert!(m.operator_review("confirm", "kept-op"));
+        let request = m.operator_confirm().unwrap();
+        assert!(m.complete_operator(&request, Err("OutcomeUnknown")));
+        // The retry could not be submitted (lost WSL bridge, stopped daemon).
+        let retry = m.operator_retry().unwrap();
+        assert!(m.complete_operator(&retry, Err("Unavailable")));
+        assert!(m.operator.outcome_unknown);
+        assert!(m.operator.pending.as_ref() == Some(&request));
+        // A later identical retry is still possible and settles it once.
+        let again = m.operator_retry().unwrap();
+        assert_eq!(
+            serde_json::to_vec(&again.mutation).unwrap(),
+            serde_json::to_vec(&request.mutation).unwrap()
+        );
+        let receipt = json!({"generation":"b".repeat(32),"operation_id":"kept-op","commit_sequence":2,"affected":[]});
+        assert!(m.complete_operator(&again, Ok(receipt)));
+        assert!(!m.operator.outcome_unknown && m.operator.pending.is_none());
+        // A fresh mutation that was never submitted is not uncertain.
+        let mut fresh = model();
+        assert!(fresh.operator_review("confirm", "fresh-op"));
+        let first = fresh.operator_confirm().unwrap();
+        assert!(fresh.complete_operator(&first, Err("Unavailable")));
+        assert!(!fresh.operator.outcome_unknown && fresh.operator.pending.is_none());
     }
     #[test]
     fn exact_review_revision_and_same_request_only_uncertain_retry() {
@@ -2109,7 +2216,7 @@ mod tests {
 mod native_boundary_tests {
     use super::*;
     #[test]
-    fn wsl_and_offline_never_attempt_operator_ipc_even_with_a_prepared_request() {
+    fn offline_never_and_wsl_only_over_a_live_bridge_attempt_operator_ipc() {
         let mut m = Model::fixture();
         m.connection.target = Target::Local;
         m.connection.runtime = std::env::temp_dir().to_str().unwrap().into();
@@ -2120,12 +2227,15 @@ mod native_boundary_tests {
             crate::native::Inputs::default().operator_call(&request),
             Err("Unauthorized")
         );
+        // Off Windows the WSL transport is unavailable: nothing is submitted.
         let inputs = crate::native::Inputs {
-            runtime_dir: Some(std::env::temp_dir()),
-            endpoint: Some("synthetic".into()),
             wsl_distribution: Some("synthetic".into()),
+            wsl_user: Some("operator".into()),
+            wsl_bridge: Some("/opt/acp-wsl-bridge".into()),
+            wsl_runtime_dir: Some("/tmp/private".into()),
+            wsl_endpoint: Some("/tmp/private/control.sock".into()),
             ..Default::default()
         };
-        assert_eq!(inputs.operator_call(&request), Err("Unauthorized"));
+        assert_eq!(inputs.operator_call(&request), Err("Unavailable"));
     }
 }

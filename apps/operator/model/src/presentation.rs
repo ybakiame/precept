@@ -14,6 +14,11 @@ pub fn sanitize(value: &str, limit: usize) -> String {
 }
 impl Model {
     pub fn read_label(&self) -> &'static str {
+        // A WSL link or launch problem names its exact cause instead of a
+        // generic "disconnected"; it never changes the page phase or data.
+        if let Some(msg) = self.wsl_reason() {
+            return self.word(msg);
+        }
         match self.phase {
             Phase::Loading => self.word(Msg::Reading),
             Phase::Ready if !self.live => self.word(Msg::SyntheticReady),

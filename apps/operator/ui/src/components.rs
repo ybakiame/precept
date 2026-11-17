@@ -14,6 +14,21 @@ pub(super) fn action(
         .disabled(move || !enabled())
         .on_press(callback)
 }
+/// A labelled action whose focus stop reports a closed catalog key (e.g. an
+/// index), never its label or other user/daemon content.
+pub(super) fn keyed_action(
+    model: Signal<Model>,
+    label: impl Into<String>,
+    key: &'static str,
+    index: usize,
+    enabled: impl Fn() -> bool + 'static,
+    callback: impl Fn() + 'static,
+) -> impl IntoElement {
+    ui::button(model, label.into())
+        .probe_key(move || format!("{key}{index}"))
+        .disabled(move || !enabled())
+        .on_press(callback)
+}
 pub(super) fn word_action(
     model: Signal<Model>,
     key: Msg,
@@ -359,7 +374,15 @@ pub(super) fn shell(
                                         .child(
                                             text(move || {
                                                 let m = model.get();
-                                                if m.operator.open {
+                                                // A WSL link/launch problem names its exact cause on
+                                                // every page, including the open Operator panel.
+                                                if let Some(reason) = m.wsl_reason() {
+                                                    format!(
+                                                        "{} · {}",
+                                                        m.target_label(),
+                                                        m.word(reason)
+                                                    )
+                                                } else if m.operator.open {
                                                     format!(
                                                         "{} · {}",
                                                         m.target_label(),
@@ -383,6 +406,9 @@ pub(super) fn shell(
                                                 }
                                             })
                                             .text_color(move || match model.get().phase {
+                                                _ if model.get().wsl_reason().is_some() => {
+                                                    palette(model).error
+                                                }
                                                 Phase::Error | Phase::Unavailable => {
                                                     palette(model).error
                                                 }

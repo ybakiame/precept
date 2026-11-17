@@ -34,12 +34,24 @@ M2 integrated acceptance.
 | `crates/acp-mcp` | Read-only stdio bridge to project-bound IPC | Profile/task/session mutation |
 | `crates/acp-write` | S1 fresh-v1 storage; merged S2 adds guarded existing-v1 attachment through daemon-owned lease/epoch and explicit grant | Arbitrary existing-path Writer, direct UI/CLI writes, generic SQL |
 | `crates/acp-query` | Native operator reads/session controls and S3 typed write requests through authenticated daemon IPC | Direct database access or a second writer |
-| `apps/operator/model`, `apps/operator/ui` | Shared typed presentation and NSH Desktop/TUI surfaces | Direct database access, duplicate resolution logic or autonomous daemon startup |
+| `apps/operator/model`, `apps/operator/ui` | Shared typed presentation and NSH Desktop/TUI surfaces; the `acp-wsl-bridge` stdio helper for the Windows→WSL2 target | Direct database access, duplicate resolution logic, autonomous daemon startup or a second authority in the bridge |
 
 Product crate paths remain as implemented; the operator app moved from `spikes/p1-e`
 to one `apps/operator` workspace, and the historical comparison workspace is
-archived under `docs/archive/gpui-kit-spike`, not removed. Windows→WSL owner queries
-remain read-only.
+archived under `docs/archive/gpui-kit-spike`, not removed.
+
+**Windows → WSL2 (P1-M5/S1-B, primary workflow).** The Windows-native HWND GUI is
+the normal control surface for an ACP daemon that runs inside an explicitly selected
+WSL2 user distribution. WSL owns Linux project paths, the daemon, Profile/runtime
+state and any managed agent processes. The GUI starts one long-lived
+`acp-wsl-bridge` helper per connection with `wsl.exe --distribution D --user U
+--exec /abs/acp-wsl-bridge --runtime-dir R --endpoint E` (no shell, TCP, port
+forwarding or mirrored networking). The helper loads `operator.cap` and
+`operator-write.cap` inside WSL and calls the same `acp-ipc` Operator, OperatorWrite
+and session paths as a local client, so the daemon stays the only authority; tokens
+never cross the stdio boundary. The protocol is in [interfaces](interfaces.md#windows-gui--wsl2-bridge).
+The **secondary** WSLg + Weston Wayland Linux GUI/TUI path ([S1-C #72](https://github.com/ybakiame/agent-control-plane/issues/72))
+connects to the same WSL daemon directly over Unix IPC and does not use the bridge.
 
 The [merged S2 implementation and native evidence](evaluation/p1-m2-s2-ownership.md) add
 single-assignment daemon selection, native file binding, a distinct write role,
