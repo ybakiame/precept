@@ -132,7 +132,7 @@ catalog! {
     Sessions => ("Sessions", "会话"),
     SessionAuthority => ("Operator-controlled agent process. Context/MCP remain read-only. No OS sandbox.", "Agent 进程由操作员控制；上下文和 MCP 保持只读，无 OS 沙箱。"),
     SessionKeys => ("Alt 6 sessions · Alt J prompt · Alt 7 review start · Alt 8 confirm · Alt 9 send · Alt Q cancel · Alt X stop", "Alt 6 会话 · Alt J 提示词 · Alt 7 启动审阅 · Alt 8 确认 · Alt 9 发送 · Alt Q 取消 · Alt X 停止"),
-    SessionHelp => ("Native local host only · ephemeral ACP v1 observation · no persistent resume", "仅原生本机 · ACP v1 临时观测 · 不支持持久恢复"),
+    SessionHelp => ("Native local or WSL daemon host · ephemeral ACP v1 observation · no persistent resume", "原生本机或 WSL Daemon 主机 · ACP v1 临时观测 · 不支持持久恢复"),
     SessionDisabled => ("Choose a native local or WSL Daemon target and an allowlisted project.", "请选择原生本机或 WSL Daemon 目标，以及允许访问的项目。"),
     SessionEmpty => ("No observed session. Configure a trusted executable explicitly on the Daemon.", "尚无已观测会话。请在 Daemon 显式配置可信可执行文件。"),
     SessionRefresh => ("Refresh session", "刷新会话"),

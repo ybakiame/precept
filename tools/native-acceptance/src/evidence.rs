@@ -166,7 +166,7 @@ pub fn event(kind: &str, observation: Value) {
                     l.value["cells"][index]["owned_ui_event"] = json!(l.event_count);
                 }
             }
-            let event = json!({"index":l.event_count,"cell":l.active.map(|index|CELLS[index]),"time":stamp(l.start),"kind":kind,"observation":observation});
+            let event = json!({"index":l.event_count,"cell":l.active.map(|index|l.value["cells"][index]["id"].clone()),"time":stamp(l.start),"kind":kind,"observation":observation});
             let bytes = serde_json::to_vec(&event).unwrap();
             assert!(bytes.len() <= 4096 && l.stream_bytes + bytes.len() < 8 * 1024 * 1024, "bounded event stream exhausted");
             l.stream.write_all(&bytes).unwrap();
