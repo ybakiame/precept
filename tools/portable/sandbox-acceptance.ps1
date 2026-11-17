@@ -119,7 +119,8 @@ Cell 'missing-prerequisite-fails-to-load-all-five' {
     $codes = foreach ($b in $manifest.binaries) {
         $exe = Join-Path $acp $b.file
         # Direct CreateProcess so the no-dialog error mode is inherited.
-        $psi = New-Object Diagnostics.ProcessStartInfo $exe '--help'
+        $psi = New-Object Diagnostics.ProcessStartInfo -ArgumentList $exe
+        $psi.Arguments = '--help'
         $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true
         $p = [Diagnostics.Process]::Start($psi)
         if (-not $p.WaitForExit(15000)) { $p.Kill(); throw "$($b.file) did not exit" }
