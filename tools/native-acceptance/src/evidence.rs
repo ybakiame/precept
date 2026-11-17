@@ -70,8 +70,12 @@ fn flush(l: &Ledger) {
     .unwrap();
 }
 pub fn init(out: &Path, surface: &str, sha: &str, binaries: Value) {
+    init_with(out, surface, sha, binaries, CELLS);
+}
+/// Same ledger with an explicit declared cell catalog (e.g. the S1-B WSL mode).
+pub fn init_with(out: &Path, surface: &str, sha: &str, binaries: Value, declared: &[&str]) {
     let start = Instant::now();
-    let cells: Vec<_> = CELLS
+    let cells: Vec<_> = declared
         .iter()
         .map(|id| json!({"id":id,"status":"NOT_RUN","mechanism":null,"event_range":null}))
         .collect();
