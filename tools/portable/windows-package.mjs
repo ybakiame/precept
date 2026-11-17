@@ -1,10 +1,11 @@
 // Developer-only Windows portable recipe. No install, activation or publish.
 //
 // Archive layout (all entries under one top-level product directory):
-//   ACP/bin/{five product executables, app-local VC++ runtime DLLs}
-//   ACP/runtime/manifest.json   provenance + every other file's size/SHA-256
-//   ACP/notices/                dependency ledger, notice texts, VC++ runtime notice
-//   ACP/README.txt, ACP/LICENSE.txt
+//   ACP/bin/                    five product executables only
+//   ACP/runtime/manifest.json   provenance, prerequisites, every other file's size/SHA-256
+//   ACP/notices/                NOTICE.txt, dependency ledger, notice texts
+//   ACP/README.txt, ACP/LICENSE.txt (Apache-2.0)
+// The Microsoft Visual C++ v14 runtime is a documented user prerequisite, not bundled.
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -16,6 +17,8 @@ export const binaries = ['acp-daemon.exe', 'acp-query.exe', 'acp-mcp.exe', 'acp-
 export const product = 'ACP';
 export const pin = 'b7f31a08478be262fd7b76ec856036fd5b8ffdb0';
 export const target = 'x86_64-pc-windows-msvc';
+// SHA-256 of the canonical https://www.apache.org/licenses/LICENSE-2.0.txt (11,358 bytes).
+export const apacheLicenseSha256 = 'cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30';
 export const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 export class PolicyError extends Error {}
 function requireValue(value, message) { if (!value) throw new PolicyError(message); }
@@ -87,10 +90,10 @@ export function peImports(bytes) {
   return { machine: 'AMD64', subsystem: read16(optional + 68), imports };
 }
 
-// VC++ runtime DLLs required by the ACTUAL PE imports. These are not Windows
-// components, so the archive carries unmodified app-local copies. Debug CRTs
-// are never redistributable and refuse. UCRT (api-ms-win-crt-*) is an OS
-// component on Windows 10+ and is not bundled.
+// VC++ runtime DLLs required by the ACTUAL PE imports. They are not Windows
+// components and are not bundled: the user installs the Microsoft Visual C++
+// v14 Redistributable, at least as new as the MSVC build tools used here.
+// Debug CRTs refuse. UCRT (api-ms-win-crt-*) is an OS component on Windows 10+.
 const vcRelease = /^(vcruntime|msvcp|concrt|vccorlib)140(_[a-z0-9_]+)?\.dll$/;
 const vcDebug = /^((vcruntime|msvcp|concrt|vccorlib)140(_[a-z0-9]+)?d|ucrtbased)\.dll$/;
 export function vcRuntimeImports(records) {
@@ -103,7 +106,6 @@ export function vcRuntimeImports(records) {
   }
   return [...names].sort();
 }
-export const shippedDllName = name => name.slice(0, -4).toUpperCase() + '.dll';
 
 // Packages linked into shipped binaries: normal-dependency closure from the
 // shipped package roots, for the resolved target/features. Build-dependencies
@@ -181,7 +183,7 @@ export function verifyInventory(root, expected) {
 
 // Explicit removal of an owned extracted prototype, never product-data cleanup.
 // Paths are relative to the extraction root, so they start with `ACP/`.
-const removable = /^ACP\/(bin\/(acp-(daemon|query|mcp|nsh-native|nsh-tui)\.exe|(VCRUNTIME|MSVCP|CONCRT|VCCORLIB)140(_[A-Z0-9_]+)?\.dll)|runtime\/manifest\.json|notices\/(dependency-notices\.json|microsoft-visual-cpp-runtime\.txt|[a-f0-9]{64}\.txt)|README\.txt|LICENSE\.txt)$/;
+const removable = /^ACP\/(bin\/acp-(daemon|query|mcp|nsh-native|nsh-tui)\.exe|runtime\/manifest\.json|notices\/(NOTICE\.txt|dependency-notices\.json|[a-f0-9]{64}\.txt)|README\.txt|LICENSE\.txt)$/;
 const productDirectories = ['ACP/bin', 'ACP/runtime', 'ACP/notices', 'ACP'];
 export function removeOwnedProduct(root, files) {
   requireValue(Array.isArray(files) && files.length >= binaries.length + 4 && files.length <= 10000, 'Invalid removal inventory');
@@ -216,8 +218,12 @@ export function build(repo, parent, name, cargoProgram) {
   requireValue(!command('git', ['status', '--porcelain', '--untracked-files=all'], repo), 'Clean committed source required');
   const sha = command('git', ['rev-parse', 'HEAD'], repo), tree = command('git', ['rev-parse', 'HEAD^{tree}'], repo);
   requireValue(/^[a-f0-9]{40}$/.test(sha) && /^[a-f0-9]{40}$/.test(tree), 'Invalid source identity');
-  const redist = process.env.VCToolsRedistDir;
-  requireValue(redist && fs.existsSync(redist), 'VC++ redistributable directory unavailable; no installation attempted');
+  const vcTools = process.env.VCToolsVersion?.trim();
+  requireValue(/^14\.\d+\.\d+$/.test(vcTools ?? ''), 'MSVC v14 build tools environment unavailable; no installation attempted');
+  // The first-party grant is committed source; only the verbatim Apache-2.0 text ships.
+  const license = fs.readFileSync(path.join(repo, 'LICENSE'));
+  requireValue(digest(license) === apacheLicenseSha256, 'LICENSE is not the verbatim Apache-2.0 text');
+  const notice = fs.readFileSync(path.join(repo, 'NOTICE'));
   const report = freshDirectory(parent, name);
   command('pwsh', ['-NoProfile', '-NonInteractive', '-File', path.join(repo, 'tools/portable/private-output.ps1'), '-Directory', report], repo);
   const packageRoot = freshDirectory(report, 'package');
@@ -233,15 +239,14 @@ export function build(repo, parent, name, cargoProgram) {
   const manifest = { format: 2, layout: 'ACP/{bin,runtime,notices}', prototype: true, public_distribution: false,
     source_sha: sha, source_tree: tree, target, profile: 'release', nsh_revision: pin,
     builder: { os_build: os.release(), node: process.version,
-      vc_tools: process.env.VCToolsVersion ?? 'unknown', vc_redist: path.basename(path.resolve(redist)),
+      vc_tools: vcTools,
       windows_sdk: (process.env.WindowsSDKVersion ?? 'unknown').replace(/\\$/, ''),
       cargo: command(cargoProgram, ['--version'], repo, null, env), rustc: command('rustc', ['-Vv'], repo, null, env) },
     rustflags: remaps.map(([, to], i) => `--remap-path-prefix=<${['checkout', 'cargo-home', 'build-output'][i]}>=${to}`),
-    locks: {}, build_commands: [], binaries: [], runtime_dlls: [], files: [],
+    license: 'Apache-2.0', locks: {}, build_commands: [], binaries: [], prerequisites: [], files: [],
     limitations: ['Unsigned product executables; not a release or reproducible-binary claim',
       'OS minimum and clean-target acceptance unverified',
-      'App-local VC++ runtime is not serviced by Windows Update; replace the archive to update it',
-      'First-party license grant and complete third-party notice review pending'] };
+      'Third-party notice review pending; the ledger is not a linker-derived SBOM'] };
   for (const file of ['Cargo.lock', 'apps/operator/Cargo.lock']) manifest.locks[file] = digest(fs.readFileSync(path.join(repo, file)));
   requireValue(fs.readFileSync(path.join(repo, 'apps/operator/ui/Cargo.toml'), 'utf8').includes(pin), 'NSH pin mismatch');
 
@@ -267,44 +272,21 @@ export function build(repo, parent, name, cargoProgram) {
       const bytes = fs.readFileSync(artifact.executable);
       fs.writeFileSync(path.join(bin, file), bytes, { flag: 'wx' });
       regular(path.join(bin, file));
-      manifest.binaries.push({ file: `bin/${file}`, sha256: digest(bytes), size: bytes.length, ...peImports(bytes),
-        builder_path_bytes: builderPathScan(bytes, { checkout: repo, user_home: os.homedir() }) });
+      // Release binaries must not carry builder-private paths (checkout, home, Cargo home, output).
+      const leaked = builderPathScan(bytes, { checkout: repo, user_home: os.homedir(), cargo_home: cargoHome(), build_output: report });
+      requireValue(!Object.values(leaked).some(Boolean), `Builder path bytes in ${file}`);
+      manifest.binaries.push({ file: `bin/${file}`, sha256: digest(bytes), size: bytes.length, ...peImports(bytes), builder_path_bytes: false });
     }
   }
   requireValue(JSON.stringify(manifest.binaries.map(b => path.basename(b.file)).sort()) === JSON.stringify([...binaries].sort()), 'Shipping binary set mismatch');
 
-  // App-local VC++ runtime: exactly the imported release DLLs, unmodified, from the
-  // same Visual Studio installation's redistributable folder that built the binaries.
-  const architecture = path.join(redist, 'x64');
-  const crtFolders = fs.readdirSync(architecture).filter(n => /^Microsoft\.VC\d+\.CRT$/.test(n));
-  requireValue(crtFolders.length === 1, 'Expected exactly one x64 VC++ CRT redistributable folder');
-  const crt = path.join(architecture, crtFolders[0]);
-  const available = new Map(fs.readdirSync(crt).map(n => [n.toLowerCase(), n]));
-  for (const imported of vcRuntimeImports(manifest.binaries)) {
-    requireValue(available.has(imported), 'Imported VC++ runtime is not in the redistributable folder');
-    const source = path.join(crt, available.get(imported));
-    const info = fs.lstatSync(source);
-    requireValue(info.isFile() && !info.isSymbolicLink(), 'Redistributable is not a regular file');
-    const bytes = fs.readFileSync(source), shipped = shippedDllName(imported);
-    fs.writeFileSync(path.join(bin, shipped), bytes, { flag: 'wx' });
-    regular(path.join(bin, shipped));
-    manifest.runtime_dlls.push({ file: `bin/${shipped}`, imported_as: imported, sha256: digest(bytes), size: bytes.length,
-      origin: { kind: 'msvc-redist-app-local', redist_version: manifest.builder.vc_redist, crt_folder: crtFolders[0] },
-      importers: manifest.binaries.filter(b => b.imports.some(i => i.name === imported)).map(b => b.file), ...peImports(bytes) });
-  }
-  requireValue(manifest.runtime_dlls.length > 0, 'Expected VC++ runtime imports');
-
-  // Verify the exact shipped bytes. Product executables are expected to be unsigned.
-  const signatures = JSON.parse(command('pwsh', ['-NoProfile', '-NonInteractive', '-File',
-    path.join(repo, 'tools/portable/authenticode.ps1'), '-Directory', bin], repo));
-  requireValue(Array.isArray(signatures) && signatures.every(s => s && typeof s.file === 'string'), 'Unexpected signature report shape');
-  const signatureOf = file => signatures.find(s => s.file === path.basename(file));
-  for (const dll of manifest.runtime_dlls) {
-    const s = signatureOf(dll.file);
-    requireValue(s && s.status === 'Valid' && /(^|, )O=Microsoft Corporation(,|$)/.test(s.signer ?? ''), 'VC++ runtime lacks a valid Microsoft signature');
-    Object.assign(dll, { authenticode: s.status, signer: s.signer, signer_thumbprint: s.thumbprint, file_version: s.file_version });
-  }
-  for (const b of manifest.binaries) b.authenticode = signatureOf(b.file)?.status ?? 'unknown';
+  // VC++ runtime is a user prerequisite: record exactly what the imports need.
+  const vcImports = vcRuntimeImports(manifest.binaries);
+  requireValue(vcImports.length > 0, 'Expected VC++ runtime imports');
+  manifest.prerequisites.push({ component: 'Microsoft Visual C++ v14 Redistributable (x64)', minimum_version: vcTools,
+    reason: 'installed version must be the same or later than the MSVC build tools used to build these executables',
+    imports: vcImports.map(name => ({ name, importers: manifest.binaries.filter(b => b.imports.some(i => i.name === name)).map(b => b.file) })),
+    download: 'https://aka.ms/vc14/vc_redist.x64.exe', bundled: false });
 
   // Notices: crate-local texts for the linked normal-dependency closure.
   const ledger = { scope: 'normal-dependency closure of shipped packages for target/features; NOT a linker-derived SBOM', packages: [] };
@@ -325,42 +307,23 @@ export function build(repo, parent, name, cargoProgram) {
         }
         ledger.packages.push({ workspace: label, package: pkg.name, version: pkg.version, linkage,
           source: pkg.source ? pkg.source.replace(/#.*$/, '') : 'first-party', declared_license: pkg.license, texts,
-          review: texts.length ? 'PENDING' : 'PENDING: no crate-local notice text found' });
+          review: !pkg.source ? 'FIRST-PARTY: Apache-2.0, see LICENSE.txt and notices/NOTICE.txt'
+            : texts.length ? 'PENDING' : 'PENDING: no crate-local notice text found' });
       }
     }
   }
   fs.writeFileSync(path.join(notices, 'dependency-notices.json'), JSON.stringify(ledger, null, 2) + '\n', { flag: 'wx' });
-  const dllLines = manifest.runtime_dlls.map(d => `  ${path.basename(d.file)}  file version ${d.file_version}  SHA-256 ${d.sha256}`);
-  fs.writeFileSync(path.join(notices, 'microsoft-visual-cpp-runtime.txt'), [
-    'Microsoft Visual C++ runtime (app-local copies)', '',
-    ...dllLines, '',
-    `Copied unmodified from the Visual Studio ${manifest.builder.vc_redist} x64 ${crtFolders[0]} redistributable`,
-    'folder used to build these executables. Copyright (c) Microsoft Corporation. Distributed as',
-    'Visual Studio "Distributable Code" subject to the Microsoft Software License Terms; see',
-    'https://learn.microsoft.com/visualstudio/releases/2026/redistribution . Each file carries a',
-    'Microsoft Authenticode signature (recorded in runtime/manifest.json).', '',
-    'App-local copies are not updated by Windows Update. Security fixes require replacing this',
-    'archive with a newer build. Publication remains subject to owner license review.', ''].join('\r\n'), { flag: 'wx' });
-
+  fs.writeFileSync(path.join(notices, 'NOTICE.txt'), notice, { flag: 'wx' });
   fs.copyFileSync(path.join(repo, 'tools/portable/README-portable.txt'), path.join(acp, 'README.txt'), fs.constants.COPYFILE_EXCL);
-  // Never invent a first-party grant: copy a committed root license if one exists.
-  const firstParty = ['LICENSE', 'LICENSE.txt', 'LICENSE.md'].map(f => path.join(repo, f)).find(f => fs.existsSync(f));
-  if (firstParty) fs.copyFileSync(firstParty, path.join(acp, 'LICENSE.txt'), fs.constants.COPYFILE_EXCL);
-  else fs.writeFileSync(path.join(acp, 'LICENSE.txt'), [
-    'LICENSE STATUS: PENDING OWNER DECISION', '',
-    'This is a local, unpublished prototype. The repository contains no committed first-party',
-    'license text, and Cargo package metadata is not a license grant. No rights are granted by',
-    'this file. Third-party notices are in notices/; their review is also pending.',
-    'Do not publish or redistribute this archive.', ''].join('\r\n'), { flag: 'wx' });
-  manifest.first_party_license = firstParty ? `copied from ${path.basename(firstParty)}` : 'PENDING_OWNER_DECISION';
+  fs.writeFileSync(path.join(acp, 'LICENSE.txt'), license, { flag: 'wx' });
   manifest.notices = { linked_packages: ledger.packages.filter(p => p.linkage === 'linked').length,
     compile_time_packages: ledger.packages.filter(p => p.linkage !== 'linked').length,
-    without_text: ledger.packages.filter(p => !p.texts.length).length };
+    third_party_without_text: ledger.packages.filter(p => p.source !== 'first-party' && !p.texts.length).length };
   manifest.files = inventory(acp);
   fs.writeFileSync(path.join(runtime, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx' });
 
   // No private source paths, credentials or raw compiler diagnostics in archive text.
-  for (const file of ['runtime/manifest.json', 'notices/dependency-notices.json', 'notices/microsoft-visual-cpp-runtime.txt', 'README.txt', 'LICENSE.txt']) {
+  for (const file of ['runtime/manifest.json', 'notices/dependency-notices.json', 'notices/NOTICE.txt', 'README.txt', 'LICENSE.txt']) {
     const scan = builderPathScan(fs.readFileSync(path.join(acp, file)), { checkout: repo, user_home: os.homedir(), report });
     requireValue(!Object.values(scan).some(Boolean), 'Private build path in archive metadata');
   }

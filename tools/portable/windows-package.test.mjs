@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { binaries, builderPathScan, cargoEnvironment, digest, freshDirectory, normalClosure, peImports, regular,
-  removeOwnedProduct, shippedDllName, vcRuntimeImports, verifyInventory } from './windows-package.mjs';
+import { apacheLicenseSha256, binaries, builderPathScan, cargoEnvironment, digest, freshDirectory, normalClosure, peImports,
+  regular, removeOwnedProduct, vcRuntimeImports, verifyInventory } from './windows-package.mjs';
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'acp-package-test-'));
@@ -51,13 +51,18 @@ test('shipping contract is exactly five product entrypoints', () => {
   assert.deepEqual([...binaries].sort(), ['acp-daemon.exe','acp-mcp.exe','acp-nsh-native.exe','acp-nsh-tui.exe','acp-query.exe']);
 });
 
-test('app-local VC++ runtime set follows actual imports; debug CRTs refuse; UCRT is not bundled', () => {
+test('committed first-party LICENSE is the verbatim Apache-2.0 text and NOTICE names the holder', () => {
+  const repo = path.resolve(import.meta.dirname, '../..');
+  assert.equal(digest(fs.readFileSync(path.join(repo, 'LICENSE'))), apacheLicenseSha256);
+  assert.match(fs.readFileSync(path.join(repo, 'NOTICE'), 'utf8'), /^Agent Control Plane\nCopyright 2026 ybakiame\n/);
+});
+
+test('VC++ prerequisite set follows actual imports; debug CRTs refuse; UCRT is not listed', () => {
   const record = (...names) => ({ imports: names.map(name => ({ name, delayed: false })) });
   const imports = vcRuntimeImports([
     record('kernel32.dll', 'vcruntime140.dll', 'api-ms-win-crt-runtime-l1-1-0.dll'),
     record('vcruntime140.dll', 'vcruntime140_1.dll', 'd3d11.dll')]);
   assert.deepEqual(imports, ['vcruntime140.dll', 'vcruntime140_1.dll']);
-  assert.deepEqual(imports.map(shippedDllName), ['VCRUNTIME140.dll', 'VCRUNTIME140_1.dll']);
   assert.deepEqual(vcRuntimeImports([record('msvcp140_codecvt_ids.dll', 'vcruntime140_threads.dll')]), ['msvcp140_codecvt_ids.dll', 'vcruntime140_threads.dll']);
   for (const debug of ['vcruntime140d.dll', 'vcruntime140_1d.dll', 'msvcp140d.dll', 'ucrtbased.dll']) {
     assert.throws(() => vcRuntimeImports([record(debug)]));
@@ -102,8 +107,8 @@ test('builder path scan finds ASCII/UTF-16, either separator, any case, and repo
 });
 
 function product(root) {
-  const names = [...binaries.map(b => `ACP/bin/${b}`), 'ACP/bin/VCRUNTIME140.dll', 'ACP/bin/VCRUNTIME140_1.dll',
-    'ACP/runtime/manifest.json', 'ACP/notices/dependency-notices.json', 'ACP/notices/microsoft-visual-cpp-runtime.txt',
+  const names = [...binaries.map(b => `ACP/bin/${b}`),
+    'ACP/runtime/manifest.json', 'ACP/notices/dependency-notices.json', 'ACP/notices/NOTICE.txt',
     `ACP/notices/${'a'.repeat(64)}.txt`, 'ACP/README.txt', 'ACP/LICENSE.txt'];
   for (const dir of ['ACP', 'ACP/bin', 'ACP/runtime', 'ACP/notices']) fs.mkdirSync(path.join(root, dir));
   return names.map(file => { fs.writeFileSync(path.join(root, file), 'product'); return { file, sha256: digest(Buffer.from('product')) }; });
@@ -112,7 +117,7 @@ test('removal preflights every file, refuses forged paths, retains Profile/auth/
   const root = fixture(t);
   const files = product(root);
   for (const name of ['profile.sqlite3', 'operator.cap', 'unknown.txt']) fs.writeFileSync(path.join(root, name), 'retain');
-  for (const forged of ['../operator.cap', 'ACP/../operator.cap', 'operator.cap', 'ACP/bin/evil.dll', 'ACP/runtime/operator.cap', 'ACP/bin/acp-daemon.exe.bak']) {
+  for (const forged of ['../operator.cap', 'ACP/../operator.cap', 'operator.cap', 'ACP/bin/evil.dll', 'ACP/bin/VCRUNTIME140.dll', 'ACP/runtime/operator.cap', 'ACP/bin/acp-daemon.exe.bak']) {
     assert.throws(() => removeOwnedProduct(root, [...files, { file: forged, sha256: digest(Buffer.from('retain')) }]));
   }
   const changed = path.join(root, 'ACP/README.txt'); fs.writeFileSync(changed, 'changed');
@@ -139,5 +144,5 @@ test('removal keeps a product directory holding an unknown file and never follow
   for (const dir of ['runtime', 'notices']) fs.cpSync(path.join(outside, 'ACP', dir), path.join(aliased, 'ACP', dir), { recursive: true });
   for (const file of ['README.txt', 'LICENSE.txt']) fs.copyFileSync(path.join(outside, 'ACP', file), path.join(aliased, 'ACP', file));
   assert.throws(() => removeOwnedProduct(aliased, listed));
-  assert.equal(fs.readdirSync(path.join(outside, 'ACP/bin')).length, binaries.length + 2);
+  assert.equal(fs.readdirSync(path.join(outside, 'ACP/bin')).length, binaries.length);
 });

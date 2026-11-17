@@ -24,21 +24,25 @@ Archive layout (one top-level directory, so extraction never scatters files):
 
 ```
 ACP/
-├── bin/          five product executables + VCRUNTIME140.dll, VCRUNTIME140_1.dll
-├── runtime/      manifest.json: provenance + size/SHA-256 of every other file
-├── notices/      dependency-notices.json, <sha256>.txt texts, VC++ runtime notice
-├── README.txt
-└── LICENSE.txt   committed root license if present, otherwise PENDING status text
+├── bin/          the five product executables only
+├── runtime/      manifest.json: provenance, prerequisites, size/SHA-256 of every other file
+├── notices/      NOTICE.txt, dependency-notices.json, <sha256>.txt license texts
+├── README.txt    includes the prerequisite and verification instructions
+└── LICENSE.txt   the committed root LICENSE (verbatim Apache-2.0, hash-checked)
 ```
 
-The VC++ DLLs are exactly the release runtime DLLs the PE imports name, copied
-unmodified from `%VCToolsRedistDir%\x64\Microsoft.VC*.CRT` of the same Visual
-Studio that built the binaries. The staged copies must carry a valid Microsoft
-Authenticode signature; debug CRTs refuse; UCRT stays an OS component. Microsoft
-permits this app-local deployment but does not service it: a VC++ security fix
-needs a rebuilt archive. Cargo runs with inherited `RUSTFLAGS`/wrapper/target/profile
-overrides removed and `--remap-path-prefix` for checkout, Cargo home and build output.
-The recipe scans each binary for remaining checkout/home bytes and records booleans.
+The Microsoft Visual C++ v14 Redistributable (x64) is a **documented user
+prerequisite, not bundled** (owner decision): app-local copies would not be serviced
+by Windows Update. The recipe derives the required DLLs from the actual PE imports,
+refuses debug CRTs and records `prerequisites[].minimum_version` = the MSVC build
+tools version (the installed redistributable must be the same or later). Smoke
+asserts each process loads the VC++ runtime from the Windows installation and
+nothing but the executable from `ACP\bin`.
+
+Cargo runs with inherited `RUSTFLAGS`/wrapper/target/profile overrides removed and
+`--remap-path-prefix` for checkout, Cargo home and build output. Any remaining
+checkout, home, Cargo-home or build-output bytes (ASCII or UTF-16) in a binary
+**refuse the build**.
 
 ```powershell
 ./tools/portable/windows-package.ps1 -OutputParent artifacts/local-p1-m5 -Name zip-attempt-01
@@ -54,9 +58,9 @@ The ZIP name carries its source SHA suffix; the exact archive hash/file list liv
 `ACP/runtime/manifest.json` identifies clean source SHA/tree, both locks, target/flags,
 builder, VC++ redistributable version/signer and every other file's hash. This is a reproducible recipe,
 not a deterministic-output, signed, completed-SBOM or complete-license claim.
-First-party grant/text and third-party obligations remain owner/review gates.
-Path remapping does not reach `env!("CARGO_MANIFEST_DIR")`: the compiled IPC runtime
-guard still embeds the builder checkout, so the recorded scan is expected to be true. Keep all
+First-party license: Apache-2.0 (`LICENSE`, `NOTICE`). Third-party obligations remain a review gate.
+Product code embeds no build-host path; the IPC runtime refuses any `.git` checkout
+ancestor generically instead of a compiled-in source path. Keep all
 artifacts private until that separate exclusion is resolved without deleting guards.
 
 `windows-smoke.ps1` builds only the separate non-shipping harness and runs its

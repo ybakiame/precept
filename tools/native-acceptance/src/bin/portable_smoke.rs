@@ -272,11 +272,12 @@ struct Package {
     manifest: Value,
 }
 impl Package {
-    /// Shipped executables and app-local runtime DLLs, as `bin/<name>`.
+    /// Shipped executables, as `bin/<name>`.
     fn shipped(&self) -> Vec<String> {
-        ["binaries", "runtime_dlls"]
+        self.manifest["binaries"]
+            .as_array()
+            .unwrap()
             .iter()
-            .flat_map(|k| self.manifest[*k].as_array().unwrap())
             .map(|m| m["file"].as_str().unwrap().to_owned())
             .collect()
     }
@@ -290,7 +291,8 @@ impl Package {
             .collect()
     }
     /// Records loaded modules of one owned process and proves that every VC++
-    /// runtime DLL it imports was loaded from the package's own bin directory.
+    /// runtime DLL it imports came from the installed Windows prerequisite and
+    /// that nothing beside the executable was loaded from the package.
     fn modules(&self, pid: u32, exe: &str, out: &Path, worker: &str, surface: &str) {
         let script = Path::new(worker)
             .parent()
@@ -317,31 +319,38 @@ impl Package {
                 .all(|m| m["location"] != "external-component-review-required"),
             "{surface}: module loaded from outside the package and Windows tree"
         );
+        assert!(
+            loaded.iter().all(|m| m["location"] != "packaged-app-local"),
+            "{surface}: unexpected module loaded from the package bin directory"
+        );
         let importer = format!("bin/{exe}");
         let mut checked = 0;
-        for dll in self.manifest["runtime_dlls"].as_array().unwrap() {
-            if !dll["importers"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|i| i == importer.as_str())
-            {
-                continue;
+        for prerequisite in self.manifest["prerequisites"].as_array().unwrap() {
+            for import in prerequisite["imports"].as_array().unwrap() {
+                if !import["importers"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|i| i == importer.as_str())
+                {
+                    continue;
+                }
+                let name = import["name"].as_str().unwrap();
+                let found: Vec<_> = loaded
+                    .iter()
+                    .filter(|m| m["name"].as_str().unwrap().eq_ignore_ascii_case(name))
+                    .collect();
+                assert!(
+                    found.len() == 1 && found[0]["location"] == "windows-component-or-driver",
+                    "{surface}: {name} not loaded from the installed system prerequisite"
+                );
+                checked += 1;
             }
-            let name = dll["imported_as"].as_str().unwrap();
-            let found: Vec<_> = loaded
-                .iter()
-                .filter(|m| m["name"].as_str().unwrap().eq_ignore_ascii_case(name))
-                .collect();
-            assert!(
-                found.len() == 1
-                    && found[0]["location"] == "packaged-app-local"
-                    && found[0]["sha256"] == dll["sha256"],
-                "{surface}: {name} not loaded from the packaged app-local copy"
-            );
-            checked += 1;
         }
-        assert!(checked > 0, "{surface}: no app-local VC++ runtime import");
+        assert!(
+            checked > 0,
+            "{surface}: no VC++ runtime prerequisite import"
+        );
     }
 }
 #[tokio::main]
@@ -381,10 +390,11 @@ async fn main() {
         );
     }
     let before = package.hashes();
+    assert_eq!(before.len(), 5, "exactly five product executables");
     assert_eq!(
-        before.len(),
-        7,
-        "five executables and two VC++ runtime DLLs"
+        fs::read_dir(&bins).unwrap().count(),
+        5,
+        "bin holds only the product executables"
     );
     transport::private_dir(&bins, false).unwrap();
     for b in &before {
@@ -594,7 +604,7 @@ async fn main() {
         ui.close();
     }
     record("packaged-hwnd-render-resize-normal-close");
-    record("app-local-vc-runtime-loaded-by-daemon-conpty-hwnd");
+    record("vc-runtime-prerequisite-loaded-from-system-by-daemon-conpty-hwnd");
     f.ok(&["health"]);
     record("ui-close-leaves-daemon-running");
     let state_before = Sha256::digest(fs::read(&db).unwrap());

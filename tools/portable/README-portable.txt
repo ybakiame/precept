@@ -6,15 +6,27 @@ Layout
   bin\acp-mcp.exe           MCP stdio server with two project-bound read-only tools
   bin\acp-nsh-native.exe    native Desktop (HWND)
   bin\acp-nsh-tui.exe       terminal UI (ConPTY)
-  bin\VCRUNTIME140*.dll     unmodified Microsoft Visual C++ runtime, app-local copies
-  runtime\manifest.json     source/build provenance and SHA-256 of every other file
-  notices\                  dependency notice ledger/texts and VC++ runtime notice
-  LICENSE.txt               first-party license status
+  runtime\manifest.json     provenance, prerequisites and SHA-256 of every other file
+  notices\                  NOTICE.txt, third-party dependency ledger and license texts
+  LICENSE.txt               Apache License 2.0 (Copyright 2026 ybakiame; see notices\NOTICE.txt)
 
 No installer, Windows service, PATH edit, elevation, registry change, scheduled task,
 auto-update, Profile discovery/creation or model invocation is performed by extraction.
-No signing, supported OS minimum, clean-machine or completed license claim is made.
-The VC++ runtime DLLs are not updated by Windows Update; replace the whole archive.
+No signing, supported OS minimum, clean-machine or completed third-party notice claim is made.
+
+Prerequisites (not included; install them yourself, nothing here installs them)
+  Windows x64. ACP's exact minimum build is not yet established; the VC++ v14
+  Redistributable itself supports Windows 10/11 and Windows Server 2016 or later.
+  Microsoft Visual C++ v14 Redistributable (x64), version at least the
+  "minimum_version" in runtime\manifest.json "prerequisites". The latest supported
+  version always qualifies; Microsoft's permalink:
+    https://aka.ms/vc14/vc_redist.x64.exe
+  Installing it needs administrator rights and is serviced by Windows Update.
+  All five programs need VCRUNTIME140.dll; the Desktop also needs VCRUNTIME140_1.dll.
+  Without it, Windows reports that VCRUNTIME140.dll was not found and nothing starts.
+  Read-only check of the installed version (no output means not installed):
+    Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64' -ErrorAction SilentlyContinue | Select-Object Version, Installed
+  Git is optional and external; it is needed only for live repository evidence.
 
 Before first use
 Extract into a NEW private local directory; never extract over an existing tree.
