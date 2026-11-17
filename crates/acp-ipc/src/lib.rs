@@ -68,20 +68,18 @@ impl Location {
             .runtime_dir
             .canonicalize()
             .map_err(|_| Error::UnsafeRuntime)?;
-        // Credentials never belong in a project checkout. Managed temp mount
-        // roots can themselves carry platform Git metadata; descendants that
-        // are actual checkouts remain forbidden.
+        // Credentials never belong in a project checkout: any Git checkout,
+        // worktree or submodule (`.git` directory or file) at or above the
+        // runtime refuses, including this product's own source checkout. No
+        // build-host path is compiled in. Managed temp mount roots can
+        // themselves carry platform Git metadata; descendants that are actual
+        // checkouts remain forbidden.
         let temp = std::env::temp_dir()
             .canonicalize()
             .map_err(|_| Error::UnsafeRuntime)?;
-        let build_checkout = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .canonicalize()
-            .ok();
-        if build_checkout.as_ref().is_some_and(|p| root.starts_with(p))
-            || root
-                .ancestors()
-                .any(|p| p != temp && p.join(".git").exists())
+        if root
+            .ancestors()
+            .any(|p| p != temp && p.join(".git").exists())
         {
             return Err(Error::UnsafeRuntime);
         }
@@ -410,6 +408,45 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn runtime_below(parent: &Path) -> Location {
+        let runtime_dir = parent.join("runtime");
+        transport::private_dir(&runtime_dir, true).unwrap();
+        Location {
+            runtime_dir,
+            endpoint: "checkout-guard".into(),
+        }
+    }
+    #[test]
+    fn runtime_inside_any_git_checkout_or_worktree_refuses() {
+        let temp = tempfile::Builder::new()
+            .prefix("acp-checkout-guard-")
+            .tempdir()
+            .unwrap();
+        // Plain private directory below the temp root is accepted.
+        let plain = temp.path().join("plain");
+        fs::create_dir(&plain).unwrap();
+        assert!(runtime_below(&plain).root().is_ok());
+        // A checkout `.git` directory, at any ancestor depth, refuses.
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(repo.join(".git")).unwrap();
+        fs::create_dir(repo.join("nested")).unwrap();
+        assert_eq!(runtime_below(&repo).root(), Err(Error::UnsafeRuntime));
+        assert_eq!(
+            runtime_below(&repo.join("nested")).root(),
+            Err(Error::UnsafeRuntime)
+        );
+        // A linked worktree or submodule has a `.git` FILE; it refuses too.
+        let worktree = temp.path().join("worktree");
+        fs::create_dir(&worktree).unwrap();
+        fs::write(worktree.join(".git"), "gitdir: elsewhere\n").unwrap();
+        assert_eq!(runtime_below(&worktree).root(), Err(Error::UnsafeRuntime));
+        // Relative runtime paths refuse before any filesystem inspection.
+        let relative = Location {
+            runtime_dir: PathBuf::from("runtime"),
+            endpoint: "checkout-guard".into(),
+        };
+        assert_eq!(relative.root(), Err(Error::UnsafeRuntime));
+    }
     #[tokio::test]
     async fn framing_rejects_oversize_and_malformed() {
         let (mut a, mut b) = tokio::io::duplex(64);
