@@ -24,7 +24,8 @@ Runtime dependencies (not included; OS-owned libraries are never bundled)
 
 Before first use
 Extract into a NEW private directory as your normal user; never over an existing tree:
-  mkdir -m 700 ~/acp-portable && tar -xzf acp-linux-x86_64-prototype-*.tar.gz -C ~/acp-portable
+  mkdir -m 700 ~/acp-portable && tar --keep-old-files -xzf acp-linux-x86_64-prototype-*.tar.gz -C ~/acp-portable
+(--keep-old-files makes tar fail instead of overwriting an existing file.)
 Verify the externally recorded archive SHA-256, then every file (from ~/acp-portable/ACP):
   python3 -c 'import json,hashlib;m=json.load(open("runtime/manifest.json"));[exit("mismatch "+f["file"]) for f in m["files"] if hashlib.sha256(open(f["file"],"rb").read()).hexdigest()!=f["sha256"]]'
 Keep the product directory writable only by you.
@@ -47,6 +48,7 @@ Close the Desktop normally; TUI Ctrl+Q exits and restores the terminal. UI close
 NOT stop the daemon. In the daemon's terminal use Ctrl+C and wait for it to exit.
 
 Remove
-After all processes exit, remove ONLY the files listed in runtime/manifest.json, then
+After all ACP processes exit (Linux lets a running executable be deleted, so check
+first), remove ONLY the files listed in runtime/manifest.json, then
 runtime/manifest.json, then the empty bin, runtime and notices directories and ACP.
 Never recursively delete a Profile, runtime or unknown directory.
