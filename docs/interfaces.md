@@ -67,7 +67,8 @@ Ignored files, submodule internals and external/device state are not attested.
 The operator-only `session.*` extension uses session API v2 inside IPC v2. It needs
 explicit trusted executable configuration and confirmed Start. Reads, prompt,
 permission-once/deny, cancel, stop and opt-in context controls remain separate.
-The Windows-to-WSL read helper cannot execute these operations. See the
+A Windows GUI reaches a WSL daemon's sessions only through the typed bridge below;
+the daemon's executable configuration, policy and leases stay authoritative. See the
 [session runtime](p1/agent-session-runtime.md) and [auth contract](p1/agent-authentication.md).
 Authentication is observed readiness; no login RPC, credential UI or automatic retry.
 
@@ -80,3 +81,42 @@ semantics and never gain write authority. See the [lease contract](p1/session-co
 
 The retired prototype interfaces are available only in marked historical reports
 and Git history. Current build/setup/verification is [Rust-only](p1/rust-only-development.md).
+
+## Windows GUI → WSL2 bridge
+
+P1-M5/S1-B. One long-lived `acp-wsl-bridge` process per active WSL connection,
+started only by an explicit user action (connect, Reconnect, navigation, or an
+Operator action) as `wsl.exe --distribution D --user U --exec /abs/acp-wsl-bridge
+--runtime-dir R --endpoint E`. The distribution, user and three paths are validated
+explicit inputs; project, task and request data never appear in argv.
+
+- **Framing:** u32 big-endian length + JSON. Client→helper frames ≤ 256 KiB;
+  helper→client ≤ 5 MiB. Empty or oversized frames end the stream.
+- **Hello:** the helper's first frame is `{"version":1,"id":0,"ok":{"bridge":"acp-wsl-bridge","version":1}}`;
+  any other identity or version refuses the connection.
+- **Requests:** `{"version":1,"id":N,"op":{...}}`, strict fields, `id` ≥ 1, at most
+  8 in flight. `op.type` is exactly one of `snapshot`, `control` (the Operator
+  read/control allowlist: `profile.info|create|select|write.enable|write.disable`,
+  `profile.preferences.list|get`, `profile.review.queue|inspect`, `profile.handoff.get`),
+  `mutate` (one OperatorWrite `Mutation`), `session` (`session.refresh|start|prompt|permission|cancel|stop`)
+  or `cancel` (abandon an in-flight id; no reply of its own). Anything else is
+  `Unsupported`/`InvalidRequest`. There is no generic IPC forwarding or shell.
+- **Replies:** `{"version":1,"id":N,"ok":…}` or `{"version":1,"id":N,"error":"Code"}`,
+  exactly one of the two. Error codes are a fixed vocabulary; the Windows side maps
+  anything else to `Unavailable` and never displays helper text verbatim. An
+  unsolicited, mismatched or ambiguous reply ends the bridge.
+- **Authority:** capabilities load inside WSL. Operator control and the exact
+  Profile/generation/owner-epoch-bound OperatorWrite capability stay separate. The
+  helper never validates or approves a mutation, opens SQLite or links the Writer.
+- **Uncertainty:** a mutation whose bridge times out or is lost after the request
+  may have been delivered is `OutcomeUnknown`. Nothing is retried automatically.
+  Only the explicit identical retry (same operation ID, binding and epoch) settles
+  it; a retry that cannot be submitted keeps the uncertainty.
+- **Lifecycle:** session polling and Operator calls reuse the live bridge; polling
+  never starts one, so a stopped distribution or lost helper is an explicit
+  unavailable state. Closing the GUI or leaving the WSL target closes the helper
+  (stdin EOF; in-flight work finishes briefly) without stopping the WSL daemon or
+  touching Profile, auth or runtime files.
+- **Non-goals:** no daemon start, Profile selection, write enable, agent launch or
+  authentication by the bridge; no MCP writes; no context-sharing UI (the native
+  GUI does not expose it; it remains a CLI session-start option).
