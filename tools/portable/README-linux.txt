@@ -22,6 +22,14 @@ Runtime dependencies (not included; OS-owned libraries are never bundled)
   The Desktop needs a Wayland session (WSLg provides one); the TUI needs only a
   terminal. Git is optional and external (live repository evidence only).
 
+GPU rendering on WSLg (optional)
+  By default Mesa renders the Desktop in software on WSLg, because WSLg's Weston
+  exposes no GPU device to Wayland clients. To use the Windows GPU through WSL's
+  d3d12 driver, set this for the Desktop process only (nothing in this archive sets it):
+    GALLIUM_DRIVER=d3d12 ./bin/acp-nsh-native --runtime-dir ... --endpoint ... --operator
+  It uses WSL's own /usr/lib/wsl libraries; no extra package is needed. If the Desktop
+  misbehaves, start it without the variable to return to software rendering.
+
 Before first use
 Extract into a NEW private directory as your normal user; never over an existing tree:
   mkdir -m 700 ~/acp-portable && tar --keep-old-files -xzf acp-linux-x86_64-prototype-*.tar.gz -C ~/acp-portable
