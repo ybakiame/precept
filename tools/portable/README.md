@@ -105,11 +105,10 @@ A developer-host PASS never satisfies the independent clean-target, second-user,
 offline runtime closure or stable minimum Windows version gate. No VM availability
 means BLOCKED/NOT_RUN, not installing a VM or changing the daily machine.
 
-Linux **S1-B remains required**: use S1-A file-list/provenance/retention lessons to
-plan an independently scoped archive/ELF dependency slice with both native Wayland
-Desktop and PTY TUI on one clean standalone x86_64 distro/compositor. A `.tar.gz` is
-recommended pending GTK/libc/media closure; WSLg cannot satisfy standalone acceptance.
-Do not automatically implement Linux packaging, a compositor matrix or new UI stack.
+Standalone Linux x86_64 native Wayland + PTY acceptance remains a separate future gate;
+WSLg does not satisfy it. S1-C validates the WSLg integration and a local-only Linux
+package recipe on Ubuntu 24.04 WSL2. Do not infer general Linux support, add a compositor
+matrix, or upload the generated archive as a PR/Release asset.
 
 ## Linux x86_64 `.tar.gz` (M5/S1-C)
 
