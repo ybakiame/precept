@@ -358,7 +358,11 @@ async fn main() {
     assert_eq!(args.len(), 4, "EXTRACTED_PACKAGE NEW_REPORT WINDOW_WORKER");
     let acp = PathBuf::from(&args[1]).canonicalize().unwrap().join("ACP");
     let out = PathBuf::from(&args[2]);
-    fs::create_dir(&out).unwrap();
+    // Private (0700) from creation: evidence names private fixture paths.
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        fs::DirBuilder::new().mode(0o700).create(&out).unwrap();
+    }
     let manifest: Value =
         serde_json::from_slice(&fs::read(acp.join("runtime/manifest.json")).unwrap()).unwrap();
     let package = Package {
