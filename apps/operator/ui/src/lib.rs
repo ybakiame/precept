@@ -423,7 +423,8 @@ mod tests {
         let mut app = nsh_testing::Headless::start(EngineConfig::new(Root::of::<App>())).unwrap();
         app.wait_for("Project: alpha").unwrap();
         app.press_key("alt+6").unwrap();
-        app.wait_for("Choose a native local Daemon target and an allowlisted project. Windows→WSL stays read-only.").unwrap();
+        app.wait_for("Choose a native local or WSL Daemon target and an allowlisted project.")
+            .unwrap();
         app.press_key("mod+shift+s").unwrap();
         assert!(!app.screen().shows("Confirm start on this checkout"));
         app.press_key("mod+shift+c").unwrap();

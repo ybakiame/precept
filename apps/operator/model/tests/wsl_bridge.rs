@@ -60,13 +60,32 @@ impl Drop for Daemon {
 }
 impl Daemon {
     fn start() -> Self {
+        Self::start_with(false)
+    }
+    /// `agent`: an explicit private agent config with the deterministic fake
+    /// agent in permission mode (never a real coding agent).
+    fn start_with(agent: bool) -> Self {
         let root = Root::new();
         std::fs::create_dir(root.0.join("alpha")).unwrap();
         std::fs::write(root.0.join("alpha/AGENTS.md"), "Synthetic contract\n").unwrap();
         acp_ipc::transport::private_dir(&root.0.join("state"), true).unwrap();
         let runtime = root.0.join("runtime");
         let endpoint = runtime.join("control.sock").to_str().unwrap().to_owned();
-        let child = Command::new(bin("acp-daemon"))
+        let mut command = Command::new(bin("acp-daemon"));
+        if agent {
+            use std::os::unix::fs::OpenOptionsExt;
+            let config = root.0.join("agents.json");
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&config)
+                .unwrap();
+            let programs = json!({"version":1,"programs":[{"id":"fake","executable":bin("acp-fake-agent"),"args":["permission"],"env":{}}]});
+            file.write_all(programs.to_string().as_bytes()).unwrap();
+            command.arg("--agent-config").arg(config);
+        }
+        let child = command
             .arg("--runtime-dir")
             .arg(&runtime)
             .args([
@@ -681,4 +700,104 @@ fn client_rejects_wrong_hello_mismatched_ids_and_ambiguous_replies() {
             Err(CallError::NotSent | CallError::Lost)
         ));
     }
+}
+
+#[test]
+fn session_lifecycle_permissions_and_replay_through_the_bridge() {
+    let d = Daemon::start_with(true);
+    let c = d.client();
+    writable(&d, &c);
+    let call = |method: &str, fields: Value| {
+        c.call(
+            Op::Session {
+                project: "alpha".into(),
+                method: method.into(),
+                fields,
+            },
+            Duration::from_secs(30),
+        )
+    };
+    let observe = |pred: &dyn Fn(&Value) -> bool| {
+        let end = Instant::now() + Duration::from_secs(20);
+        loop {
+            let v = call("session.refresh", json!({})).unwrap();
+            if pred(&v["view"]) {
+                return v;
+            }
+            assert!(Instant::now() < end, "session state: {}", v["view"]);
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    };
+    let first = call("session.refresh", json!({})).unwrap();
+    assert_eq!(first["capabilities"]["executables"], json!(["fake"]));
+    // Only a configured program, and only with explicit confirmation.
+    let denied = Err(CallError::Remote("Session unavailable or request denied"));
+    assert_eq!(
+        call(
+            "session.start",
+            json!({"executable":"/bin/sh","confirmed":true})
+        ),
+        denied
+    );
+    assert_eq!(call("session.start", json!({"executable":"fake"})), denied);
+    call(
+        "session.start",
+        json!({"executable":"fake","confirmed":true}),
+    )
+    .unwrap();
+    let ready = observe(&|v| v["process_alive"] == true && v["state"] == "ready");
+    let session_id = ready["view"]["session_id"].as_str().unwrap().to_owned();
+    // A second start while alive is refused (no duplicate agent).
+    assert_eq!(
+        call(
+            "session.start",
+            json!({"executable":"fake","confirmed":true})
+        ),
+        denied
+    );
+    // Prompt -> permission request -> one-time allow; the replay is refused.
+    call(
+        "session.prompt",
+        json!({"session_id":session_id,"prompt":"first synthetic turn"}),
+    )
+    .unwrap();
+    let waiting = observe(&|v| v["permissions"].as_array().is_some_and(|p| p.len() == 1));
+    let permission = waiting["view"]["permissions"][0].clone();
+    let request = permission["request_id"].as_str().unwrap().to_owned();
+    let allow = permission["allow_once"].clone();
+    assert!(allow.is_string(), "{permission}");
+    let decision = json!({"session_id":session_id,"request_id":request,"option_id":allow});
+    call("session.permission", decision.clone()).unwrap();
+    assert_eq!(
+        call("session.permission", decision),
+        denied,
+        "permission replay"
+    );
+    observe(&|v| {
+        v["state"] == "completed" && v["permissions"].as_array().is_some_and(Vec::is_empty)
+    });
+    // Second turn: explicit deny.
+    call(
+        "session.prompt",
+        json!({"session_id":session_id,"prompt":"second synthetic turn"}),
+    )
+    .unwrap();
+    let waiting = observe(&|v| v["permissions"].as_array().is_some_and(|p| p.len() == 1));
+    let request = waiting["view"]["permissions"][0]["request_id"].clone();
+    call(
+        "session.permission",
+        json!({"session_id":session_id,"request_id":request,"option_id":null}),
+    )
+    .unwrap();
+    observe(&|v| {
+        v["permissions"].as_array().is_some_and(Vec::is_empty) && v["state"] != "waiting_permission"
+    });
+    // Cancel with no running turn is refused; stop ends the agent process.
+    assert_eq!(
+        call("session.cancel", json!({"session_id":session_id})),
+        denied
+    );
+    call("session.stop", json!({"session_id":session_id})).unwrap();
+    observe(&|v| v["process_alive"] == false);
+    c.close(Duration::from_secs(5));
 }
