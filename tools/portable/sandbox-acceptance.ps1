@@ -218,7 +218,9 @@ Cell 'mcp-exactly-two-read-tools-and-context' {
     $meta = @{ 'io.modelcontextprotocol/protocolVersion' = '2026-07-28' }
     function Ask($method, $params) {
         $params['_meta'] = $meta
-        $p.StandardInput.WriteLine((@{ jsonrpc = '2.0'; id = 1; method = $method; params = $params } | ConvertTo-Json -Compress -Depth 6)); $p.StandardInput.Flush()
+        # Raw BOM-less UTF-8: the .NET Framework stdin writer would prepend a BOM.
+        $bytes = (New-Object Text.UTF8Encoding $false).GetBytes((@{ jsonrpc = '2.0'; id = 1; method = $method; params = $params } | ConvertTo-Json -Compress -Depth 6) + "`n")
+        $p.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length); $p.StandardInput.BaseStream.Flush()
         $t = $p.StandardOutput.ReadLineAsync(); Need ($t.Wait(10000)) "MCP $method timeout"
         if ($null -eq $t.Result) { Start-Sleep -Milliseconds 500; throw "MCP closed stdout on $method; exited=$($p.HasExited) stderr=$($mcpErr.Result)" }
         Log "MCP $method -> $($t.Result.Substring(0, [Math]::Min(300, $t.Result.Length)))"
