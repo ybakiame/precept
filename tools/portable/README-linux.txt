@@ -1,5 +1,9 @@
 ACP Linux x86_64 portable prototype - local, unpublished, synthetic use only
 
+This archive is a local acceptance output, not a release asset. Keep it and its
+sidecars in ignored local artifacts; do not commit or upload it. Formal distribution
+and signing require a later, explicit release decision.
+
 Layout
   bin/acp-daemon        local daemon; the only Profile write owner
   bin/acp-query         operator CLI
