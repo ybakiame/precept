@@ -436,7 +436,8 @@ fn console(model: Signal<Model>) -> impl IntoElement {
                 );
                 let lease = current.session.context.unwrap_or_default();
                 eprintln!(
-                    "ACP_NSH_CONTEXT share={} enabled={} active={} context_calls={} handoff_calls={} stop_reason={:?}",
+                    "ACP_NSH_CONTEXT exe={} share={} enabled={} active={} context_calls={} handoff_calls={} stop_reason={:?}",
+                    current.session.executable,
                     current.session.share_context,
                     lease.enabled,
                     lease.active,

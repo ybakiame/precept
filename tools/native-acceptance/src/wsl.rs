@@ -324,6 +324,36 @@ fn gui_args(r: &Remote) -> Vec<String> {
     .collect()
 }
 
+/// Alt E cycles the configured programs (ctx, fake, slow) until `name` is
+/// selected. Each press waits for the GUI's own fresh probe line before deciding.
+fn select_program(ui: &mut Ui, name: &str) {
+    let Ui::Desktop(d) = ui else {
+        panic!("desktop only")
+    };
+    for _ in 0..4 {
+        let before = d.lines.lock().unwrap().len();
+        d.key("alt+e");
+        let end = Instant::now() + Duration::from_secs(5);
+        let selected = loop {
+            let line = d.lines.lock().unwrap()[before..]
+                .iter()
+                .rev()
+                .find(|l| l.starts_with("ACP_NSH_CONTEXT exe="))
+                .cloned();
+            if let Some(line) = line {
+                break line;
+            }
+            assert!(Instant::now() < end, "Alt E produced no program change");
+            thread::sleep(Duration::from_millis(25));
+        };
+        if selected.starts_with(&format!("ACP_NSH_CONTEXT exe={name} ")) {
+            evidence::event("program-selected", json!({"program":name,"key":"alt+e"}));
+            return;
+        }
+    }
+    panic!("program {name} not selectable with Alt E");
+}
+
 fn timed(label: &str, f: impl FnOnce()) {
     let t = Instant::now();
     f();
@@ -589,10 +619,10 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     ui.wait("configured=3", "ctx");
     ui.capture("wsl-sessions", out);
     // 1) `fake` without context sharing: the opt-in is off by default.
-    ui.action("SessionExecutable1", &focus, None);
+    select_program(&mut ui, "fake");
     ui.key("alt+7");
     ui.wait("confirm=true", "Confirm start");
-    ui.wait("ACP_NSH_CONTEXT share=false", "off");
+    ui.wait("share=false enabled=", "off");
     timed("session-start", || {
         ui.key("alt+8");
         ui.wait("state=Some(Ready) alive=true", "Ready");
@@ -648,12 +678,12 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
 
     // 2) `ctx` with the separately confirmed opt-in: an active lease the agent
     //    uses through the trusted context bridge; Stop revokes it.
-    ui.action("SessionExecutable0", &focus, None);
+    select_program(&mut ui, "ctx");
     ui.key("alt+7");
     ui.wait("confirm=true", "Confirm start");
-    ui.wait("ACP_NSH_CONTEXT share=false", "off");
+    ui.wait("share=false enabled=", "off");
     ui.key("alt+g");
-    ui.wait("ACP_NSH_CONTEXT share=true", "ON");
+    ui.wait("share=true enabled=", "ON");
     ui.capture("wsl-context-opt-in", out);
     ui.key("alt+8");
     ui.wait("state=Some(Ready) alive=true", "Ready");
@@ -674,11 +704,11 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
 
     // 3) Cancel of a RUNNING turn from the GUI, with an active lease: the turn
     //    ends as cancelled, the agent stays alive and the lease is revoked.
-    ui.action("SessionExecutable2", &focus, None);
+    select_program(&mut ui, "slow");
     ui.key("alt+7");
-    ui.wait("ACP_NSH_CONTEXT share=false", "off");
+    ui.wait("share=false enabled=", "off");
     ui.key("alt+g");
-    ui.wait("ACP_NSH_CONTEXT share=true", "ON");
+    ui.wait("share=true enabled=", "ON");
     ui.key("alt+8");
     ui.wait("share=false enabled=true active=true", "active");
     ui.key("alt+j");

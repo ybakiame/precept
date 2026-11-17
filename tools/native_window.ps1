@@ -152,7 +152,7 @@ try {
         if ($command.action -in @('key','text')) { $layout=Ensure-English $h }
         switch ($command.action) {
             'key' {
-                if ($command.key -notmatch '^(alt\+shift\+[umerxlsvynzihwq]|alt\+[opkwft1-9abcgjiynqx]|alt\+(right|left)|ctrl\+[alrpq]|escape|enter|space|tab|right|left|home|end)$') { throw 'Key outside fixed synthetic vocabulary' }
+                if ($command.key -notmatch '^(alt\+shift\+[umerxlsvynzihwq]|alt\+[opkwft1-9abcegjiynqx]|alt\+(right|left)|ctrl\+[alrpq]|escape|enter|space|tab|right|left|home|end)$') { throw 'Key outside fixed synthetic vocabulary' }
                 $parts = $command.key -split '\+'
                 $last = $parts[-1]
                 $code = switch ($last) { 'escape' {27}; 'tab' {9}; 'enter' {13}; 'space' {32}; 'right' {39}; 'left' {37}; 'home' {36}; 'end' {35}; default { if ($last -notmatch '^[a-z0-9]$') { throw 'Unsupported synthetic key' }; [int][char]$last.ToUpperInvariant() } }

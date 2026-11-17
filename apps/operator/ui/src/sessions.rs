@@ -102,6 +102,34 @@ fn start_review(model: Signal<Model>) {
         });
     }
 }
+/// Keyboard choice of the configured program (Alt E): next in the daemon's list.
+/// Only without a live agent; it abandons any pending Start review and opt-in.
+fn cycle_executable(model: Signal<Model>) {
+    let m = model.get();
+    if !m.sessions || !enabled(model) || m.session.view.as_ref().is_some_and(|v| v.process_alive) {
+        return;
+    }
+    let Some(list) = m
+        .session
+        .capabilities
+        .as_ref()
+        .map(|c| c.executables.clone())
+    else {
+        return;
+    };
+    if list.is_empty() {
+        return;
+    }
+    let next = list
+        .iter()
+        .position(|e| *e == m.session.executable)
+        .map_or(0, |i| (i + 1) % list.len());
+    model.update(|m| {
+        m.session.executable = list[next].clone();
+        m.session.confirm_start = false;
+        m.session.share_context = false;
+    });
+}
 /// Explicit, separately confirmed per-start opt-in; only inside a Start review.
 fn toggle_share(model: Signal<Model>) {
     if model.get().sessions && enabled(model) && model.get().session.confirm_start {
@@ -321,6 +349,7 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
     });
     on_key_with("alt+u", global, move |_| review_auth_retry(model));
     on_key_with("alt+g", global, move |_| toggle_share(model));
+    on_key_with("alt+e", global, move |_| cycle_executable(model));
     on_key_with("alt+8", global, move |_| {
         if model.get().sessions {
             confirm_start(model);
