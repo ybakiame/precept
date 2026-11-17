@@ -200,10 +200,13 @@ Cell 'explicit-synthetic-profile-grant-register' {
     $b = (Q @('profile', 'info')).json.binding
     $r = Q @('profile', 'write', 'enable', '--profile-id', $b.profile_id, '--generation', $b.generation, '--confirm')
     Need ($r.code -eq 0) "write enable failed: $(Why $r)"
+    # The mutation binds to the CURRENT binding, read after the write grant (as the host smoke does).
+    $before = "$($b.profile_id)/$($b.generation)/$($b.owner_epoch)"
+    $b = (Q @('profile', 'info')).json.binding
     $op = -join ((1..16) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) })
     $canonical = [AcpNative]::FinalPath($synthetic)
     $r = Q @('project-register', 'synthetic', $canonical, '--profile-id', $b.profile_id, '--generation', $b.generation, '--owner-epoch', "$($b.owner_epoch)", '--operation-id', $op)
-    Need ($r.code -eq 0) "register failed: $(Why $r)"
+    Need ($r.code -eq 0) "register failed: $(Why $r); binding before=$before after=$($b.profile_id)/$($b.generation)/$($b.owner_epoch); root=$canonical"
     Need (Test-Path (Join-Path $runtime 'agent-synthetic.cap')) 'agent credential missing'
     "created, repeat refused, write enabled, registered $canonical"
 }
