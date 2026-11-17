@@ -99,7 +99,8 @@ explicit inputs; project, task and request data never appear in argv.
   read/control allowlist: `profile.info|create|select|write.enable|write.disable`,
   `profile.preferences.list|get`, `profile.review.queue|inspect`, `profile.handoff.get`),
   `mutate` (one OperatorWrite `Mutation`), `session` (`session.refresh|start|prompt|permission|cancel|stop`)
-  or `cancel` (abandon an in-flight id; no reply of its own). Anything else is
+  `health` (daemon health with the Operator credential, for the GUI's live WSL
+  status) or `cancel` (abandon an in-flight id; no reply of its own). Anything else is
   `Unsupported`/`InvalidRequest`. There is no generic IPC forwarding or shell.
 - **Replies:** `{"version":1,"id":N,"ok":…}` or `{"version":1,"id":N,"error":"Code"}`,
   exactly one of the two. Error codes are a fixed vocabulary; the Windows side maps
@@ -112,6 +113,12 @@ explicit inputs; project, task and request data never appear in argv.
   may have been delivered is `OutcomeUnknown`. Nothing is retried automatically.
   Only the explicit identical retry (same operation ID, binding and epoch) settles
   it; a retry that cannot be submitted keeps the uncertainty.
+- **Status:** launch failures are classified from the launcher's exit status
+  (`wsl.exe` -1: distribution or user, decided by `wsl.exe --list --quiet` only after
+  a failure; 1: helper not executable; 2: helper argument refusal), plus incompatible
+  hello, no response, daemon unreachable and runtime refused. The GUI shows the exact
+  cause. A 2 s watcher reports a lost bridge or unreachable daemon without starting a
+  bridge or process and without changing page data or Operator guards.
 - **Lifecycle:** session polling and Operator calls reuse the live bridge; polling
   never starts one, so a stopped distribution or lost helper is an explicit
   unavailable state. Closing the GUI or leaving the WSL target closes the helper

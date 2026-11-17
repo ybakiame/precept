@@ -3,7 +3,7 @@
 2026-11-17. Scope: [Issue #73](https://github.com/ybakiame/agent-control-plane/issues/73), parent
 [M5 #67](https://github.com/ybakiame/agent-control-plane/issues/67), after merged
 [PR #71](https://github.com/ybakiame/agent-control-plane/pull/71) (`e4be2657c9417ce00ffc186d2920db0837aa09ae`).
-**Windows HWND GUI → WSL2 daemon end-to-end acceptance PASS (15/15 cells) on one
+**Windows HWND GUI → WSL2 daemon end-to-end acceptance PASS (16/16 cells) on one
 recorded host and one disposable WSL2 user distribution.** This is development
 acceptance of the primary workflow, not a release, packaging, OS-support or
 real-Profile claim. The secondary WSLg + Weston path is
@@ -34,6 +34,15 @@ real-Profile claim. The secondary WSLg + Weston path is
   pending uncertain mutation that gets no daemon decision (`Unavailable`) now keeps
   the uncertainty and the exact request (local and WSL). UI text no longer calls
   Windows→WSL read-only.
+- **WSL status detection:** failures name their exact cause instead of a generic
+  "check the local daemon" text, on every page including the open Operator panel.
+  Launch failures are classified from `wsl.exe`'s exit status (-1 distribution or
+  user, decided by `wsl.exe --list --quiet` only after a failure; 1 helper not
+  executable; 2 helper argument refusal), plus incompatible helper, no response,
+  daemon unreachable and runtime refused. A watcher checks the live link every 2 s
+  (lost bridge at once; stopped daemon via a read-only `health` bridge op). It never
+  starts a bridge or process and only updates a display field, so page data and
+  Operator guards (and the identical retry) are unaffected.
 - **Docs:** architecture, interfaces, README, readiness plan (C5/C6, G19, D1) and
   roadmap distinguish the primary Windows→WSL2 bridge from the secondary WSLg path.
 
@@ -41,7 +50,7 @@ real-Profile claim. The secondary WSLg + Weston path is
 
 | Item | Exact identity |
 | --- | --- |
-| Clean source (all binaries and the acceptance run) | `87ef0c122c26dfa7a26c2ac4fdd38f56f1cdcf66`, tree `cbaba6ad68ec2aacd20129f3a3b2a8a28043336f` |
+| Clean source (all binaries and the acceptance run) | `135c06feb722066945313ef2c12e2061bb20163b`, tree `5ffa9558eefe8cfb474d6e92be28ccccabe70105` |
 | Windows host | Windows 11 Pro for Workstations build **10.0.26300**; MSVC 14.51.36231 / SDK 10.0.26100.0 |
 | WSL | WSL 3.0.5.0, kernel 6.18.58.1-1 (`6.18.58.1-microsoft-standard-WSL2`), WSLg 1.0.79 (not used) |
 | User distribution | Disposable **`acp-s1b-ubuntu`**: Ubuntu **24.04.5 LTS** (official image via `wsl --install Ubuntu-24.04 --name acp-s1b-ubuntu --no-launch`), glibc 2.39; not the WSLg system distro; the daily `archlinux` distro was not used for evidence |
@@ -50,9 +59,9 @@ real-Profile claim. The secondary WSLg + Weston path is
 
 | Binary | SHA-256 |
 | --- | --- |
-| `acp-nsh-native.exe` (Windows GUI) | `165b5659e5d99117f63fc423c07d2033c2f60c761283e53afee1db36fc169516` |
-| `acp-native-acceptance.exe` (harness) | `c76ca93bfd5f2e1303239823d48775b316aa0bd2b352fd123428d3a92e065990` |
-| `acp-wsl-bridge` (Linux) | `c49e98a25c5496746fa89c6abc0b4ed7f7d4d3943c5b44abf3443b19fe273d0e` |
+| `acp-nsh-native.exe` (Windows GUI) | `a3de827081be1d5b4257523fd6d947483051a95fa2e8363081484f85df44151b` |
+| `acp-native-acceptance.exe` (harness) | `79dea06133523909eac78ced4736bb682dd189fc3c031204bdc74516daa7e706` |
+| `acp-wsl-bridge` (Linux) | `361417232c79772ebd210243aa12a5936b68f3185552ff193741d3bf500dbfc2` |
 | `acp-daemon` (Linux) | `ede76ce0d632d1812a17e228a140d3211e1123ccd38bcdfa1eeaa232dfcd940c` |
 | `acp-query` (Linux) | `28d6d7c4b7e90585d213a1c224bb75d0fcb0a27d48adf3b4f146b5eeef64676a` |
 | `acp-fake-agent` (Linux, deterministic test fixture) | `d0225d3632ef4f8b2d9953253fb891cc1acc1e7aedcae0096be7e8eecb255308` |
@@ -67,13 +76,15 @@ through the existing owned-window worker, reads the GUI's own probe lines, and
 observes WSL independently with `acp-query`/`pgrep`/`ss`/`ps` via `wsl.exe --exec`
 (no shell). Screenshots were inspected; this is not independent human, IME or
 assistive-technology acceptance. Private run: ignored
-`artifacts/local-p1-m5/s1b-attempt-01/` (`report.json` `01d7d045…d197b`,
-`ledger.json` `f38d3b6d…f7cc`). Synthetic Profile and project only.
+`artifacts/local-p1-m5/s1b-attempt-02/` (`report.json` `54447003…72b697668`,
+`ledger.json` `b751b3af…16c2a7a5`). Synthetic Profile and project only.
+`s1b-attempt-01` (15/15 at `87ef0c1`, before the status-detection fix) is retained
+and superseded.
 
 ## Operation coverage (Windows HWND GUI → WSL2 daemon)
 
 `acp-native-acceptance wsl-desktop`, non-development mode, clean tree before and after:
-**15 PASS / 0 FAIL / 0 NOT_RUN**.
+**16 PASS / 0 FAIL / 0 NOT_RUN**.
 
 | Issue goal | Cell(s) | Observed |
 | --- | --- | --- |
@@ -97,37 +108,40 @@ assistive-technology acceptance. Private run: ignored
 | Wrong hello, unsolicited/mismatched IDs, ambiguous replies | PASS | Client refuses connect or ends the bridge; tested with a misbehaving fake helper whose stdout stays open |
 | Timeout and cancellation | PASS | 1 µs timeout → `Timeout`; late reply ignored; bridge stays healthy; identical retry settles |
 | Child exit / bridge loss after submit | PASS | Linux: SIGKILL during a mutation → `Lost` (never a fabricated failure); reconnect + identical operation ID settles; changed payload → `IdempotencyConflict`. Windows GUI: as in goal 4 |
-| Daemon absent, distro/user/runtime wrong, symlinked runtime | PASS | GUI `phase=Unavailable` for wrong distribution, wrong Linux user, wrong runtime; daemon stop → Unavailable; symlinked runtime → `Permission denied` (Linux test); relative paths refused before the protocol |
+| Exact cause for wrong targets | PASS | GUI shows (probe and visible header): wrong distribution → "WSL distribution not found"; wrong user → "WSL user not available"; missing helper → "Bridge helper not found or not executable"; wrong runtime → "WSL daemon not running or not reachable". Symlinked runtime → `Permission denied` and relative paths refused (Linux tests); exit-status classes covered by real-process tests |
+| Live status without user action | PASS | Daemon stopped while connected → "WSL daemon not running or not reachable" within the watcher interval; `wsl --terminate` of the disposable distro while connected → "WSL bridge disconnected"; no helper restarted automatically |
 | Authorization negatives | PASS | Missing/revoked OperatorWrite → `Unauthorized`; stale generation → `Unauthorized`; wrong project/scope refused; unconfigured or unconfirmed session executable refused; double start refused; permission replay refused; cancel without a turn refused |
 | GUI close / reconnect | PASS | Closing the GUI ends the helper (stdin EOF); the WSL daemon PID, health and Profile digest are unchanged |
 | No direct SQLite/Writer from GUI/helper | PASS | `cargo tree --features native --edges normal` for the model crate: only `acp-core`, `acp-ipc`, `acp-session`; no `acp-store`, `acp-write` or `rusqlite` |
 
 Timing on this host with the distribution already running: GUI launch → first
-Operator state including bridge start **585 ms**; Reconnect → Ready **110 ms**;
-suggest prepare/apply/receipt **224 ms**; retry including bridge restart **140 ms**;
-session start **613 ms**. Linux in-distro bridge round trip for `profile.info`
+Operator state including bridge start **655 ms**; Reconnect → Ready **111 ms**;
+suggest prepare/apply/receipt **229 ms**; retry including bridge restart **141 ms**;
+session start **163 ms**. Linux in-distro bridge round trip for `profile.info`
 ≈ 2.9 ms (local IPC connect included). Cold distribution boot latency was **NOT_RUN**.
 
 ## Validation commands
 
 | Check | Platform | Result |
 | --- | --- | --- |
-| Model fmt / Clippy `-D warnings` / tests (`--features native`) | Linux (archlinux), Ubuntu 24.04 target distro, Windows | PASS; 57 unit + 6 bridge real-process tests (process tests are Unix-only; Windows covered by the GUI run) |
+| Model fmt / Clippy `-D warnings` / tests (`--features native`) | Linux (archlinux), Ubuntu 24.04 target distro, Windows | PASS; 60 unit + 8 bridge real-process tests (process tests are Unix-only; Windows covered by the GUI run) |
 | Operator UI fmt / Clippy / tests (`--features native,tui`, CI configuration) | Linux | PASS, 27 unit + 2 real-daemon integration |
 | Root workspace fmt / Clippy / tests | Linux | PASS, 153 passed, 2 ignored (unchanged by this PR) |
 | Harness fmt / Clippy / tests incl. env isolation | Linux | PASS, 36 |
 | Windows GUI + harness build | Windows | PASS |
-| **Windows HWND → WSL2 acceptance** `s1b-attempt-01` | Windows + `acp-s1b-ubuntu` | **PASS 15/15** |
+| **Windows HWND → WSL2 acceptance** `s1b-attempt-02` | Windows + `acp-s1b-ubuntu` | **PASS 16/16** |
 
 Correction to earlier reports: the four `operator::tests` UI failures recorded in
 S1-A occur only when the UI crate is tested **without** its `native,tui` features (a
 plain `cargo test --workspace`). In the CI configuration they pass (27/27).
 
-Development runs `s1b-dev-01..04` are retained locally and not counted. They found
+Development runs `s1b-dev-01..05` are retained locally and not counted. They found
 and fixed: the ledger catalog for the new mode; the window worker's fixed key
 vocabulary lacking the session chords; a 17-character relaunch nonce; and — before
 the GUI run — a model gap where a lost bridge could leave an `OutcomeUnknown`
-mutation without any identical-retry path.
+mutation without any identical-retry path. After `s1b-attempt-01`, review found that WSL failures
+showed a generic "local daemon" message and a lost bridge kept the last successful
+status; the status-detection fix and its cells (`s1b-dev-05`, `s1b-attempt-02`) followed.
 
 ## Not run / limitations
 
@@ -136,8 +150,6 @@ mutation without any identical-retry path.
 - The 148-cell native UI matrix was intentionally not rerun (issue scope).
 - Windows ConPTY TUI → WSL target uses the same model paths but was not exercised.
 - Human IME/AT, second Windows user, cold-boot latency: NOT_RUN.
-- Follow-up wording: for a WSL target the unavailable message still says "check the
-  local daemon". `acp-ui-snapshot` remains in the model crate but the GUI no longer
-  uses it for WSL.
+- `acp-ui-snapshot` remains in the model crate but the GUI no longer uses it for WSL.
 - WSLg + Weston Linux GUI/TUI is S1-C #72. Parent M5 stays open; no release,
   public distribution or real Profile use is authorized.
