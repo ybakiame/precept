@@ -214,12 +214,15 @@ Cell 'mcp-exactly-two-read-tools-and-context' {
     $psi = New-Object Diagnostics.ProcessStartInfo (Join-Path $bin 'acp-mcp.exe')
     $psi.Arguments = '--runtime-dir "' + $runtime + '" --endpoint ' + $endpoint + ' --project synthetic --capability-file "' + (Join-Path $runtime 'agent-synthetic.cap') + '"'
     $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true; $psi.RedirectStandardInput = $true; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
-    $p = [Diagnostics.Process]::Start($psi); [void]$p.StandardError.ReadToEndAsync()
+    $p = [Diagnostics.Process]::Start($psi); $mcpErr = $p.StandardError.ReadToEndAsync()
     $meta = @{ 'io.modelcontextprotocol/protocolVersion' = '2026-07-28' }
     function Ask($method, $params) {
         $params['_meta'] = $meta
         $p.StandardInput.WriteLine((@{ jsonrpc = '2.0'; id = 1; method = $method; params = $params } | ConvertTo-Json -Compress -Depth 6)); $p.StandardInput.Flush()
-        $t = $p.StandardOutput.ReadLineAsync(); Need ($t.Wait(10000)) "MCP $method timeout"; $t.Result | ConvertFrom-Json
+        $t = $p.StandardOutput.ReadLineAsync(); Need ($t.Wait(10000)) "MCP $method timeout"
+        if ($null -eq $t.Result) { Start-Sleep -Milliseconds 500; throw "MCP closed stdout on $method; exited=$($p.HasExited) stderr=$($mcpErr.Result)" }
+        Log "MCP $method -> $($t.Result.Substring(0, [Math]::Min(300, $t.Result.Length)))"
+        $t.Result | ConvertFrom-Json
     }
     $tools = @((Ask 'tools/list' @{}).result.tools | ForEach-Object { $_.name })
     Need (($tools -join ',') -eq 'get_effective_context,get_handoff') "tools: $($tools -join ',')"
