@@ -48,7 +48,19 @@ checkout, home, Cargo-home or build-output bytes (ASCII or UTF-16) in a binary
 ./tools/portable/windows-package.ps1 -OutputParent artifacts/local-p1-m5 -Name zip-attempt-01
 ./tools/portable/windows-smoke.ps1 -PackageDir artifacts/local-p1-m5/zip-attempt-01/extracted -ReportDir artifacts/local-p1-m5/zip-attempt-01/smoke-01
 ./tools/portable/windows-retention.ps1 -AttemptDir artifacts/local-p1-m5/zip-attempt-01 -SmokeName smoke-01
+./tools/portable/windows-sandbox.ps1 -AttemptDir artifacts/local-p1-m5/zip-attempt-01 -Name sandbox-01
 ```
+
+`windows-sandbox.ps1` is the disposable clean-target acceptance. It needs Windows
+Sandbox already enabled (it never enables, installs or uninstalls anything on the host)
+and refuses if another Sandbox is running. It maps the ZIP and the Microsoft-signed
+`vc_redist.x64.exe` of the building Visual Studio read-only into a fresh, networkless
+Sandbox. There, `sandbox-acceptance.ps1` (Windows PowerShell 5.1) proves the five
+executables fail with `0xC0000135` without the prerequisite, installs it inside the
+Sandbox only, then follows the README: private state directory, daemon in its own
+console, CLI, MCP, HWND, ConPTY, Ctrl+C stop, exact removal. The Sandbox shuts itself
+down; results stay in the ignored `<attempt>-sandbox-NN/output/`. Do not click inside
+the Sandbox window while it runs.
 
 Retain failed attempt directories; use a new name for the next run. Raw build logs
 and tool metadata can contain private developer paths and remain ignored. The ZIP
