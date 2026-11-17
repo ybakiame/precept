@@ -627,10 +627,7 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
         ui.key("alt+8");
         ui.wait("state=Some(Ready) alive=true", "Ready");
     });
-    ui.wait(
-        "ACP_NSH_CONTEXT share=false enabled=false active=false",
-        "not shared",
-    );
+    ui.wait("share=false enabled=false active=false", "not shared");
     let agents = r.wsl.pids("acp-fake-agent");
     assert_eq!(agents.len(), 1, "agent process runs inside WSL");
     let helper = r.wsl.pids("acp-wsl-bridge");
