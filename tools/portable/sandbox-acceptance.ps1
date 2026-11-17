@@ -32,12 +32,15 @@ public static class AcpNative {
   [DllImport("kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)]
   static extern bool CreateProcessW(string app, StringBuilder cmd, IntPtr pa, IntPtr ta, bool inherit, uint flags, IntPtr env, string cwd, ref STARTUPINFO si, out PROCESS_INFORMATION pi);
   [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
-  // The daemon gets its OWN console window, as README instructs users to run it.
-  public static int StartInOwnConsole(string app, string commandLine) {
-    var si = new STARTUPINFO(); si.cb = Marshal.SizeOf(typeof(STARTUPINFO));
-    PROCESS_INFORMATION pi;
-    if (!CreateProcessW(app, new StringBuilder(commandLine), IntPtr.Zero, IntPtr.Zero, false, 0x10, IntPtr.Zero, null, ref si, out pi)) throw new Win32Exception();
-    CloseHandle(pi.thread); CloseHandle(pi.process); return pi.pid;
+  [DllImport("kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)]
+  static extern uint GetFinalPathNameByHandleW(IntPtr h, StringBuilder path, uint size, uint flags);
+  // Same final path that Rust's std::fs::canonicalize returns on Windows (\\?\ form).
+  public static string FinalPath(string path) {
+    IntPtr h = CreateFileW(path, 0, 7, IntPtr.Zero, 3, 0x02000000, IntPtr.Zero);
+    if (h == new IntPtr(-1)) throw new Win32Exception();
+    var sb = new StringBuilder(1024); uint n = GetFinalPathNameByHandleW(h, sb, 1024, 0); CloseHandle(h);
+    if (n == 0 || n >= 1024) throw new Win32Exception();
+    return sb.ToString();
   }
   [DllImport("kernel32.dll", SetLastError=true)] static extern bool FreeConsole();
   [DllImport("kernel32.dll", SetLastError=true)] static extern bool AttachConsole(uint pid);
@@ -101,7 +104,7 @@ Log "start build=$($os.BuildNumber)"
 $product = Join-Path $env:LOCALAPPDATA 'acp-product'
 $state = Join-Path $env:LOCALAPPDATA 'acp-sandbox-state'
 $acp = Join-Path $product 'ACP'; $bin = Join-Path $acp 'bin'
-$manifest = $null; $daemonPid = 0
+$manifest = $null; $daemonPid = 0; $daemon = $null
 
 Cell 'clean-target-has-no-vc-runtime' {
     $key = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64' -ErrorAction SilentlyContinue
@@ -179,8 +182,9 @@ function Why($r) { "exit $($r.code) error=$($r.json.error) stderr=$(($r.err -spl
 
 
 Cell 'daemon-start-no-implicit-profile' {
-    $line = '"' + (Join-Path $bin 'acp-daemon.exe') + '" --runtime-dir "' + $runtime + '" --endpoint ' + $endpoint + ' --allow-project synthetic --allow-root "synthetic=' + $synthetic + '"'
-    $script:daemonPid = [AcpNative]::StartInOwnConsole((Join-Path $bin 'acp-daemon.exe'), $line)
+    # Its OWN console window, as README instructs; the Process object keeps the handle.
+    $script:daemon = Start-Process -FilePath (Join-Path $bin 'acp-daemon.exe') -PassThru -ArgumentList @('--runtime-dir', ('"' + $runtime + '"'), '--endpoint', $endpoint, '--allow-project', 'synthetic', '--allow-root', ('"synthetic=' + $synthetic + '"'))
+    $script:daemonPid = $daemon.Id
     $deadline = (Get-Date).AddSeconds(20)
     do { Start-Sleep -Milliseconds 200; $info = Q @('profile', 'info') } while ($info.code -ne 0 -and (Get-Date) -lt $deadline)
     Need ($info.code -eq 0) 'daemon not ready'
@@ -197,11 +201,11 @@ Cell 'explicit-synthetic-profile-grant-register' {
     $r = Q @('profile', 'write', 'enable', '--profile-id', $b.profile_id, '--generation', $b.generation, '--confirm')
     Need ($r.code -eq 0) "write enable failed: $(Why $r)"
     $op = -join ((1..16) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) })
-    $canonical = '\\?\' + (Resolve-Path -LiteralPath $synthetic).Path
+    $canonical = [AcpNative]::FinalPath($synthetic)
     $r = Q @('project-register', 'synthetic', $canonical, '--profile-id', $b.profile_id, '--generation', $b.generation, '--owner-epoch', "$($b.owner_epoch)", '--operation-id', $op)
     Need ($r.code -eq 0) "register failed: $(Why $r)"
     Need (Test-Path (Join-Path $runtime 'agent-synthetic.cap')) 'agent credential missing'
-    'created, repeat refused, write enabled, project registered'
+    "created, repeat refused, write enabled, registered $canonical"
 }
 Cell 'mcp-exactly-two-read-tools-and-context' {
     $psi = New-Object Diagnostics.ProcessStartInfo (Join-Path $bin 'acp-mcp.exe')
@@ -266,7 +270,7 @@ Cell 'conpty-tui-render-ctrl-q-exit' {
 }
 Cell 'graceful-stop-cleans-credentials' {
     Need ($daemonPid -ne 0) 'no daemon'
-    $p = Get-Process -Id $daemonPid
+    $p = $daemon
     $err = [AcpNative]::CtrlCInConsoleOf([uint32]$daemonPid)
     Need ($null -eq $err) "Ctrl+C failed: $err"
     Need ($p.WaitForExit(15000)) 'daemon did not exit'
@@ -302,4 +306,4 @@ $result.passed = @($cells | Where-Object { $_.status -eq 'PASS' }).Count
 $result.failed = @($cells | Where-Object { $_.status -ne 'PASS' }).Count
 $result | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $out 'result.json') -Encoding UTF8
 Log "done passed=$($result.passed) failed=$($result.failed)"
-shutdown.exe /s /t 5
+Stop-Computer -Force

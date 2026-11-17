@@ -9,7 +9,7 @@ $repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 if (& git -C $repo status --porcelain) { throw 'Clean committed acceptance tooling required' }
 $sandboxExe = Join-Path $env:WINDIR 'System32\WindowsSandbox.exe'
 if (-not (Test-Path -LiteralPath $sandboxExe)) { throw 'Windows Sandbox is not enabled; nothing is installed by this script' }
-if (Get-Process -Name 'WindowsSandbox*' -ErrorAction SilentlyContinue) { throw 'A Windows Sandbox is already running; only one may run' }
+if (Get-Process -Name 'WindowsSandboxRemoteSession' -ErrorAction SilentlyContinue) { throw 'A Windows Sandbox is already running; only one may run' }
 
 $attempt = (Resolve-Path -LiteralPath $AttemptDir).Path
 $result = Get-Content -LiteralPath (Join-Path $attempt 'package-result.json') -Raw | ConvertFrom-Json
@@ -61,8 +61,13 @@ while (-not (Test-Path -LiteralPath $resultFile) -and (Get-Date) -lt $deadline) 
 $run.completed = Test-Path -LiteralPath $resultFile
 # The in-sandbox script shuts the sandbox down; wait for that instead of killing it.
 $closeBy = (Get-Date).AddMinutes(3)
-while ((Get-Process -Name 'WindowsSandbox*' -ErrorAction SilentlyContinue) -and (Get-Date) -lt $closeBy) { Start-Sleep -Seconds 3 }
-$run.sandbox_closed = -not (Get-Process -Name 'WindowsSandbox*' -ErrorAction SilentlyContinue)
+while ((Get-Process -Name 'WindowsSandboxRemoteSession' -ErrorAction SilentlyContinue) -and (Get-Date) -lt $closeBy) { Start-Sleep -Seconds 3 }
+$run.sandbox_closed = -not (Get-Process -Name 'WindowsSandboxRemoteSession' -ErrorAction SilentlyContinue)
+if ($run.completed -and -not $run.sandbox_closed) {
+    # Only this run's sandbox can exist (checked at start); close it after the result is safe.
+    Stop-Process -Name 'WindowsSandboxRemoteSession' -ErrorAction SilentlyContinue
+    $run.sandbox_closed_by_launcher = $true
+}
 $run | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $exchange 'sandbox-run.json')
 if (-not $run.completed) { throw 'Sandbox acceptance produced no result before the timeout; sandbox left for inspection' }
 $cells = Get-Content -LiteralPath $resultFile -Raw | ConvertFrom-Json
