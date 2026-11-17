@@ -14,7 +14,7 @@ VC++ redistributable was installed only inside the discarded sandbox.
 | Topic | Decision | Implementation |
 | --- | --- | --- |
 | VC++ runtime | **Documented prerequisite, not bundled.** App-local copies would not be serviced by Windows Update. | `bin/` holds only the five executables; the manifest records `prerequisites[]`; README gives install link and a read-only check |
-| First-party license | **Apache-2.0**, copyright holder `ybakiame` | Root `LICENSE` (verbatim canonical text, SHA-256 `cfc7749b…3d30`), `NOTICE`, README section, license field on the two operator crates; shipped as `ACP/LICENSE.txt` and `ACP/notices/NOTICE.txt` |
+| First-party license | **Apache-2.0**, copyright holder `ybakiame`; explicitly confirmed by the owner on 2026-11-17 in response to PR #71 review item 4 | Root `LICENSE` (verbatim canonical text, SHA-256 `cfc7749b…3d30`), `NOTICE`, README section, license field on the two operator crates; shipped as `ACP/LICENSE.txt` and `ACP/notices/NOTICE.txt` |
 | `acp-ipc` builder path | **Remove the compiled-in build-checkout rule** and keep the generic `.git` ancestor refusal | `7a19db2`, plus the regression tests that rule never had |
 | Clean target | **Windows Sandbox** instead of uninstalling VC++ on the daily machine; Windows N editions out of scope for the target audience | `windows-sandbox.ps1` + `sandbox-acceptance.ps1` |
 | OS scope | The tested clean target is **Windows 11 Enterprise, Windows Sandbox image build 26100**. Older Windows versions are outside the current validation and support claim; no broader compatibility is asserted, and no additional OS run is required for S1-A | This report |
@@ -211,7 +211,7 @@ The separate synthetic Profile, auth-labeled and unknown files kept their hashes
 | G07 | PASS: collision, graceful stop/lease release, crash/normal restart, stale credential refusal |
 | G08 | PASS: PE imports, recorded prerequisite, missing-prerequisite failure and post-install load on the clean target; offline/no-network operation passed with Sandbox networking disabled. Font/GPU breadth beyond one host remains NOT_RUN |
 | G09 | PASS on host and clean target: exact removal, empty-directory cleanup, Profile/auth/unknown retention |
-| G11 | **PARTIAL — BLOCKED for public distribution.** PASS: source/toolchain/lock/binary/archive provenance, verbatim first-party Apache-2.0 `LICENSE` and `NOTICE` shipped and hash-checked, narrowed notice ledger. Open: **21 third-party entries lack crate-local notice text and are pending review**; signing and publication undecided; explicit owner confirmation of the first-party grant requested in PR review. Accurately recorded, this does not block merging a private prototype |
+| G11 | **PARTIAL — BLOCKED for public distribution.** PASS: source/toolchain/lock/binary/archive provenance, verbatim first-party Apache-2.0 `LICENSE` and `NOTICE` shipped and hash-checked, narrowed notice ledger. Open: **21 third-party entries lack crate-local notice text and are pending review**; signing and publication undecided. The first-party Apache-2.0 grant (copyright `ybakiame`) is explicitly owner-confirmed. Accurately recorded, this does not block merging a private prototype |
 
 ## Validation commands
 
