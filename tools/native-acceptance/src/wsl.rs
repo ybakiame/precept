@@ -322,13 +322,13 @@ fn timed(label: &str, f: impl FnOnce()) {
 }
 
 pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
-    let nonce = format!(
-        "{:x}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    );
+    // The window worker accepts exactly 16 lowercase hex digits per window.
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos() as u64;
+    let nonce = format!("{nanos:016x}");
+    let relaunch_nonce = format!("{:016x}", nanos.wrapping_add(1));
     let focus = out.join("focus.events");
     fs::write(&focus, "").unwrap();
     let wsl_before = windows_wsl_processes();
@@ -655,7 +655,7 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     let mut ui = Ui::Desktop(Box::new(desktop::Desktop::start(
         gui,
         &gui_args(&r),
-        &format!("{nonce}b"),
+        &relaunch_nonce,
         script,
         out,
         &focus,
