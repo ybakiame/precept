@@ -1590,11 +1590,12 @@ fn wsl_desktop(a: &[String]) {
     };
     let windows = binary_fingerprints(&[std::env::current_exe().unwrap(), gui.clone()]);
     let linux = wsl::linux_binaries(&target);
-    evidence::init(
+    evidence::init_with(
         &out,
         "wsl-desktop",
         &sha,
         json!({"windows":windows,"linux":linux}),
+        wsl::CELLS,
     );
     std::panic::set_hook(Box::new(|info| {
         eprintln!(

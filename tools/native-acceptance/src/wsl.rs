@@ -15,6 +15,23 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Declared S1-B cells; every one must end PASS for an acceptance PASS.
+pub const CELLS: &[&str] = &[
+    "wsl-connect-no-implicit-state",
+    "wsl-profile-create-without-write",
+    "wsl-write-grant-enable",
+    "wsl-dashboard-context-handoff",
+    "wsl-suggest-inspect-confirm",
+    "wsl-reject",
+    "wsl-deprecate",
+    "wsl-delete-exact-retype",
+    "wsl-bridge-loss-outcome-unknown-identical-retry",
+    "wsl-session-lifecycle-agent-in-wsl",
+    "wsl-write-grant-disable",
+    "wsl-gui-close-keeps-daemon-and-state",
+    "wsl-daemon-absent-and-explicit-recovery",
+];
+
 pub struct Wsl {
     pub distribution: String,
     pub user: String,
