@@ -229,6 +229,8 @@ The separate synthetic Profile, auth-labeled and unknown files kept their hashes
 | `windows-package.ps1` (attempt-08), `windows-smoke.ps1` (smoke-01), `windows-retention.ps1` | Windows | PASS |
 | `windows-sandbox.ps1` (attempt-08 sandbox-01) | Windows Sandbox | **12 PASS** |
 | PowerShell AST, PS 7 helpers and PS 5.1 Sandbox script | Windows | PASS |
+| Harness env isolation (review item 1, `ae9689d`): fmt, Clippy `-D warnings`, tests incl. real child process with mixed-case `ACP_*` | Windows; Linux/WSL | PASS, 36 tests each; the unit and process tests fail when the prefix check is made case-sensitive (mutation-checked) |
+| Packaged smoke with `Acp_Ui_Gallery` leaked into the parent environment (`smoke-02`, fresh re-extraction of the same attempt-08 ZIP, inventory verified) | Windows | **14 PASS**; HWND capture shows the operator UI, not the Gallery |
 
 Not run: operator workspace tests on Windows, the full 148-cell UI matrix, standalone
 Linux/WSLg, a physical clean installation, hosted Actions, models.
