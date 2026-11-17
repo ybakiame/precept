@@ -39,10 +39,21 @@ Only after verification, remove a downloaded-file zone mark if Windows added one
 Executable ACL and runtime/Profile ACL are separate: require current-user ownership and
 no other-user write access to bin\. Do not weaken security if startup refuses.
 
-State lives OUTSIDE this directory
-Use a separate private local runtime directory outside Git, network, interop/shared and
-synchronized roots. Never use this ACP\runtime metadata directory as --runtime-dir,
-never copy capabilities into ACP\, and do not add state directories to PATH.
+State lives OUTSIDE this directory, in a PRIVATE directory
+The Profile's directory must be owned by you with exactly one access rule (yours).
+Folders made by Explorer or plain New-Item inherit SYSTEM/Administrators access and are
+refused (UnsafeRuntime). Create one private state directory once, in PowerShell:
+  $d = New-Item -ItemType Directory -Path "$env:LOCALAPPDATA\ACP-state"
+  $me = [Security.Principal.WindowsIdentity]::GetCurrent().User
+  $acl = New-Object Security.AccessControl.DirectorySecurity
+  $acl.SetOwner($me); $acl.SetAccessRuleProtection($true, $false)
+  $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($me, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
+  Set-Acl -LiteralPath $d.FullName -AclObject $acl
+Keep the Profile directly in it (e.g. <state>\profile.sqlite3) and use <state>\runtime as
+--runtime-dir; the daemon creates that runtime directory privately itself. Stay outside
+Git, network, interop/shared and synchronized roots. Never use this ACP\runtime metadata
+directory as --runtime-dir, never copy capabilities into ACP\, and do not add state
+directories to PATH.
 
 Start (replace placeholders; use synthetic data for this prototype)
  .\bin\acp-daemon.exe --runtime-dir <private-local-runtime> --endpoint <unique-name> --allow-project synthetic --allow-root synthetic=<synthetic-project>

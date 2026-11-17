@@ -13,6 +13,7 @@ function Cell([string]$id, [scriptblock]$body) {
     catch { [void]$cells.Add([ordered]@{ id = $id; status = 'FAIL'; detail = $_.Exception.Message }); Log "FAIL $id $($_.Exception.Message)" }
 }
 function Need([bool]$ok, [string]$m) { if (-not $ok) { throw $m } }
+function Owner([string]$path) { $acl = Get-Acl -LiteralPath $path; "owner=$($acl.Owner) rules=" + (($acl.Access | ForEach-Object { "$($_.IdentityReference):$($_.FileSystemRights)" }) -join ';') }
 
 Add-Type -AssemblyName System.Drawing
 Add-Type -TypeDefinition @'
@@ -20,13 +21,6 @@ using System; using System.ComponentModel; using System.Runtime.InteropServices;
 public static class AcpNative {
   [DllImport("kernel32.dll")] public static extern uint SetErrorMode(uint mode);
   [DllImport("kernel32.dll", SetLastError=true)] public static extern bool GenerateConsoleCtrlEvent(uint ev, uint group);
-  [DllImport("kernel32.dll", SetLastError=true)] static extern uint GetConsoleProcessList(uint[] list, uint count);
-  public static string CtrlBreak(uint pid) {
-    var list = new uint[64]; uint n = GetConsoleProcessList(list, 64);
-    bool shared = false; for (int i = 0; i < n && i < 64; i++) if (list[i] == pid) shared = true;
-    if (GenerateConsoleCtrlEvent(1, pid)) return null;
-    return "GenerateConsoleCtrlEvent error " + Marshal.GetLastWin32Error() + "; console processes " + n + "; target shares console " + shared;
-  }
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
@@ -38,12 +32,24 @@ public static class AcpNative {
   [DllImport("kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)]
   static extern bool CreateProcessW(string app, StringBuilder cmd, IntPtr pa, IntPtr ta, bool inherit, uint flags, IntPtr env, string cwd, ref STARTUPINFO si, out PROCESS_INFORMATION pi);
   [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
-  // Same console, NEW process group: Ctrl+Break then reaches only this process group.
-  public static int StartInNewGroup(string app, string commandLine) {
+  // The daemon gets its OWN console window, as README instructs users to run it.
+  public static int StartInOwnConsole(string app, string commandLine) {
     var si = new STARTUPINFO(); si.cb = Marshal.SizeOf(typeof(STARTUPINFO));
     PROCESS_INFORMATION pi;
-    if (!CreateProcessW(app, new StringBuilder(commandLine), IntPtr.Zero, IntPtr.Zero, false, 0x200, IntPtr.Zero, null, ref si, out pi)) throw new Win32Exception();
+    if (!CreateProcessW(app, new StringBuilder(commandLine), IntPtr.Zero, IntPtr.Zero, false, 0x10, IntPtr.Zero, null, ref si, out pi)) throw new Win32Exception();
     CloseHandle(pi.thread); CloseHandle(pi.process); return pi.pid;
+  }
+  [DllImport("kernel32.dll", SetLastError=true)] static extern bool FreeConsole();
+  [DllImport("kernel32.dll", SetLastError=true)] static extern bool AttachConsole(uint pid);
+  [DllImport("kernel32.dll", SetLastError=true)] static extern bool SetConsoleCtrlHandler(IntPtr handler, bool add);
+  // Equivalent of pressing Ctrl+C in the daemon's own console. This process ignores the
+  // event and leaves its original console (later steps log to a file only).
+  public static string CtrlCInConsoleOf(uint pid) {
+    FreeConsole();
+    if (!AttachConsole(pid)) return "AttachConsole error " + Marshal.GetLastWin32Error();
+    SetConsoleCtrlHandler(IntPtr.Zero, true);
+    if (!GenerateConsoleCtrlEvent(0, 0)) return "GenerateConsoleCtrlEvent error " + Marshal.GetLastWin32Error();
+    return null;
   }
   [StructLayout(LayoutKind.Explicit, CharSet=CharSet.Unicode)] struct INPUT_RECORD {
     [FieldOffset(0)] public ushort EventType; [FieldOffset(4)] public int KeyDown; [FieldOffset(8)] public ushort Repeat;
@@ -152,7 +158,14 @@ Cell 'install-vc-redist-inside-sandbox-only' {
 $setupFailed = @($cells | Where-Object { $_.status -ne 'PASS' }).Count -ne 0
 if ($setupFailed) { Log 'setup failed; functional cells NOT_RUN' }
 else {
-New-Item -ItemType Directory -Path $state | Out-Null
+# Exactly the README "private state directory" snippet: owner = this user, one ACE.
+$d = New-Item -ItemType Directory -Path $state
+$me = [Security.Principal.WindowsIdentity]::GetCurrent().User
+$acl = New-Object Security.AccessControl.DirectorySecurity
+$acl.SetOwner($me); $acl.SetAccessRuleProtection($true, $false)
+$acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($me, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
+Set-Acl -LiteralPath $d.FullName -AclObject $acl
+Log "state $(Owner $state)"
 $synthetic = Join-Path $state 'synthetic'
 New-Item -ItemType Directory -Path $synthetic | Out-Null
 Set-Content -LiteralPath (Join-Path $synthetic 'AGENTS.md') -Value 'Synthetic sandbox acceptance only.'
@@ -163,11 +176,11 @@ $loc = @('--runtime-dir', $runtime, '--endpoint', $endpoint)
 $query = Join-Path $bin 'acp-query.exe'
 function Q([string[]]$a) { Run $query ($loc + $a) }
 function Why($r) { "exit $($r.code) error=$($r.json.error) stderr=$(($r.err -split "`n" | Select-Object -First 2) -join ' | ')" }
-function Owner([string]$path) { $acl = Get-Acl -LiteralPath $path; "owner=$($acl.Owner) rules=" + (($acl.Access | ForEach-Object { "$($_.IdentityReference):$($_.FileSystemRights)" }) -join ';') }
+
 
 Cell 'daemon-start-no-implicit-profile' {
     $line = '"' + (Join-Path $bin 'acp-daemon.exe') + '" --runtime-dir "' + $runtime + '" --endpoint ' + $endpoint + ' --allow-project synthetic --allow-root "synthetic=' + $synthetic + '"'
-    $script:daemonPid = [AcpNative]::StartInNewGroup((Join-Path $bin 'acp-daemon.exe'), $line)
+    $script:daemonPid = [AcpNative]::StartInOwnConsole((Join-Path $bin 'acp-daemon.exe'), $line)
     $deadline = (Get-Date).AddSeconds(20)
     do { Start-Sleep -Milliseconds 200; $info = Q @('profile', 'info') } while ($info.code -ne 0 -and (Get-Date) -lt $deadline)
     Need ($info.code -eq 0) 'daemon not ready'
@@ -254,8 +267,8 @@ Cell 'conpty-tui-render-ctrl-q-exit' {
 Cell 'graceful-stop-cleans-credentials' {
     Need ($daemonPid -ne 0) 'no daemon'
     $p = Get-Process -Id $daemonPid
-    $err = [AcpNative]::CtrlBreak([uint32]$daemonPid)
-    Need ($null -eq $err) "Ctrl+Break failed: $err"
+    $err = [AcpNative]::CtrlCInConsoleOf([uint32]$daemonPid)
+    Need ($null -eq $err) "Ctrl+C failed: $err"
     Need ($p.WaitForExit(15000)) 'daemon did not exit'
     Need ($p.ExitCode -eq 0) "daemon exit $($p.ExitCode)"
     foreach ($cap in 'operator.cap', 'agent-synthetic.cap', 'operator-write.cap') { Need (-not (Test-Path (Join-Path $runtime $cap))) "$cap left behind" }
