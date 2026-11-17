@@ -623,15 +623,32 @@ async fn main() {
             libs.iter().any(|l| l.contains("libwayland-client")),
             "Wayland client mapped"
         );
+        // Ubuntu's GTK 4 links both backends, so libX11 may be mapped as linkage.
+        // No X11 connection is possible: the owned GUI has no DISPLAY and is pinned
+        // to the Wayland backend, which GTK itself reports above.
+        let environ = fs::read(format!("/proc/{}/environ", ui.pid())).unwrap();
+        let vars: Vec<&[u8]> = environ.split(|b| *b == 0).collect();
         assert!(
-            !libs.iter().any(|l| l.contains("libX11.so")),
-            "no X11 client library mapped"
+            !vars.iter().any(|v| v.starts_with(b"DISPLAY=")),
+            "GUI has no DISPLAY"
         );
+        assert!(
+            vars.contains(&&b"GDK_BACKEND=wayland"[..]),
+            "GUI pinned to Wayland"
+        );
+        let x11_linked: Vec<_> = libs
+            .iter()
+            .filter(|l| l.contains("libX"))
+            .cloned()
+            .collect();
         let display = json!({
             "WAYLAND_DISPLAY": std::env::var("WAYLAND_DISPLAY").ok(),
             "XDG_RUNTIME_DIR": std::env::var("XDG_RUNTIME_DIR").ok(),
             "WSL_DISTRO_NAME": std::env::var("WSL_DISTRO_NAME").ok(),
             "gtk": gtk,
+            "gui_display_env": false,
+            "gdk_backend": "wayland",
+            "x11_libraries_mapped_as_gtk_linkage": x11_linked,
         });
         fs::write(
             out.join("wayland.json"),
