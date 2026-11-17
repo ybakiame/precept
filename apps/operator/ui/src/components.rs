@@ -359,7 +359,15 @@ pub(super) fn shell(
                                         .child(
                                             text(move || {
                                                 let m = model.get();
-                                                if m.operator.open {
+                                                // A WSL link/launch problem names its exact cause on
+                                                // every page, including the open Operator panel.
+                                                if let Some(reason) = m.wsl_reason() {
+                                                    format!(
+                                                        "{} · {}",
+                                                        m.target_label(),
+                                                        m.word(reason)
+                                                    )
+                                                } else if m.operator.open {
                                                     format!(
                                                         "{} · {}",
                                                         m.target_label(),
@@ -383,6 +391,9 @@ pub(super) fn shell(
                                                 }
                                             })
                                             .text_color(move || match model.get().phase {
+                                                _ if model.get().wsl_reason().is_some() => {
+                                                    palette(model).error
+                                                }
                                                 Phase::Error | Phase::Unavailable => {
                                                     palette(model).error
                                                 }
