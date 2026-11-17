@@ -18,3 +18,4 @@
 # Ship verbatim bytes: the portable recipe verifies the canonical Apache-2.0 hash.
 /LICENSE -text
 /NOTICE -text
+/tools/portable/notice-supplements/*.txt -text

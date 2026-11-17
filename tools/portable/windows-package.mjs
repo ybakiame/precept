@@ -12,6 +12,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { noticeLedger, NoticeError } from './notices.mjs';
 
 export const binaries = ['acp-daemon.exe', 'acp-query.exe', 'acp-mcp.exe', 'acp-nsh-native.exe', 'acp-nsh-tui.exe'];
 export const product = 'ACP';
@@ -247,7 +248,7 @@ export function build(repo, parent, name, cargoProgram) {
     license: 'Apache-2.0', locks: {}, build_commands: [], binaries: [], prerequisites: [], files: [],
     limitations: ['Unsigned product executables; not a release or reproducible-binary claim',
       'OS minimum and clean-target acceptance unverified',
-      'Third-party notice review pending; the ledger is not a linker-derived SBOM'] };
+      'Third-party notices reviewed against a permissive-license policy; the ledger is not a linker-derived SBOM; signing and publication undecided'] };
   for (const file of ['Cargo.lock', 'apps/operator/Cargo.lock']) manifest.locks[file] = digest(fs.readFileSync(path.join(repo, file)));
   requireValue(fs.readFileSync(path.join(repo, 'apps/operator/ui/Cargo.toml'), 'utf8').includes(pin), 'NSH pin mismatch');
 
@@ -289,37 +290,22 @@ export function build(repo, parent, name, cargoProgram) {
     imports: vcImports.map(name => ({ name, importers: manifest.binaries.filter(b => b.imports.some(i => i.name === name)).map(b => b.file) })),
     download: 'https://aka.ms/vc14/vc_redist.x64.exe', bundled: false });
 
-  // Notices: crate-local texts for the linked normal-dependency closure.
-  const ledger = { scope: 'normal-dependency closure of shipped packages for target/features; NOT a linker-derived SBOM', packages: [] };
+  // Notices: reviewed ledger for the linked normal-dependency closure (shared with Linux).
+  const noticeEntries = [];
   for (const [label, manifestFile, packages, features] of workspaces) {
     const metadata = JSON.parse(command(cargoProgram, ['metadata', '--format-version', '1', '--locked', '--filter-platform', target,
       '--manifest-path', manifestFile, ...features], repo, path.join(report, label + '-metadata.log'), env));
     const closure = normalClosure(metadata, packages);
-    for (const [linkage, list] of [['linked', closure.linked], ['compile-time-proc-macro', closure.compileTime]]) {
-      for (const pkg of list) {
-        const texts = [];
-        const directory = path.dirname(pkg.manifest_path);
-        for (const filename of fs.readdirSync(directory).filter(n => /^(licen[sc]e|copying|notice)([.-]|$)/i.test(n)).sort()) {
-          const source = path.join(directory, filename), info = fs.lstatSync(source);
-          if (!info.isFile() || info.isSymbolicLink()) continue;
-          const bytes = fs.readFileSync(source), hash = digest(bytes), destination = `${hash}.txt`;
-          if (!fs.existsSync(path.join(notices, destination))) fs.writeFileSync(path.join(notices, destination), bytes, { flag: 'wx' });
-          texts.push({ file: `notices/${destination}`, sha256: hash });
-        }
-        ledger.packages.push({ workspace: label, package: pkg.name, version: pkg.version, linkage,
-          source: pkg.source ? pkg.source.replace(/#.*$/, '') : 'first-party', declared_license: pkg.license, texts,
-          review: !pkg.source ? 'FIRST-PARTY: Apache-2.0, see LICENSE.txt and notices/NOTICE.txt'
-            : texts.length ? 'PENDING' : 'PENDING: no crate-local notice text found' });
-      }
-    }
+    for (const [linkage, list] of [['linked', closure.linked], ['compile-time-proc-macro', closure.compileTime]])
+      for (const pkg of list) noticeEntries.push({ workspace: label, linkage, pkg });
   }
+  const ledger = noticeLedger(noticeEntries, notices, repo, (file, bytes) => fs.writeFileSync(file, bytes, { flag: 'wx' }));
   fs.writeFileSync(path.join(notices, 'dependency-notices.json'), JSON.stringify(ledger, null, 2) + '\n', { flag: 'wx' });
   fs.writeFileSync(path.join(notices, 'NOTICE.txt'), notice, { flag: 'wx' });
   fs.copyFileSync(path.join(repo, 'tools/portable/README-portable.txt'), path.join(acp, 'README.txt'), fs.constants.COPYFILE_EXCL);
   fs.writeFileSync(path.join(acp, 'LICENSE.txt'), license, { flag: 'wx' });
   manifest.notices = { linked_packages: ledger.packages.filter(p => p.linkage === 'linked').length,
-    compile_time_packages: ledger.packages.filter(p => p.linkage !== 'linked').length,
-    third_party_without_text: ledger.packages.filter(p => p.source !== 'first-party' && !p.texts.length).length };
+    compile_time_packages: ledger.packages.filter(p => p.linkage !== 'linked').length, ...ledger.summary };
   manifest.files = inventory(acp);
   fs.writeFileSync(path.join(runtime, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx' });
 
@@ -346,7 +332,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const result = build(...process.argv.slice(2));
     console.log(JSON.stringify({ source_sha: result.sha, source_tree: result.tree, status: 'ASSEMBLED_NOT_ZIPPED' }));
   } catch (error) {
-    const detail = error instanceof PolicyError ? error.message : (error.code ?? error.name);
+    const detail = error instanceof PolicyError || error instanceof NoticeError ? error.message : (error.code ?? error.name);
     console.error(`PACKAGING_REFUSED: ${detail}; no install, cleanup or source fallback performed`); process.exitCode = 1;
   }
 }

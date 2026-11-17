@@ -14,7 +14,8 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { apacheLicenseSha256, builderPathScan, cargoEnvironment, digest, freshDirectory, inventory, normalClosure,
   pin, PolicyError, regular, removeOwnedProduct, verifyInventory } from './windows-package.mjs';
-import { elfInfo, minimumVersions } from './elf.mjs';
+import { ElfError, elfInfo, minimumVersions } from './elf.mjs';
+import { noticeLedger, NoticeError } from './notices.mjs';
 
 export const binaries = ['acp-daemon', 'acp-query', 'acp-mcp', 'acp-nsh-native', 'acp-nsh-tui', 'acp-wsl-bridge'];
 export const target = 'x86_64-unknown-linux-gnu';
@@ -104,7 +105,7 @@ export function build(repo, parent, name, cargoProgram) {
     locks: {}, build_commands: [], binaries: [], runtime: {}, files: [],
     limitations: ['Unsigned; not a release or reproducible-binary claim',
       'Validated only on the recorded Ubuntu 24.04 WSL2 + WSLg target; no standalone Linux or cross-distro claim',
-      'Third-party notice review pending; the ledger is not a linker-derived SBOM'] };
+      'Third-party notices reviewed against a permissive-license policy; the ledger is not a linker-derived SBOM; signing and publication undecided'] };
   for (const file of ['Cargo.lock', 'apps/operator/Cargo.lock']) manifest.locks[file] = digest(fs.readFileSync(path.join(repo, file)));
   const workspaces = [
     ['core', 'Cargo.toml', ['acp-daemon', 'acp-query', 'acp-mcp'], []],
@@ -143,30 +144,16 @@ export function build(repo, parent, name, cargoProgram) {
     packages: Object.keys(byPackage).sort().map(name => ({ name, builder_version: run('dpkg-query', ['-W', '-f=${Version}', name]), needed_by: [...byPackage[name]].sort() })),
     note: 'Direct DT_NEEDED owners on the builder. Dynamic GTK/GIO/GStreamer modules, fonts and GPU/display integration are observed separately at runtime.'
   };
-  // Notices for the shipped packages' normal-dependency closure.
-  const ledger = { scope: 'normal-dependency closure of shipped packages for target/features; NOT a linker-derived SBOM', packages: [] };
+  // Notices: reviewed ledger for the shipped packages' normal-dependency closure.
+  const noticeEntries = [];
   for (const [label, manifestFile, packages, features] of workspaces) {
     const metadata = JSON.parse(run(cargoProgram, ['metadata', '--format-version', '1', '--locked', '--filter-platform', target,
       '--manifest-path', manifestFile, ...features], { cwd: repo, env }));
     const closure = normalClosure(metadata, packages);
-    for (const [linkage, list] of [['linked', closure.linked], ['compile-time-proc-macro', closure.compileTime]]) {
-      for (const pkg of list) {
-        const texts = [];
-        const directory = path.dirname(pkg.manifest_path);
-        for (const filename of fs.readdirSync(directory).filter(n => /^(licen[sc]e|copying|notice)([.-]|$)/i.test(n)).sort()) {
-          const source = path.join(directory, filename), info = fs.lstatSync(source);
-          if (!info.isFile() || info.isSymbolicLink()) continue;
-          const bytes = fs.readFileSync(source), hash = digest(bytes), destination = `${hash}.txt`;
-          if (!fs.existsSync(path.join(notices, destination))) fs.writeFileSync(path.join(notices, destination), bytes, { flag: 'wx', mode: 0o644 });
-          texts.push({ file: `notices/${destination}`, sha256: hash });
-        }
-        ledger.packages.push({ workspace: label, package: pkg.name, version: pkg.version, linkage,
-          source: pkg.source ? pkg.source.replace(/#.*$/, '') : 'first-party', declared_license: pkg.license, texts,
-          review: !pkg.source ? 'FIRST-PARTY: Apache-2.0, see LICENSE.txt and notices/NOTICE.txt'
-            : texts.length ? 'PENDING' : 'PENDING: no crate-local notice text found' });
-      }
-    }
+    for (const [linkage, list] of [['linked', closure.linked], ['compile-time-proc-macro', closure.compileTime]])
+      for (const pkg of list) noticeEntries.push({ workspace: label, linkage, pkg });
   }
+  const ledger = noticeLedger(noticeEntries, notices, repo, (file, bytes) => fs.writeFileSync(file, bytes, { flag: 'wx', mode: 0o644 }));
   fs.writeFileSync(path.join(notices, 'dependency-notices.json'), JSON.stringify(ledger, null, 2) + '\n', { flag: 'wx', mode: 0o644 });
   fs.writeFileSync(path.join(notices, 'NOTICE.txt'), notice, { flag: 'wx', mode: 0o644 });
   const packageLine = manifest.runtime.packages.map(p => p.name).join(' ');
@@ -176,8 +163,7 @@ export function build(repo, parent, name, cargoProgram) {
   fs.writeFileSync(path.join(acp, 'README.txt'), readme, { flag: 'wx', mode: 0o644 });
   fs.writeFileSync(path.join(acp, 'LICENSE.txt'), license, { flag: 'wx', mode: 0o644 });
   manifest.notices = { linked_packages: ledger.packages.filter(p => p.linkage === 'linked').length,
-    compile_time_packages: ledger.packages.filter(p => p.linkage !== 'linked').length,
-    third_party_without_text: ledger.packages.filter(p => p.source !== 'first-party' && !p.texts.length).length };
+    compile_time_packages: ledger.packages.filter(p => p.linkage !== 'linked').length, ...ledger.summary };
   manifest.files = inventory(acp);
   fs.writeFileSync(path.join(runtime, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx', mode: 0o644 });
   for (const file of ['runtime/manifest.json', 'notices/dependency-notices.json', 'notices/NOTICE.txt', 'README.txt', 'LICENSE.txt']) {
@@ -217,7 +203,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     need(process.argv.length === 6, 'Usage: node linux-package.mjs REPO EXISTING_PARENT NEW_NAME CARGO');
     console.log(JSON.stringify(build(...process.argv.slice(2))));
   } catch (error) {
-    const detail = error instanceof PolicyError || error?.name === 'ElfError' ? error.message : (error.code ?? error.name);
+    const detail = error instanceof PolicyError || error instanceof ElfError || error instanceof NoticeError ? error.message : (error.code ?? error.name);
     console.error(`PACKAGING_REFUSED: ${detail}; no install, cleanup or source fallback performed`);
     process.exitCode = 1;
   }
