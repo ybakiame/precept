@@ -6,7 +6,7 @@
 [S1-A](p1-m5-s1a-windows-portable.md) (Windows ZIP) and
 [S1-B](p1-m5-s1b-windows-wsl-operator.md) (primary Windows GUI → WSL2 workflow).
 
-**Results: the unpublished Linux x86_64 `.tar.gz` is assembled, and every check
+**Results: a local-only Linux x86_64 portable `.tar.gz` was assembled and exercised; every check
 passed on one disposable, clean Ubuntu 24.04 WSL2 user distribution with WSLg:**
 - ELF and runtime dependency closure.
 - Missing-dependency diagnostics.
@@ -62,11 +62,18 @@ This is not independent human, IME or assistive-technology acceptance.
 - Copies only the six Cargo-reported product executables.
 - Refuses any builder-path bytes in binaries or metadata.
 
-Local attempts are ignored under `artifacts/local-p1-m5/s1c-attempt-*` in the builder,
-plus private run directories in the target. Logs, the archive, captures, VT and
-library maps stay local and unattached.
+Local attempts and generated package outputs are ignored under
+`artifacts/local-p1-m5/s1c-attempt-*` in the builder, plus private run directories
+in the target. Logs, the `.tar.gz`, inventory/checksum sidecars, captures, VT and
+library maps stay local and unattached. Only the packaging recipe, tests and this
+evidence report are committed; the generated archive is not a PR or release asset.
 
-## Archive and provenance
+## Local archive and provenance
+
+The archive below is a local test output, not a repository deliverable. It is
+built for clean-target extraction and acceptance; the generated archive and sidecars
+remain in ignored local artifacts. Formal release packaging, signing and publication
+are deferred until an explicitly approved release stage.
 
 `acp-linux-x86_64-prototype-dd0940405117.tar.gz`: **42,316,349 bytes, 269 entries,
 265 files**. SHA-256
@@ -341,4 +348,4 @@ Not run: standalone Linux host/VM, other distributions or compositors, the full
   Linux support claim. It also needs a decision on whether to declare graphics/font
   packages that the WSL image happened to provide.
 - Human, IME and AT acceptance on WSLg, if WSLg is ever offered beyond secondary use.
-- Parent M5 stays open; keep the PR Draft.
+- Parent M5 stays open for later approved readiness gates. This PR reviews the local packaging implementation and WSLg acceptance evidence; it is not a release or distribution authorization.
