@@ -349,6 +349,20 @@ catalog! {
     RuntimeHeading => ("Runtime", "运行时"),
     BackendUnobserved => ("Runtime backend not observed yet; inspect local diagnostics.", "尚未观测运行时后端，请检查本机诊断。"),
     RendererHelp => ("Renderer class does not attest GPU acceleration or compositor identity.", "渲染器类型不能证明 GPU 加速或 compositor 身份。"),
+    WslHostUnavailable => ("WSL is not available on this Windows host.", "此 Windows 主机上无法使用 WSL。"),
+    WslDistributionNotFound => ("WSL distribution not found. Check the distribution name.", "未找到 WSL 发行版，请检查发行版名称。"),
+    WslUserUnavailable => ("WSL user is not available in this distribution. Check the Linux user.", "该发行版中没有此 WSL 用户，请检查 Linux 用户。"),
+    WslLaunchFailed => ("WSL could not start the bridge helper.", "WSL 无法启动桥接辅助程序。"),
+    WslHelperMissing => ("Bridge helper not found or not executable in WSL. Check its absolute path.", "WSL 中未找到桥接辅助程序或其不可执行，请检查绝对路径。"),
+    WslHelperRefused => ("Bridge helper refused the runtime or endpoint. Use absolute Linux paths.", "桥接辅助程序拒绝了运行目录或端点，请使用 Linux 绝对路径。"),
+    WslHelperIncompatible => ("Incompatible bridge helper version. Install the matching acp-wsl-bridge.", "桥接辅助程序版本不兼容，请安装匹配的 acp-wsl-bridge。"),
+    WslBridgeTimeout => ("WSL bridge did not respond. Reconnect when WSL is ready.", "WSL 桥接无响应，请在 WSL 就绪后重新连接。"),
+    WslBridgeDisconnected => ("WSL bridge disconnected (distribution stopped or helper exited). Reconnect explicitly.", "WSL 桥接已断开（发行版已停止或辅助程序已退出），请手动重新连接。"),
+    WslDaemonUnreachable => ("WSL daemon is not running or not reachable at this runtime endpoint. Start it inside WSL, then Reconnect.", "WSL Daemon 未运行或无法通过该运行端点访问。请在 WSL 内启动后重新连接。"),
+    WslRuntimeRefused => ("WSL runtime refused: check its ownership and private permissions.", "WSL 运行目录被拒绝：请检查其属主与私有权限。"),
+    WslQueryTimedOut => ("WSL query timed out.", "WSL 查询超时。"),
+    WslLinkOk => ("WSL link healthy", "WSL 连接正常"),
+    ReviewErrorUnavailableWsl => ("WSL daemon or bridge unavailable; see the WSL status line, then Reconnect or retry.", "WSL Daemon 或桥接不可用；请查看 WSL 状态行，然后重新连接或重试。"),
 }
 
 #[cfg(test)]

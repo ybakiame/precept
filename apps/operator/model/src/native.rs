@@ -194,10 +194,43 @@ impl Inputs {
             k.endpoint,
         ])
     }
-    /// The live WSL bridge. `start` is true only for explicit user reads.
+    /// The live WSL bridge. `start` is true only for explicit user actions.
+    /// A failure is reported as a specific `wsl_status` reason.
     pub(crate) fn wsl_bridge(&self, start: bool) -> Result<crate::bridge::Client, &'static str> {
+        use crate::bridge::{BridgeError, ConnectFailure};
+        use crate::connection::wsl_status as status;
         let key = self.wsl_key()?;
-        crate::bridge::bridge(&key, start, || self.wsl_command())
+        crate::bridge::bridge(&key, start, || self.wsl_command()).map_err(|e| match e {
+            BridgeError::NotStarted => status::BRIDGE_DISCONNECTED,
+            BridgeError::Command(reason) => reason,
+            BridgeError::Connect(ConnectFailure::Spawn) => status::HOST_UNAVAILABLE,
+            BridgeError::Connect(ConnectFailure::Timeout) => status::BRIDGE_TIMEOUT,
+            BridgeError::Connect(ConnectFailure::Incompatible) => status::HELPER_INCOMPATIBLE,
+            BridgeError::Connect(ConnectFailure::Exited(code)) => {
+                // Only after a WSL-level failure: is the distribution registered?
+                let registered = (code == Some(-1))
+                    .then(|| registered_distribution(&key.distribution))
+                    .flatten();
+                status::launch_failure(code, registered)
+            }
+        })
+    }
+    /// Live WSL link status for the GUI's watcher. Never starts a bridge and
+    /// never touches the page phase or data: `None` means no bridge yet or healthy.
+    pub fn wsl_link_status(&self) -> Option<&'static str> {
+        use crate::bridge::{CallError, Op};
+        use crate::connection::wsl_status as status;
+        let client = crate::bridge::peek(&self.wsl_key().ok()?)?;
+        if !client.alive() {
+            return Some(status::BRIDGE_DISCONNECTED);
+        }
+        match client.call(Op::Health {}, std::time::Duration::from_secs(5)) {
+            Ok(_) => None,
+            Err(CallError::Remote("Permission denied")) => Some(status::RUNTIME_REFUSED),
+            Err(CallError::Remote(_)) => Some(status::DAEMON_UNREACHABLE),
+            Err(CallError::Timeout) => Some(status::BRIDGE_TIMEOUT),
+            Err(CallError::Lost | CallError::NotSent) => Some(status::BRIDGE_DISCONNECTED),
+        }
     }
     #[cfg(target_os = "windows")]
     fn wsl_command(&self) -> Result<std::process::Command, &'static str> {
@@ -228,10 +261,14 @@ impl Inputs {
                 },
                 std::time::Duration::from_secs(20),
             )
-            .map_err(|e| match e {
-                CallError::Remote("Permission denied") => "Permission denied",
-                CallError::Timeout => "WSL query timed out",
-                _ => "WSL daemon unavailable or access refused",
+            .map_err(|e| {
+                use crate::connection::wsl_status as status;
+                match e {
+                    CallError::Remote("Permission denied") => status::RUNTIME_REFUSED,
+                    CallError::Remote(_) => status::DAEMON_UNREACHABLE,
+                    CallError::Timeout => status::QUERY_TIMED_OUT,
+                    CallError::Lost | CallError::NotSent => status::BRIDGE_DISCONNECTED,
+                }
             })?;
         let data: Snapshot = serde_json::from_value(value).map_err(|_| "Invalid WSL snapshot")?;
         data.validate()?;
@@ -240,6 +277,72 @@ impl Inputs {
         }
         Ok(data)
     }
+}
+
+/// Whether `wsl.exe --list --quiet` lists `name` (case-insensitive, as WSL is).
+/// `None` if the list itself is unavailable. Windows only; read-only.
+#[cfg(target_os = "windows")]
+fn registered_distribution(name: &str) -> Option<bool> {
+    use std::os::windows::process::CommandExt;
+    let executable = std::env::var_os("SystemRoot")
+        .map(PathBuf::from)?
+        .join("System32/wsl.exe");
+    let output = std::process::Command::new(executable)
+        .args(["--list", "--quiet"])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .creation_flags(0x08000000)
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| parse_distribution_list(&output.stdout, name))
+}
+#[cfg(not(target_os = "windows"))]
+fn registered_distribution(_: &str) -> Option<bool> {
+    None
+}
+/// `wsl.exe --list` writes UTF-16LE (optionally with a BOM).
+// Used at runtime on Windows; unit-tested everywhere.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub(crate) fn parse_distribution_list(raw: &[u8], name: &str) -> bool {
+    let units: Vec<u16> = raw
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| u16::from_le_bytes(*c))
+        .collect();
+    String::from_utf16_lossy(&units)
+        .trim_start_matches('\u{feff}')
+        .lines()
+        .map(|l| l.trim_matches(|c: char| c.is_whitespace() || c == '\0'))
+        .any(|l| l.eq_ignore_ascii_case(name))
+}
+
+/// Daemon health through the Operator credential (WSL bridge live status).
+pub(crate) async fn health_at(location: &Location) -> Result<serde_json::Value, &'static str> {
+    let path = location
+        .credential_path(None)
+        .map_err(|_| "Local daemon unavailable or access refused")?;
+    let credential = load_credential(location, &path).map_err(|e| match e {
+        acp_ipc::Error::Unauthorized | acp_ipc::Error::UnsafeRuntime
+            if std::fs::symlink_metadata(&path).is_ok() =>
+        {
+            "Permission denied"
+        }
+        _ => "Local daemon unavailable or access refused",
+    })?;
+    if credential.access != Access::Operator {
+        return Err("Permission denied");
+    }
+    let mut client = Client::connect(location, &credential)
+        .await
+        .map_err(|_| "Local daemon unavailable or access refused")?;
+    client
+        .request("daemon.health", serde_json::json!({}))
+        .await
+        .map_err(|_| "Local daemon unavailable or access refused")
 }
 
 /// Shared snapshot read used by the local client and the WSL bridge helper.
@@ -408,6 +511,21 @@ mod tests {
         }
     }
     #[test]
+    fn distribution_list_is_utf16_and_case_insensitive() {
+        let encode = |s: &str| {
+            let mut out = vec![0xff, 0xfe];
+            for u in s.encode_utf16() {
+                out.extend(u.to_le_bytes());
+            }
+            out
+        };
+        let raw = encode("archlinux\r\nacp-s1b-ubuntu\r\n");
+        assert!(parse_distribution_list(&raw, "acp-s1b-ubuntu"));
+        assert!(parse_distribution_list(&raw, "ACP-S1B-Ubuntu"));
+        assert!(!parse_distribution_list(&raw, "acp-s1b"));
+        assert!(!parse_distribution_list(&[], "archlinux"));
+    }
+    #[test]
     fn wsl_is_explicit_shell_free_and_never_a_fixture_fallback() {
         use clap::Parser;
         assert!(Inputs::try_parse_from(["ui", "--wsl-distribution", "synthetic"]).is_err());
@@ -465,7 +583,7 @@ mod tests {
         // Without an explicit user read no bridge is ever started.
         assert_eq!(
             base.wsl_bridge(false).err(),
-            Some("WSL bridge disconnected; reconnect explicitly")
+            Some(crate::connection::wsl_status::BRIDGE_DISCONNECTED)
         );
     }
 }

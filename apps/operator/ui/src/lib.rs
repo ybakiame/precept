@@ -242,7 +242,43 @@ pub fn App() -> impl IntoElement {
     let model = signal(initial);
     load(model);
     sessions::poll(model);
+    #[cfg(feature = "ipc")]
+    wsl_watch(model);
     console(model).into_element()
+}
+
+/// Live WSL link status every 2 s for a WSL target: a lost bridge (distribution
+/// stopped, helper exited) or an unreachable daemon is shown without waiting
+/// for a user action. It never starts a bridge or a process, and only updates
+/// the display-only `wsl_link` field (page phase, data and guards are untouched).
+#[cfg(feature = "ipc")]
+fn wsl_watch(model: Signal<Model>) {
+    use acp_operator_model::connection::Target;
+    spawn(async move {
+        loop {
+            timer(std::time::Duration::from_secs(2)).await;
+            let connection = model.get_untracked().connection.clone();
+            if connection.target != Target::Wsl {
+                if model.get_untracked().wsl_link.is_some() {
+                    model.update(|m| m.wsl_link = None);
+                }
+                continue;
+            }
+            let probe = connection.clone();
+            let status = blocking(move || {
+                acp_operator_model::native::Inputs::from_connection(&probe)
+                    .ok()
+                    .and_then(|inputs| inputs.wsl_link_status())
+            })
+            .await
+            .unwrap_or(None);
+            if model.get_untracked().connection == connection
+                && model.get_untracked().wsl_link != status
+            {
+                model.update(|m| m.wsl_link = status);
+            }
+        }
+    });
 }
 
 fn console(model: Signal<Model>) -> impl IntoElement {
@@ -360,6 +396,10 @@ fn console(model: Signal<Model>) -> impl IntoElement {
     effect(move || {
         if std::env::var_os("ACP_UI_PROBE").is_some() {
             let current = model.get();
+            eprintln!(
+                "ACP_UI_WSL link={:?} failure={:?}",
+                current.wsl_link, current.read_failure
+            );
             eprintln!(
                 "ACP_UI_SESSION target={:?} draft={:?} invalid={} settings={} locale={:?} theme={:?} mode={:?} denied={}",
                 current.connection.target,

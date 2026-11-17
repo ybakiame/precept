@@ -178,6 +178,12 @@ pub struct Model {
     pub task_id: String,
     pub page: usize,
     pub permission_denied: bool,
+    /// Reason of the last failed read (a fixed string, e.g. a `wsl_status` value).
+    pub read_failure: Option<&'static str>,
+    /// Live WSL link problem observed by the GUI watcher (`None` = healthy or not
+    /// yet connected). Display only: never part of an Operator guard, so it can
+    /// not invalidate an uncertain request's identical retry.
+    pub wsl_link: Option<&'static str>,
     pub queried_task: String,
     pub selected_project: Option<String>,
 }
@@ -216,6 +222,8 @@ impl Model {
             task_id: String::new(),
             page: 0,
             permission_denied: false,
+            read_failure: None,
+            wsl_link: None,
             queried_task: String::new(),
             selected_project: None,
         }
@@ -280,6 +288,7 @@ impl Model {
         self.selected_preference = None;
         self.copied = false;
         self.permission_denied = false;
+        self.read_failure = None;
         if !self.task_id.is_empty() && !valid_task(&self.task_id) {
             self.phase = Phase::Error;
             return Err("Invalid task ID");
@@ -345,6 +354,10 @@ impl Model {
     }
     pub fn receive(&mut self, result: Result<Snapshot, &'static str>) {
         self.permission_denied = result.as_ref().is_err_and(|e| *e == "Permission denied");
+        self.read_failure = result.as_ref().err().copied();
+        if result.is_ok() {
+            self.wsl_link = None;
+        }
         match result {
             Ok(s) if s.validate().is_ok() => {
                 self.project_names = s.projects.iter().map(|p| p.name.clone()).collect();
@@ -435,6 +448,19 @@ impl Model {
             512,
         )
     }
+    /// For a WSL target: the live link problem, else the last read failure.
+    pub fn wsl_reason(&self) -> Option<i18n::Msg> {
+        if self.connection.target != connection::Target::Wsl {
+            return None;
+        }
+        self.wsl_link
+            .or(if self.phase == Phase::Unavailable {
+                self.read_failure
+            } else {
+                None
+            })
+            .and_then(connection::wsl_status::message)
+    }
     fn connection_status(&self) -> String {
         match self.phase {
             Phase::Loading => "Loading — read-only query in progress".into(),
@@ -443,7 +469,9 @@ impl Model {
                 "Error — invalid task ID; use 1–120 characters without control characters".into()
             }
             Phase::Unavailable => {
-                if self.permission_denied {
+                if let Some(msg) = self.wsl_reason() {
+                    format!("Unavailable — {}", self.word(msg))
+                } else if self.permission_denied {
                     "Permission denied — check the private operator capability; reconnect manually"
                         .into()
                 } else {
@@ -755,6 +783,46 @@ mod tests {
 
 #[cfg(test)]
 mod target_tests {
+    #[test]
+    fn wsl_status_names_the_cause_without_touching_phase_data_or_guards() {
+        use crate::connection::{Connection, Target, wsl_status};
+        let mut m = Model::fixture();
+        m.connection = Connection {
+            target: Target::Wsl,
+            distribution: "Synthetic".into(),
+            user: "operator".into(),
+            helper: "/s/acp-wsl-bridge".into(),
+            wsl_runtime: "/s/runtime".into(),
+            wsl_endpoint: "/s/runtime/control.sock".into(),
+            ..Default::default()
+        };
+        m.receive(Err(wsl_status::DISTRIBUTION_NOT_FOUND));
+        assert_eq!(m.phase, Phase::Unavailable);
+        assert_eq!(m.read_label(), m.word(i18n::Msg::WslDistributionNotFound));
+        assert!(
+            m.status()
+                .contains(m.word(i18n::Msg::WslDistributionNotFound))
+        );
+        // A live link problem is display-only: phase, data and the Operator
+        // guard are unchanged, so an uncertain request can still be retried.
+        m.receive(Ok(Snapshot::fixture()));
+        assert_eq!(m.phase, Phase::Ready);
+        m.operator.open = true;
+        let guard = m.operator_guard();
+        assert!(guard.is_some());
+        m.wsl_link = Some(wsl_status::BRIDGE_DISCONNECTED);
+        assert_eq!(m.phase, Phase::Ready);
+        assert!(m.data.is_some());
+        assert!(m.operator_guard() == guard);
+        assert_eq!(m.read_label(), m.word(i18n::Msg::WslBridgeDisconnected));
+        // A successful read clears both; local targets never show WSL text.
+        m.receive(Ok(Snapshot::fixture()));
+        assert_eq!((m.wsl_link, m.read_failure), (None, None));
+        m.connection.target = Target::Local;
+        m.wsl_link = Some(wsl_status::BRIDGE_DISCONNECTED);
+        assert_eq!(m.wsl_reason(), None);
+    }
+
     use super::*;
     #[test]
     fn target_switch_invalidates_delayed_scope_data_and_timestamps() {

@@ -204,8 +204,9 @@ fn commit_delete(model: Signal<Model>, delete_open: Signal<bool>) {
         delete_open.set(false);
     }
 }
-fn error_msg(code: &str) -> Msg {
+fn error_msg(code: &str, wsl: bool) -> Msg {
     match code {
+        "Unavailable" if wsl => Msg::ReviewErrorUnavailableWsl,
         "ReviewMismatch" => Msg::ReviewMismatch,
         "Conflict" => Msg::ReviewErrorConflict,
         "InvalidTransition" => Msg::ReviewErrorInvalidTransition,
@@ -1163,7 +1164,8 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
                 && !o.outcome_unknown
             {
                 let toast = ui::motion::toast();
-                let message = format!("{e}: {}", tr(m.locale, error_msg(e)));
+                let wsl = m.connection.target == acp_operator_model::connection::Target::Wsl;
+                let message = format!("{e}: {}", tr(m.locale, error_msg(e, wsl)));
                 body = body.child(
                     view()
                         .bind_motion(&toast)
@@ -2058,7 +2060,7 @@ mod tests {
             ("OutcomeUnknown", Msg::OperatorUnknown),
             ("unknown", Msg::ReviewErrorGeneric),
         ] {
-            assert_eq!(error_msg(code), expected);
+            assert_eq!(error_msg(code, false), expected);
         }
     }
 

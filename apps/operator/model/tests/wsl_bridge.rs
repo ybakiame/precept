@@ -4,7 +4,7 @@
 //! Build the root workspace binaries first (`cargo build` at the repository root).
 #![cfg(all(feature = "native", unix))]
 use acp_core::operator::{Binding, Command as Op2, Expected, Mutation, Origin, Scope};
-use acp_operator_model::bridge::{self, CallError, Client, Op, Reply};
+use acp_operator_model::bridge::{self, CallError, Client, ConnectFailure, Op, Reply};
 use serde_json::{Value, json};
 use std::{
     io::{Read, Write},
@@ -799,5 +799,62 @@ fn session_lifecycle_permissions_and_replay_through_the_bridge() {
     );
     call("session.stop", json!({"session_id":session_id})).unwrap();
     observe(&|v| v["process_alive"] == false);
+    c.close(Duration::from_secs(5));
+}
+
+#[test]
+fn launch_failures_are_typed_from_the_launcher_exit_status() {
+    let sh = |script: &str| {
+        let mut c = Command::new("sh");
+        c.args(["-c", script]);
+        c
+    };
+    // `wsl.exe` exits 1 when the helper cannot be exec'd, 2 is a helper refusal.
+    assert_eq!(
+        Client::connect(sh("exit 1"), Duration::from_secs(5)).err(),
+        Some(ConnectFailure::Exited(Some(1)))
+    );
+    assert_eq!(
+        Client::connect(sh("exit 2"), Duration::from_secs(5)).err(),
+        Some(ConnectFailure::Exited(Some(2)))
+    );
+    // The real helper refuses relative paths with exit 2.
+    let mut refused = Command::new(HELPER);
+    refused.args(["--runtime-dir", "relative", "--endpoint", "/x"]);
+    assert_eq!(
+        Client::connect(refused, Duration::from_secs(5)).err(),
+        Some(ConnectFailure::Exited(Some(2)))
+    );
+    // A non-hello first frame is an incompatible helper; silence is a timeout.
+    assert_eq!(
+        Client::connect(
+            sh("printf '\\000\\000\\000\\002{}'; exec sleep 30"),
+            Duration::from_secs(5)
+        )
+        .err(),
+        Some(ConnectFailure::Incompatible)
+    );
+    assert_eq!(
+        Client::connect(sh("exec sleep 30"), Duration::from_millis(300)).err(),
+        Some(ConnectFailure::Timeout)
+    );
+}
+
+#[test]
+fn health_reports_daemon_reachability_over_the_live_bridge() {
+    let mut d = Daemon::start();
+    let c = d.client();
+    let health = c.call(Op::Health {}, Duration::from_secs(5)).unwrap();
+    assert_eq!(health["service"], "acp-daemon");
+    // Daemon stops while the bridge stays alive: an explicit unavailable answer.
+    let _ = d.child.kill();
+    let _ = d.child.wait();
+    assert!(c.alive());
+    assert_eq!(
+        c.call(Op::Health {}, Duration::from_secs(5)),
+        Err(CallError::Remote(
+            "Local daemon unavailable or access refused"
+        ))
+    );
     c.close(Duration::from_secs(5));
 }

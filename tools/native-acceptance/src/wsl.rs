@@ -32,6 +32,7 @@ pub const CELLS: &[&str] = &[
     "wsl-gui-close-keeps-daemon-and-state",
     "wsl-daemon-absent-and-explicit-recovery",
     "wsl-wrong-target-explicit-unavailable",
+    "wsl-live-link-distribution-stopped",
 ];
 
 pub struct Wsl {
@@ -714,8 +715,19 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     ui.key("alt+o");
     ui.wait("selected=true grant=false busy=false", "Profile selected");
     r.stop_daemon();
+    // Detected live, with no user action: the watcher's health check over the
+    // still-running bridge reports the stopped daemon.
+    ui.wait(
+        "ACP_UI_WSL link=Some(\"WSL daemon not running or not reachable\")",
+        "unavailable",
+    );
+    ui.capture("wsl-daemon-stopped-live", out);
     ui.key("ctrl+r");
     ui.wait("phase=Unavailable", "unavailable");
+    ui.wait(
+        "failure=Some(\"WSL daemon not running or not reachable\")",
+        "unavailable",
+    );
     ui.capture("wsl-daemon-absent", out);
     // Explicit restart: no Profile is adopted; the operator selects it again.
     r.start_daemon();
@@ -738,41 +750,83 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     evidence::begin("wsl-wrong-target-explicit-unavailable", "actual-os-input");
     // Wrong distribution, wrong Linux user, wrong runtime: explicit unavailable,
     // never a fixture or a local Windows daemon.
-    for (i, (distribution, user, runtime)) in [
+    // Each wrong input names its exact cause (from wsl.exe's exit status and the
+    // bridge), never a generic "local daemon" message, fixture or local fallback.
+    for (i, (field, value, cause)) in [
         (
+            1,
             "acp-s1b-missing".to_owned(),
-            r.wsl.user.clone(),
-            r.runtime.clone(),
+            "WSL distribution not found",
         ),
         (
-            r.wsl.distribution.clone(),
+            3,
             "acp-nobody".to_owned(),
-            r.runtime.clone(),
+            "WSL user not available in this distribution",
         ),
         (
-            r.wsl.distribution.clone(),
-            r.wsl.user.clone(),
+            5,
+            format!("{}/bin/acp-missing-helper", r.wsl.prefix),
+            "Bridge helper not found or not executable in WSL",
+        ),
+        (
+            7,
             format!("{}/absent", r.base),
+            "WSL daemon not running or not reachable",
         ),
     ]
     .into_iter()
     .enumerate()
     {
         let mut args = gui_args(&r);
-        args[1] = distribution;
-        args[3] = user;
-        args[7] = runtime;
+        args[field] = value;
         let nonce = format!("{:016x}", nanos.wrapping_add(2 + i as u64));
         let mut ui = Ui::Desktop(Box::new(desktop::Desktop::start(
             gui, &args, &nonce, script, out, &focus,
         )));
         ui.wait("phase=Unavailable", "unavailable");
+        ui.wait(&format!("failure=Some(\"{cause}\")"), "unavailable");
+        evidence::event("wrong-target-cause", json!({"case":i,"cause":cause}));
         ui.capture(&format!("wsl-wrong-target-{i}"), out);
         ui.close();
     }
     evidence::finish("PASS");
 
-    r.stop_daemon();
+    evidence::begin(
+        "wsl-live-link-distribution-stopped",
+        "actual-os-input + wsl-terminate",
+    );
+    // Connected GUI, then the disposable distribution is terminated (daemon and
+    // helper die). The GUI reports the lost bridge by itself, without restarting it.
+    let mut ui = Ui::Desktop(Box::new(desktop::Desktop::start(
+        gui,
+        &gui_args(&r),
+        &format!("{:016x}", nanos.wrapping_add(9)),
+        script,
+        out,
+        &focus,
+    )));
+    ui.key("alt+o");
+    ui.wait("selected=true grant=false busy=false", "Profile selected");
+    ui.wait("ACP_UI_WSL link=None", "Profile selected");
+    let terminated = Command::new(wsl_exe())
+        .args(["--terminate", &r.wsl.distribution])
+        .status()
+        .unwrap();
+    assert!(terminated.success());
+    r.daemon = None;
+    ui.wait(
+        "ACP_UI_WSL link=Some(\"WSL bridge disconnected\")",
+        "disconnected",
+    );
+    ui.capture("wsl-bridge-disconnected-live", out);
+    thread::sleep(Duration::from_secs(3));
+    assert!(
+        r.wsl.pids("acp-wsl-bridge").is_empty(),
+        "no automatic bridge restart"
+    );
+    ui.close();
+    evidence::finish("PASS");
+
     evidence::event(
         "windows-wsl-processes",
         json!({"before":wsl_before,"after":windows_wsl_processes()}),

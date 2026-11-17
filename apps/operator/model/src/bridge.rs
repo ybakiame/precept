@@ -115,6 +115,8 @@ pub enum Op {
         method: String,
         fields: Value,
     },
+    /// Daemon health for the GUI's live WSL status (Operator credential).
+    Health {},
     /// Abandon an in-flight request. It produces no reply of its own.
     Cancel {
         target: u64,
@@ -173,7 +175,7 @@ pub fn admit(op: &Op) -> Result<(), &'static str> {
                 return Err("InvalidRequest");
             }
         }
-        Op::Mutate { .. } => {}
+        Op::Mutate { .. } | Op::Health {} => {}
         Op::Session {
             project,
             method,
@@ -404,6 +406,7 @@ mod native_bridge {
                 method,
                 fields,
             } => crate::session::session_raw(location, &project, &method, fields).await,
+            Op::Health {} => crate::native::health_at(location).await,
             Op::Cancel { .. } => Err("InvalidRequest"),
         }
     }
@@ -428,6 +431,30 @@ mod native_bridge {
         Timeout,
         Remote(&'static str),
     }
+    /// Why a helper never completed the protocol hello. `Exited` carries the
+    /// launcher's exit status: for `wsl.exe`, -1 is a WSL-level failure
+    /// (distribution or user), 1 a failed `exec` (the helper itself never exits 1)
+    /// and 2 a helper argument refusal.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum ConnectFailure {
+        Spawn,
+        Exited(Option<i32>),
+        Timeout,
+        Incompatible,
+    }
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum BridgeError {
+        /// No live bridge and this caller may not start one.
+        NotStarted,
+        /// The launch command could not be built (e.g. no WSL transport here).
+        Command(&'static str),
+        Connect(ConnectFailure),
+    }
+    enum Hello2 {
+        Ok,
+        Eof,
+        Mismatch,
+    }
     struct Inner {
         stdin: Mutex<Option<ChildStdin>>,
         child: Mutex<Child>,
@@ -445,14 +472,14 @@ mod native_bridge {
         pub fn connect(
             mut command: Command,
             hello_timeout: Duration,
-        ) -> Result<Self, &'static str> {
+        ) -> Result<Self, ConnectFailure> {
             command
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::null());
-            let mut child = command.spawn().map_err(|_| "WSL bridge unavailable")?;
+            let mut child = command.spawn().map_err(|_| ConnectFailure::Spawn)?;
             let stdin = child.stdin.take();
-            let mut stdout = child.stdout.take().ok_or("WSL bridge unavailable")?;
+            let mut stdout = child.stdout.take().ok_or(ConnectFailure::Spawn)?;
             let inner = Arc::new(Inner {
                 stdin: Mutex::new(stdin),
                 child: Mutex::new(child),
@@ -461,25 +488,35 @@ mod native_bridge {
                 next: AtomicU64::new(1),
                 alive: AtomicBool::new(true),
             });
-            let (hello_tx, hello_rx) = mpsc::sync_channel::<bool>(1);
+            let (hello_tx, hello_rx) = mpsc::sync_channel::<Hello2>(1);
             let reader = inner.clone();
             std::thread::spawn(move || {
-                let hello = read_frame(&mut stdout, MAX_REPLY)
-                    .ok()
-                    .flatten()
-                    .and_then(|b| serde_json::from_slice::<Reply>(&b).ok())
-                    .filter(|r| r.id == 0 && r.well_formed())
-                    .and_then(|r| r.ok)
-                    .and_then(|v| serde_json::from_value::<Hello>(v).ok())
-                    .is_some_and(|h| {
-                        h == Hello {
-                            bridge: PROTOCOL.into(),
-                            version: VERSION,
+                let hello = match read_frame(&mut stdout, MAX_REPLY) {
+                    Ok(None) | Err(_) => Hello2::Eof,
+                    Ok(Some(b)) => {
+                        let matches = serde_json::from_slice::<Reply>(&b)
+                            .ok()
+                            .filter(|r| r.id == 0 && r.well_formed())
+                            .and_then(|r| r.ok)
+                            .and_then(|v| serde_json::from_value::<Hello>(v).ok())
+                            .is_some_and(|h| {
+                                h == Hello {
+                                    bridge: PROTOCOL.into(),
+                                    version: VERSION,
+                                }
+                            });
+                        if matches {
+                            Hello2::Ok
+                        } else {
+                            Hello2::Mismatch
                         }
-                    });
+                    }
+                };
+                let ok = matches!(hello, Hello2::Ok);
                 let _ = hello_tx.send(hello);
-                if !hello {
-                    reader.shutdown();
+                if !ok {
+                    // Never trust a non-hello stream. The connecting thread reads
+                    // the launcher's exit status first, then shuts it down.
                     return;
                 }
                 while let Ok(Some(body)) = read_frame(&mut stdout, MAX_REPLY) {
@@ -500,13 +537,26 @@ mod native_bridge {
                 }
                 reader.shutdown();
             });
-            match hello_rx.recv_timeout(hello_timeout) {
-                Ok(true) => Ok(Self { inner }),
-                _ => {
-                    inner.shutdown();
-                    Err("WSL bridge unavailable")
+            let failure = match hello_rx.recv_timeout(hello_timeout) {
+                Ok(Hello2::Ok) => return Ok(Self { inner }),
+                Ok(Hello2::Mismatch) => ConnectFailure::Incompatible,
+                Err(_) => ConnectFailure::Timeout,
+                Ok(Hello2::Eof) => {
+                    // The launcher ended before any hello: read its exit status.
+                    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+                    loop {
+                        if let Ok(Some(status)) = inner.child.lock().unwrap().try_wait() {
+                            break ConnectFailure::Exited(status.code());
+                        }
+                        if std::time::Instant::now() >= deadline {
+                            break ConnectFailure::Exited(None);
+                        }
+                        std::thread::sleep(Duration::from_millis(20));
+                    }
                 }
-            }
+            };
+            inner.shutdown();
+            Err(failure)
         }
         pub fn alive(&self) -> bool {
             self.inner.alive.load(Ordering::SeqCst)
@@ -626,7 +676,7 @@ mod native_bridge {
         key: &Key,
         start: bool,
         command: impl FnOnce() -> Result<Command, &'static str>,
-    ) -> Result<Client, &'static str> {
+    ) -> Result<Client, BridgeError> {
         let mut active = ACTIVE.lock().unwrap();
         if let Some((current, client)) = active.as_ref()
             && current == key
@@ -635,14 +685,27 @@ mod native_bridge {
             return Ok(client.clone());
         }
         if !start {
-            return Err("WSL bridge disconnected; reconnect explicitly");
+            return Err(BridgeError::NotStarted);
         }
         if let Some((_, old)) = active.take() {
             old.close(Duration::from_secs(3));
         }
-        let client = Client::connect(command()?, Duration::from_secs(30))?;
+        let client = Client::connect(
+            command().map_err(BridgeError::Command)?,
+            Duration::from_secs(30),
+        )
+        .map_err(BridgeError::Connect)?;
         *active = Some((key.clone(), client.clone()));
         Ok(client)
+    }
+    /// The bridge registered for `key`, without waiting on a connect in progress
+    /// and without ever starting one. For the GUI's live status watcher only.
+    pub fn peek(key: &Key) -> Option<Client> {
+        let active = ACTIVE.try_lock().ok()?;
+        active
+            .as_ref()
+            .filter(|(current, _)| current == key)
+            .map(|(_, client)| client.clone())
     }
     /// Closes the active bridge, e.g. when the connection target changes or the
     /// GUI exits. Never stops the WSL daemon.
