@@ -242,6 +242,17 @@ workflow is the Windows HWND GUI operating a daemon inside WSL2 — S1-B
 local-only Linux `.tar.gz` build/validation follows as the secondary S1-C [#72](https://github.com/ybakiame/agent-control-plane/issues/72)
 ([evidence](evaluation/p1-m5-s1c-wslg-wayland-portable.md); WSLg target only, standalone Linux still NOT_RUN). Generated archives remain ignored and are not PR/Release assets; formal distribution is deferred to an approved release stage.
 
+**Progress (2026-11-18):** S1 complete. Owner scope decision for the first candidate:
+- Windows HWND/ConPTY plus the primary Windows GUI → WSL2 workflow are in scope.
+- WSLg stays secondary.
+- Standalone Linux is deferred and is not an M5 blocker.
+- G13–G16 human/IME/AT gates are NOT_RUN under that narrowed claim.
+- G18 waits for owner-approved budgets.
+
+S1-D [#76](https://github.com/ybakiame/agent-control-plane/issues/76)
+reviews the third-party notice ledger for both recipes
+([evidence](evaluation/p1-m5-s1d-notice-review.md)).
+
 [S0 #68](https://github.com/ybakiame/agent-control-plane/issues/68) audits merged
 main `6d8000153107c67edfa5ff3bc77da15f196623d3` without behavior changes. Deliver
 the [candidate support and release plan](p1/release-readiness-plan.md) and
