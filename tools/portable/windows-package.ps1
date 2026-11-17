@@ -1,4 +1,5 @@
 # Developer-only entrypoint; restore the caller's environment, no prerequisite install.
+# VsDevShell supplies VCToolsRedistDir, the source of the app-local VC++ runtime DLLs.
 param([Parameter(Mandatory)][string]$OutputParent, [Parameter(Mandatory)][string]$Name)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -17,23 +18,25 @@ try {
     Import-Module (Join-Path $vs 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
     Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64' | Out-Null
     $env:Path = "$toolchain;$env:Path"
+    # The recipe itself strips inherited RUSTFLAGS/wrapper/target/profile overrides for Cargo.
     $env:CARGO_NET_OFFLINE = 'true'
-    Remove-Item Env:CARGO_TARGET_DIR -ErrorAction SilentlyContinue
     $parent = (Resolve-Path -LiteralPath $OutputParent).Path
     & node (Join-Path $PSScriptRoot 'windows-package.mjs') $repo $parent $Name (Join-Path $toolchain 'cargo.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Assembly failed; retain private attempt directory' }
     $report = Join-Path $parent $Name
-    $stage = Join-Path $report 'acp-windows-x86_64-prototype'
-    $source = Get-Content -LiteralPath (Join-Path $stage 'manifest.json') -Raw | ConvertFrom-Json
+    $packageRoot = Join-Path $report 'package'
+    $source = Get-Content -LiteralPath (Join-Path $packageRoot 'ACP/runtime/manifest.json') -Raw | ConvertFrom-Json
     $zip = Join-Path $report ("acp-windows-x86_64-prototype-" + $source.source_sha.Substring(0,12) + ".zip")
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    [IO.Compression.ZipFile]::CreateFromDirectory($stage, $zip)
+    # Entries are ACP/...; extraction always creates one product directory.
+    [IO.Compression.ZipFile]::CreateFromDirectory($packageRoot, $zip)
     # Extract into a NEW directory only. Inspect entries before any extraction.
     $archive = [IO.Compression.ZipFile]::OpenRead($zip)
     try {
         $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
         foreach ($entry in $archive.Entries) {
-            if ($entry.FullName -notmatch '^[A-Za-z0-9][A-Za-z0-9._/-]*$' -or $entry.FullName.Contains('..') -or $entry.FullName.Contains('\') -or -not $names.Add($entry.FullName)) { throw 'Unsafe or colliding archive entry' }
+            $n = $entry.FullName
+            if ($n -cnotmatch '^ACP/([A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*$' -or $n.Contains('..') -or -not $names.Add($n)) { throw 'Unsafe or colliding archive entry' }
         }
     } finally { $archive.Dispose() }
     $extracted = Join-Path $report 'extracted'
@@ -41,7 +44,7 @@ try {
     [IO.Compression.ZipFile]::ExtractToDirectory($zip, $extracted)
     & node (Join-Path $PSScriptRoot 'windows-package.mjs') --verify $extracted (Join-Path $report 'archive-inventory.json')
     if ($LASTEXITCODE -ne 0) { throw 'Extracted archive mismatch' }
-    @{ archive_sha256 = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant(); archive_bytes = (Get-Item -LiteralPath $zip).Length; extract_inventory = 'PASS'; clean_target = 'NOT_RUN'; developer_host = $true } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $report 'package-result.json')
+    [ordered]@{ archive = (Split-Path -Leaf $zip); archive_sha256 = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant(); archive_bytes = (Get-Item -LiteralPath $zip).Length; archive_entries = $names.Count; extract_inventory = 'PASS'; clean_target = 'NOT_RUN'; developer_host = $true } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $report 'package-result.json')
     Write-Output 'PASS: unpublished ZIP assembled and extracted; clean-target acceptance NOT_RUN'
 } finally {
     Pop-Location

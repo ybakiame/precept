@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { binaries, digest, freshDirectory, peImports, regular, verifyInventory } from './windows-package.mjs';
+import { binaries, builderPathScan, cargoEnvironment, digest, freshDirectory, normalClosure, peImports, regular,
+  removeOwnedProduct, shippedDllName, vcRuntimeImports, verifyInventory } from './windows-package.mjs';
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'acp-package-test-'));
@@ -50,17 +51,93 @@ test('shipping contract is exactly five product entrypoints', () => {
   assert.deepEqual([...binaries].sort(), ['acp-daemon.exe','acp-mcp.exe','acp-nsh-native.exe','acp-nsh-tui.exe','acp-query.exe']);
 });
 
-test('removal preflights every file, refuses forged paths, retains Profile/auth/unknown files', async t => {
-  const {removeOwnedProduct} = await import('./windows-package.mjs');
+test('app-local VC++ runtime set follows actual imports; debug CRTs refuse; UCRT is not bundled', () => {
+  const record = (...names) => ({ imports: names.map(name => ({ name, delayed: false })) });
+  const imports = vcRuntimeImports([
+    record('kernel32.dll', 'vcruntime140.dll', 'api-ms-win-crt-runtime-l1-1-0.dll'),
+    record('vcruntime140.dll', 'vcruntime140_1.dll', 'd3d11.dll')]);
+  assert.deepEqual(imports, ['vcruntime140.dll', 'vcruntime140_1.dll']);
+  assert.deepEqual(imports.map(shippedDllName), ['VCRUNTIME140.dll', 'VCRUNTIME140_1.dll']);
+  assert.deepEqual(vcRuntimeImports([record('msvcp140_codecvt_ids.dll', 'vcruntime140_threads.dll')]), ['msvcp140_codecvt_ids.dll', 'vcruntime140_threads.dll']);
+  for (const debug of ['vcruntime140d.dll', 'vcruntime140_1d.dll', 'msvcp140d.dll', 'ucrtbased.dll']) {
+    assert.throws(() => vcRuntimeImports([record(debug)]));
+  }
+});
+
+test('notice closure follows normal edges from shipped roots only; proc-macros are compile-time', () => {
+  const pkg = (name, kind = 'lib') => ({ id: name, name, version: '1.0.0', targets: [{ kind: [kind] }] });
+  const edge = (to, kind) => ({ pkg: to, dep_kinds: [{ kind, target: null }] });
+  const metadata = {
+    workspace_members: ['app', 'snapshot'],
+    packages: [pkg('app', 'bin'), pkg('snapshot', 'bin'), pkg('linked'), pkg('derive', 'proc-macro'), pkg('derive-only'),
+      pkg('test-only'), pkg('build-only'), pkg('snapshot-only')],
+    resolve: { nodes: [
+      { id: 'app', deps: [edge('linked', null), edge('derive', null), edge('test-only', 'dev'), edge('build-only', 'build')] },
+      { id: 'snapshot', deps: [edge('snapshot-only', null)] },
+      { id: 'linked', deps: [] }, { id: 'derive', deps: [edge('derive-only', null)] }, { id: 'derive-only', deps: [] },
+      { id: 'test-only', deps: [] }, { id: 'build-only', deps: [] }, { id: 'snapshot-only', deps: [] }] } };
+  const closure = normalClosure(metadata, ['app']);
+  assert.deepEqual(closure.linked.map(p => p.name), ['app', 'linked']);
+  assert.deepEqual(closure.compileTime.map(p => p.name), ['derive']);
+  assert.throws(() => normalClosure(metadata, ['app', 'missing']));
+  assert.throws(() => normalClosure(metadata, ['linked'])); // Not a workspace member.
+});
+
+test('cargo environment drops inherited flags, wrappers, target and profile overrides', () => {
+  const env = cargoEnvironment({ Path: 'x', CARGO_HOME: 'h', RUSTFLAGS: '-Cfoo', rustc_wrapper: 'sccache', CARGO_TARGET_DIR: 't',
+    CARGO_PROFILE_RELEASE_DEBUG: 'true', CARGO_BUILD_TARGET: 'other', CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER: 'evil', RUSTC: 'other' },
+    ['--remap-path-prefix=a=b', '--remap-path-prefix=c d=e']);
+  assert.deepEqual(Object.keys(env).sort(), ['CARGO_ENCODED_RUSTFLAGS', 'CARGO_HOME', 'CARGO_INCREMENTAL', 'CARGO_NET_OFFLINE',
+    'Path', 'RUSTC_WORKSPACE_WRAPPER', 'RUSTC_WRAPPER']);
+  assert.equal(env.CARGO_ENCODED_RUSTFLAGS, '--remap-path-prefix=a=b\x1f--remap-path-prefix=c d=e');
+  assert.equal(env.RUSTC_WRAPPER, '');
+});
+
+test('builder path scan finds ASCII/UTF-16, either separator, any case, and reports booleans only', () => {
+  const prefixes = { checkout: 'C:\\Users\\Dev\\src\\acp', user_home: 'C:\\Users\\Dev' };
+  const clean = builderPathScan(Buffer.from('/acp/source/crates/x.rs /cargo/registry'), prefixes);
+  assert.deepEqual(clean, { checkout: false, user_home: false });
+  assert.deepEqual(builderPathScan(Buffer.from('panic at c:/users/dev/src/acp/crates'), prefixes), { checkout: true, user_home: true });
+  assert.deepEqual(builderPathScan(Buffer.from('C:\\Users\\Dev\\.cargo', 'utf16le'), prefixes), { checkout: false, user_home: true });
+});
+
+function product(root) {
+  const names = [...binaries.map(b => `ACP/bin/${b}`), 'ACP/bin/VCRUNTIME140.dll', 'ACP/bin/VCRUNTIME140_1.dll',
+    'ACP/runtime/manifest.json', 'ACP/notices/dependency-notices.json', 'ACP/notices/microsoft-visual-cpp-runtime.txt',
+    `ACP/notices/${'a'.repeat(64)}.txt`, 'ACP/README.txt', 'ACP/LICENSE.txt'];
+  for (const dir of ['ACP', 'ACP/bin', 'ACP/runtime', 'ACP/notices']) fs.mkdirSync(path.join(root, dir));
+  return names.map(file => { fs.writeFileSync(path.join(root, file), 'product'); return { file, sha256: digest(Buffer.from('product')) }; });
+}
+test('removal preflights every file, refuses forged paths, retains Profile/auth/unknown files', t => {
   const root = fixture(t);
-  const names = [...binaries, 'manifest.json','dependency-notices.json','README.txt','LICENSE-STATUS.txt','SHA256SUMS.txt'];
-  const files = names.map(name => { fs.writeFileSync(path.join(root, name), 'product'); return {file:name, sha256:digest(Buffer.from('product'))}; });
-  for (const name of ['profile.sqlite3','operator.cap','unknown.txt']) fs.writeFileSync(path.join(root, name), 'retain');
-  assert.throws(() => removeOwnedProduct(root, [...files, {file:'../operator.cap',sha256:digest(Buffer.from('retain'))}]));
-  const changed = path.join(root, 'README.txt'); fs.writeFileSync(changed, 'changed');
+  const files = product(root);
+  for (const name of ['profile.sqlite3', 'operator.cap', 'unknown.txt']) fs.writeFileSync(path.join(root, name), 'retain');
+  for (const forged of ['../operator.cap', 'ACP/../operator.cap', 'operator.cap', 'ACP/bin/evil.dll', 'ACP/runtime/operator.cap', 'ACP/bin/acp-daemon.exe.bak']) {
+    assert.throws(() => removeOwnedProduct(root, [...files, { file: forged, sha256: digest(Buffer.from('retain')) }]));
+  }
+  const changed = path.join(root, 'ACP/README.txt'); fs.writeFileSync(changed, 'changed');
   assert.throws(() => removeOwnedProduct(root, files));
-  assert.ok(fs.existsSync(path.join(root, binaries[0]))); // No partial removal before preflight.
-  fs.writeFileSync(changed, 'product'); removeOwnedProduct(root, files);
-  assert.deepEqual(fs.readdirSync(root).sort(), ['operator.cap','profile.sqlite3','unknown.txt']);
+  assert.ok(fs.existsSync(path.join(root, 'ACP/bin', binaries[0]))); // No partial removal before preflight.
+  fs.writeFileSync(changed, 'product');
+  assert.deepEqual(removeOwnedProduct(root, files), { removed_files: files.length, retained_directories: [] });
+  assert.deepEqual(fs.readdirSync(root).sort(), ['operator.cap', 'profile.sqlite3', 'unknown.txt']);
   for (const name of fs.readdirSync(root)) assert.equal(fs.readFileSync(path.join(root, name), 'utf8'), 'retain');
+});
+test('removal keeps a product directory holding an unknown file and never follows a directory alias', t => {
+  const root = fixture(t);
+  const files = product(root);
+  fs.writeFileSync(path.join(root, 'ACP/bin/unknown.txt'), 'retain');
+  assert.deepEqual(removeOwnedProduct(root, files).retained_directories, ['ACP/bin', 'ACP']);
+  assert.deepEqual(fs.readdirSync(path.join(root, 'ACP')), ['bin']);
+  assert.deepEqual(fs.readdirSync(path.join(root, 'ACP/bin')), ['unknown.txt']);
+
+  const aliased = fixture(t);
+  const outside = fixture(t);
+  const listed = product(outside);
+  fs.mkdirSync(path.join(aliased, 'ACP'));
+  fs.symlinkSync(path.join(outside, 'ACP/bin'), path.join(aliased, 'ACP/bin'), process.platform === 'win32' ? 'junction' : 'dir');
+  for (const dir of ['runtime', 'notices']) fs.cpSync(path.join(outside, 'ACP', dir), path.join(aliased, 'ACP', dir), { recursive: true });
+  for (const file of ['README.txt', 'LICENSE.txt']) fs.copyFileSync(path.join(outside, 'ACP', file), path.join(aliased, 'ACP', file));
+  assert.throws(() => removeOwnedProduct(aliased, listed));
+  assert.equal(fs.readdirSync(path.join(outside, 'ACP/bin')).length, binaries.length + 2);
 });

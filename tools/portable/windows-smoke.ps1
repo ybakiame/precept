@@ -1,4 +1,5 @@
 # Developer host smoke of an already assembled package. No provisioning/install.
+# PackageDir is the extraction root that contains ACP/.
 param([Parameter(Mandatory)][string]$PackageDir, [Parameter(Mandatory)][string]$ReportDir)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -10,7 +11,7 @@ try {
     if (& git status --porcelain) { throw 'Clean committed harness required' }
     if (Test-Path -LiteralPath $ReportDir) { throw 'Report collision refused' }
     $package = (Resolve-Path -LiteralPath $PackageDir).Path
-    $manifest = Get-Content -LiteralPath (Join-Path $package 'manifest.json') -Raw | ConvertFrom-Json
+    $manifest = Get-Content -LiteralPath (Join-Path $package 'ACP/runtime/manifest.json') -Raw | ConvertFrom-Json
     $toolchain = Join-Path $env:USERPROFILE '.rustup\toolchains\1.99.1-x86_64-pc-windows-msvc\bin'
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
     $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
@@ -34,7 +35,7 @@ try {
     & $driver $package ([IO.Path]::GetFullPath($ReportDir)) (Join-Path $repo 'tools/native_window.ps1')
     $smokeExit = $LASTEXITCODE
     if (Test-Path -LiteralPath $ReportDir) {
-        @{ harness_sha = (& git rev-parse HEAD); harness_sha256 = (Get-FileHash -LiteralPath $driver -Algorithm SHA256).Hash.ToLowerInvariant(); package_source_sha = $manifest.source_sha; os_build = [Environment]::OSVersion.Version.ToString(); actor = 'Codex automated owned synthetic smoke'; environment = 'Developer host; not isolated clean target'; exit_code = $smokeExit } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $ReportDir 'harness.json')
+        @{ harness_sha = (& git rev-parse HEAD); harness_sha256 = (Get-FileHash -LiteralPath $driver -Algorithm SHA256).Hash.ToLowerInvariant(); package_source_sha = $manifest.source_sha; os_build = [Environment]::OSVersion.Version.ToString(); actor = 'automated owned synthetic smoke'; environment = 'Developer host; not isolated clean target'; exit_code = $smokeExit } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $ReportDir 'harness.json')
     }
     if ($smokeExit -ne 0) { throw 'Packaged process smoke failed; preserve owned state and partial reports' }
 } finally {

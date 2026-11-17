@@ -266,38 +266,83 @@ impl Mcp {
             .expect("packaged MCP deadline")
     }
 }
-fn modules(pid: u32, executable: &Path, out: &Path, worker: &str, surface: &str) {
-    let script = Path::new(worker)
-        .parent()
-        .unwrap()
-        .join("portable/loaded-modules.ps1");
-    let mut cmd = command(Path::new("pwsh.exe"));
-    cmd.args(["-NoProfile", "-NonInteractive", "-File"])
-        .arg(script)
-        .args(["-OwnedPid", &pid.to_string(), "-ExpectedExe"])
-        .arg(executable);
-    let (ok, value) = bounded(cmd);
-    assert!(ok && value.is_array(), "owned loaded-module inspection");
-    fs::write(
-        out.join(format!("{surface}-modules.json")),
-        serde_json::to_vec_pretty(&value).unwrap(),
-    )
-    .unwrap();
+struct Package {
+    acp: PathBuf,
+    bins: PathBuf,
+    manifest: Value,
 }
-fn hashes(root: &Path) -> Vec<Value> {
-    [
-        "acp-daemon.exe",
-        "acp-query.exe",
-        "acp-mcp.exe",
-        "acp-nsh-native.exe",
-        "acp-nsh-tui.exe",
-    ]
-    .into_iter()
-    .map(|name| {
-        let bytes = fs::read(root.join(name)).unwrap();
-        json!({"file":name,"sha256":format!("{:x}", Sha256::digest(bytes))})
-    })
-    .collect()
+impl Package {
+    /// Shipped executables and app-local runtime DLLs, as `bin/<name>`.
+    fn shipped(&self) -> Vec<String> {
+        ["binaries", "runtime_dlls"]
+            .iter()
+            .flat_map(|k| self.manifest[*k].as_array().unwrap())
+            .map(|m| m["file"].as_str().unwrap().to_owned())
+            .collect()
+    }
+    fn hashes(&self) -> Vec<Value> {
+        self.shipped()
+            .into_iter()
+            .map(|file| {
+                let bytes = fs::read(self.acp.join(&file)).unwrap();
+                json!({"file":file,"sha256":format!("{:x}", Sha256::digest(bytes))})
+            })
+            .collect()
+    }
+    /// Records loaded modules of one owned process and proves that every VC++
+    /// runtime DLL it imports was loaded from the package's own bin directory.
+    fn modules(&self, pid: u32, exe: &str, out: &Path, worker: &str, surface: &str) {
+        let script = Path::new(worker)
+            .parent()
+            .unwrap()
+            .join("portable/loaded-modules.ps1");
+        let mut cmd = command(Path::new("pwsh.exe"));
+        cmd.args(["-NoProfile", "-NonInteractive", "-File"])
+            .arg(script)
+            .args(["-OwnedPid", &pid.to_string(), "-ExpectedExe"])
+            .arg(self.bins.join(exe))
+            .arg("-PackageBin")
+            .arg(&self.bins);
+        let (ok, value) = bounded(cmd);
+        assert!(ok && value.is_array(), "owned loaded-module inspection");
+        fs::write(
+            out.join(format!("{surface}-modules.json")),
+            serde_json::to_vec_pretty(&value).unwrap(),
+        )
+        .unwrap();
+        let loaded = value.as_array().unwrap();
+        assert!(
+            loaded
+                .iter()
+                .all(|m| m["location"] != "external-component-review-required"),
+            "{surface}: module loaded from outside the package and Windows tree"
+        );
+        let importer = format!("bin/{exe}");
+        let mut checked = 0;
+        for dll in self.manifest["runtime_dlls"].as_array().unwrap() {
+            if !dll["importers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|i| i == importer.as_str())
+            {
+                continue;
+            }
+            let name = dll["imported_as"].as_str().unwrap();
+            let found: Vec<_> = loaded
+                .iter()
+                .filter(|m| m["name"].as_str().unwrap().eq_ignore_ascii_case(name))
+                .collect();
+            assert!(
+                found.len() == 1
+                    && found[0]["location"] == "packaged-app-local"
+                    && found[0]["sha256"] == dll["sha256"],
+                "{surface}: {name} not loaded from the packaged app-local copy"
+            );
+            checked += 1;
+        }
+        assert!(checked > 0, "{surface}: no app-local VC++ runtime import");
+    }
 }
 #[tokio::main]
 async fn main() {
@@ -315,28 +360,42 @@ async fn main() {
     }
     let args: Vec<_> = std::env::args().collect();
     assert_eq!(args.len(), 4, "EXTRACTED_PACKAGE NEW_REPORT WINDOW_WORKER");
-    let bins = PathBuf::from(&args[1]).canonicalize().unwrap();
+    let acp = PathBuf::from(&args[1]).canonicalize().unwrap().join("ACP");
     let out = PathBuf::from(&args[2]);
     fs::create_dir(&out).unwrap();
-    let before = hashes(&bins);
     let manifest: Value =
-        serde_json::from_slice(&fs::read(bins.join("manifest.json")).unwrap()).unwrap();
-    for b in &before {
-        assert!(
-            manifest["binaries"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|m| m["file"] == b["file"] && m["sha256"] == b["sha256"])
+        serde_json::from_slice(&fs::read(acp.join("runtime/manifest.json")).unwrap()).unwrap();
+    let package = Package {
+        bins: acp.join("bin"),
+        acp,
+        manifest,
+    };
+    let manifest = &package.manifest;
+    let bins = package.bins.clone();
+    // Every archived file matches the in-archive manifest before any launch.
+    for m in manifest["files"].as_array().unwrap() {
+        let bytes = fs::read(package.acp.join(m["file"].as_str().unwrap())).unwrap();
+        assert_eq!(
+            format!("{:x}", Sha256::digest(bytes)),
+            m["sha256"].as_str().unwrap()
         );
     }
+    let before = package.hashes();
+    assert_eq!(
+        before.len(),
+        7,
+        "five executables and two VC++ runtime DLLs"
+    );
     transport::private_dir(&bins, false).unwrap();
     for b in &before {
-        drop(transport::open_private(&bins.join(b["file"].as_str().unwrap()), false).unwrap());
+        drop(
+            transport::open_private(&package.acp.join(b["file"].as_str().unwrap()), false).unwrap(),
+        );
     }
     let mut f = Fixture::start(bins.clone());
     // Keep the retained root private and out of public evidence. Only this file names it.
     transport::private_dir(&out, true).unwrap();
+    package.modules(f.daemon.0.id(), "acp-daemon.exe", &out, &args[3], "daemon");
     fs::write(
         out.join("private-fixture-root.txt"),
         f.root.to_str().unwrap(),
@@ -499,13 +558,7 @@ async fn main() {
     {
         let mut ui = tty::Tty::start(&bins.join("acp-nsh-tui.exe"), &ui_args, &out, &focus);
         ui.wait("Agent Control Plane");
-        modules(
-            ui.pid(),
-            &bins.join("acp-nsh-tui.exe"),
-            &out,
-            &args[3],
-            "conpty",
-        );
+        package.modules(ui.pid(), "acp-nsh-tui.exe", &out, &args[3], "conpty");
         ui.capture(&out.join("conpty.txt"));
         ui.resize(100, 35);
         ui.wait("Agent Control Plane");
@@ -535,18 +588,13 @@ async fn main() {
             &focus,
         );
         ui.wait_after("ACP_NSH_STATE phase=Ready", 0);
-        modules(
-            ui.pid(),
-            &bins.join("acp-nsh-native.exe"),
-            &out,
-            &args[3],
-            "hwnd",
-        );
+        package.modules(ui.pid(), "acp-nsh-native.exe", &out, &args[3], "hwnd");
         ui.resize(920, 640);
         ui.capture("hwnd", &out);
         ui.close();
     }
     record("packaged-hwnd-render-resize-normal-close");
+    record("app-local-vc-runtime-loaded-by-daemon-conpty-hwnd");
     f.ok(&["health"]);
     record("ui-close-leaves-daemon-running");
     let state_before = Sha256::digest(fs::read(&db).unwrap());
@@ -586,7 +634,7 @@ async fn main() {
         fs::read(f.root.join("state/unknown-retain.txt")).unwrap(),
         b"SYNTHETIC RETAIN\n"
     );
-    assert_eq!(before, hashes(&bins));
+    assert_eq!(before, package.hashes());
     fs::write(out.join("smoke.json"), serde_json::to_vec_pretty(&json!({"source_sha":manifest["source_sha"],"source_tree":manifest["source_tree"],"platform":"Windows x86_64 developer host, NOT clean-target","binaries":before,"initial_daemon_pid":pid,"cells":cells,"clean_target":"NOT_RUN","second_user":"NOT_RUN","ime_at":"NOT_RUN"})).unwrap()).unwrap();
     println!("PASS: owned packaged Windows smoke; clean-target NOT_RUN");
 }

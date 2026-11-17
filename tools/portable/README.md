@@ -15,9 +15,30 @@ Create an existing owned output parent under ignored `artifacts/local-p1-m5/`.
 Each attempt name must be NEW. The recipe exclusively creates/protects its private
 output, builds into a new Cargo target, copies only actual Cargo artifact messages
 for five product executables into independent regular files, audits x86_64 PE
-normal/delay DLL imports and collects a **resolved dependency superset** notice
-ledger. Cargo's internal artifact hard links are not copied as archive aliases.
-No target-directory glob or fake/test driver is shipped.
+normal/delay DLL imports and collects notices for the **normal-dependency closure**
+of the shipped packages (build/dev dependencies excluded; proc-macros labeled
+compile-time; still not a linker-derived SBOM). Cargo's internal artifact hard links
+are not copied as archive aliases. No target-directory glob or fake/test driver is shipped.
+
+Archive layout (one top-level directory, so extraction never scatters files):
+
+```
+ACP/
+├── bin/          five product executables + VCRUNTIME140.dll, VCRUNTIME140_1.dll
+├── runtime/      manifest.json: provenance + size/SHA-256 of every other file
+├── notices/      dependency-notices.json, <sha256>.txt texts, VC++ runtime notice
+├── README.txt
+└── LICENSE.txt   committed root license if present, otherwise PENDING status text
+```
+
+The VC++ DLLs are exactly the release runtime DLLs the PE imports name, copied
+unmodified from `%VCToolsRedistDir%\x64\Microsoft.VC*.CRT` of the same Visual
+Studio that built the binaries. The staged copies must carry a valid Microsoft
+Authenticode signature; debug CRTs refuse; UCRT stays an OS component. Microsoft
+permits this app-local deployment but does not service it: a VC++ security fix
+needs a rebuilt archive. Cargo runs with inherited `RUSTFLAGS`/wrapper/target/profile
+overrides removed and `--remap-path-prefix` for checkout, Cargo home and build output.
+The recipe scans each binary for remaining checkout/home bytes and records booleans.
 
 ```powershell
 ./tools/portable/windows-package.ps1 -OutputParent artifacts/local-p1-m5 -Name zip-attempt-01
@@ -29,17 +50,18 @@ Retain failed attempt directories; use a new name for the next run. Raw build lo
 and tool metadata can contain private developer paths and remain ignored. The ZIP
 contains only the explicit file inventory, provenance, notices and local instructions;
 no Node/PowerShell helper, Rust toolchain, snapshots, raw logs, credentials or data.
-The ZIP name carries its source SHA suffix; the exact archive hash/file list live beside it. `manifest.json` identifies clean
-source SHA/tree, both locks, target/flags and builder. This is a reproducible recipe,
+The ZIP name carries its source SHA suffix; the exact archive hash/file list live beside it.
+`ACP/runtime/manifest.json` identifies clean source SHA/tree, both locks, target/flags,
+builder, VC++ redistributable version/signer and every other file's hash. This is a reproducible recipe,
 not a deterministic-output, signed, completed-SBOM or complete-license claim.
 First-party grant/text and third-party obligations remain owner/review gates.
-Existing binaries can embed builder paths, including the compiled IPC runtime guard;
-archive metadata path checks do not prove path-free executable bytes. Keep all
+Path remapping does not reach `env!("CARGO_MANIFEST_DIR")`: the compiled IPC runtime
+guard still embeds the builder checkout, so the recorded scan is expected to be true. Keep all
 artifacts private until that separate exclusion is resolved without deleting guards.
 
 `windows-smoke.ps1` builds only the separate non-shipping harness and runs its
 focused lint/tests. It launches **extracted** product binaries against a new private
-synthetic fixture outside Git, explicitly creates a fresh Profile, enables writes
+synthetic fixture outside Git (`-PackageDir` is the extraction root holding `ACP/`), explicitly creates a fresh Profile, enables writes
 only to register its allowlisted synthetic project, then revokes them. It tests
 MCP tools/context/refusals, stale capabilities, endpoint collision, normal/crash
 restart and runtime lease release. Desktop and ConPTY reuse existing bounded owned
@@ -51,7 +73,8 @@ process group, never other user processes; forced kill is separately labeled cra
 The fixture is retained on success/failure; its private path is only in ignored output.
 
 For post-stop removal, use the exact original `archive-inventory.json`; preflight
-all listed files/hashes before removing any. Aliases, altered files and forged
+all listed files/hashes before removing any. Known product directories are then
+removed only when empty (non-recursive `rmdir`). Aliases, altered files and forged
 members refuse. **Unknown/Profile/auth files are retained**. No recursive cleanup
 or user-data erasure exists. The operation is developer tooling, not a shipped
 uninstaller. An example for a disposable extracted package, after smoke exits:
