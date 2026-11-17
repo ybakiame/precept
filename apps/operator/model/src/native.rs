@@ -38,13 +38,13 @@ pub struct Inputs {
     #[arg(long, conflicts_with = "runtime_dir", value_parser = clap::value_parser!(u32).range(1..=10000))]
     pub synthetic_rows: Option<u32>,
     /// Windows owner access to an explicitly selected WSL distribution. No shell or TCP.
-    #[arg(long, requires_all = ["wsl_user", "wsl_snapshot", "wsl_runtime_dir", "wsl_endpoint"], conflicts_with_all = ["runtime_dir", "endpoint", "synthetic_rows"])]
+    #[arg(long, requires_all = ["wsl_user", "wsl_bridge", "wsl_runtime_dir", "wsl_endpoint"], conflicts_with_all = ["runtime_dir", "endpoint", "synthetic_rows"])]
     pub wsl_distribution: Option<String>,
     #[arg(long, requires = "wsl_distribution")]
     pub wsl_user: Option<String>,
-    /// Absolute Linux path of the existing acp-ui-snapshot executable.
+    /// Absolute Linux path of the acp-wsl-bridge executable inside the distribution.
     #[arg(long, requires = "wsl_distribution")]
-    pub wsl_snapshot: Option<String>,
+    pub wsl_bridge: Option<String>,
     #[arg(long, requires = "wsl_distribution")]
     pub wsl_runtime_dir: Option<String>,
     #[arg(long, requires = "wsl_distribution")]
@@ -69,7 +69,7 @@ impl Inputs {
             endpoint: self.endpoint.clone().unwrap_or_default(),
             distribution: self.wsl_distribution.clone().unwrap_or_default(),
             user: self.wsl_user.clone().unwrap_or_default(),
-            helper: self.wsl_snapshot.clone().unwrap_or_default(),
+            helper: self.wsl_bridge.clone().unwrap_or_default(),
             wsl_runtime: self.wsl_runtime_dir.clone().unwrap_or_default(),
             wsl_endpoint: self.wsl_endpoint.clone().unwrap_or_default(),
             synthetic_rows: self.synthetic_rows,
@@ -93,7 +93,7 @@ impl Inputs {
             Target::Wsl => Self {
                 wsl_distribution: Some(c.distribution.clone()),
                 wsl_user: Some(c.user.clone()),
-                wsl_snapshot: Some(c.helper.clone()),
+                wsl_bridge: Some(c.helper.clone()),
                 wsl_runtime_dir: Some(c.wsl_runtime.clone()),
                 wsl_endpoint: Some(c.wsl_endpoint.clone()),
                 ..Default::default()
@@ -151,141 +151,107 @@ impl Inputs {
             .enable_all()
             .build()
             .map_err(|_| "Client unavailable")?
-            .block_on(fetch(&location, project, task))
-            .map_err(|e| match e {
-                acp_ipc::Error::Unauthorized | acp_ipc::Error::UnsafeRuntime => "Permission denied",
-                _ => "Local daemon unavailable or access refused",
-            })
+            .block_on(snapshot_at(&location, project, task))
     }
-    fn wsl_arguments(
-        &self,
-        project: Option<&str>,
-        task: &str,
-    ) -> Result<Vec<String>, &'static str> {
-        let distro = self
-            .wsl_distribution
-            .as_deref()
-            .ok_or("Explicit WSL distribution required")?;
-        let user = self
-            .wsl_user
-            .as_deref()
-            .ok_or("Explicit WSL owner required")?;
-        let snapshot = self
-            .wsl_snapshot
-            .as_deref()
-            .ok_or("Explicit WSL helper required")?;
-        let runtime = self
-            .wsl_runtime_dir
-            .as_deref()
-            .ok_or("Explicit WSL runtime required")?;
-        let endpoint = self
-            .wsl_endpoint
-            .as_deref()
-            .ok_or("Explicit WSL endpoint required")?;
-        if !distro
-            .as_bytes()
-            .first()
-            .is_some_and(u8::is_ascii_alphanumeric)
-            || distro.len() > 64
-            || !distro
-                .bytes()
-                .all(|c| c.is_ascii_alphanumeric() || b"-_. ".contains(&c))
-            || !user
-                .as_bytes()
-                .first()
-                .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_')
-            || user.len() > 64
-            || !user
-                .bytes()
-                .all(|c| c.is_ascii_alphanumeric() || b"-_".contains(&c))
-            || [snapshot, runtime, endpoint].iter().any(|p| {
-                !p.starts_with('/')
-                    || p.chars().any(char::is_control)
-                    || p.split('/').any(|s| s == "..")
-            })
-        {
+    /// Validated identity of the explicitly selected WSL connection.
+    pub(crate) fn wsl_key(&self) -> Result<crate::bridge::Key, &'static str> {
+        let field = |v: &Option<String>, m: &'static str| v.clone().ok_or(m);
+        let key = crate::bridge::Key {
+            distribution: field(&self.wsl_distribution, "Explicit WSL distribution required")?,
+            user: field(&self.wsl_user, "Explicit WSL owner required")?,
+            helper: field(&self.wsl_bridge, "Explicit WSL helper required")?,
+            runtime: field(&self.wsl_runtime_dir, "Explicit WSL runtime required")?,
+            endpoint: field(&self.wsl_endpoint, "Explicit WSL endpoint required")?,
+        };
+        let valid = crate::connection::Connection {
+            target: crate::connection::Target::Wsl,
+            distribution: key.distribution.clone(),
+            user: key.user.clone(),
+            helper: key.helper.clone(),
+            wsl_runtime: key.runtime.clone(),
+            wsl_endpoint: key.endpoint.clone(),
+            ..Default::default()
+        }
+        .validate();
+        if !valid || key.distribution.starts_with('-') {
             return Err("Invalid WSL connection inputs");
         }
-        let mut args = vec![
-            "--distribution".into(),
-            distro.into(),
-            "--user".into(),
-            user.into(),
-            "--exec".into(),
-            snapshot.into(),
-            "--runtime-dir".into(),
-            runtime.into(),
-            "--endpoint".into(),
-            endpoint.into(),
-        ];
-        if let Some(project) = project {
-            args.push(format!("--project={project}"));
-        }
-        if !task.is_empty() {
-            args.push(format!("--task-id={task}"));
-        }
-        Ok(args)
+        Ok(key)
     }
-    #[cfg(not(target_os = "windows"))]
-    fn fetch_wsl(&self, project: Option<&str>, task: &str) -> Result<Snapshot, &'static str> {
-        self.wsl_arguments(project, task)?;
-        Err("Windows WSL owner transport unavailable on this OS")
+    /// Exact `wsl.exe` argument vector: no shell, no interpolation, no secrets.
+    pub(crate) fn wsl_arguments(&self) -> Result<Vec<String>, &'static str> {
+        let k = self.wsl_key()?;
+        Ok(vec![
+            "--distribution".into(),
+            k.distribution,
+            "--user".into(),
+            k.user,
+            "--exec".into(),
+            k.helper,
+            "--runtime-dir".into(),
+            k.runtime,
+            "--endpoint".into(),
+            k.endpoint,
+        ])
+    }
+    /// The live WSL bridge. `start` is true only for explicit user reads.
+    pub(crate) fn wsl_bridge(&self, start: bool) -> Result<crate::bridge::Client, &'static str> {
+        let key = self.wsl_key()?;
+        crate::bridge::bridge(&key, start, || self.wsl_command())
     }
     #[cfg(target_os = "windows")]
-    fn fetch_wsl(&self, project: Option<&str>, task: &str) -> Result<Snapshot, &'static str> {
-        use tokio::io::AsyncReadExt;
-        let args = self.wsl_arguments(project, task)?;
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|_| "Client unavailable")?
-            .block_on(async {
-                let executable = std::env::var_os("SystemRoot")
-                    .map(PathBuf::from)
-                    .ok_or("WSL executable unavailable")?
-                    .join("System32/wsl.exe");
-                let mut cmd = tokio::process::Command::new(executable);
-                cmd.args(args)
-                    .stdin(std::process::Stdio::null())
-                    .stdout(std::process::Stdio::piped())
-                    .stderr(std::process::Stdio::null())
-                    .kill_on_drop(true);
-                // Native desktop reconnect must not create a Windows console window.
-                cmd.creation_flags(0x08000000);
-                let mut child = cmd.spawn().map_err(|_| "WSL query unavailable")?;
-                let result = tokio::time::timeout(std::time::Duration::from_secs(20), async {
-                    let mut raw = Vec::new();
-                    child
-                        .stdout
-                        .take()
-                        .ok_or("WSL query unavailable")?
-                        .take(4 * 1024 * 1024 + 1)
-                        .read_to_end(&mut raw)
-                        .await
-                        .map_err(|_| "WSL query unavailable")?;
-                    if raw.len() > 4 * 1024 * 1024 {
-                        return Err("WSL response too large");
-                    }
-                    let status = child.wait().await.map_err(|_| "WSL query unavailable")?;
-                    if !status.success() {
-                        return Err(helper_failure(status.code()));
-                    }
-                    let data: Snapshot =
-                        serde_json::from_slice(&raw).map_err(|_| "Invalid WSL snapshot")?;
-                    data.validate()?;
-                    if project.is_some_and(|p| !data.projects.iter().any(|v| v.name == p)) {
-                        return Err("Permission denied");
-                    }
-                    Ok(data)
-                })
-                .await
-                .unwrap_or(Err("WSL query timed out"));
-                if result.is_err() {
-                    let _ = child.kill().await;
-                }
-                result
-            })
+    fn wsl_command(&self) -> Result<std::process::Command, &'static str> {
+        use std::os::windows::process::CommandExt;
+        let executable = std::env::var_os("SystemRoot")
+            .map(PathBuf::from)
+            .ok_or("WSL executable unavailable")?
+            .join("System32/wsl.exe");
+        let mut command = std::process::Command::new(executable);
+        command.args(self.wsl_arguments()?);
+        // The native desktop must not create a Windows console window.
+        command.creation_flags(0x08000000);
+        Ok(command)
     }
+    #[cfg(not(target_os = "windows"))]
+    fn wsl_command(&self) -> Result<std::process::Command, &'static str> {
+        self.wsl_arguments()?;
+        Err("Windows WSL owner transport unavailable on this OS")
+    }
+    fn fetch_wsl(&self, project: Option<&str>, task: &str) -> Result<Snapshot, &'static str> {
+        use crate::bridge::{CallError, Op};
+        let value = self
+            .wsl_bridge(true)?
+            .call(
+                Op::Snapshot {
+                    project: project.map(str::to_owned),
+                    task: task.to_owned(),
+                },
+                std::time::Duration::from_secs(20),
+            )
+            .map_err(|e| match e {
+                CallError::Remote("Permission denied") => "Permission denied",
+                CallError::Timeout => "WSL query timed out",
+                _ => "WSL daemon unavailable or access refused",
+            })?;
+        let data: Snapshot = serde_json::from_value(value).map_err(|_| "Invalid WSL snapshot")?;
+        data.validate()?;
+        if project.is_some_and(|p| !data.projects.iter().any(|v| v.name == p)) {
+            return Err("Permission denied");
+        }
+        Ok(data)
+    }
+}
+
+/// Shared snapshot read used by the local client and the WSL bridge helper.
+pub(crate) async fn snapshot_at(
+    location: &Location,
+    project: Option<&str>,
+    task: &str,
+) -> Result<Snapshot, &'static str> {
+    fetch(location, project, task).await.map_err(|e| match e {
+        acp_ipc::Error::Unauthorized | acp_ipc::Error::UnsafeRuntime => "Permission denied",
+        _ => "Local daemon unavailable or access refused",
+    })
 }
 
 /// Stable helper exit classification; never forwards stderr or private paths.
@@ -448,37 +414,58 @@ mod tests {
         let base = Inputs {
             wsl_distribution: Some("synthetic".into()),
             wsl_user: Some("operator".into()),
-            wsl_snapshot: Some("/opt/acp-ui-snapshot".into()),
+            wsl_bridge: Some("/opt/acp/bin/acp-wsl-bridge".into()),
             wsl_runtime_dir: Some("/tmp/private".into()),
             wsl_endpoint: Some("/tmp/private/control.sock".into()),
             ..Default::default()
         };
         assert!(base.is_live());
-        let args = base
-            .wsl_arguments(Some("alpha"), "task 'quoted' ; $(never-run)")
-            .unwrap();
-        assert_eq!(args[4], "--exec");
+        let args = base.wsl_arguments().unwrap();
         assert_eq!(
-            args.last().unwrap(),
-            "--task-id=task 'quoted' ; $(never-run)"
+            args,
+            [
+                "--distribution",
+                "synthetic",
+                "--user",
+                "operator",
+                "--exec",
+                "/opt/acp/bin/acp-wsl-bridge",
+                "--runtime-dir",
+                "/tmp/private",
+                "--endpoint",
+                "/tmp/private/control.sock"
+            ]
         );
+        // Project/task never become helper argv; they travel as typed frames.
         assert!(
             !args
                 .iter()
                 .any(|v| ["bash", "sh", "-c"].contains(&v.as_str()))
         );
-        for invalid in ["../other", "bad\nname", "--system"] {
+        for invalid in ["../other", "bad\nname", "--system", "-d"] {
             let mut bad = base.clone();
             bad.wsl_distribution = Some(invalid.into());
-            assert!(bad.wsl_arguments(None, "").is_err());
+            assert!(bad.wsl_arguments().is_err(), "{invalid}");
         }
-        assert!(
-            Inputs {
-                wsl_snapshot: Some("/opt/../secret".into()),
-                ..base.clone()
-            }
-            .wsl_arguments(None, "")
-            .is_err()
+        for (helper, runtime) in [
+            ("/opt/../secret", "/tmp/p"),
+            ("relative", "/tmp/p"),
+            ("/opt/b", "tmp"),
+        ] {
+            assert!(
+                Inputs {
+                    wsl_bridge: Some(helper.into()),
+                    wsl_runtime_dir: Some(runtime.into()),
+                    ..base.clone()
+                }
+                .wsl_arguments()
+                .is_err()
+            );
+        }
+        // Without an explicit user read no bridge is ever started.
+        assert_eq!(
+            base.wsl_bridge(false).err(),
+            Some("WSL bridge disconnected; reconnect explicitly")
         );
     }
 }

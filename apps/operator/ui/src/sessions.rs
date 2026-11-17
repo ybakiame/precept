@@ -18,8 +18,10 @@ pub(super) fn open(model: Signal<Model>) {
 }
 fn enabled(model: Signal<Model>) -> bool {
     let m = model.get();
+    // Local and WSL targets share the daemon-owned session policy; agents run
+    // wherever that daemon runs (inside WSL for the WSL target).
     m.phase == Phase::Ready
-        && m.connection.target == Target::Local
+        && matches!(m.connection.target, Target::Local | Target::Wsl)
         && m.selected_project.is_some()
         && !m.session.busy
 }
@@ -373,7 +375,9 @@ pub(super) fn panel(model: Signal<Model>) -> impl IntoElement {
             let _ = summary.get();
             let m = model.get_untracked();
             let mut body = view().gap_2().flex_shrink_0();
-            if m.connection.target != Target::Local || m.phase != Phase::Ready {
+            if !matches!(m.connection.target, Target::Local | Target::Wsl)
+                || m.phase != Phase::Ready
+            {
                 return body.child(text(m.word(Msg::SessionDisabled)));
             }
             if let Some(c) = &m.session.capabilities {

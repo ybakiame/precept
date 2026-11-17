@@ -17,6 +17,8 @@ pub fn valid_task(task: &str) -> bool {
 }
 
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+pub mod bridge;
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 pub mod native;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]

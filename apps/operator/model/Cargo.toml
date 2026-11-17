@@ -14,8 +14,13 @@ acp-session = { path = "../../../crates/acp-session" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 acp-ipc = { path = "../../../crates/acp-ipc", optional = true }
-tokio = { version = "1", features = ["rt", "net", "time", "process", "io-util"], optional = true }
+tokio = { version = "1", features = ["rt", "net", "time", "process", "io-util", "io-std", "sync", "macros"], optional = true }
 clap = { version = "4", features = ["derive"], optional = true }
+
+[[bin]]
+name = "acp-wsl-bridge"
+path = "src/bin/acp_wsl_bridge.rs"
+required-features = ["native"]
 
 [[bin]]
 name = "acp-ui-snapshot"

@@ -28,7 +28,7 @@ pub(super) fn open(model: Signal<Model>) {
 fn available(model: Signal<Model>) -> bool {
     let m = model.get();
     m.operator.open
-        && m.connection.target == Target::Local
+        && matches!(m.connection.target, Target::Local | Target::Wsl)
         && m.connection.validate()
         && !m.operator.busy
         && !m.operator.outcome_unknown

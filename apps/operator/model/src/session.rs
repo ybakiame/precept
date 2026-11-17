@@ -1,5 +1,6 @@
 //! Session view state is ephemeral and isolated from context snapshots/Handoff.
 pub use acp_session::{AuthMethodKind, AuthStatus, Capabilities, SESSION_API, State, View};
+use serde_json::Value;
 #[derive(Clone, Debug, Default)]
 pub struct PollGuard(std::sync::Arc<std::sync::atomic::AtomicBool>);
 impl PartialEq for PollGuard {
@@ -148,79 +149,122 @@ impl SessionModel {
             && self.prompt.len() <= 4096
     }
 }
+/// Builds an Observation from daemon JSON. Applied on the Windows side to every
+/// WSL bridge reply, so a helper can never bypass the version checks.
+pub fn observation(capabilities: Value, view: Value) -> Result<Observation, &'static str> {
+    let capabilities: Capabilities =
+        serde_json::from_value(capabilities).map_err(|_| "Invalid session capabilities")?;
+    if capabilities.session_api_version != SESSION_API || capabilities.protocol_version != 1 {
+        return Err("Unsupported session version");
+    }
+    let view = serde_json::from_value(view).map_err(|_| "Invalid session state")?;
+    Ok(Observation { capabilities, view })
+}
+
+/// One session request against the daemon at `location`, returning the raw
+/// `{"capabilities","view"}` pair. Session policy stays entirely daemon-side.
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+pub(crate) async fn session_raw(
+    location: &acp_ipc::Location,
+    project: &str,
+    method: &str,
+    mut fields: Value,
+) -> Result<Value, &'static str> {
+    use acp_ipc::{Access, Client, load_credential};
+    let c = load_credential(
+        location,
+        &location
+            .credential_path(None)
+            .map_err(|_| "Session unavailable")?,
+    )
+    .map_err(|_| "Session access refused")?;
+    if c.access != Access::Operator {
+        return Err("Session access refused");
+    }
+    let mut client = Client::connect(location, &c)
+        .await
+        .map_err(|_| "Session unavailable")?;
+    let capabilities = client
+        .request(
+            "session.capabilities",
+            serde_json::json!({"session_api_version":SESSION_API,"project":project}),
+        )
+        .await
+        .map_err(|_| "Session unavailable")?;
+    // Fail closed on version before sending any session command.
+    observation(capabilities.clone(), Value::Null)?;
+    fields["session_api_version"] = SESSION_API.into();
+    fields["project"] = project.into();
+    let result = client
+        .request(
+            if method == "session.refresh" {
+                "session.get"
+            } else {
+                method
+            },
+            fields,
+        )
+        .await
+        .map_err(|_| "Session unavailable or request denied")?;
+    let view = if method == "session.refresh" {
+        result
+            .get("session")
+            .cloned()
+            .ok_or("Invalid session state")?
+    } else {
+        result
+    };
+    Ok(serde_json::json!({"capabilities": capabilities, "view": view}))
+}
+
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 impl crate::native::Inputs {
     pub fn session_call(
         &self,
         project: &str,
         method: &str,
-        mut fields: serde_json::Value,
+        fields: Value,
     ) -> Result<Observation, &'static str> {
-        use acp_ipc::{Access, Client, Location, load_credential};
-        // Never extend the Windows->WSL read-only helper into an execution bridge.
-        if self.wsl_distribution.is_some() || self.runtime_dir.is_none() {
-            return Err("Native local target required");
-        }
-        let location = Location {
-            runtime_dir: self.runtime_dir.clone().ok_or("Local target required")?,
-            endpoint: self.endpoint.clone().ok_or("Local target required")?,
-        };
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|_| "Session unavailable")?
-            .block_on(async {
-                let c = load_credential(
-                    &location,
-                    &location
-                        .credential_path(None)
-                        .map_err(|_| "Session unavailable")?,
-                )
-                .map_err(|_| "Session access refused")?;
-                if c.access != Access::Operator {
-                    return Err("Session access refused");
-                }
-                let mut client = Client::connect(&location, &c)
-                    .await
-                    .map_err(|_| "Session unavailable")?;
-                let cap = client
-                    .request(
-                        "session.capabilities",
-                        serde_json::json!({"session_api_version":SESSION_API,"project":project}),
-                    )
-                    .await
-                    .map_err(|_| "Session unavailable")?;
-                let capabilities: Capabilities =
-                    serde_json::from_value(cap).map_err(|_| "Invalid session capabilities")?;
-                if capabilities.session_api_version != SESSION_API
-                    || capabilities.protocol_version != 1
-                {
-                    return Err("Unsupported session version");
-                }
-                fields["session_api_version"] = SESSION_API.into();
-                fields["project"] = project.into();
-                let result = client
-                    .request(
-                        if method == "session.refresh" {
-                            "session.get"
-                        } else {
-                            method
-                        },
+        let raw = if self.wsl_distribution.is_some() {
+            use crate::bridge::{CallError, Op};
+            // Reuses the live bridge only: session polling never starts WSL.
+            let bridge = self.wsl_bridge(false).map_err(|_| "Session unavailable")?;
+            bridge
+                .call(
+                    Op::Session {
+                        project: project.into(),
+                        method: method.into(),
                         fields,
-                    )
-                    .await
-                    .map_err(|_| "Session unavailable or request denied")?;
-                let view = serde_json::from_value(if method == "session.refresh" {
-                    result
-                        .get("session")
-                        .cloned()
-                        .ok_or("Invalid session state")?
-                } else {
-                    result
-                })
-                .map_err(|_| "Invalid session state")?;
-                Ok(Observation { capabilities, view })
-            })
+                    },
+                    std::time::Duration::from_secs(30),
+                )
+                .map_err(|e| match e {
+                    CallError::Remote(code) => code,
+                    _ => "Session unavailable",
+                })?
+        } else {
+            let location = acp_ipc::Location {
+                runtime_dir: self
+                    .runtime_dir
+                    .clone()
+                    .ok_or("Native local target required")?,
+                endpoint: self
+                    .endpoint
+                    .clone()
+                    .ok_or("Native local target required")?,
+            };
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|_| "Session unavailable")?
+                .block_on(session_raw(&location, project, method, fields))?
+        };
+        let capabilities = raw
+            .get("capabilities")
+            .cloned()
+            .ok_or("Invalid session state")?;
+        let view = raw.get("view").cloned().ok_or("Invalid session state")?;
+        observation(capabilities, view)
     }
 }
 #[cfg(test)]
