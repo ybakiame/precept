@@ -105,8 +105,35 @@ A developer-host PASS never satisfies the independent clean-target, second-user,
 offline runtime closure or stable minimum Windows version gate. No VM availability
 means BLOCKED/NOT_RUN, not installing a VM or changing the daily machine.
 
-Linux **S1-B remains required**: use S1-A file-list/provenance/retention lessons to
-plan an independently scoped archive/ELF dependency slice with both native Wayland
-Desktop and PTY TUI on one clean standalone x86_64 distro/compositor. A `.tar.gz` is
-recommended pending GTK/libc/media closure; WSLg cannot satisfy standalone acceptance.
-Do not automatically implement Linux packaging, a compositor matrix or new UI stack.
+Standalone Linux x86_64 native Wayland + PTY acceptance remains a separate future gate;
+WSLg does not satisfy it. S1-C validates the WSLg integration and a local-only Linux
+package recipe on Ubuntu 24.04 WSL2. Do not infer general Linux support, add a compositor
+matrix, or upload the generated archive as a PR/Release asset.
+
+## Linux x86_64 `.tar.gz` (M5/S1-C)
+
+[Issue #72](https://github.com/ybakiame/agent-control-plane/issues/72);
+[evidence](../../docs/evaluation/p1-m5-s1c-wslg-wayland-portable.md). Run on a clean
+committed checkout inside a native Linux x86_64 builder with the pinned stock toolchain,
+Node, and GTK 4/GStreamer development headers:
+
+```sh
+node tools/portable/linux-package.mjs "$PWD" "$PWD/artifacts/local-p1-m5" s1c-attempt-01 "$HOME/.cargo/bin/cargo"
+```
+
+The generated `.tar.gz`, inventory and checksum sidecars stay under the ignored local
+artifact directory. Do not commit or upload them; formal distribution and signing are
+deferred until an explicitly approved release stage.
+
+The same `ACP/{bin,runtime,notices}` layout ships six executables (including the S1-B
+`acp-wsl-bridge` helper). `elf.mjs` records the interpreter, DT_NEEDED, RPATH/RUNPATH
+(refused) and symbol-version needs; direct DT_NEEDED owners (`dpkg -S`) become the
+declared runtime packages written into the README `apt-get` line. OS-owned libraries
+are never bundled. The tar is sorted, owned 0:0 and timestamped at the commit; the
+listing policy refuses links, devices, traversal and unexpected modes.
+
+`acp-linux-portable-smoke` (tools/native-acceptance) runs in the target:
+`missing-deps BIN_DIR NEW_REPORT` before the packages are installed, the packaged
+smoke `EXTRACTED_PARENT NEW_REPORT WINDOW_WORKER` (Wayland through WSLg via the
+Windows window worker), and `archive ARCHIVE INVENTORY NEW_WORK_DIR` for listing
+policy, hostile archives, collision and exact removal.

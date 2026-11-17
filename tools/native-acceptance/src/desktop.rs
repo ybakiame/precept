@@ -192,6 +192,49 @@ impl Desktop {
         };
         std::fs::copy(native, out.join(format!("{name}.png"))).unwrap();
     }
+    /// Moves the pointer over one window-relative point of the owned window (the
+    /// worker saves the original position; `unhover`/close/exit restore it).
+    #[allow(dead_code)] // Used by the packaged smokes, not the matrix driver.
+    pub fn hover(&mut self, x: u16, y: u16) {
+        self.control(json!({"action":"hover","x":x,"y":y}));
+        // Let the hover wash transition settle before any capture.
+        thread::sleep(Duration::from_millis(400));
+    }
+    #[allow(dead_code)] // Used by the packaged smokes, not the matrix driver.
+    pub fn unhover(&mut self) {
+        self.control(json!({"action":"unhover"}));
+    }
+    /// Capture plus the RGB of one window-relative pixel of the same frame.
+    #[allow(dead_code)] // Used by the packaged smokes, not the matrix driver.
+    pub fn capture_sample(&mut self, name: &str, out: &Path, x: u16, y: u16) -> [u8; 3] {
+        thread::sleep(Duration::from_millis(250));
+        let r = self.control(
+            json!({"action":"capture","name":format!("{name}.png"),"sample":{"x":x,"y":y}}),
+        );
+        let file = r["file"].as_str().unwrap();
+        let native = if cfg!(unix) {
+            String::from_utf8(
+                Command::new("wslpath")
+                    .args(["-u", file])
+                    .output()
+                    .unwrap()
+                    .stdout,
+            )
+            .unwrap()
+            .trim()
+            .to_owned()
+        } else {
+            file.to_owned()
+        };
+        std::fs::copy(native, out.join(format!("{name}.png"))).unwrap();
+        let rgb: Vec<u8> = r["sample"]
+            .as_array()
+            .expect("worker pixel sample")
+            .iter()
+            .map(|v| v.as_u64().unwrap() as u8)
+            .collect();
+        [rgb[0], rgb[1], rgb[2]]
+    }
     pub fn resize(&mut self, w: u16, h: u16) {
         self.after = self.lines.lock().unwrap().len();
         #[cfg(unix)]

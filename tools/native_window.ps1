@@ -126,6 +126,14 @@ function Invoke-OwnedDrag([IntPtr]$Window, [AcpWindow+POINT]$Point, [int]$Dx, [i
         [void][AcpWindow]::SetCursorPos($saved.x,$saved.y)
     }
 }
+# Pointer position saved by 'hover'; restored by 'unhover', 'close' and on exit.
+$pointerSaved=$null
+function Restore-Pointer {
+    if ($null -ne $script:pointerSaved) {
+        [void][AcpWindow]::SetCursorPos($script:pointerSaved.x,$script:pointerSaved.y)
+        $script:pointerSaved=$null
+    }
+}
 try {
 :requests while ($null -ne ($line = [Console]::ReadLine())) {
     # Every reply must name the request it answers; the driver refuses otherwise.
@@ -147,7 +155,7 @@ try {
         $h = Owned-Window
         $active = [AcpWindow]::GetForegroundWindow() -eq $h
         if ($command.action -eq 'observe') { @{status='ok';rpc_id=$rid;foreground=$active} | ConvertTo-Json -Compress; continue }
-        if ($command.action -in @('key','text','capture','resize') -and -not $active) { @{status='foreground_required';rpc_id=$rid;nonce=$nonce} | ConvertTo-Json -Compress; continue }
+        if ($command.action -in @('key','text','capture','resize','hover') -and -not $active) { @{status='foreground_required';rpc_id=$rid;nonce=$nonce} | ConvertTo-Json -Compress; continue }
         $layout=$null
         if ($command.action -in @('key','text')) { $layout=Ensure-English $h }
         switch ($command.action) {
@@ -230,17 +238,41 @@ try {
                     if ((Owned-Window) -ne $h -or [AcpWindow]::GetForegroundWindow() -ne $h) {throw 'Owned capture lost foreground'}
                     $file=Join-Path $images $command.name
                     $bitmap.Save($file,[Drawing.Imaging.ImageFormat]::Png)
+                    # Optional single-pixel sample (window-relative) for color assertions.
+                    $sample=$null
+                    if ($null -ne $command.sample) {
+                        $sx=[int]$command.sample.x;$sy=[int]$command.sample.y
+                        if ($sx -lt 0 -or $sy -lt 0 -or $sx -ge $w -or $sy -ge $height) {throw 'Sample outside capture'}
+                        $px=$bitmap.GetPixel($sx,$sy); $sample=@([int]$px.R,[int]$px.G,[int]$px.B)
+                    }
                 } finally {$bitmap.Dispose()}
-                @{status='ok';rpc_id=$rid;file=$file;frame_attempts=$attempts} | ConvertTo-Json -Compress
+                @{status='ok';rpc_id=$rid;file=$file;frame_attempts=$attempts;sample=$sample} | ConvertTo-Json -Compress
                 continue requests
             }
-            'close' { [AcpWindow]::PostMessage($h,0x10,[IntPtr]::Zero,[IntPtr]::Zero) | Out-Null }
+            'hover' {
+                # Pointer over one window-relative point of the owned, foreground,
+                # unoccluded window; the original position is kept for restore.
+                $x=[int]$command.x;$y=[int]$command.y
+                $rect=[AcpWindow+RECT]::new(); if (-not [AcpWindow]::GetWindowRect($h,[ref]$rect)) {throw 'Owned bounds unavailable'}
+                if ($x -lt 8 -or $y -lt 40 -or $x -gt ($rect.right-$rect.left-8) -or $y -gt ($rect.bottom-$rect.top-8)) {throw 'Hover point outside owned client area'}
+                $point=[AcpWindow+POINT]::new(); $point.x=$rect.left+$x; $point.y=$rect.top+$y
+                if ([AcpWindow]::GetAncestor([AcpWindow]::WindowFromPoint($point),2) -ne $h) {throw 'Owned hover target is occluded'}
+                if ($null -eq $script:pointerSaved) {
+                    $saved=[AcpWindow+POINT]::new()
+                    if (-not [AcpWindow]::GetCursorPos([ref]$saved)) {throw 'Pointer unavailable'}
+                    $script:pointerSaved=$saved
+                }
+                if (-not [AcpWindow]::SetCursorPos($point.x,$point.y)) {throw 'Owned pointer move refused'}
+            }
+            'unhover' { Restore-Pointer }
+            'close' { Restore-Pointer; [AcpWindow]::PostMessage($h,0x10,[IntPtr]::Zero,[IntPtr]::Zero) | Out-Null }
             default { throw 'Unsupported bounded window action' }
         }
         @{status='ok';rpc_id=$rid;input_layout=$layout} | ConvertTo-Json -Compress
     } catch { @{status='refused';rpc_id=$rid;reason=$_.Exception.Message} | ConvertTo-Json -Compress }
 }
 } finally {
+    Restore-Pointer
     if ($originalLayout -ne [IntPtr]::Zero) {
         try { if ((Owned-Window) -eq $layoutWindow) { [void][AcpWindow]::PostMessage($layoutWindow,0x50,[IntPtr]::Zero,$originalLayout) } } catch { }
     }

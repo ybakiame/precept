@@ -164,7 +164,7 @@ function command(program, args, cwd, logFile, env) {
   requireValue(!result.error && result.status === 0, `Developer command failed: ${path.basename(program)} status=${result.status} code=${result.error?.code ?? 'exit'}; inspect retained private log`);
   return result.stdout.trim();
 }
-function inventory(root) {
+export function inventory(root) {
   const files = [];
   function walk(relative) {
     for (const name of fs.readdirSync(path.join(root, relative)).sort()) {
@@ -185,13 +185,14 @@ export function verifyInventory(root, expected) {
 // Paths are relative to the extraction root, so they start with `ACP/`.
 const removable = /^ACP\/(bin\/acp-(daemon|query|mcp|nsh-native|nsh-tui)\.exe|runtime\/manifest\.json|notices\/(NOTICE\.txt|dependency-notices\.json|[a-f0-9]{64}\.txt)|README\.txt|LICENSE\.txt)$/;
 const productDirectories = ['ACP/bin', 'ACP/runtime', 'ACP/notices', 'ACP'];
-export function removeOwnedProduct(root, files) {
-  requireValue(Array.isArray(files) && files.length >= binaries.length + 4 && files.length <= 10000, 'Invalid removal inventory');
-  requireValue(binaries.every(name => files.some(f => f.file === `ACP/bin/${name}`)), 'Incomplete removal inventory');
+/// `allowed`/`required` default to the Windows layout; the Linux recipe passes its own.
+export function removeOwnedProduct(root, files, allowed = removable, required = binaries) {
+  requireValue(Array.isArray(files) && files.length >= required.length + 4 && files.length <= 10000, 'Invalid removal inventory');
+  requireValue(required.every(name => files.some(f => f.file === `ACP/bin/${name}`)), 'Incomplete removal inventory');
   realDirectoryChain(root);
   const seen = new Set();
   for (const f of files) {
-    requireValue(removable.test(f.file) && !seen.has(f.file.toLowerCase()) && /^[a-f0-9]{64}$/.test(f.sha256), 'Unsafe removal member');
+    requireValue(allowed.test(f.file) && !seen.has(f.file.toLowerCase()) && /^[a-f0-9]{64}$/.test(f.sha256), 'Unsafe removal member');
     seen.add(f.file.toLowerCase());
     const file = path.join(root, f.file);
     realDirectoryChain(path.dirname(file));

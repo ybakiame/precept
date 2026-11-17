@@ -239,7 +239,8 @@ merged in [PR #71](https://github.com/ybakiame/agent-control-plane/pull/71). Own
 workflow is the Windows HWND GUI operating a daemon inside WSL2 — S1-B
 [#73](https://github.com/ybakiame/agent-control-plane/issues/73) delivers full Operator/Sessions parity over the persistent
 `acp-wsl-bridge` ([evidence](evaluation/p1-m5-s1b-windows-wsl-operator.md)). WSLg + Weston Linux GUI/TUI and the
-Linux `.tar.gz` follow as the secondary S1-C [#72](https://github.com/ybakiame/agent-control-plane/issues/72).
+local-only Linux `.tar.gz` build/validation follows as the secondary S1-C [#72](https://github.com/ybakiame/agent-control-plane/issues/72)
+([evidence](evaluation/p1-m5-s1c-wslg-wayland-portable.md); WSLg target only, standalone Linux still NOT_RUN). Generated archives remain ignored and are not PR/Release assets; formal distribution is deferred to an approved release stage.
 
 [S0 #68](https://github.com/ybakiame/agent-control-plane/issues/68) audits merged
 main `6d8000153107c67edfa5ff3bc77da15f196623d3` without behavior changes. Deliver

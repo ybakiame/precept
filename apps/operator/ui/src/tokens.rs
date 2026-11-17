@@ -44,8 +44,36 @@ pub fn palette(model: Signal<Model>) -> Palette {
 pub fn compact() -> bool {
     TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed) || window().width.0 < 900.0
 }
-/// Mix two semantic colors per appearance (`t` toward `b`). Derives hover and
-/// pressed washes from tokens without introducing a raw color value.
+/// Mix two semantic colors per appearance, moving `t` toward `b` (`0.0` = `a`,
+/// `1.0` = `b`). Derives hover and pressed washes from tokens without
+/// introducing a raw color value. NSH's `Hsla::mix(other, factor)` keeps
+/// `factor` of `self`, so the weight is inverted here; passing `t` through made
+/// a "7% wash" 93% text color (near-white hover fill with unreadable text).
 pub fn mix(a: AdaptiveColor, b: AdaptiveColor, t: f32) -> AdaptiveColor {
-    AdaptiveColor::new(a.light.mix(b.light, t), a.dark.mix(b.dark, t))
+    let keep = 1.0 - t.clamp(0.0, 1.0);
+    AdaptiveColor::new(a.light.mix(b.light, keep), a.dark.mix(b.dark, keep))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nsh_core::color::hsla;
+
+    #[test]
+    fn mix_moves_t_toward_b() {
+        let dark_bg = hsla(0.6, 0.4, 0.15, 1.0);
+        let light_text = hsla(0.6, 0.6, 0.9, 1.0);
+        let (a, b) = (
+            AdaptiveColor::new(dark_bg, dark_bg),
+            AdaptiveColor::new(light_text, light_text),
+        );
+        let close = |x: f32, y: f32| (x - y).abs() < 1e-4;
+        assert!(close(mix(a, b, 0.0).dark.l, 0.15));
+        assert!(close(mix(a, b, 1.0).dark.l, 0.9));
+        // A hover wash stays near the background: readable text on top of it.
+        let wash = mix(a, b, 0.07);
+        assert!(close(wash.dark.l, 0.15 + 0.07 * 0.75));
+        assert!(close(wash.light.l, wash.dark.l));
+        assert!(wash.dark.l < 0.25, "wash must stay dark under light text");
+    }
 }

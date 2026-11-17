@@ -29,3 +29,7 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Securit
 [[bin]]
 name = "acp-portable-smoke"
 path = "src/bin/portable_smoke.rs"
+
+[[bin]]
+name = "acp-linux-portable-smoke"
+path = "src/bin/linux_portable_smoke.rs"
