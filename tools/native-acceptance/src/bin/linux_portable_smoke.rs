@@ -383,7 +383,8 @@ async fn main() {
         6,
         "bin holds only the product executables"
     );
-    // Product files: owned by this user, never group/other writable; executables 0755.
+    // Product files: owned by this user, never group/other writable, user-executable.
+    // Exact modes depend on the extracting umask (0755 by default, 0700 under 077).
     {
         use std::os::unix::fs::MetadataExt;
         let uid = unsafe { libc::getuid() };
@@ -393,7 +394,13 @@ async fn main() {
         }
         for b in &before {
             let m = fs::symlink_metadata(package.acp.join(b["file"].as_str().unwrap())).unwrap();
-            assert!(m.is_file() && m.uid() == uid && m.mode() & 0o777 == 0o755 && m.nlink() == 1);
+            assert!(
+                m.is_file()
+                    && m.uid() == uid
+                    && m.mode() & 0o022 == 0
+                    && m.mode() & 0o100 != 0
+                    && m.nlink() == 1
+            );
         }
     }
     let mut f = Fixture::start(bins.clone());
