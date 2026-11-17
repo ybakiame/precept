@@ -27,9 +27,11 @@ pub const CELLS: &[&str] = &[
     "wsl-delete-exact-retype",
     "wsl-bridge-loss-outcome-unknown-identical-retry",
     "wsl-session-lifecycle-agent-in-wsl",
+    "wsl-no-listener-no-shell",
     "wsl-write-grant-disable",
     "wsl-gui-close-keeps-daemon-and-state",
     "wsl-daemon-absent-and-explicit-recovery",
+    "wsl-wrong-target-explicit-unavailable",
 ];
 
 pub struct Wsl {
@@ -594,6 +596,17 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     ui.key("alt+i");
     ui.key("alt+y");
     ui.wait("state=Some(Completed) alive=true pending=0", "Completed");
+    // While the agent is alive: no listener owned by any of this user's processes.
+    let listeners = r
+        .wsl
+        .ok("/usr/bin/ss", &["-H", "-l", "-t", "-u", "-n", "-p"]);
+    for name in ["acp-wsl-bridge", "acp-daemon", "acp-fake-agent"] {
+        assert!(!listeners.contains(name), "{name} owns a network listener");
+    }
+    evidence::event(
+        "no-listener-with-live-agent",
+        json!({"checked":["acp-wsl-bridge","acp-daemon","acp-fake-agent"]}),
+    );
     ui.key("alt+j");
     ui.text("second synthetic turn");
     ui.key("alt+9");
@@ -614,6 +627,44 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     assert!(
         r.wsl.pids("acp-fake-agent").is_empty(),
         "agent stopped in WSL"
+    );
+    evidence::finish("PASS");
+
+    evidence::begin("wsl-no-listener-no-shell", "wsl-process-inspection");
+    let listeners = r
+        .wsl
+        .ok("/usr/bin/ss", &["-H", "-l", "-t", "-u", "-n", "-p"]);
+    for name in ["acp-wsl-bridge", "acp-daemon"] {
+        assert!(!listeners.contains(name), "{name} owns a network listener");
+    }
+    // The helper is exec'd directly by WSL interop, never through a shell, and
+    // its argv carries only the runtime and endpoint (no token, no project data).
+    let helper_pid = r.wsl.pids("acp-wsl-bridge")[0].clone();
+    let parent = r.wsl.ok("/usr/bin/ps", &["-o", "ppid=", "-p", &helper_pid]);
+    let parent_comm = r
+        .wsl
+        .ok("/usr/bin/ps", &["-o", "comm=", "-p", parent.trim()]);
+    assert!(
+        !["sh", "bash", "dash", "zsh", "fish"].contains(&parent_comm.trim()),
+        "helper parent is a shell: {parent_comm}"
+    );
+    let cmdline = r
+        .wsl
+        .ok("/usr/bin/cat", &[&format!("/proc/{helper_pid}/cmdline")]);
+    let argv: Vec<&str> = cmdline.split('\0').filter(|a| !a.is_empty()).collect();
+    assert_eq!(
+        argv.len(),
+        5,
+        "helper argv: exe --runtime-dir R --endpoint E"
+    );
+    assert!(
+        argv[0].ends_with("/acp-wsl-bridge")
+            && argv[1] == "--runtime-dir"
+            && argv[3] == "--endpoint"
+    );
+    evidence::event(
+        "process-boundary",
+        json!({"listeners_owned":0,"helper_parent":parent_comm.trim(),"helper_argc":argv.len()}),
     );
     evidence::finish("PASS");
 
@@ -682,6 +733,43 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     ui.key("ctrl+r");
     ui.wait("phase=Ready", "alpha");
     ui.close();
+    evidence::finish("PASS");
+
+    evidence::begin("wsl-wrong-target-explicit-unavailable", "actual-os-input");
+    // Wrong distribution, wrong Linux user, wrong runtime: explicit unavailable,
+    // never a fixture or a local Windows daemon.
+    for (i, (distribution, user, runtime)) in [
+        (
+            "acp-s1b-missing".to_owned(),
+            r.wsl.user.clone(),
+            r.runtime.clone(),
+        ),
+        (
+            r.wsl.distribution.clone(),
+            "acp-nobody".to_owned(),
+            r.runtime.clone(),
+        ),
+        (
+            r.wsl.distribution.clone(),
+            r.wsl.user.clone(),
+            format!("{}/absent", r.base),
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut args = gui_args(&r);
+        args[1] = distribution;
+        args[3] = user;
+        args[7] = runtime;
+        let nonce = format!("{:016x}", nanos.wrapping_add(2 + i as u64));
+        let mut ui = Ui::Desktop(Box::new(desktop::Desktop::start(
+            gui, &args, &nonce, script, out, &focus,
+        )));
+        ui.wait("phase=Unavailable", "unavailable");
+        ui.capture(&format!("wsl-wrong-target-{i}"), out);
+        ui.close();
+    }
     evidence::finish("PASS");
 
     r.stop_daemon();
