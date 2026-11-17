@@ -675,8 +675,8 @@ async fn main() {
         b"SYNTHETIC RETAIN\n"
     );
     assert_eq!(before, package.hashes());
-    fs::write(out.join("smoke.json"), serde_json::to_vec_pretty(&json!({"source_sha":manifest["source_sha"],"source_tree":manifest["source_tree"],"platform":"Linux x86_64 WSL2 user distribution with WSLg (Weston, Wayland)","binaries":before,"initial_daemon_pid":pid,"cells":cells,"clean_target":"NOT_RUN","second_user":"NOT_RUN","ime_at":"NOT_RUN"})).unwrap()).unwrap();
-    println!("PASS: owned packaged Windows smoke; clean-target NOT_RUN");
+    fs::write(out.join("smoke.json"), serde_json::to_vec_pretty(&json!({"source_sha":manifest["source_sha"],"source_tree":manifest["source_tree"],"platform":"Linux x86_64 WSL2 user distribution with WSLg (Weston, Wayland)","binaries":before,"initial_daemon_pid":pid,"cells":cells,"second_user":"NOT_RUN","ime_at":"NOT_RUN"})).unwrap()).unwrap();
+    println!("PASS: owned packaged Linux smoke ({} cells)", cells.len());
 }
 
 /// Before the declared GUI packages are installed: the Desktop must fail with the
