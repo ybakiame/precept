@@ -91,3 +91,8 @@ contracts; older vendor results remain in their original reports.
 The separate [agent-development-protocol](https://github.com/ybakiame/agent-development-protocol)
 remains authoritative for neutral engineering procedures. ACP consumes those rules;
 it never rewrites a project's AGENTS.md, dependencies or CI automatically.
+
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE). Copyright 2026 ybakiame; see
+[NOTICE](NOTICE). Third-party dependencies keep their own licenses.

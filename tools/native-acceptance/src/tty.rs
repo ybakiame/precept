@@ -140,10 +140,11 @@ mod platform {
                 let mut original = std::mem::zeroed();
                 assert_eq!(libc::tcgetattr(slave.as_raw_fd(), &mut original), 0);
                 let mut cmd = Command::new(bin);
-                cmd.args(args)
+                // No inherited ACP_* control reaches the product; re-add only the focus file.
+                acp_native_acceptance::environment::clear_inherited_acp(&mut cmd)
+                    .args(args)
                     .env("TERM", "xterm-256color")
                     .env("COLORTERM", "truecolor")
-                    .env_remove("ACP_UI_PROBE")
                     .env("ACP_NATIVE_FOCUS_FILE", focus)
                     .stdin(Stdio::from(slave.try_clone().unwrap()))
                     .stdout(Stdio::from(slave.try_clone().unwrap()))
@@ -287,14 +288,9 @@ mod platform {
                 startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
                 startup.lpAttributeList = attributes;
                 let mut info = PROCESS_INFORMATION::default();
-                let mut environment: Vec<_> = std::env::vars_os()
-                    .filter(|(key, _)| {
-                        !key.to_string_lossy().eq_ignore_ascii_case("ACP_UI_PROBE")
-                            && !key
-                                .to_string_lossy()
-                                .eq_ignore_ascii_case("ACP_NATIVE_FOCUS_FILE")
-                    })
-                    .collect();
+                // No inherited ACP_* control (any case) reaches the product.
+                let mut environment =
+                    acp_native_acceptance::environment::without_acp(std::env::vars_os());
                 environment.push(("ACP_NATIVE_FOCUS_FILE".into(), focus.as_os_str().to_owned()));
                 environment.sort_by_key(|(key, _)| key.to_string_lossy().to_uppercase());
                 let mut environment_block = Vec::<u16>::new();
