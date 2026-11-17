@@ -698,10 +698,18 @@ impl Model {
             }
             Ok(())
         });
+        // A retry of the pending uncertain mutation that produced no daemon
+        // decision ("Unavailable": nothing was submitted, e.g. a lost WSL bridge
+        // or a stopped daemon) settles nothing: the uncertainty and the exact
+        // request are kept for a later identical retry.
+        let unsubmitted_retry = request.mutation.is_some()
+            && self.operator.outcome_unknown
+            && self.operator.pending.as_ref() == Some(request)
+            && result.as_ref().err() == Some(&"Unavailable");
         self.operator.error = result.err().map(str::to_owned);
         if self.operator.error.is_some() {
             self.operator.outcome_unknown = request.mutation.is_some()
-                && self.operator.error.as_deref() == Some("OutcomeUnknown");
+                && (self.operator.error.as_deref() == Some("OutcomeUnknown") || unsubmitted_retry);
             if !self.operator.outcome_unknown {
                 self.operator.pending = None;
                 self.operator.clear_review_snapshots();
@@ -771,8 +779,10 @@ impl crate::native::Inputs {
     pub fn operator_call(&self, request: &Review) -> Result<Value, &'static str> {
         use crate::bridge::{CallError, Op};
         if self.wsl_distribution.is_some() {
-            // Reuses the live bridge only; an Operator action never starts WSL.
-            let Ok(bridge) = self.wsl_bridge(false) else {
+            // Operator requests are explicit user actions, so they may restart a
+            // lost bridge (e.g. the identical retry after OutcomeUnknown). Session
+            // polling never does. Nothing is submitted if the bridge cannot start.
+            let Ok(bridge) = self.wsl_bridge(true) else {
                 return Err("Unavailable");
             };
             let (op, timeout) = match &request.mutation {
@@ -909,6 +919,33 @@ mod tests {
         let request = m.operator_confirm().unwrap();
         assert_eq!(request.method, "profile.write.enable");
         assert!(request.mutation.is_none());
+    }
+    #[test]
+    fn an_unsubmitted_retry_keeps_the_uncertainty_and_the_exact_request() {
+        let mut m = model();
+        assert!(m.operator_review("confirm", "kept-op"));
+        let request = m.operator_confirm().unwrap();
+        assert!(m.complete_operator(&request, Err("OutcomeUnknown")));
+        // The retry could not be submitted (lost WSL bridge, stopped daemon).
+        let retry = m.operator_retry().unwrap();
+        assert!(m.complete_operator(&retry, Err("Unavailable")));
+        assert!(m.operator.outcome_unknown);
+        assert!(m.operator.pending.as_ref() == Some(&request));
+        // A later identical retry is still possible and settles it once.
+        let again = m.operator_retry().unwrap();
+        assert_eq!(
+            serde_json::to_vec(&again.mutation).unwrap(),
+            serde_json::to_vec(&request.mutation).unwrap()
+        );
+        let receipt = json!({"generation":"b".repeat(32),"operation_id":"kept-op","commit_sequence":2,"affected":[]});
+        assert!(m.complete_operator(&again, Ok(receipt)));
+        assert!(!m.operator.outcome_unknown && m.operator.pending.is_none());
+        // A fresh mutation that was never submitted is not uncertain.
+        let mut fresh = model();
+        assert!(fresh.operator_review("confirm", "fresh-op"));
+        let first = fresh.operator_confirm().unwrap();
+        assert!(fresh.complete_operator(&first, Err("Unavailable")));
+        assert!(!fresh.operator.outcome_unknown && fresh.operator.pending.is_none());
     }
     #[test]
     fn exact_review_revision_and_same_request_only_uncertain_retry() {
@@ -2190,7 +2227,7 @@ mod native_boundary_tests {
             crate::native::Inputs::default().operator_call(&request),
             Err("Unauthorized")
         );
-        // A WSL Operator call never starts a bridge (and so never boots WSL).
+        // Off Windows the WSL transport is unavailable: nothing is submitted.
         let inputs = crate::native::Inputs {
             wsl_distribution: Some("synthetic".into()),
             wsl_user: Some("operator".into()),
