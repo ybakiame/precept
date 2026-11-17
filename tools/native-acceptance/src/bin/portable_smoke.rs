@@ -596,10 +596,26 @@ async fn main() {
         ui.wait_after("ACP_NSH_STATE phase=Ready", 0);
         package.modules(ui.pid(), "acp-nsh-native.exe", &out, &args[3], "hwnd");
         ui.resize(920, 640);
-        ui.capture("hwnd", &out);
+        // Sidebar "Sessions" (Default button) at rest, then under the real
+        // pointer: the hover wash must stay near the dark rest fill so the light
+        // label stays readable (regression: an inverted mix made it ~text color).
+        let rest = ui.capture_sample("hwnd", &out, 150, 286);
+        ui.hover(150, 286);
+        let hover = ui.capture_sample("hwnd-hover", &out, 150, 286);
+        ui.unhover();
+        let luma = |c: [u8; 3]| (299 * c[0] as u32 + 587 * c[1] as u32 + 114 * c[2] as u32) / 1000;
+        fs::write(
+            out.join("hover.json"),
+            serde_json::to_vec_pretty(&json!({"rest":rest,"hover":hover})).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            luma(hover) < 110 && luma(hover).abs_diff(luma(rest)) <= 40,
+            "hover wash must stay near the rest fill: rest={rest:?} hover={hover:?}"
+        );
         ui.close();
     }
-    record("packaged-hwnd-render-resize-normal-close");
+    record("packaged-hwnd-render-resize-hover-normal-close");
     record("vc-runtime-prerequisite-loaded-from-system-by-daemon-conpty-hwnd");
     f.ok(&["health"]);
     record("ui-close-leaves-daemon-running");
