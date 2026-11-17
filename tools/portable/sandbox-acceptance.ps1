@@ -101,7 +101,12 @@ Cell 'zip-hash-extract-new-dir-manifest-verify' {
     Need (@($zip).Count -eq 1) 'expected one ZIP'
     Need ((Get-FileHash -LiteralPath $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -eq $expected.archive_sha256) 'ZIP hash mismatch'
     Need (-not (Test-Path $product)) 'extraction collision'
-    Expand-Archive -LiteralPath $zip.FullName -DestinationPath $product
+    # .NET extraction: the Archive module is not loadable in every sandbox image.
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [IO.Compression.ZipFile]::OpenRead($zip.FullName)
+    try { foreach ($e in $archive.Entries) { Need ($e.FullName -cmatch '^ACP/([A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*$' -and -not $e.FullName.Contains('..')) "unsafe entry $($e.FullName)" } }
+    finally { $archive.Dispose() }
+    [IO.Compression.ZipFile]::ExtractToDirectory($zip.FullName, $product)
     Need (((@(Get-ChildItem -LiteralPath $product -Force) | ForEach-Object { $_.Name }) -join ',') -eq 'ACP') 'archive must create only ACP\'
     $script:manifest = Get-Content -LiteralPath (Join-Path $acp 'runtime\manifest.json') -Raw | ConvertFrom-Json
     foreach ($f in $manifest.files) {
@@ -121,6 +126,7 @@ Cell 'missing-prerequisite-fails-to-load-all-five' {
         Need ($p.ExitCode -eq -1073741515) "$($b.file) exit $($p.ExitCode), expected STATUS_DLL_NOT_FOUND"
         "$(Split-Path -Leaf $b.file)=0xC0000135"
     }
+    Need (@($codes).Count -eq 5) "checked $(@($codes).Count) of 5 executables"
     $codes -join ' '
 }
 Cell 'install-vc-redist-inside-sandbox-only' {
@@ -135,6 +141,9 @@ Cell 'install-vc-redist-inside-sandbox-only' {
     "installed $v >= $minimum (exit $($p.ExitCode))"
 }
 
+$setupFailed = @($cells | Where-Object { $_.status -ne 'PASS' }).Count -ne 0
+if ($setupFailed) { Log 'setup failed; functional cells NOT_RUN' }
+else {
 New-Item -ItemType Directory -Path $state | Out-Null
 $synthetic = Join-Path $state 'synthetic'
 New-Item -ItemType Directory -Path $synthetic | Out-Null
@@ -260,7 +269,9 @@ Cell 'exact-removal-retains-state-and-unknown' {
     "$($list.Count) files removed; bin kept for unknown file; Profile/state retained"
 }
 
+}
 if ($daemonPid -ne 0) { try { Stop-Process -Id $daemonPid -Force; Log 'forced daemon cleanup after failure' } catch { } }
+$result.setup_failed = $setupFailed
 $result.passed = @($cells | Where-Object { $_.status -eq 'PASS' }).Count
 $result.failed = @($cells | Where-Object { $_.status -ne 'PASS' }).Count
 $result | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $out 'result.json') -Encoding UTF8
