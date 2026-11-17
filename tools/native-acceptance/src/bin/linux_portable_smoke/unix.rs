@@ -296,12 +296,20 @@ impl Package {
             .collect();
         libs.sort();
         libs.dedup();
-        let bins = self.bins.to_str().unwrap();
+        // Anything under the extracted ACP/ tree is refused, not only bin/.
+        let acp = self.acp.to_str().unwrap();
+        let mut distribution = Vec::new();
+        let mut wsl_provided = Vec::new();
         for lib in &libs {
             assert!(
-                !lib.starts_with(bins),
+                !lib.starts_with(acp),
                 "{surface}: library loaded from the archive: {lib}"
             );
+            // WSL mounts its GPU/DXCore integration here; it is not a distro package.
+            if lib.starts_with("/usr/lib/wsl/") {
+                wsl_provided.push(lib.clone());
+                continue;
+            }
             assert!(
                 [
                     "/usr/lib/",
@@ -315,10 +323,14 @@ impl Package {
                 .any(|p| lib.starts_with(p)),
                 "{surface}: library outside the user distribution: {lib}"
             );
+            distribution.push(lib.clone());
         }
         fs::write(
             out.join(format!("{surface}-libraries.json")),
-            serde_json::to_vec_pretty(&libs).unwrap(),
+            serde_json::to_vec_pretty(
+                &json!({"user_distribution":distribution,"wsl_provided":wsl_provided}),
+            )
+            .unwrap(),
         )
         .unwrap();
         libs
@@ -647,6 +659,14 @@ pub async fn main() {
             "gui_display_env": false,
             "gdk_backend": "wayland",
             "x11_libraries_mapped_as_gtk_linkage": x11_linked,
+            // From what the process actually mapped: WSL's d3d12/DXCore libraries
+            // mean Mesa's d3d12 (GPU) driver; otherwise Mesa fell back to software.
+            "gl_driver": if libs.iter().any(|l| l.starts_with("/usr/lib/wsl/lib/libd3d12")) {
+                "mesa-d3d12 (WSL GPU)"
+            } else {
+                "mesa-software (no WSL GPU library mapped)"
+            },
+            "GALLIUM_DRIVER": std::env::var("GALLIUM_DRIVER").ok(),
         });
         fs::write(
             out.join("wayland.json"),
