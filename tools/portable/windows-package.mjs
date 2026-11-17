@@ -297,6 +297,7 @@ export function build(repo, parent, name, cargoProgram) {
   // Verify the exact shipped bytes. Product executables are expected to be unsigned.
   const signatures = JSON.parse(command('pwsh', ['-NoProfile', '-NonInteractive', '-File',
     path.join(repo, 'tools/portable/authenticode.ps1'), '-Directory', bin], repo));
+  requireValue(Array.isArray(signatures) && signatures.every(s => s && typeof s.file === 'string'), 'Unexpected signature report shape');
   const signatureOf = file => signatures.find(s => s.file === path.basename(file));
   for (const dll of manifest.runtime_dlls) {
     const s = signatureOf(dll.file);

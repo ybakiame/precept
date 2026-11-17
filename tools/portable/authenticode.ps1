@@ -4,7 +4,8 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $item = Get-Item -LiteralPath $Directory -Force
 if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Expected regular staged directory' }
-ConvertTo-Json -Depth 3 -AsArray @(Get-ChildItem -LiteralPath $Directory -File -Force | Sort-Object Name | ForEach-Object {
+# Pipe, never pass the array as -InputObject: that would nest it one level deeper.
+@(Get-ChildItem -LiteralPath $Directory -File -Force | Sort-Object Name | ForEach-Object {
     $signature = Get-AuthenticodeSignature -LiteralPath $_.FullName
     [ordered]@{
         file = $_.Name
@@ -13,4 +14,4 @@ ConvertTo-Json -Depth 3 -AsArray @(Get-ChildItem -LiteralPath $Directory -File -
         thumbprint = $(if ($signature.SignerCertificate) { $signature.SignerCertificate.Thumbprint } else { $null })
         file_version = $_.VersionInfo.FileVersion
     }
-})
+}) | ConvertTo-Json -Depth 3 -AsArray
