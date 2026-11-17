@@ -782,16 +782,16 @@ fn check_listing(archive: &Path) -> Result<usize, String> {
     let text = String::from_utf8(o.stdout).map_err(|_| "non-UTF-8 listing")?;
     let mut entries = 0;
     for line in text.lines().filter(|l| !l.is_empty()) {
+        let mode = line.split_whitespace().next().unwrap_or_default();
+        if !(mode.starts_with('-') || mode.starts_with('d')) {
+            return Err("link or device entry".into());
+        }
+        // mode owner/group size date time name.
         let fields: Vec<&str> = line.split_whitespace().collect();
-        // mode owner/group size date time name; links append "-> target".
         if fields.len() != 6 {
             return Err("unexpected entry shape".into());
         }
-        let (mode, file) = (fields[0], fields[5].trim_end_matches('/'));
-        let kind = &mode[..1];
-        if kind != "-" && kind != "d" {
-            return Err("link or device entry".into());
-        }
+        let (kind, file) = (&mode[..1], fields[5].trim_end_matches('/'));
         let component = |c: &str| {
             c.bytes().next().is_some_and(|b| b.is_ascii_alphanumeric())
                 && c.bytes()
