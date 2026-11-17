@@ -12,11 +12,12 @@ $exe = Local-Path $p.Path
 if ($exe -ne (Local-Path $ExpectedExe)) { throw 'Owned executable mismatch' }
 $bin = (Local-Path $PackageBin).TrimEnd('\') + '\'
 $windowsRoot = [IO.Path]::GetFullPath($env:WINDIR).TrimEnd('\') + '\'
-ConvertTo-Json -Depth 4 -AsArray @($p.Modules | ForEach-Object {
+# Pipe, never pass the array as -InputObject: that would nest it one level deeper.
+@($p.Modules | ForEach-Object {
     $file = Local-Path $_.FileName
     $location = if ($file -eq $exe) { 'packaged-executable' }
         elseif ($file.StartsWith($bin, [StringComparison]::OrdinalIgnoreCase) -and -not $file.Substring($bin.Length).Contains('\')) { 'packaged-app-local' }
         elseif ($file.StartsWith($windowsRoot, [StringComparison]::OrdinalIgnoreCase)) { 'windows-component-or-driver' }
         else { 'external-component-review-required' }
     [ordered]@{ name = $_.ModuleName; location = $location; sha256 = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() }
-})
+}) | ConvertTo-Json -Depth 4 -AsArray
