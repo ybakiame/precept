@@ -16,6 +16,12 @@ passed on one disposable, clean Ubuntu 24.04 WSL2 user distribution with WSLg:**
 
 All of it ran **inside a disconnected network namespace**.
 
+This revision also fixes a cross-platform UI defect found during the WSLg captures.
+The inverted color-mix weight turned the hover/press wash of every Default button
+near-white with an unreadable label. A real-pointer hover check now guards it, and
+it was proven on WSLg and on Windows HWND. The README documents the optional WSLg
+GPU switch.
+
 This validates exactly that WSLg deployment target. It is **not** a standalone
 Linux, other-distribution, compositor, release or public-distribution claim. No real
 Profile was used.
@@ -34,8 +40,8 @@ Profile was used.
 | Input / observation | Exact identity |
 | --- | --- |
 | Baseline main | `a237427` (PR #74 merge) |
-| Clean source of archive, smoke harness and every target run | `c218030ecc9d7e4aab091049bceef1450cb00fa4` (tree `0b6b7bc11c96a953dd89cefc4730c8d5243e29ef`); later commits are documentation only |
-| Harness executable SHA-256 | `5aad580caa07e7edd18e485ea94ea978c352144d3373738da127d271f2657be4` |
+| Clean source of archive, smoke harness and every target run | `dd0940405117be5784f0ad6b6cecd2e35ef9a244` (tree `9ddd235770a77fcf3e1c7726354f494af17ce879`); later commits: `7c6c95d` adds the same hover cell to the Windows smoke (its HWND run below), plus documentation |
+| Harness executable SHA-256 | Linux `78b1b1da90f480b2745cbdff8be5251dce5a579bd04f785d2f72d92010849ddd`; Windows HWND (`7c6c95d`, debug) `5182b2febba67f38b45f5191e88be83d739dca95b0ffe0f55c0592d159d362f5` |
 | Windows host | `10.0.26300.9818`, AMD GPU |
 | WSL / kernel / WSLg | WSL `3.0.5.0`, kernel `6.18.58.1-1`, WSLg `1.0.79`, MSRDC `1.2.7391`, Direct3D `1.611.1`, DXCore `10.0.26100.1` |
 | WSLg system distro (`/mnt/wslg/versions.txt`, read-only) | Azure Linux 3.0, built 2026-06-25; wslg `6942bb53`, weston `a7e35fda`, mesa `23.1.0`, FreeRDP `c4030980`, DirectX-Headers `v1.608.0` |
@@ -62,11 +68,11 @@ library maps stay local and unattached.
 
 ## Archive and provenance
 
-`acp-linux-x86_64-prototype-c218030ecc9d.tar.gz`: **42,317,097 bytes, 269 entries,
+`acp-linux-x86_64-prototype-dd0940405117.tar.gz`: **42,316,349 bytes, 269 entries,
 265 files**. SHA-256
-`fe97af2ffc671798db7525c2df62688415b400497d184f609bd224cf1c86493e`. The external
-inventory SHA-256 is `5c506868…836f`; the in-archive `runtime/manifest.json` SHA-256
-is `6fc4b88b…d3f2`.
+`20b3c1ea1bda719e8fa653d13ac3fc54cd62c2a6d09ccd5b2ef2bc1b339f3af0`. The external
+inventory SHA-256 is `703f395d…b26c`; the in-archive `runtime/manifest.json` SHA-256
+is `67e637ce…2bc0`.
 
 ```
 ACP/
@@ -87,13 +93,14 @@ not a duplicate implementation.
 | `acp-daemon` | 6,865,320 | `77948368…8ead` | 4 | 2.39 |
 | `acp-query` | 2,376,648 | `3b4792c0…9aa7` | 4 | 2.34 |
 | `acp-mcp` | 2,531,984 | `218dec77…ead9` | 4 | 2.34 |
-| `acp-nsh-native` | 60,356,304 | `20352a2b…f62c` | 19 | 2.39 |
-| `acp-nsh-tui` | 56,346,248 | `a6dd81e0…44bb` | 4 | 2.39 |
+| `acp-nsh-native` | 60,356,760 | `7ccd6e67…9375` | 19 | 2.39 |
+| `acp-nsh-tui` | 56,346,696 | `7e4ab6ba…18c3` | 4 | 2.39 |
 | `acp-wsl-bridge` | 2,950,512 | `fe632d5c…401a` | 4 | 2.34 |
 
-The six binaries are byte-identical to an earlier independent clean build at
-`13120f2`. Only the test harness differs between the two commits. This is an
-observation on one builder, not a reproducible-build claim.
+The daemon, query, MCP and bridge binaries are byte-identical across three
+independent clean builds (`13120f2`, `c218030`, `dd09404`). The two UI binaries
+changed only with the color fix. This is an observation on one builder, not a
+reproducible-build claim.
 
 Every binary has the same ELF facts:
 - ELF64 x86_64, interpreter `/lib64/ld-linux-x86-64.so.2`.
@@ -151,8 +158,9 @@ The clean target already had these from its base image, and they are recorded as
   then reverted it; rendering stayed software.
 - **Opt-in GPU works.** With `GALLIUM_DRIVER=d3d12` set by the user, Mesa uses WSL's
   d3d12 driver and GTK selects `GskNglRenderer`.
-- **Archive stays neutral.** The archive sets no environment variable. Whether the
-  README should mention this opt-in is an owner decision.
+- **Archive stays neutral.** The archive sets no environment variable. On the
+  owner's decision, the README now documents this optional, per-process switch and
+  how to fall back to software rendering.
 
 **Install delta** (`apt-get install --no-install-recommends` on the README line, the
 strictest test of sufficiency):
@@ -178,8 +186,8 @@ Order of the evidence run, as the normal user `acp`, following the shipped READM
 4. Root installs the README line with `--no-install-recommends`, in the target only.
 5. Root starts `unshare -n` and drops to uid 1000 (`setpriv`); the namespace has only
    `lo`, no route, DNS or TCP. **Offline** runs:
-   - smoke with the default renderer, 4.4 s
-   - smoke with `GALLIUM_DRIVER=d3d12`, 4.3 s
+   - smoke with the default renderer, 5.4 s
+   - smoke with `GALLIUM_DRIVER=d3d12`, 5.1 s
    - the archive cells
 
 **Packaged smoke: 14/14 PASS in both renderer runs** (identical cells):
@@ -195,7 +203,7 @@ Order of the evidence run, as the normal user `acp`, following the shipped READM
 | packaged-mcp-exact-two-read-tools-context-missing-handoff-write-refusal | exactly two read-only tools; unknown write tool refused |
 | write-grant-explicit-revocation | explicit disable |
 | packaged-pty-render-resize-normal-restore | PTY render, resize, Ctrl+Q, alt-screen and bracketed-paste restore |
-| packaged-wayland-render-resize-navigate-normal-close | Wayland render, resize to 920×640, Alt+3 input → Preferences, normal close |
+| packaged-wayland-render-resize-navigate-hover-normal-close | Wayland render, resize to 920×640, Alt+3 input → Preferences, real-pointer hover on "Sessions" keeps a readable wash, normal close |
 | libraries-from-user-distribution-only | `/proc/<pid>/maps` provenance for the daemon, TUI and Desktop, as classified above |
 | ui-close-leaves-daemon-running | daemon healthy after both UIs close |
 | graceful-stop-cleans-owned-credentials-releases-runtime-lease | SIGINT to the owned daemon; credentials removed; lease reacquirable |
@@ -232,21 +240,39 @@ no external network.
 - The captures (920×640) show the synthetic Preferences page. Fonts, icons and the
   client-side frame render correctly inside the WSLg RAIL window.
 
-**Visual observation, cause undetermined:**
-- In 2 of 3 d3d12 captures (one evidence run plus two repeats), the sidebar
-  "Sessions" button showed a light fill (`216,227,248` instead of `44,59,86`) with
-  low-contrast text.
-- The 4 software captures across attempts never showed it.
-- Possible causes: pointer hover over the RAIL window, the timing of a focus/hover
-  transition at capture (the capture waits 250 ms), or the renderer. It is recorded
-  for UI follow-up, not as a pass or fail.
+**Hover defect found and fixed:**
+- **Symptom.** Earlier d3d12 captures showed a light "Sessions" fill (`216,227,248`)
+  with an unreadable label. The owner identified it as pointer hover, also seen on
+  other buttons.
+- **Cause.** NSH's `Hsla::mix(other, factor)` keeps `factor` of `self`. Our
+  `tokens::mix(a, b, t)` passed `t` through. The Default button's "7% hover / 13%
+  press wash" was therefore 93% / 87% text color. A selected operator row was 90%
+  accent instead of a 10% tint.
+- **Fix.** `tokens::mix` now inverts the weight once (`64f2ea2`). A unit regression
+  test covers it and was mutation-checked.
+- **Guard.** The window worker gained a guarded `hover` action:
+  - the window must be owned, in the foreground and not occluded
+  - the original pointer position is restored on `unhover`, on close and on worker
+    exit
+
+  Captures can also sample one pixel. The Linux and Windows packaged smokes hover
+  the sidebar "Sessions" button and assert the wash stays near the dark rest fill.
+
+| Package | Surface | Rest | Hover | Cell |
+| --- | --- | --- | --- | --- |
+| `c218030` (pre-fix) | WSLg | `44,59,86` | `216,227,248` | **FAIL** (as intended) |
+| `729eb51` (S1-A, pre-fix) | Windows HWND | `44,59,86` | `216,227,248` | **FAIL** (as intended) |
+| `dd09404` | WSLg software / d3d12 | `44,59,86` | `50,70,105` | PASS / PASS |
+| `7c6c95d` Windows ZIP | Windows HWND (developer host) | `44,59,86` | `50,70,105` | PASS, smoke 14/14 |
+
+The fixed hover capture shows a subtle lift with a clearly readable label.
 
 **Performance observations (no gate):**
 
 | Renderer | First `phase=Ready` | GTK mapped | First painted frame |
 | --- | ---: | ---: | ---: |
-| default (software) | 0.27 s | 0.54 s | 0.61 s |
-| d3d12 | 0.06 s | 0.19 s | 0.35 s |
+| default (software) | 0.34 s | 0.63 s | 0.70 s |
+| d3d12 | 0.06 s | 0.20 s | 0.38 s |
 
 Typing latency, long sessions and multi-monitor/DPI behavior on WSLg were NOT_RUN.
 
@@ -261,7 +287,7 @@ Typing latency, long sessions and multi-monitor/DPI behavior on WSLg were NOT_RU
 | G08 | **PASS (WSLg target)**: static ELF closure, declared packages, missing-library diagnosis, post-install run with classified `/proc` library provenance covering dynamically loaded GIO/EGL/Vulkan/d3d12 modules, GUI and TUI measured separately, disconnected run. Media/audio playback was not exercised, because the UI does not play media. Font/GPU breadth beyond this target NOT_RUN |
 | G09 | **PASS**: exact inventory removal; changed and occupied products refused before unlink; unknown/Profile/auth retained; collision refused |
 | G11 | **PARTIAL — BLOCKED for public distribution.** PASS: source/toolchain/lock/binary/archive provenance, verbatim Apache-2.0 `LICENSE` and `NOTICE`. Open: in the Linux closure, **18 third-party entries lack crate-local notice text** and are pending review (21 in the Windows closure), and signing is undecided |
-| G12 | **WSLg PASS, standalone NOT_RUN**: actual `GdkWaylandDisplay` mapping, render, resize, input and close through WSLg's Weston, with both software (default) and d3d12 renderers and owned captures. The standalone native Wayland target remains NOT_RUN, and WSLg does not substitute for it |
+| G12 | **WSLg PASS, standalone NOT_RUN**: actual `GdkWaylandDisplay` mapping, render, resize, keyboard and real-pointer hover input, and close through WSLg's Weston, with both software (default) and d3d12 renderers and owned captures. The standalone native Wayland target remains NOT_RUN, and WSLg does not substitute for it |
 | G17 | **PASS (automated) / human NOT_RUN**: PTY render, resize, consumed Ctrl+Q and terminal restore (alt-screen and bracketed-paste exit sequences). Error/cancel streams and human inspection beyond the captured frame were NOT_RUN |
 
 ## Validation commands
@@ -270,10 +296,13 @@ Typing latency, long sessions and multi-monitor/DPI behavior on WSLg were NOT_RU
 | --- | --- | --- |
 | `node --test tools/portable/{elf,linux-package,windows-package}.test.mjs` | Linux/WSL | **17 PASS** (ELF facts match `readelf`) |
 | Same | Windows | **16 PASS, 1 skipped** (the `readelf` comparison is Linux-only) |
-| Harness `cargo fmt --check`, `cargo clippy --all-targets --locked -- -D warnings`, `cargo test --locked` | Linux/WSL (`c218030`); Windows (`ca53bd9`; later changes are inside the `cfg(unix)` module, excluded on Windows) | PASS; 36 tests each |
-| `linux-package.mjs` attempt-08 | builder | PASS: extraction inventory, listing policy |
+| Harness `cargo fmt --check`, `cargo clippy --all-targets --locked -- -D warnings`, `cargo test --locked` | Linux/WSL (`7c6c95d`); Windows (`ca53bd9`, plus `windows-smoke.ps1`'s own fmt/Clippy/test of `acp-portable-smoke` at `7c6c95d`) | PASS; 36 tests |
+| `native_window.ps1` PowerShell AST parse | Windows | PASS, 0 errors |
+| Operator UI (`acp-operator-ui`, `native,tui`): Clippy `-D warnings`, tests | Linux/WSL | PASS; **28 + 1 + 1** (includes the new `mix` regression test; reverting the fix makes it fail) |
+| `linux-package.mjs` attempt-09 | builder | PASS: extraction inventory, listing policy |
 | `missing-deps`, smoke-default, smoke-d3d12, archive-01 | clean target | PASS, 14/14, 14/14, 11/11 |
-| Root and operator workspaces | — | Not rerun: no product Rust source changed since PR #74 (`a237427`), where they passed; the shipped binaries are byte-identical across two builds |
+| `windows-package.ps1` + `windows-smoke.ps1` (`s1c-hover-zip-01`, smoke-04) | Windows developer host | PASS, 14/14 including HWND hover |
+| Root workspace; operator model | — | Not rerun: their sources are unchanged since PR #74 (`a237427`), where they passed; daemon/query/MCP/bridge binaries are byte-identical |
 
 Not run: standalone Linux host/VM, other distributions or compositors, the full
 148-cell UI matrix, second user, IME/AT, hosted Actions, models.
@@ -299,15 +328,13 @@ Not run: standalone Linux host/VM, other distributions or compositors, the full
   report then claimed hardware GL. Checking the mapped libraries showed Mesa software
   rendering, and showed that the harness counted `/usr/lib/wsl` as user distribution.
   Both were fixed in `c218030`.
-- **attempt-08** (`c218030`): this report.
+- **attempt-08** (`c218030`): smoke 14/14 with both renderers and archive 11/11,
+  offline. It showed the intermittent light button fill that turned out to be the
+  hover defect.
+- **attempt-09** (`dd09404`): this report, after the `mix` fix and the hover cell.
 
 ## Required follow-up, not release authorization
 
-- Owner decision: whether the README should mention the `GALLIUM_DRIVER=d3d12`
-  opt-in for WSLg GPU rendering. The archive itself must keep setting no
-  environment variables.
-- UI follow-up: the intermittent light "Sessions" button state on d3d12 captures,
-  and its low text contrast.
 - Review the third-party entries without notice text (18 Linux, 21 Windows), then
   decide on signing.
 - **Standalone Linux** (host or VM, native compositor) remains required before any
