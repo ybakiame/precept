@@ -4,9 +4,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { gitCheckoutRoot, licensePolicy, noticeLedger, loadSupplements } from './notices.mjs';
 
-const repo = new URL('../..', import.meta.url).pathname;
+const repo = fileURLToPath(new URL('../..', import.meta.url));
 const sha = b => createHash('sha256').update(b).digest('hex');
 
 test('license policy: permissive choices, legacy slash, WITH exceptions, refusals', () => {
