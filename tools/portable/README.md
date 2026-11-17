@@ -122,6 +122,10 @@ Node, and GTK 4/GStreamer development headers:
 node tools/portable/linux-package.mjs "$PWD" "$PWD/artifacts/local-p1-m5" s1c-attempt-01 "$HOME/.cargo/bin/cargo"
 ```
 
+The generated `.tar.gz`, inventory and checksum sidecars stay under the ignored local
+artifact directory. Do not commit or upload them; formal distribution and signing are
+deferred until an explicitly approved release stage.
+
 The same `ACP/{bin,runtime,notices}` layout ships six executables (including the S1-B
 `acp-wsl-bridge` helper). `elf.mjs` records the interpreter, DT_NEEDED, RPATH/RUNPATH
 (refused) and symbol-version needs; direct DT_NEEDED owners (`dpkg -S`) become the
