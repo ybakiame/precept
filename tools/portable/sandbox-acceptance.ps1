@@ -20,6 +20,13 @@ using System; using System.ComponentModel; using System.Runtime.InteropServices;
 public static class AcpNative {
   [DllImport("kernel32.dll")] public static extern uint SetErrorMode(uint mode);
   [DllImport("kernel32.dll", SetLastError=true)] public static extern bool GenerateConsoleCtrlEvent(uint ev, uint group);
+  [DllImport("kernel32.dll", SetLastError=true)] static extern uint GetConsoleProcessList(uint[] list, uint count);
+  public static string CtrlBreak(uint pid) {
+    var list = new uint[64]; uint n = GetConsoleProcessList(list, 64);
+    bool shared = false; for (int i = 0; i < n && i < 64; i++) if (list[i] == pid) shared = true;
+    if (GenerateConsoleCtrlEvent(1, pid)) return null;
+    return "GenerateConsoleCtrlEvent error " + Marshal.GetLastWin32Error() + "; console processes " + n + "; target shares console " + shared;
+  }
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
@@ -155,6 +162,8 @@ $endpoint = 'acp-sandbox-' + [guid]::NewGuid().ToString('N').Substring(0, 12)
 $loc = @('--runtime-dir', $runtime, '--endpoint', $endpoint)
 $query = Join-Path $bin 'acp-query.exe'
 function Q([string[]]$a) { Run $query ($loc + $a) }
+function Why($r) { "exit $($r.code) error=$($r.json.error) stderr=$(($r.err -split "`n" | Select-Object -First 2) -join ' | ')" }
+function Owner([string]$path) { $acl = Get-Acl -LiteralPath $path; "owner=$($acl.Owner) rules=" + (($acl.Access | ForEach-Object { "$($_.IdentityReference):$($_.FileSystemRights)" }) -join ';') }
 
 Cell 'daemon-start-no-implicit-profile' {
     $line = '"' + (Join-Path $bin 'acp-daemon.exe') + '" --runtime-dir "' + $runtime + '" --endpoint ' + $endpoint + ' --allow-project synthetic --allow-root "synthetic=' + $synthetic + '"'
@@ -168,14 +177,16 @@ Cell 'daemon-start-no-implicit-profile' {
 }
 $db = Join-Path $state 'profile.sqlite3'
 Cell 'explicit-synthetic-profile-grant-register' {
-    Need ((Q @('profile', 'create', $db)).code -eq 0) 'profile create failed'
+    $r = Q @('profile', 'create', $db)
+    Need ($r.code -eq 0) "profile create failed: $(Why $r); state $(Owner $state)"
     Need ((Q @('profile', 'create', $db)).code -ne 0) 'repeat create must refuse'
     $b = (Q @('profile', 'info')).json.binding
-    Need ((Q @('profile', 'write', 'enable', '--profile-id', $b.profile_id, '--generation', $b.generation, '--confirm')).code -eq 0) 'write enable failed'
+    $r = Q @('profile', 'write', 'enable', '--profile-id', $b.profile_id, '--generation', $b.generation, '--confirm')
+    Need ($r.code -eq 0) "write enable failed: $(Why $r)"
     $op = -join ((1..16) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) })
     $canonical = '\\?\' + (Resolve-Path -LiteralPath $synthetic).Path
     $r = Q @('project-register', 'synthetic', $canonical, '--profile-id', $b.profile_id, '--generation', $b.generation, '--owner-epoch', "$($b.owner_epoch)", '--operation-id', $op)
-    Need ($r.code -eq 0) "register failed: $($r.json.error)"
+    Need ($r.code -eq 0) "register failed: $(Why $r)"
     Need (Test-Path (Join-Path $runtime 'agent-synthetic.cap')) 'agent credential missing'
     'created, repeat refused, write enabled, project registered'
 }
@@ -243,7 +254,8 @@ Cell 'conpty-tui-render-ctrl-q-exit' {
 Cell 'graceful-stop-cleans-credentials' {
     Need ($daemonPid -ne 0) 'no daemon'
     $p = Get-Process -Id $daemonPid
-    Need ([AcpNative]::GenerateConsoleCtrlEvent(1, [uint32]$daemonPid)) 'Ctrl+Break failed'
+    $err = [AcpNative]::CtrlBreak([uint32]$daemonPid)
+    Need ($null -eq $err) "Ctrl+Break failed: $err"
     Need ($p.WaitForExit(15000)) 'daemon did not exit'
     Need ($p.ExitCode -eq 0) "daemon exit $($p.ExitCode)"
     foreach ($cap in 'operator.cap', 'agent-synthetic.cap', 'operator-write.cap') { Need (-not (Test-Path (Join-Path $runtime $cap))) "$cap left behind" }
