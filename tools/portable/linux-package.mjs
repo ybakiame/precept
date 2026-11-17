@@ -59,10 +59,11 @@ function cargoHome() { return process.env.CARGO_HOME || path.join(os.homedir(), 
 function packagesFor(file, needed) {
   const resolved = {};
   for (const line of run('ldd', [file]).split('\n')) {
-    // "libX.so.N => /path (0x..)" or the loader itself as "/lib64/ld-linux-x86-64.so.2 (0x..)".
-    const m = /^\s*(\S+) => (\/\S+) \(/.exec(line) ?? /^\s*((\/\S+\/)?(\S+)) \(0x/.exec(line);
-    if (m && m[2]?.startsWith('/')) resolved[m[1]] = m[2];
-    else if (m && m[1].startsWith('/')) resolved[path.basename(m[1])] = m[1];
+    // "libX.so.N => /path (0x..)", or the loader itself as "/lib64/ld-linux-x86-64.so.2 (0x..)".
+    const arrow = /^\s*(\S+) => (\/\S+) \(0x/.exec(line);
+    const bare = /^\s*(\/\S+) \(0x/.exec(line);
+    if (arrow) resolved[arrow[1]] = arrow[2];
+    else if (bare) resolved[path.basename(bare[1])] = bare[1];
   }
   return needed.map(lib => {
     const where = resolved[lib];
