@@ -125,5 +125,7 @@ explicit inputs; project, task and request data never appear in argv.
   (stdin EOF; in-flight work finishes briefly) without stopping the WSL daemon or
   touching Profile, auth or runtime files.
 - **Non-goals:** no daemon start, Profile selection, write enable, agent launch or
-  authentication by the bridge; no MCP writes; no context-sharing UI (the native
-  GUI does not expose it; it remains a CLI session-start option).
+  authentication by the bridge; no MCP writes. Context sharing is a per-start
+  operator opt-in (off by default) carried as `share_context` on `session.start`;
+  a refresh reports the daemon's `session.context` lease. The daemon's lease
+  contract is unchanged.
