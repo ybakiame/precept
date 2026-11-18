@@ -1,5 +1,11 @@
 # P1-M4/S3 — Integrated acceptance evidence ledger
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved, including the `apps/operator/{model,ui,tests}`
+> app paths of that time; the app now lives in the `apps/` workspace
+> (`core`/`client`/`ui`/`web-smoke`). Use
+> [Rust-only development](../p1/rust-only-development.md) for current commands.
+
 2026-11-16 P1-N follow-up: the owner approved the separate #65 design, and
 [PR #66's integration evidence](p1-n-project-contracts.md) records production
 contract enforcement at clean `435f4bd` on both native OS environments. This S3

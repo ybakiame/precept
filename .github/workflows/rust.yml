@@ -25,6 +25,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - run: npm ci --prefix apps/operator/tests
+      - run: npm ci --prefix apps/web-smoke
       - run: node tools/check_source.mjs
-      - run: node --test apps/operator/tests/static-server.test.mjs
+      - run: node --test apps/web-smoke/static-server.test.mjs

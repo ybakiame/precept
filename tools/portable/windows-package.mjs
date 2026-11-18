@@ -249,12 +249,12 @@ export function build(repo, parent, name, cargoProgram) {
     limitations: ['Unsigned product executables; not a release or reproducible-binary claim',
       'OS minimum and clean-target acceptance unverified',
       'Third-party notices reviewed against a permissive-license policy; the ledger is not a linker-derived SBOM; signing and publication undecided'] };
-  for (const file of ['Cargo.lock', 'apps/operator/Cargo.lock']) manifest.locks[file] = digest(fs.readFileSync(path.join(repo, file)));
-  requireValue(fs.readFileSync(path.join(repo, 'apps/operator/ui/Cargo.toml'), 'utf8').includes(pin), 'NSH pin mismatch');
+  for (const file of ['Cargo.lock', 'apps/Cargo.lock']) manifest.locks[file] = digest(fs.readFileSync(path.join(repo, file)));
+  requireValue(fs.readFileSync(path.join(repo, 'apps/ui/Cargo.toml'), 'utf8').includes(pin), 'NSH pin mismatch');
 
   const workspaces = [
     ['core', 'Cargo.toml', ['acp-daemon', 'acp-query', 'acp-mcp'], []],
-    ['operator', 'apps/operator/Cargo.toml', ['acp-operator-ui'], ['--features', 'native,tui']]];
+    ['operator', 'apps/Cargo.toml', ['acp-operator-ui'], ['--features', 'native,tui']]];
   // A new target directory for each attempt prevents packaging stale build products.
   for (const [label, manifestFile, packages, features] of workspaces) {
     const args = ['build', '--manifest-path', manifestFile, '--release', '--locked', '--target', target,

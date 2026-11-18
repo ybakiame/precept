@@ -1,10 +1,12 @@
 # NSH console architecture (E4 / S3 operator extension)
 
-The implemented NSH Rust console lives at `apps/operator`, one Cargo workspace
-outside the root Rust workspace with `model` and `ui` members.
+The implemented NSH Rust console lives at `apps/`, one Cargo workspace outside the
+root Rust workspace with `core`, `client` and `ui` members (see
+[apps/README](../../apps/README.md)).
 [ADR-0003](../adr/0003-ui-framework-selection.md) now **accepts NSH**
 as the product Desktop/TUI direction; behavior below is unchanged. Source paths
-are relative to `apps/operator` (`model` was `shared`, `ui` was `nsh`).
+are relative to `apps/`. `model/` paths below are now split between `core/` (state,
+presentation, i18n) and `client/` (`native.rs`, `bridge.rs`, the request paths).
 [Product IA](../product-ui.md) describes later workflows, not implemented pages.
 Mobile and production writes remain deferred.
 

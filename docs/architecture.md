@@ -34,10 +34,10 @@ M2 integrated acceptance.
 | `crates/acp-mcp` | Read-only stdio bridge to project-bound IPC | Profile/task/session mutation |
 | `crates/acp-write` | S1 fresh-v1 storage; merged S2 adds guarded existing-v1 attachment through daemon-owned lease/epoch and explicit grant | Arbitrary existing-path Writer, direct UI/CLI writes, generic SQL |
 | `crates/acp-query` | Native operator reads/session controls and S3 typed write requests through authenticated daemon IPC | Direct database access or a second writer |
-| `apps/operator/model`, `apps/operator/ui` | Shared typed presentation and NSH Desktop/TUI surfaces; the `acp-wsl-bridge` stdio helper for the Windows→WSL2 target | Direct database access, duplicate resolution logic, autonomous daemon startup or a second authority in the bridge |
+| `apps/core`, `apps/client`, `apps/ui` | Pure operator state/presentation (`core`); native IPC and the `acp-wsl-bridge` stdio helper for the Windows→WSL2 target (`client`); NSH Desktop/TUI surfaces (`ui`) | Direct database access, duplicate resolution logic, autonomous daemon startup or a second authority in the bridge |
 
 Product crate paths remain as implemented; the operator app moved from `spikes/p1-e`
-to one `apps/operator` workspace, and the historical comparison workspace is
+to `apps/operator` and then to the `apps/` workspace (`core`/`client`/`ui`), and the historical comparison workspace is
 archived under `docs/archive/gpui-kit-spike`, not removed.
 
 **Windows → WSL2 (P1-M5/S1-B, primary workflow).** The Windows-native HWND GUI is

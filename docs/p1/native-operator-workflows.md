@@ -93,7 +93,7 @@ M4/S2 ([Issue #57](https://github.com/ybakiame/agent-control-plane/issues/57))
 supersedes only the deprecate/delete gate: the shared native UI adds exact
 Queue/Detail/History inspection, peer disclosure, explicit deprecate/apply and
 exact-ID retype/delete/apply. Registration and Handoff put remain CLI-only.
-See the [current app keyboard flow](../../apps/operator/README.md#review-keyboard-flow).
+See the [current app keyboard flow](../../apps/README.md#review-keyboard-flow).
 
 The shared model captures target/project/task/request epoch plus exact observed
 record and binding before review. Scope/record/target/project/task changes invalidate
@@ -129,7 +129,7 @@ Build native workspace binaries first; NSH is a separate manifest:
 
 ```text
 cargo build --workspace --bins --locked
-cargo build --manifest-path apps/operator/ui/Cargo.toml --features native,tui --bins --locked
+cargo build --manifest-path apps/ui/Cargo.toml --features native,tui --bins --locked
 ```
 
 Use a fresh owned synthetic checkout and an existing private Profile parent (0700

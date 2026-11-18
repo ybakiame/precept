@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseDocument } from '../apps/operator/tests/node_modules/yaml/dist/index.js';
+import { parseDocument } from '../apps/web-smoke/node_modules/yaml/dist/index.js';
 const root = fileURLToPath(new URL('../', import.meta.url));
 process.chdir(root);
 const listed = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { encoding:'utf8' }).split('\0').filter(Boolean);
@@ -57,7 +57,7 @@ for (const file of files) {
 }
 // Cargo's core dependency is the authority; compare every active consumer, not
 // historical reports or archived manifests. This validates pins, never resolves them.
-const nshDependencies = [...readFileSync('apps/operator/ui/Cargo.toml', 'utf8')
+const nshDependencies = [...readFileSync('apps/ui/Cargo.toml', 'utf8')
   .matchAll(/^(nsh-[\w-]+)\s*=\s*\{([^\n]+)\}\s*$/gm)]
   .map(([, name, fields]) => ({ name, revision:fields.match(/\brev\s*=\s*"([0-9a-f]{40})"/)?.[1] }));
 const nshPin = nshDependencies.find(dependency => dependency.name === 'nsh-core')?.revision;
@@ -70,7 +70,7 @@ const packagerPin = readFileSync('tools/package_ui_web.mjs', 'utf8')
 requireCheck(!!nshPin && packagerPin === nshPin, 'NSH packager pin differs from Cargo');
 const webWorkflow = parseDocument(readFileSync('.github/workflows/ui-spike.yml', 'utf8'), { uniqueKeys:true }).toJS();
 const rendererPins = (webWorkflow.jobs?.web?.steps || []).flatMap(step =>
-  [...(step.run || '').matchAll(/\bgit\s+-C\s+apps\/operator\/vendor\/nsh\s+checkout\s+(\S+)/g)]
+  [...(step.run || '').matchAll(/\bgit\s+-C\s+apps\/vendor\/nsh\s+checkout\s+(\S+)/g)]
     .map(match => match[1]));
 requireCheck(!!nshPin && rendererPins.length === 1 && rendererPins[0] === nshPin,
   'NSH workflow renderer pin differs from Cargo');

@@ -38,7 +38,7 @@ impl Session {
                 .fold(0u64, |n, b| n.wrapping_mul(131).wrapping_add(b as u64))
         );
         let is_desktop = surface == "desktop";
-        let binary = repo.join("apps/operator/target/debug").join(format!(
+        let binary = repo.join("apps/target/debug").join(format!(
             "acp-nsh-{}{}",
             if is_desktop { "native" } else { "tui" },
             std::env::consts::EXE_SUFFIX

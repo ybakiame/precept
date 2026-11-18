@@ -1,5 +1,11 @@
 # P1-M4/S2 — shared native review repair and local acceptance
 
+> **Historical record — not a current runbook.** Original dates, source revisions
+> and outcomes below are preserved, including the `apps/operator/{model,ui,tests}`
+> app paths of that time; the app now lives in the `apps/` workspace
+> (`core`/`client`/`ui`/`web-smoke`). Use
+> [Rust-only development](../p1/rust-only-development.md) for current commands.
+
 Scope: [Issue #57](https://github.com/ybakiame/agent-control-plane/issues/57),
 parent [#52](https://github.com/ybakiame/agent-control-plane/issues/52).
 Baseline: merged S1 `d66d7c6f1dd60cf98238d5122111ed374efc4343`.

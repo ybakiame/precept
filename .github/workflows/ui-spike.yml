@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - 'apps/operator/**'
+      - 'apps/**'
       - 'crates/**'
       - 'tools/**'
       - '.github/workflows/ui-spike.yml'
@@ -24,7 +24,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: nsh-registry-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'apps/operator/Cargo.lock') }}
+          key: nsh-registry-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'apps/Cargo.lock') }}
       - name: Linux NSH build dependencies
         if: runner.os == 'Linux'
         run: |
@@ -32,14 +32,11 @@ jobs:
           sudo apt-get install -y clang libclang-dev cmake ninja-build pkg-config libgtk-4-dev libasound2-dev libssl-dev libxkbcommon-dev libwayland-dev
       - run: rustup show
       - run: cargo build --workspace --bins --locked
-      - run: cargo fmt --manifest-path apps/operator/model/Cargo.toml -- --check
-      - run: cargo clippy --manifest-path apps/operator/model/Cargo.toml --all-targets --features native --locked -- -D warnings
-      - run: cargo test --manifest-path apps/operator/model/Cargo.toml --features native --locked
-      - run: cargo fmt --manifest-path apps/operator/ui/Cargo.toml -- --check
-      - run: cargo build --manifest-path apps/operator/ui/Cargo.toml --features native,tui --bins --locked
-      - run: cargo clippy --manifest-path apps/operator/ui/Cargo.toml --all-targets --features native,tui --locked -- -D warnings
+      - run: cargo fmt --manifest-path apps/Cargo.toml --all -- --check
+      - run: cargo build --manifest-path apps/Cargo.toml --workspace --features acp-operator-ui/native,acp-operator-ui/tui --bins --locked
+      - run: cargo clippy --manifest-path apps/Cargo.toml --workspace --all-targets --features acp-operator-ui/native,acp-operator-ui/tui --locked -- -D warnings
       - name: Shared NSH headless components and real native daemon integration (not GUI or TTY evidence)
-        run: cargo test --manifest-path apps/operator/ui/Cargo.toml --all-targets --features native,tui --locked
+        run: cargo test --manifest-path apps/Cargo.toml --workspace --all-targets --features acp-operator-ui/native,acp-operator-ui/tui --locked
   web:
     timeout-minutes: 30
     runs-on: ubuntu-latest
@@ -48,22 +45,22 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - run: npm ci --prefix apps/operator/tests
+      - run: npm ci --prefix apps/web-smoke
       - name: Verify Cargo, packager and workflow NSH pins before building
         run: node tools/check_source.mjs
       - run: sudo apt-get update && sudo apt-get install -y clang llvm
       - run: rustup target add wasm32-unknown-unknown
-      - run: cargo build --manifest-path apps/operator/ui/Cargo.toml --target wasm32-unknown-unknown --lib --locked
+      - run: cargo build --manifest-path apps/ui/Cargo.toml --target wasm32-unknown-unknown --lib --locked
       - name: Fetch exact upstream renderer
         run: |
-          git clone https://github.com/longbridge/nsh apps/operator/vendor/nsh
-          git -C apps/operator/vendor/nsh checkout b7f31a08478be262fd7b76ec856036fd5b8ffdb0
-      - run: node tools/package_ui_web.mjs apps/operator/vendor/nsh apps/operator/target/wasm32-unknown-unknown/debug/acp_operator_ui.wasm apps/operator/ui/dist
-      - run: node --test apps/operator/tests/static-server.test.mjs
-      - run: npx --prefix apps/operator/tests playwright install chromium --with-deps
-      - run: node apps/operator/tests/web-smoke.mjs apps/operator/ui/dist apps/operator/artifacts
+          git clone https://github.com/longbridge/nsh apps/vendor/nsh
+          git -C apps/vendor/nsh checkout b7f31a08478be262fd7b76ec856036fd5b8ffdb0
+      - run: node tools/package_ui_web.mjs apps/vendor/nsh apps/target/wasm32-unknown-unknown/debug/acp_operator_ui.wasm apps/ui/dist
+      - run: node --test apps/web-smoke/static-server.test.mjs
+      - run: npx --prefix apps/web-smoke playwright install chromium --with-deps
+      - run: node apps/web-smoke/web-smoke.mjs apps/ui/dist apps/artifacts
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: nsh-offline-web
-          path: apps/operator/artifacts
+          path: apps/artifacts

@@ -1,0 +1,13 @@
+[package]
+name = "acp-operator-core"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+description = "Operator app state, presentation and i18n: pure, no I/O (also builds for wasm)"
+
+[dependencies]
+acp-core = { path = "../../crates/acp-core" }
+acp-session = { path = "../../crates/acp-session" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

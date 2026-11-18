@@ -19,7 +19,7 @@ _bins=(acp-daemon acp-query acp-mcp acp-wsl-bridge acp-nsh-tui)
 prepare() {
   cd "$srcdir/acp-@SHORT@"
   cargo fetch --locked --offline --target x86_64-unknown-linux-gnu
-  cargo fetch --locked --offline --target x86_64-unknown-linux-gnu --manifest-path apps/operator/Cargo.toml
+  cargo fetch --locked --offline --target x86_64-unknown-linux-gnu --manifest-path apps/Cargo.toml
 }
 
 build() {
@@ -31,9 +31,9 @@ build() {
   sysroot=$(rustc --print sysroot)
   export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$srcdir=/acp/build --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$sysroot=/rust-sysroot"
   cargo build --frozen --release -p acp-daemon -p acp-query -p acp-mcp --bins
-  cargo build --frozen --release --manifest-path apps/operator/Cargo.toml \
-    -p acp-operator-model --bin acp-wsl-bridge --features acp-operator-model/native
-  cargo build --frozen --release --manifest-path apps/operator/Cargo.toml \
+  cargo build --frozen --release --manifest-path apps/Cargo.toml \
+    -p acp-operator-client --bin acp-wsl-bridge
+  cargo build --frozen --release --manifest-path apps/Cargo.toml \
     -p acp-operator-ui --bin acp-nsh-tui --features acp-operator-ui/tui
 }
 

@@ -14,6 +14,6 @@ await cp(path.join(upstream, 'nsh.js'), path.join(output, 'nsh.js'));
 await cp(path.join(upstream, 'browser'), path.join(output, 'browser'), { recursive:true });
 await cp(path.join(source, 'LICENSE-APACHE'), path.join(output, 'NSH-LICENSE-APACHE.txt'));
 await cp(wasm, path.join(output, 'acp_operator_ui.wasm'));
-const web = fileURLToPath(new URL('../apps/operator/ui/web/', import.meta.url));
+const web = fileURLToPath(new URL('../apps/ui/web/', import.meta.url));
 for (const name of ['index.html', 'start.js']) await cp(path.join(web, name), path.join(output, name));
 console.log('PASS: pinned offline NSH assets', (await readdir(output)).length);

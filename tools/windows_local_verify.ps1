@@ -58,13 +58,10 @@ try {
             Invoke-Gate 'workspace-tests' @('cargo','test','--workspace','--all-targets','--locked')
         } else { Invoke-Gate 'process-binaries' @('cargo','build','--workspace','--bins','--locked') }
         if ($Suite -ne 'Core') {
-            Invoke-Gate 'shared-fmt' @('cargo','fmt','--manifest-path','apps/operator/model/Cargo.toml','--','--check')
-            Invoke-Gate 'shared-clippy' @('cargo','clippy','--manifest-path','apps/operator/model/Cargo.toml','--all-targets','--features','native','--locked','--','-D','warnings')
-            Invoke-Gate 'shared-tests' @('cargo','test','--manifest-path','apps/operator/model/Cargo.toml','--features','native','--locked')
-            Invoke-Gate 'nsh-fmt' @('cargo','fmt','--manifest-path','apps/operator/ui/Cargo.toml','--','--check')
-            Invoke-Gate 'nsh-build' @('cargo','build','--manifest-path','apps/operator/ui/Cargo.toml','--features','native,tui','--bins','--locked')
-            Invoke-Gate 'nsh-clippy' @('cargo','clippy','--manifest-path','apps/operator/ui/Cargo.toml','--all-targets','--features','native,tui','--locked','--','-D','warnings')
-            Invoke-Gate 'nsh-tests' @('cargo','test','--manifest-path','apps/operator/ui/Cargo.toml','--all-targets','--features','native,tui','--locked')
+            Invoke-Gate 'apps-fmt' @('cargo','fmt','--manifest-path','apps/Cargo.toml','--all','--','--check')
+            Invoke-Gate 'apps-build' @('cargo','build','--manifest-path','apps/Cargo.toml','--workspace','--features','acp-operator-ui/native,acp-operator-ui/tui','--bins','--locked')
+            Invoke-Gate 'apps-clippy' @('cargo','clippy','--manifest-path','apps/Cargo.toml','--workspace','--all-targets','--features','acp-operator-ui/native,acp-operator-ui/tui','--locked','--','-D','warnings')
+            Invoke-Gate 'apps-tests' @('cargo','test','--manifest-path','apps/Cargo.toml','--workspace','--all-targets','--features','acp-operator-ui/native,acp-operator-ui/tui','--locked')
         }
         Invoke-Gate 'diff' @('git','diff','--check')
     } finally { $metadata | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $report.FullName 'report.json') }

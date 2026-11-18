@@ -85,7 +85,7 @@ export function build(repo, parent, name, cargoProgram) {
   const license = fs.readFileSync(path.join(repo, 'LICENSE'));
   need(digest(license) === apacheLicenseSha256, 'LICENSE is not the verbatim Apache-2.0 text');
   const notice = fs.readFileSync(path.join(repo, 'NOTICE'));
-  need(fs.readFileSync(path.join(repo, 'apps/operator/ui/Cargo.toml'), 'utf8').includes(pin), 'NSH pin mismatch');
+  need(fs.readFileSync(path.join(repo, 'apps/ui/Cargo.toml'), 'utf8').includes(pin), 'NSH pin mismatch');
   const report = freshDirectory(parent, name);
   fs.chmodSync(report, 0o700);
   const packageRoot = freshDirectory(report, 'package');
@@ -106,11 +106,11 @@ export function build(repo, parent, name, cargoProgram) {
     limitations: ['Unsigned; not a release or reproducible-binary claim',
       'Validated only on the recorded Ubuntu 24.04 WSL2 + WSLg target; no standalone Linux or cross-distro claim',
       'Third-party notices reviewed against a permissive-license policy; the ledger is not a linker-derived SBOM; signing and publication undecided'] };
-  for (const file of ['Cargo.lock', 'apps/operator/Cargo.lock']) manifest.locks[file] = digest(fs.readFileSync(path.join(repo, file)));
+  for (const file of ['Cargo.lock', 'apps/Cargo.lock']) manifest.locks[file] = digest(fs.readFileSync(path.join(repo, file)));
   const workspaces = [
     ['core', 'Cargo.toml', ['acp-daemon', 'acp-query', 'acp-mcp'], []],
-    ['operator', 'apps/operator/Cargo.toml', ['acp-operator-ui', 'acp-operator-model'],
-      ['--features', 'acp-operator-ui/native,acp-operator-ui/tui,acp-operator-model/native']]];
+    ['operator', 'apps/Cargo.toml', ['acp-operator-ui', 'acp-operator-client'],
+      ['--features', 'acp-operator-ui/native,acp-operator-ui/tui']]];
   for (const [label, manifestFile, packages, features] of workspaces) {
     const args = ['build', '--manifest-path', manifestFile, '--release', '--locked', '--target', target,
       '--target-dir', targetDir, '--message-format=json', ...packages.flatMap(p => ['-p', p]), '--bins', ...features];

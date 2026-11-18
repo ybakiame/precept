@@ -1,0 +1,25 @@
+[package]
+name = "acp-operator-client"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+description = "Operator app transport: native IPC to the daemon and the Windows -> WSL2 bridge"
+
+[dependencies]
+acp-operator-core = { path = "../core" }
+acp-core = { path = "../../crates/acp-core" }
+acp-session = { path = "../../crates/acp-session" }
+acp-ipc = { path = "../../crates/acp-ipc" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "net", "time", "process", "io-util", "io-std", "sync", "macros"] }
+clap = { version = "4", features = ["derive"] }
+
+[[bin]]
+name = "acp-wsl-bridge"
+path = "src/bin/acp_wsl_bridge.rs"
+
+[[bin]]
+name = "acp-ui-snapshot"
+path = "src/bin/acp_ui_snapshot.rs"

@@ -532,7 +532,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         .bytes()
         .fold(0u64, |a, b| a.wrapping_mul(131).wrapping_add(b as u64));
     let nonce = format!("{hash:016x}");
-    let nsh = repo.join("apps/operator/target/debug").join(format!(
+    let nsh = repo.join("apps/target/debug").join(format!(
         "acp-nsh-{}{}",
         if surface == "desktop" {
             "native"
@@ -1473,7 +1473,7 @@ fn main() {
         "literal new artifact path required"
     );
     fs::create_dir(&out).expect("new report directory required");
-    let nsh = repo.join("apps/operator/target/debug").join(format!(
+    let nsh = repo.join("apps/target/debug").join(format!(
         "acp-nsh-{}{}",
         if a[0] == "desktop" { "native" } else { "tui" },
         std::env::consts::EXE_SUFFIX
@@ -1581,7 +1581,7 @@ fn wsl_desktop(a: &[String]) {
     );
     fs::create_dir(&out).expect("new report directory required");
     let gui = repo
-        .join("apps/operator/target/debug")
+        .join("apps/target/debug")
         .join(format!("acp-nsh-native{}", std::env::consts::EXE_SUFFIX));
     let target = wsl::Wsl {
         distribution: a[2].clone(),

@@ -5,11 +5,11 @@ NSH Desktop/TUI. Read [AGENTS](../../AGENTS.md), [architecture](../architecture.
 and [retirement/replacement map](python-retirement.md). No interpreter/package install,
 legacy database bootstrap, migration, default Profile or model call is required.
 
-The operator app moved from `spikes/p1-e` to `apps/operator`: `shared` → `model`
-(package `acp-operator-model`), `nsh` → `ui` (package `acp-operator-ui`), `tests` →
-`tests`. `model` and `ui` are now members of one `apps/operator` workspace with a
-single `apps/operator/Cargo.lock`, so app binaries and WASM land in
-`apps/operator/target/`, not `apps/operator/ui/target/`. The `acp-nsh-native` and
+The operator app is the `apps/` Cargo workspace (see [apps/README](../../apps/README.md)):
+`core` (`acp-operator-core`), `client` (`acp-operator-client`, which owns
+`acp-wsl-bridge`) and `ui` (`acp-operator-ui`), with `web-smoke` for the Node checks.
+It has one `apps/Cargo.lock`; app binaries and WASM land in `apps/target/`. It was
+`apps/operator/{model,ui,tests}` before 2026-11 and `spikes/p1-e` before that. The `acp-nsh-native` and
 `acp-nsh-tui` binary names are unchanged. The `gpui-kit` comparison spike is
 archived at `docs/archive/gpui-kit-spike` and is not built by any gate. Historical
 reports keep their original `spikes/p1-e` paths and results.
@@ -56,13 +56,10 @@ cargo fmt --all -- --check
 cargo build --workspace --bins --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --all-targets --locked
-cargo fmt --manifest-path apps/operator/model/Cargo.toml -- --check
-cargo clippy --manifest-path apps/operator/model/Cargo.toml --all-targets --features native --locked -- -D warnings
-cargo test --manifest-path apps/operator/model/Cargo.toml --features native --locked
-cargo fmt --manifest-path apps/operator/ui/Cargo.toml -- --check
-cargo build --manifest-path apps/operator/ui/Cargo.toml --features native,tui --bins --locked
-cargo clippy --manifest-path apps/operator/ui/Cargo.toml --all-targets --features native,tui --locked -- -D warnings
-cargo test --manifest-path apps/operator/ui/Cargo.toml --all-targets --features native,tui --locked
+cargo fmt --manifest-path apps/Cargo.toml --all -- --check
+cargo build --manifest-path apps/Cargo.toml --workspace --features acp-operator-ui/native,acp-operator-ui/tui --bins --locked
+cargo clippy --manifest-path apps/Cargo.toml --workspace --all-targets --features acp-operator-ui/native,acp-operator-ui/tui --locked -- -D warnings
+cargo test --manifest-path apps/Cargo.toml --workspace --all-targets --features acp-operator-ui/native,acp-operator-ui/tui --locked
 ```
 
 Root tests launch independent Rust daemon/CLI/MCP/fake-agent processes against owned
@@ -76,9 +73,9 @@ measurement is not a skipped security test.
 Use Node 24+ and the exact lockfile (Playwright plus YAML parser for CI validation):
 
 ```text
-npm ci --prefix apps/operator/tests
+npm ci --prefix apps/web-smoke
 node tools/check_source.mjs
-node --test apps/operator/tests/static-server.test.mjs
+node --test apps/web-smoke/static-server.test.mjs
 ```
 
 The source check rejects tracked prototype executables/packaging, active interpreter
@@ -96,10 +93,10 @@ No native daemon, credential or remote-write bridge is needed.
 
 ```text
 rustup target add wasm32-unknown-unknown
-cargo build --manifest-path apps/operator/ui/Cargo.toml --target wasm32-unknown-unknown --lib --locked
-node tools/package_ui_web.mjs PINNED_NSH_CHECKOUT apps/operator/target/wasm32-unknown-unknown/debug/acp_operator_ui.wasm apps/operator/ui/dist
-npx --prefix apps/operator/tests playwright install chromium
-node apps/operator/tests/web-smoke.mjs apps/operator/ui/dist apps/operator/artifacts
+cargo build --manifest-path apps/ui/Cargo.toml --target wasm32-unknown-unknown --lib --locked
+node tools/package_ui_web.mjs PINNED_NSH_CHECKOUT apps/target/wasm32-unknown-unknown/debug/acp_operator_ui.wasm apps/ui/dist
+npx --prefix apps/web-smoke playwright install chromium
+node apps/web-smoke/web-smoke.mjs apps/ui/dist apps/artifacts
 ```
 
 `PINNED_NSH_CHECKOUT` must be an explicit checkout at
