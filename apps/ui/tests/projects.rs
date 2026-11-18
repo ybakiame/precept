@@ -80,6 +80,7 @@ impl Fixture {
             ))
             // The test's private root is the daemon user's home for scope checks.
             .env("HOME", root.path())
+            .env("USERPROFILE", root.path())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()

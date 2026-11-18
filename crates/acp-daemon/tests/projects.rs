@@ -157,8 +157,15 @@ fn add_applies_at_once_persists_and_remove_revokes_without_touching_the_profile(
     // Its agent credential exists at once and reads its context.
     let agent = f.daemon.credential("agent-gamma.cap");
     assert!(f.daemon.call(&agent, "context.get", json!({})).is_ok());
-    let saved = fs::read_to_string(base.join("daemon-state/projects.json")).unwrap();
-    assert!(saved.contains("\"gamma\"") && saved.contains(&gamma));
+    let saved: Value =
+        serde_json::from_str(&fs::read_to_string(base.join("daemon-state/projects.json")).unwrap())
+            .unwrap();
+    assert!(
+        saved["projects"]
+            .as_array()
+            .unwrap()
+            .contains(&json!({"name":"gamma","root":gamma}))
+    );
     assert_eq!(
         add(&f, "gamma", &gamma),
         Err(Error::Conflict),

@@ -140,7 +140,10 @@ impl Daemon {
         command
             .arg("--state-dir")
             .arg(base.join("daemon-state"))
-            .env("HOME", base);
+            // The fixture base is the daemon user's home for scope checks
+            // (the daemon reads %USERPROFILE% on Windows).
+            .env("HOME", base)
+            .env("USERPROFILE", base);
         if session {
             command
                 .arg("--agent-config")
