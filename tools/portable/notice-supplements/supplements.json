@@ -14,7 +14,8 @@
         {
           "file": "d6a72bca243df26026696902d865dc3b099222d1da50559fe9e60a3f19973833.txt",
           "sha256": "d6a72bca243df26026696902d865dc3b099222d1da50559fe9e60a3f19973833",
-          "source": "https://github.com/erweixin/RaTeX/blob/5f7dc4883aba8eeb30fe34f8a104923f43f734bf/licenses/KaTeX-fonts-NOTICE.txt"
+          "source": "https://github.com/erweixin/RaTeX/blob/5f7dc4883aba8eeb30fe34f8a104923f43f734bf/licenses/KaTeX-fonts-NOTICE.txt",
+          "kind": "notice"
         },
         {
           "file": "8eea8287e5876b539670cadb82e99f9a7afddec6f6730811be1daf25d2e9bcfd.txt",
