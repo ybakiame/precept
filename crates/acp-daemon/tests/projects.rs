@@ -64,7 +64,6 @@ fn check_reads_one_path_and_answers_a_fixed_reason() {
             "not_found",
         ),
         ("relative/path".into(), "not_absolute"),
-        ("/proc".into(), "system_path"),
         (base.to_str().unwrap().to_owned(), "is_home"),
         // The daemon's own state directory and a listed project.
         (
@@ -93,6 +92,8 @@ fn check_reads_one_path_and_answers_a_fixed_reason() {
             json!({"ok":false,"reason":"outside_home"})
         );
     }
+    #[cfg(unix)]
+    assert_eq!(check("/proc"), json!({"ok":false,"reason":"system_path"}));
     // Agents never check paths.
     assert_eq!(
         f.daemon.call(
@@ -133,9 +134,11 @@ fn add_applies_at_once_persists_and_remove_revokes_without_touching_the_profile(
     }
     let b = f.daemon.enable();
     // Only the canonical root `project.check` returned is accepted.
-    assert_eq!(
-        add(&f, "gamma", &format!("{gamma}/../gamma")),
-        Err(Error::InvalidRequest)
+    // (A `..` alias: Windows verbatim paths do not resolve it at all.)
+    let alias = add(&f, "gamma", &format!("{gamma}/../gamma"));
+    assert!(
+        matches!(alias, Err(Error::InvalidRequest | Error::UnsafeRuntime)),
+        "{alias:?}"
     );
     assert_eq!(
         add(&f, "plain", base.join("alpha").to_str().unwrap()),
