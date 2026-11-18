@@ -12,9 +12,10 @@ support, signing or clean-machine claim.
 | WSL2 Arch | `arch-package.sh` (pacman package from one clean commit) | explicit `sudo pacman -U`, then the systemd **user** unit `acp-daemon.service` |
 
 The Arch package ships `acp-daemon`, `acp-query`, `acp-mcp`, `acp-wsl-bridge` and
-`acp-nsh-tui` in `/usr/bin`, the unit in `/usr/lib/systemd/user/`, the default
-configuration `/etc/acp/daemon.env` (a pacman backup file: upgrades keep your
-edits) and this file in `/usr/share/doc/agent-control-plane/`.
+`acp-nsh-tui` in `/usr/bin`, the unit in `/usr/lib/systemd/user/`, and this file
+with `agents.toml.example` in `/usr/share/doc/agent-control-plane/`. There is no
+daemon configuration file: projects and the startup Profile are chosen in the
+Desktop (or TUI, or `acp-query`) and kept by the daemon itself.
 Runtime dependencies are checked against the built binaries' direct libraries.
 
 ## Build
@@ -37,40 +38,46 @@ installed manifest, and keeps unknown files.
 
 ## Daemon service (WSL2)
 
-1. Start it as installed (the default `/etc/acp/daemon.env` runs it with no
-   projects and no Profile), and keep the user manager running without an open
-   WSL shell, so the daemon is up when the Desktop connects:
+1. Start it as installed (no projects, no Profile) and keep the user manager
+   running without an open WSL shell, so the daemon is up when the Desktop
+   connects:
    ```sh
    systemctl --user daemon-reload
    systemctl --user enable --now acp-daemon.service
    sudo loginctl enable-linger "$USER"
    ```
-2. Add your projects. Either edit `/etc/acp/daemon.env` (`sudoedit`), or keep a
-   private per-user copy, which wins when it exists:
-   ```sh
-   install -d -m 700 ~/.config/acp
-   install -m 600 /etc/acp/daemon.env ~/.config/acp/daemon.env
-   $EDITOR ~/.config/acp/daemon.env
-   systemctl --user restart acp-daemon
-   ```
-3. Create a Profile once, explicitly (the daemon never does it by itself):
+2. Create a Profile once, explicitly, in the Desktop's **Profile & review**
+   (with **Select at start**, so every daemon start selects it), or:
    ```sh
    R=~/.local/state/acp/runtime
-   acp-query --runtime-dir $R --endpoint $R/control.sock profile create ~/.local/state/acp/profile.sqlite3
+   acp-query --runtime-dir $R --endpoint $R/control.sock profile create --remember ~/.local/state/acp/profile.sqlite3
    ```
-   Then add `--database /home/<user>/.local/state/acp/profile.sqlite3` to
-   `ACP_DAEMON_ARGS` and run `systemctl --user restart acp-daemon`, so later starts
-   select it. A restart never adopts a Profile on its own.
-4. Write access stays an explicit, per-run operator action, from the Desktop or
-   `acp-query ... profile write enable --profile-id ... --generation ... --confirm`.
+   The daemon never creates or adopts a Profile by itself. **Forget** (or
+   `profile forget-startup`) stops selecting it at start; the Profile stays.
+3. Turn on writes for this run (Desktop, or `acp-query ... profile write enable
+   --profile-id ... --generation ... --confirm`). Write access is never remembered.
+4. Add projects in **Workspaces → Add project…**: choose a folder (a Git
+   repository root in your Linux home; on Windows the dialog opens in
+   `\\wsl.localhost\<distro>\home\<user>`) or type its path; the daemon checks
+   it, then adds and registers it. Or `acp-query ... project check|add|remove`.
+   Removing a project keeps its Profile records; adding it again rejoins them.
+5. Optional agent sessions: copy `agents.toml.example` to
+   `~/.config/acp/agents.toml` (0600), list your agent programs, and restart the
+   unit. Without that file, sessions are off.
 
 Status and logs: `systemctl --user status acp-daemon`, `journalctl --user -u acp-daemon`.
 Stop is SIGTERM (graceful: sessions stopped, capabilities removed, lease released).
-Exit status 2 (a configuration or safety refusal) is not restarted; fix the cause.
+Exit status 2 (a configuration or safety refusal, e.g. a damaged state file) is not
+restarted; fix the cause. The daemon never repairs its state to make itself start.
 
-Paths: state in `~/.local/state/acp` (0700), runtime in `.../runtime`, socket
-`.../runtime/control.sock`. Do not place state inside a Git checkout; the IPC
-runtime refuses that.
+Paths (fixed in the unit): state in `~/.local/state/acp` (0700: `projects.json`,
+`startup.json`), runtime in `.../runtime`, socket `.../runtime/control.sock`,
+agents in `~/.config/acp/agents.toml`.
+
+Upgrading from a build that used `/etc/acp/daemon.env`: pacman removes it (or
+leaves `daemon.env.pacsave` if you edited it, which nothing reads any more).
+Re-add your projects once in **Workspaces**; a Profile that already has them
+just rejoins its records, and select the Profile once with **Select at start**.
 
 ## Desktop (Windows)
 

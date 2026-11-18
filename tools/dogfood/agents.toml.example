@@ -1,0 +1,16 @@
+# ACP trusted agent programs (example; not active).
+# The daemon reads ~/.config/acp/agents.toml at start. Without that file, agent
+# sessions are off; everything else works. To turn them on:
+#   install -d -m 700 ~/.config/acp
+#   install -m 600 /usr/share/doc/agent-control-plane/agents.toml.example ~/.config/acp/agents.toml
+#   $EDITOR ~/.config/acp/agents.toml      # uncomment and adjust one program
+#   systemctl --user restart acp-daemon
+# The file must be private (0600, yours). Only listed programs can be started,
+# as exactly this executable and these arguments; no shell is involved.
+version = 1
+
+# [[programs]]
+# id = "codex"                       # what the Desktop shows and starts
+# executable = "/usr/bin/codex-acp"  # an absolute path to an ACP agent adapter
+# args = []                          # optional
+# env = {}                           # optional, e.g. { RUST_LOG = "warn" }

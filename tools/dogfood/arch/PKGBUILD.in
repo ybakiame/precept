@@ -11,8 +11,7 @@ depends=(@DEPENDS@)
 makedepends=(cargo)
 optdepends=('git: live repository evidence')
 options=(!debug !lto)
-backup=(etc/acp/daemon.env)
-source=("acp-@SHORT@.tar" acp-daemon.service daemon.env README.md)
+source=("acp-@SHORT@.tar" acp-daemon.service agents.toml.example README.md)
 sha256sums=(@SUMS@)
 
 _bins=(acp-daemon acp-query acp-mcp acp-wsl-bridge acp-nsh-tui)
@@ -44,7 +43,7 @@ package() {
     install -Dm755 "$srcdir/target/release/$b" "$pkgdir/usr/bin/$b"
   done
   install -Dm644 "$srcdir/acp-daemon.service" "$pkgdir/usr/lib/systemd/user/acp-daemon.service"
-  install -Dm644 "$srcdir/daemon.env" "$pkgdir/etc/acp/daemon.env"
+  install -Dm644 "$srcdir/agents.toml.example" "$pkgdir/usr/share/doc/$pkgname/agents.toml.example"
   install -Dm644 "$srcdir/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
   install -Dm644 "$srcdir/acp-@SHORT@/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 "$srcdir/acp-@SHORT@/NOTICE" "$pkgdir/usr/share/licenses/$pkgname/NOTICE"

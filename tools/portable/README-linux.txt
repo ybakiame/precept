@@ -44,16 +44,20 @@ Keep the product directory writable only by you.
 
 State lives OUTSIDE this directory, in a private directory (mode 0700):
   install -d -m 700 ~/.local/state/acp
-Use e.g. ~/.local/state/acp/runtime as --runtime-dir (the daemon creates it privately)
-and keep the Profile there. Stay outside Git checkouts, network and shared roots.
+Use ~/.local/state/acp as --state-dir (the daemon's projects and remembered startup
+Profile) and ~/.local/state/acp/runtime as --runtime-dir (created privately), and keep
+the Profile there. Stay outside Git checkouts, network and shared roots.
 
 Start (replace placeholders; synthetic data for this prototype)
-  ./bin/acp-daemon --runtime-dir <state>/runtime --endpoint <state>/runtime/control.sock --allow-project synthetic --allow-root synthetic=<synthetic-project>
+  ./bin/acp-daemon --state-dir <state> --runtime-dir <state>/runtime --endpoint <state>/runtime/control.sock
 In another terminal:
   ./bin/acp-query --runtime-dir <state>/runtime --endpoint <state>/runtime/control.sock health
   ./bin/acp-nsh-native --runtime-dir <state>/runtime --endpoint <state>/runtime/control.sock --operator
   ./bin/acp-nsh-tui --runtime-dir <state>/runtime --endpoint <state>/runtime/control.sock --operator
-The daemon never creates or selects a Profile and never enables writes by itself.
+The daemon never creates a Profile or enables writes by itself; it selects one at
+start only when you asked ("Select at start", or profile create/select --remember).
+Add projects (Git repository roots in your home) in the Desktop's Workspaces page or
+with acp-query project check|add|remove, after enabling writes.
 
 Stop
 Close the Desktop normally; TUI Ctrl+Q exits and restores the terminal. UI close does

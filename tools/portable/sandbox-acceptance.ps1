@@ -177,6 +177,8 @@ Log "state $(Owner $state)"
 $synthetic = Join-Path $state 'synthetic'
 New-Item -ItemType Directory -Path $synthetic | Out-Null
 Set-Content -LiteralPath (Join-Path $synthetic 'AGENTS.md') -Value 'Synthetic sandbox acceptance only.'
+# A project is a Git repository root inside the daemon user's home.
+New-Item -ItemType Directory -Path (Join-Path $synthetic '.git') | Out-Null
 Set-Content -LiteralPath (Join-Path $state 'unknown-retain.txt') -Value 'SYNTHETIC RETAIN'
 $runtime = Join-Path $state 'runtime'
 $endpoint = 'acp-sandbox-' + [guid]::NewGuid().ToString('N').Substring(0, 12)
@@ -188,7 +190,7 @@ function Why($r) { "exit $($r.code) error=$($r.json.error) stderr=$(($r.err -spl
 
 Cell 'daemon-start-no-implicit-profile' {
     # Its OWN console window, as README instructs; the Process object keeps the handle.
-    $script:daemon = Start-Process -FilePath (Join-Path $bin 'acp-daemon.exe') -PassThru -ArgumentList @('--runtime-dir', ('"' + $runtime + '"'), '--endpoint', $endpoint, '--allow-project', 'synthetic', '--allow-root', ('"synthetic=' + $synthetic + '"'))
+    $script:daemon = Start-Process -FilePath (Join-Path $bin 'acp-daemon.exe') -PassThru -ArgumentList @('--runtime-dir', ('"' + $runtime + '"'), '--endpoint', $endpoint, '--state-dir', ('"' + (Join-Path $state 'daemon') + '"'))
     $script:daemonPid = $daemon.Id
     $deadline = (Get-Date).AddSeconds(20)
     do { Start-Sleep -Milliseconds 200; $info = Q @('profile', 'info') } while ($info.code -ne 0 -and (Get-Date) -lt $deadline)
@@ -210,8 +212,10 @@ Cell 'explicit-synthetic-profile-grant-register' {
     $b = (Q @('profile', 'info')).json.binding
     $op = -join ((1..16) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) })
     $canonical = [AcpNative]::FinalPath($synthetic)
-    $r = Q @('project-register', 'synthetic', $canonical, '--profile-id', $b.profile_id, '--generation', $b.generation, '--owner-epoch', "$($b.owner_epoch)", '--operation-id', $op)
-    Need ($r.code -eq 0) "register failed: $(Why $r); binding before=$before after=$($b.profile_id)/$($b.generation)/$($b.owner_epoch); root=$canonical"
+    $r = Q @('project', 'check', $canonical)
+    Need ($r.code -eq 0 -and $r.json.ok -eq $true) "project check failed: $(Why $r)"
+    $r = Q @('project', 'add', 'synthetic', $r.json.root)
+    Need ($r.code -eq 0) "project add failed: $(Why $r); binding before=$before after=$($b.profile_id)/$($b.generation)/$($b.owner_epoch); root=$canonical"
     Need (Test-Path (Join-Path $runtime 'agent-synthetic.cap')) 'agent credential missing'
     "created, repeat refused, write enabled, registered $canonical"
 }

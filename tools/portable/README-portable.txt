@@ -56,9 +56,12 @@ directory as --runtime-dir, never copy capabilities into ACP\, and do not add st
 directories to PATH.
 
 Start (replace placeholders; use synthetic data for this prototype)
- .\bin\acp-daemon.exe --runtime-dir <private-local-runtime> --endpoint <unique-name> --allow-project synthetic --allow-root synthetic=<synthetic-project>
-Start the daemon in its own console. It creates only its owned runtime and credentials;
-without --database it selects no Profile. It never creates a Profile automatically.
+ .\bin\acp-daemon.exe --state-dir <state>\daemon --runtime-dir <state>\runtime --endpoint <unique-name>
+Start the daemon in its own console. It creates only its owned state, runtime and
+credentials. It never creates a Profile automatically and selects one at start only
+when you asked ("Select at start", or profile create/select --remember). Add projects
+(Git repository roots in your home) in the Desktop's Workspaces page or with
+acp-query project check|add|remove, after enabling writes.
 In a second console:
  .\bin\acp-query.exe --runtime-dir <same-runtime> --endpoint <same-name> health
  .\bin\acp-query.exe --runtime-dir <same-runtime> --endpoint <same-name> profile info

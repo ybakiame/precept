@@ -51,6 +51,8 @@ struct Program {
 #[serde(deny_unknown_fields)]
 struct Config {
     version: u32,
+    /// Absent: no programs (the packaged example starts with all commented out).
+    #[serde(default)]
     programs: Vec<Program>,
 }
 #[derive(Default)]
@@ -728,6 +730,13 @@ mod config_tests {
             "version = 1\n[[programs]]\nid = \"min\"\nexecutable = \"/bin/sh\"\n",
         );
         assert!(Supervisor::configured(Some(&d.join("min.toml")), &[]).is_ok());
+        // The packaged example as shipped: a version and only comments.
+        write(
+            &d.join("example.toml"),
+            include_str!("../../../tools/dogfood/agents.toml.example"),
+        );
+        let example = Supervisor::configured(Some(&d.join("example.toml")), &[]).unwrap();
+        assert!(example.programs.is_empty());
         let _ = std::fs::remove_dir_all(&d);
     }
     #[test]
