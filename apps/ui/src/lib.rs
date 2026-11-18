@@ -240,6 +240,11 @@ pub fn App() -> impl IntoElement {
                 }
                 None if !TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed) => {
                     initial.connection_editor = true;
+                    // The primary workflow: a daemon inside WSL2.
+                    if cfg!(target_os = "windows") {
+                        initial.connection_draft.target =
+                            acp_operator_core::connection::Target::Wsl;
+                    }
                 }
                 None => {}
             }
@@ -518,7 +523,9 @@ mod tests {
             .unwrap();
         app.press("Copy visible page").unwrap();
         assert!(app.screen().clipboard().unwrap().contains("Handoff shared"));
-        app.press("Next project").unwrap();
+        // The project menu: its trigger shows the current project.
+        app.press("alpha").unwrap();
+        app.press("beta").unwrap();
         app.wait_for("Project: beta").unwrap();
         app.wait_for("Handoff — enter a task ID and choose Lookup")
             .unwrap();
@@ -593,7 +600,7 @@ mod tests {
         app.wait_for("Invalid connection fields; the active target is unchanged.")
             .unwrap();
         // Invalid drafts cannot clear a usable snapshot or replace its source.
-        app.wait_for("OFFLINE_SYNTHETIC · Demo data · Synthetic snapshot ready")
+        app.wait_for("Demo data · Synthetic snapshot ready")
             .unwrap();
         app.press("Demo data").unwrap();
         app.press("Use demo data").unwrap();
@@ -602,7 +609,7 @@ mod tests {
         app.press("Settings").unwrap();
         app.press("Ledger").unwrap();
         app.press("Light").unwrap();
-        app.press("Language").unwrap();
+        app.press("简体中文").unwrap();
         app.wait_for("主题集").unwrap();
         app.press_key("alt+3").unwrap();
         app.wait_for("已生效的确认偏好 · 键 / 值 / 范围 / 来源")

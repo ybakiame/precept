@@ -6,7 +6,7 @@
 use super::prelude::*;
 use super::{
     BadgeVariant, ButtonSize, ButtonVariant, alert_dialog, badge, button, empty, field, input,
-    radio_group, surface, tabs,
+    menu, nav_item, properties, radio_group, surface, tabs,
 };
 use acp_operator_core::appearance::{ColorMode, ThemeId};
 
@@ -191,6 +191,40 @@ pub fn Gallery() -> impl IntoElement {
     .help(|| "An absolute path private to this user.".into())
     .into_element();
 
+    let place = signal(0usize);
+    let navigation = ["Overview", "Preferences", "Settings"]
+        .into_iter()
+        .enumerate()
+        .fold(
+            view().w(px(scale::layout::SIDEBAR)).gap_0p5(),
+            |list, (i, name)| {
+                list.child(nav_item(
+                    model,
+                    INBOX,
+                    move || name.into(),
+                    move || place.get() == i,
+                    move || place.set(i),
+                ))
+            },
+        )
+        .into_element();
+    let project = signal(0usize);
+    let picker = view()
+        .w(px(scale::layout::SIDEBAR))
+        .child(["alpha", "beta"].into_iter().enumerate().fold(
+            menu(model, move || ["alpha", "beta"][project.get()].into()),
+            |m, (i, name)| m.item(name, move || project.get() == i, move || project.set(i)),
+        ))
+        .into_element();
+    let facts = properties(model)
+        .row("Branch", "master")
+        .row("Worktree", "Changes observed")
+        .row(
+            "A long label that wraps",
+            "A long value that wraps across the lane without moving the next row",
+        )
+        .into_element();
+
     let empty_state = empty(model, "No pending reviews")
         .description("New suggestions appear here for an explicit decision.")
         .icon(INBOX)
@@ -270,6 +304,9 @@ pub fn Gallery() -> impl IntoElement {
                         .child(row(model, "Inputs", vec![fields]))
                         .child(row(model, "Field", vec![labeled]))
                         .child(row(model, "Radio group", vec![radios]))
+                        .child(row(model, "Navigation", vec![navigation]))
+                        .child(row(model, "Menu", vec![picker]))
+                        .child(row(model, "Properties", vec![facts]))
                         .child(row(model, "Empty", vec![empty_state]))
                         .child(row(model, "Destructive", vec![destructive]))
                         .child(cards)
@@ -308,6 +345,8 @@ mod tests {
             "Linux runtime directory",
             "An absolute path private to this user.",
             "Ubuntu-24.04",
+            "Overview",
+            "Worktree",
         ] {
             assert!(
                 app.screen().texts().iter().any(|t| t.contains(label)),
@@ -316,6 +355,9 @@ mod tests {
         }
         // A radio press checks its option (the app owns the value).
         app.press("Ubuntu-24.04").unwrap();
+        // A destination press selects it; facts read as one element each.
+        app.press("Preferences").unwrap();
+        app.wait_for("Branch: master").unwrap();
         // Tabs move the selection by keyboard activation.
         app.press("Detail").unwrap();
         app.wait_for("Selected tab: Detail").unwrap();

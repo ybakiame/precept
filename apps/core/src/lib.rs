@@ -269,7 +269,6 @@ impl Model {
     pub fn word(&self, key: i18n::Msg) -> &'static str {
         i18n::tr(self.locale, key)
     }
-    /// A target transition invalidates pending reads, scope, evidence and timestamps together.
     /// Starts a discovery check (or the explicit daemon start) for the current
     /// draft; returns the epoch its result must carry.
     pub fn begin_probe(&mut self, starting: bool) -> u64 {
@@ -326,6 +325,7 @@ impl Model {
         self.probe_epoch = self.probe_epoch.wrapping_add(1);
         self.probe = Probe::Idle;
     }
+    /// A target transition invalidates pending reads, scope, evidence and timestamps together.
     pub fn apply_connection(&mut self) -> bool {
         if !self.connection_draft.validate() {
             self.connection_invalid = true;

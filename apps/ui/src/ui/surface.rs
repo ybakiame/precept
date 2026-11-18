@@ -8,7 +8,7 @@ use acp_operator_core::presentation::sanitize;
 /// A panel builder; create it with [`surface`], give it a title and children.
 pub struct Surface {
     model: Signal<Model>,
-    title: Option<SharedString>,
+    title: Option<std::rc::Rc<dyn Fn() -> SharedString>>,
     children: Vec<AnyElement>,
 }
 
@@ -24,7 +24,13 @@ pub fn surface(model: Signal<Model>) -> Surface {
 impl Surface {
     /// A section title identifying the region.
     pub fn title(mut self, title: impl Into<SharedString>) -> Self {
-        self.title = Some(title.into());
+        let title = title.into();
+        self.title = Some(std::rc::Rc::new(move || title.clone()));
+        self
+    }
+    /// A title that stays current (a localized word).
+    pub fn title_fn(mut self, title: impl Fn() -> SharedString + 'static) -> Self {
+        self.title = Some(std::rc::Rc::new(title));
         self
     }
     /// Add a child (a `ui` control, text, or a layout primitive).
@@ -48,7 +54,11 @@ impl IntoElement for Surface {
             .text_color(move || palette(model).text)
             .text_size(px(scale::text::BODY));
         if let Some(title) = self.title {
-            body = body.child(text(title).font_weight(FontWeight::SEMIBOLD));
+            body = body.child(
+                text(move || title())
+                    .role(AccessibilityRole::Header)
+                    .font_weight(FontWeight::SEMIBOLD),
+            );
         }
         body.children(self.children).into_element()
     }

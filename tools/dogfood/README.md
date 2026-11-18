@@ -70,6 +70,12 @@ runtime refuses that.
 
 ## Desktop (Windows)
 
+The Desktop's **Connection** page lists your WSL distributions; choosing one runs
+a read-only check inside it (`acp-wsl-bridge --discover`: systemd, this unit, the
+daemon, the Profile) and offers **Start** when the unit is installed but not
+running. **Connect** saves the choice (`%LOCALAPPDATA%\ACP-state\connection.json`,
+owner-only) for the next launch. Explicit launch arguments always win.
+
 Start `%LOCALAPPDATA%\Programs\ACP\ACP Desktop (WSL).lnk`. It runs
 `bin\acp-nsh-native.exe` with `--wsl-distribution/--wsl-user/--wsl-bridge
 /usr/bin/acp-wsl-bridge/--wsl-runtime-dir/--wsl-endpoint` pointing at the paths above.

@@ -169,7 +169,8 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     app.wait_for("Write grant active").unwrap();
     f.register();
     app.press_key("mod+r").unwrap();
-    app.wait_for(" / alpha").unwrap();
+    // The project menu lists the newly registered project.
+    app.wait_for("alpha").unwrap();
     app.wait_for("Write grant active").unwrap();
     app.press_key("alt+k").unwrap();
     app.type_text("Preference key", "editor").unwrap();

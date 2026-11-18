@@ -183,8 +183,16 @@ input modes, including terminal cells.
 compose `ui`; they do not import `nsh/base` controls or style controls
 themselves. A look a feature needs becomes a new variant or size here first.
 
-- `button` — `Button` (Default / Primary / Danger; Small / Medium / Large;
-  disabled / loading; optional icon; hover/press/focus motion).
+- `button` — `Button` (Default / Primary / Danger / Ghost; Small / Medium / Large;
+  disabled / loading / selected; optional icon; full width; hover/press/focus motion).
+- `nav_item` — a sidebar destination: icon, label, optional trailing badge, one
+  persistent selected fill (built on `Button`'s Ghost variant).
+- `menu` — `Menu`: a trigger and items on the app's one popup surface, growing
+  from the trigger; checked items, Escape and outside press dismiss (base menu).
+- `radio` — `RadioGroup`: one choice from a small visible set; arrows move and
+  check (base radio group); full-width rows with the app's dot.
+- `field` — `Field`: a visible label, its control and optional help.
+- `properties` — label / value rows on two fixed lanes for read-only facts.
 - `input` — `Input` (text field; value, on_change, on_submit, placeholder,
   disabled, invalid, element_ref, max_length, medium/large).
 - `tabs` — `Tabs` (base WAI-ARIA tablist keyboard pattern; one sliding selection
@@ -229,6 +237,78 @@ for a user-driven layout change; a **Shader** only for something live. Animate
 opacity and transform, not layout. Create a motion once in a component body.
 Leaving is faster than entering. `BASE`, `SLOWER`, `ICON_PRESS`, `LABEL_RISE`
 complete the vocabulary for the review panel (Commit B/C).
+
+## Window shell (2026-11 redesign)
+
+**Task.** The operator opens ACP to see whether their agents get the right
+context for the current project, and to review what agents suggested. The object
+is a *project's effective context* on one *daemon*. Actions that must stay
+available: switch project, re-read, review suggestions, reach the connection.
+
+**Shell: sidebar workspace.** One persistent sidebar beside one page; the page
+owns the only scroll region.
+
+```text
+┌──────────────┬──────────────────────────────────────────────┐
+│ ACP          │ Title                         [Re-read] [⋯]  │  page header
+│ Project ▾    │ status: target · read state · last read      │
+│              ├──────────────────────────────────────────────┤
+│ Overview     │                                              │
+│ Workspace    │  page content (scrolls)                      │
+│ Preferences  │                                              │
+│ Review       │                                              │
+│ Handoff      │                                              │
+│ Sessions     │                                              │
+│              │                                              │
+│ Diagnostics  │                                              │
+│ ● Connection │                                              │
+│ Settings     │                                              │
+└──────────────┴──────────────────────────────────────────────┘
+```
+
+- **Destinations, not toggles.** The five sections, Review, Sessions,
+  Connection and Settings are all sidebar destinations with one selected state
+  (`ui::nav_item`); none hides behind a toolbar toggle. Work destinations are on
+  top; Diagnostics, Connection and Settings sit at the sidebar foot.
+- **Project is an object, not a cycle.** A project menu (`ui::menu`) at the
+  sidebar top replaces "Next project"; it lists the daemon's allowlisted
+  projects with the current one checked.
+- **One status line.** The page header carries the title and one human status
+  (target, read state, last read). Internal source codes (`LIVE_READ_ONLY`,
+  `OFFLINE_SYNTHETIC`) stay in copied evidence, not the shell.
+- **Keyboard.** Alt+1…5, Alt+6 (Sessions), Alt+O (Review), R (re-read) and the
+  other existing chords are unchanged; they are listed once, in Settings, not
+  repeated in the sidebar, the page and a footer. Tab order: sidebar
+  destinations, then the page header, then the page.
+- **Widths.** Sidebar min 200, default 224, does not grow; the page takes the
+  surplus. Below 900 wide (`compact()`), and in a terminal, the sidebar becomes a
+  wrapped row of the same destinations above the page.
+
+### Status (2026-11-18)
+
+Built on this shell: the sidebar and page header, the project menu, Overview
+(facts as `ui::properties`), Connection (pick, check, start, connect; saved for
+the next launch) and Settings. Still in their earlier layout inside the new
+shell: Workspace, Preferences, Profile & review (its sub-pane buttons, cards and
+inputs), Handoff, Diagnostics and Sessions; each gets its own pass with its own
+motion inventory. Verified: headless tests (incl. the 10k-row workload), the
+TUI in a real terminal, and Windows HWND captures in dark/light, zh-CN/en and a
+820-wide compact window. Not yet verified in the running app: the motion
+inventory below (static captures only), keyboard-only walkthrough, a screen
+reader, larger text sizes.
+
+### Motion inventory — shell and connection
+
+| Change | Motion tool | Tokens | Reduced motion |
+| --- | --- | --- | --- |
+| Destination hover / press / focus | Transition (`motion::feedback`) | `FAST`, `SETTLE`; press `PRESS` 0.97 | Instant; no scale |
+| Current destination changes | Selected fill transitions on the new item; the page swaps | `FAST` | Instant |
+| Project menu opens / closes | Popup grows from its trigger (`motion::grow`), leaves faster | `SLOW` in, `BASE` out, `ENTER` 0.97, `RISE` 8pt | Appears at rest |
+| Status line text changes | No motion (updates often; a value, not an event) | — | — |
+| Connection: target tab | Base `Tabs` sliding indicator | native, ease-in-out | Jumps |
+| Connection: distribution chosen | Radio checked fill transition | `FAST` | Instant |
+| Connection: check running / done | Button loading spinner; rows replace the "Checking…" line | continuous / none | Spinner rests |
+| Connection: Start pressed | Button press, then "Starting…" until the report | `FAST` | Instant |
 
 ## Motion inventory — review panel (Queue / Detail / History)
 

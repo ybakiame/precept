@@ -51,6 +51,12 @@ pub mod control {
 pub mod layout {
     /// A form or settings column: labels, fields and their help stay scannable.
     pub const FORM: f32 = 640.0;
+    /// The narrowest anchored popup (menus, selects).
+    pub const POPUP: f32 = 192.0;
+    /// The sidebar: wide enough for stable labels, subordinate to the page.
+    pub const SIDEBAR: f32 = 224.0;
+    /// The label lane of a properties list.
+    pub const LABEL_LANE: f32 = 144.0;
 }
 
 /// Icon sizes (points), one step below the text they sit beside.

@@ -319,7 +319,9 @@ fn checks(model: Signal<Model>) -> impl IntoElement {
     let rows = dynamic(move || {
         let (probe, unchosen) = state.get();
         match &probe {
-            Probe::Idle if unchosen => view().into_element(),
+            Probe::Idle if unchosen => {
+                caption(model, |_| Some(Msg::ChooseDistribution)).into_element()
+            }
             Probe::Idle | Probe::Checking => caption(model, |_| Some(Msg::Checking)).into_element(),
             Probe::Starting => caption(model, |_| Some(Msg::StartingDaemon)).into_element(),
             Probe::Failed(reason) => {

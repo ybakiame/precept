@@ -1054,8 +1054,11 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
         })
         .gap_3()
         .flex_shrink_0()
-        .child(text(move || model.get().word(Msg::OperatorHelp)))
-        .child(text(move || model.get().word(Msg::OperatorKeys)))
+        .child(
+            text(move || model.get().word(Msg::OperatorHelp))
+                .text_size(px(ui::scale::text::CAPTION))
+                .text_color(move || tokens::palette(model).muted),
+        )
         .child(
             view().flex_row().flex_wrap().gap_2().children(
                 [

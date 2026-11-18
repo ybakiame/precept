@@ -14,6 +14,9 @@ pub enum ButtonVariant {
     Primary,
     /// A destructive commitment; pairs with a confirmation for serious work.
     Danger,
+    /// A quiet, familiar action (a sidebar destination, a toolbar command): no
+    /// fill or boundary at rest, a wash on hover, a fill when selected.
+    Ghost,
 }
 
 /// One size sets padding, text, icon and radius together.
@@ -39,6 +42,8 @@ pub struct Button {
     loading: StateFn,
     on_press: Option<PressFn>,
     icon: Option<&'static str>,
+    selected: StateFn,
+    full_width: bool,
     // Explicit native-acceptance observer only; never a control or authority.
     #[cfg(not(target_arch = "wasm32"))]
     probe: Option<(std::path::PathBuf, String)>,
@@ -56,13 +61,15 @@ pub fn button(model: Signal<Model>, label: impl Into<SharedString>) -> Button {
         loading: Rc::new(|| false),
         on_press: None,
         icon: None,
+        selected: Rc::new(|| false),
+        full_width: false,
         #[cfg(not(target_arch = "wasm32"))]
         probe: None,
     }
 }
 
 impl Button {
-    /// Its meaning (default, primary, danger).
+    /// Its meaning (default, primary, danger, ghost).
     pub fn variant(mut self, variant: ButtonVariant) -> Self {
         self.variant = variant;
         self
@@ -91,6 +98,18 @@ impl Button {
     /// A leading outline glyph from the app's icon family.
     pub fn icon(mut self, path: &'static str) -> Self {
         self.icon = Some(path);
+        self
+    }
+    /// A persistent selected state (the current destination, an open menu's
+    /// trigger): a fill distinct from hover, announced to screen readers.
+    pub fn selected(mut self, selected: impl Fn() -> bool + 'static) -> Self {
+        self.selected = Rc::new(selected);
+        self
+    }
+    /// Fill the caller's width with the content at the leading edge (rows of
+    /// destinations or choices).
+    pub fn full_width(mut self) -> Self {
+        self.full_width = true;
         self
     }
     /// What activation does.
@@ -149,20 +168,25 @@ fn emit_focus_probe(probe: &(std::path::PathBuf, String)) {
     }
 }
 
-fn rest_bg(model: Signal<Model>, v: ButtonVariant) -> AdaptiveColor {
+fn rest_bg(model: Signal<Model>, v: ButtonVariant, selected: bool) -> AdaptiveColor {
     let p = palette(model);
     match v {
+        ButtonVariant::Default if selected => mix(p.inset, p.text, 0.10),
         ButtonVariant::Default => p.inset,
         ButtonVariant::Primary => p.primary,
         ButtonVariant::Danger => p.danger,
+        ButtonVariant::Ghost if selected => p.inset,
+        ButtonVariant::Ghost => p.inset.opacity(0.0),
     }
 }
-fn rest_text(model: Signal<Model>, v: ButtonVariant) -> AdaptiveColor {
+fn rest_text(model: Signal<Model>, v: ButtonVariant, selected: bool) -> AdaptiveColor {
     let p = palette(model);
     match v {
         ButtonVariant::Default => p.text,
         ButtonVariant::Primary => p.on_primary,
         ButtonVariant::Danger => p.on_danger,
+        ButtonVariant::Ghost if selected => p.text,
+        ButtonVariant::Ghost => p.muted,
     }
 }
 fn rest_border(model: Signal<Model>, v: ButtonVariant) -> AdaptiveColor {
@@ -171,6 +195,7 @@ fn rest_border(model: Signal<Model>, v: ButtonVariant) -> AdaptiveColor {
         ButtonVariant::Default => p.border,
         ButtonVariant::Primary => p.primary,
         ButtonVariant::Danger => p.danger,
+        ButtonVariant::Ghost => p.inset.opacity(0.0),
     }
 }
 fn hover_bg(model: Signal<Model>, v: ButtonVariant) -> AdaptiveColor {
@@ -179,6 +204,7 @@ fn hover_bg(model: Signal<Model>, v: ButtonVariant) -> AdaptiveColor {
         ButtonVariant::Default => mix(p.inset, p.text, 0.07),
         ButtonVariant::Primary => p.primary.opacity(0.88),
         ButtonVariant::Danger => p.danger.opacity(0.88),
+        ButtonVariant::Ghost => mix(p.inset, p.text, 0.04),
     }
 }
 fn press_bg(model: Signal<Model>, v: ButtonVariant) -> AdaptiveColor {
@@ -187,12 +213,13 @@ fn press_bg(model: Signal<Model>, v: ButtonVariant) -> AdaptiveColor {
         ButtonVariant::Default => mix(p.inset, p.text, 0.13),
         ButtonVariant::Primary => p.primary.opacity(0.78),
         ButtonVariant::Danger => p.danger.opacity(0.78),
+        ButtonVariant::Ghost => mix(p.inset, p.text, 0.10),
     }
 }
 fn focus_border(model: Signal<Model>, v: ButtonVariant) -> AdaptiveColor {
     let p = palette(model);
     match v {
-        ButtonVariant::Default => p.primary,
+        ButtonVariant::Default | ButtonVariant::Ghost => p.primary,
         ButtonVariant::Primary | ButtonVariant::Danger => p.text,
     }
 }
@@ -209,6 +236,10 @@ impl IntoElement for Button {
         let loading_disabled = loading.clone();
         let press = self.on_press.clone();
         let icon_path = self.icon;
+        let selected = self.selected.clone();
+        let (selected_bg, selected_text, selected_a11y) =
+            (selected.clone(), selected.clone(), selected.clone());
+        let full_width = self.full_width;
         let (text_size, icon_size, radius) = match size {
             ButtonSize::Small => (scale::text::CAPTION, scale::icon::SM, scale::radius::SMALL),
             ButtonSize::Medium => (scale::text::BODY, scale::icon::MD, scale::radius::CONTROL),
@@ -272,8 +303,9 @@ impl IntoElement for Button {
             .border_2()
             .rounded(px(radius))
             .text_size(px(text_size))
-            .bg(move || rest_bg(model, variant))
-            .text_color(move || rest_text(model, variant))
+            .selected(move || selected_a11y())
+            .bg(move || rest_bg(model, variant, selected_bg()))
+            .text_color(move || rest_text(model, variant, selected_text()))
             .border_color(move || rest_border(model, variant))
             .hover(move |s| s.bg(move || hover_bg(model, variant)))
             .active(move |s| {
@@ -301,6 +333,11 @@ impl IntoElement for Button {
             ButtonSize::Medium => b.px_2().py_1().min_h(px(scale::control::MD)),
             ButtonSize::Large => b.px_3().py_1p5().min_h(px(scale::control::LG)),
         };
+        let b = if full_width {
+            b.style_when(move || !compact(), |s| s.w_full())
+        } else {
+            b
+        };
         let mut content = view().flex_row().items_center();
         content = match size {
             ButtonSize::Small => content.gap_1(),
@@ -315,7 +352,12 @@ impl IntoElement for Button {
                 .style_when(move || !loading_spinner(), |s| s.hidden())
                 .child(icon::spinner(icon_size)),
         );
-        content = content.child(text(move || label_child()));
+        let label_view = text(move || label_child());
+        content = content.child(if full_width {
+            label_view.flex_1()
+        } else {
+            label_view
+        });
         b.child(content).into_element()
     }
 }

@@ -1,5 +1,6 @@
-//! The window shell: title bar, navigation, toolbar and shared action helpers.
-//! Shared responsive shell and small, scoped, read-only page components.
+//! The window shell: a sidebar of destinations beside one page with its header
+//! and the only scroll region (see DESIGN.md, "Window shell"). Also the shared
+//! action helpers the feature pages use.
 use crate::*;
 pub(crate) mod chrome;
 use acp_operator_core::i18n::Msg;
@@ -73,128 +74,291 @@ pub(crate) fn card(
 ) -> impl IntoElement {
     ui::card(model, title, lines)
 }
-fn navigation(model: Signal<Model>) -> impl IntoElement {
-    view()
-        .gap_1()
-        .style_when(compact, |s| s.flex_row().flex_wrap())
-        .children(
-            Section::ALL
-                .into_iter()
-                .enumerate()
-                .map(move |(index, section)| {
-                    button()
-                        .accessibility_label(move || {
-                            Some(model.get().word(section_key(section)).into())
-                        })
-                        .px_2()
-                        .py_1()
-                        .border_2()
-                        .rounded(px(6.0))
-                        .selected(move || model.get().section == section)
-                        .bg(move || {
-                            if model.get().section == section {
-                                palette(model).primary
-                            } else {
-                                palette(model).panel
-                            }
-                        })
-                        .text_color(move || {
-                            if model.get().section == section {
-                                palette(model).on_primary
-                            } else {
-                                palette(model).text
-                            }
-                        })
-                        .border_color(move || {
-                            if model.get().section == section {
-                                palette(model).primary
-                            } else {
-                                palette(model).panel
-                            }
-                        })
-                        .hover(|s| s.border_color(palette(model).border))
-                        .focus(|s| s.border_color(palette(model).text))
-                        .on_press(move || {
-                            model.update(|m| {
-                                m.operator.open = false;
-                                m.operator.review = None;
-                                m.settings = false;
-                                m.sessions = false;
-                                m.session.confirm_start = false;
-                                m.connection_editor = false;
-                                m.set_section(section)
-                            })
-                        })
-                        .flex_row()
-                        .items_center()
-                        .gap_2()
-                        .child(icons::section(section))
-                        .child(text(move || {
-                            format!("{}  {}", index + 1, model.get().word(section_key(section)))
-                        }))
-                }),
-        )
-        .child(control(model, Msg::Sessions, move || sessions::open(model)))
+/// Where the window is: one of the sections, or a workspace destination.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Destination {
+    Section(Section),
+    Review,
+    Sessions,
+    Connection,
+    Settings,
 }
-fn toolbar(model: Signal<Model>) -> impl IntoElement {
+pub(crate) fn current(m: &Model) -> Destination {
+    if m.operator.open {
+        Destination::Review
+    } else if m.sessions {
+        Destination::Sessions
+    } else if m.settings {
+        Destination::Settings
+    } else if m.connection_editor {
+        Destination::Connection
+    } else {
+        Destination::Section(m.section)
+    }
+}
+fn leave_workspaces(m: &mut Model) {
+    m.operator.open = false;
+    m.operator.review = None;
+    m.sessions = false;
+    m.session.confirm_start = false;
+    m.settings = false;
+    m.connection_editor = false;
+}
+/// Goes to `destination` (each opener keeps its own reads and guards).
+pub(crate) fn go(model: Signal<Model>, destination: Destination) {
+    match destination {
+        Destination::Review => review::open(model),
+        Destination::Sessions => sessions::open(model),
+        Destination::Connection => {
+            model.update(|m| {
+                leave_workspaces(m);
+                m.connection_editor = true;
+            });
+            connection::opened(model);
+        }
+        Destination::Settings => model.update(|m| {
+            leave_workspaces(m);
+            m.settings = true;
+        }),
+        Destination::Section(section) => model.update(|m| {
+            leave_workspaces(m);
+            m.set_section(section)
+        }),
+    }
+}
+fn title_key(destination: Destination) -> Msg {
+    match destination {
+        Destination::Section(section) => section_key(section),
+        Destination::Review => Msg::ProfileReview,
+        Destination::Sessions => Msg::Sessions,
+        Destination::Connection => Msg::Connection,
+        Destination::Settings => Msg::Settings,
+    }
+}
+fn destination(model: Signal<Model>, item: Destination, path: &'static str) -> impl IntoElement {
+    ui::nav_item(
+        model,
+        path,
+        move || model.get().word(title_key(item)).into(),
+        move || current(&model.get()) == item,
+        move || go(model, item),
+    )
+}
+/// The project menu: the daemon's allowlisted projects, the current one checked.
+fn projects(model: Signal<Model>) -> impl IntoElement {
+    let names = computed(move || model.get().project_names.clone());
+    dynamic(move || {
+        let names = names.get();
+        if names.is_empty() {
+            return text(move || model.get().word(Msg::ChooseProject))
+                .text_size(px(ui::scale::text::CAPTION))
+                .text_color(move || palette(model).muted)
+                .into_element();
+        }
+        names
+            .into_iter()
+            .enumerate()
+            .fold(
+                ui::menu(model, move || current_project(model).into()),
+                |menu, (index, name)| {
+                    menu.item(
+                        name,
+                        move || model.get().selected == index,
+                        move || switch_project(model, index),
+                    )
+                },
+            )
+            .into_element()
+    })
+}
+fn current_project(model: Signal<Model>) -> String {
+    let m = model.get();
+    m.selected_project
+        .clone()
+        .or_else(|| m.project().map(|p| p.name.clone()))
+        .unwrap_or_else(|| m.word(Msg::ChooseProject).into())
+}
+/// Where the data comes from, in words: the target and, for WSL, the distribution.
+pub(crate) fn target_words(m: &Model) -> String {
+    match m.connection.target {
+        acp_operator_core::connection::Target::Wsl if !m.connection.distribution.is_empty() => {
+            format!("{} · {}", m.target_label(), m.connection.distribution)
+        }
+        _ => m.target_label().into(),
+    }
+}
+fn sidebar(model: Signal<Model>) -> impl IntoElement {
+    use Destination::*;
+    let work = [
+        (
+            Section(acp_operator_core::Section::Dashboard),
+            icons::section_path(acp_operator_core::Section::Dashboard),
+        ),
+        (
+            Section(acp_operator_core::Section::Projects),
+            icons::section_path(acp_operator_core::Section::Projects),
+        ),
+        (
+            Section(acp_operator_core::Section::Preferences),
+            icons::section_path(acp_operator_core::Section::Preferences),
+        ),
+        (Review, icons::REVIEW),
+        (
+            Section(acp_operator_core::Section::Handoff),
+            icons::section_path(acp_operator_core::Section::Handoff),
+        ),
+        (Sessions, icons::SESSIONS),
+    ];
+    let foot = [
+        (
+            Section(acp_operator_core::Section::Diagnostics),
+            icons::section_path(acp_operator_core::Section::Diagnostics),
+        ),
+        (Connection, icons::CONNECTION),
+        (Settings, icons::SETTINGS),
+    ];
+    let group = |items: [(Destination, &'static str); 3]| {
+        view()
+            .gap_0p5()
+            .style_when(compact, |s| s.flex_row().flex_wrap().gap_1())
+            .children(
+                items
+                    .into_iter()
+                    .map(move |(d, path)| destination(model, d, path)),
+            )
+    };
+    let work_group = view()
+        .gap_0p5()
+        .style_when(compact, |s| s.flex_row().flex_wrap().gap_1())
+        .children(
+            work.into_iter()
+                .map(move |(d, path)| destination(model, d, path)),
+        );
+    view()
+        .w(move || {
+            px(if compact() {
+                (window().width.0 - 16.0).max(1.0)
+            } else {
+                ui::scale::layout::SIDEBAR
+            })
+        })
+        .flex_shrink_0()
+        .gap_4()
+        .p_3()
+        // Full height so the foot group sits at the bottom; a wrapped row when compact.
+        .style_when(move || !compact(), |s| s.h_full())
+        .style_when(compact, |s| s.p_2().gap_2())
+        .child(
+            view()
+                .gap_2()
+                .child(
+                    text("Agent Control Plane")
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_size(px(ui::scale::text::SUBTITLE))
+                        .style_when(compact, |s| s.hidden()),
+                )
+                .child(projects(model)),
+        )
+        .child(work_group)
+        .child(view().flex_1().style_when(compact, |s| s.hidden()))
+        .child(group(foot))
+}
+/// The page header: the destination's title, one human status line and the
+/// page-wide actions.
+fn header(model: Signal<Model>) -> impl IntoElement {
     view()
         .flex_row()
-        .flex_wrap()
-        .gap_2()
+        .items_start()
+        .gap_3()
         .child(
-            text(move || {
-                let m = model.get();
-                m.word(if m.operator.open {
-                    Msg::ProfileOperator
-                } else if m.sessions {
-                    Msg::Sessions
-                } else if m.settings {
-                    Msg::Settings
-                } else if m.connection_editor {
-                    Msg::Connection
-                } else {
-                    section_key(m.section)
-                })
-            })
-            .font_weight(FontWeight::SEMIBOLD)
-            .text_size(px(22.0)),
+            view()
+                .flex_1()
+                .min_w_0()
+                .gap_1()
+                .child(
+                    text(move || model.get().word(title_key(current(&model.get()))))
+                        .role(AccessibilityRole::Header)
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_size(px(ui::scale::text::TITLE)),
+                )
+                .child(
+                    view()
+                        .accessible(true)
+                        .label("Daemon connection state")
+                        .flex_row()
+                        .flex_wrap()
+                        .gap_2()
+                        .child(
+                            text(move || {
+                                let m = model.get();
+                                if let Some(reason) = m.wsl_reason() {
+                                    format!("{} · {}", target_words(&m), m.word(reason))
+                                } else if m.operator.open {
+                                    format!(
+                                        "{} · {}",
+                                        target_words(&m),
+                                        m.word(if m.operator.busy {
+                                            Msg::OperatorBusy
+                                        } else if m.operator.error.is_some() {
+                                            Msg::OperatorFailed
+                                        } else if m.operator.info.is_some() {
+                                            Msg::OperatorObserved
+                                        } else {
+                                            Msg::OperatorUnobserved
+                                        })
+                                    )
+                                } else {
+                                    format!("{} · {}", target_words(&m), m.read_label())
+                                }
+                            })
+                            .text_size(px(ui::scale::text::CAPTION))
+                            .text_color(move || {
+                                match model.get().phase {
+                                    _ if model.get().wsl_reason().is_some() => palette(model).error,
+                                    Phase::Error | Phase::Unavailable => palette(model).error,
+                                    Phase::Loading => palette(model).warning,
+                                    _ => palette(model).muted,
+                                }
+                            }),
+                        )
+                        .child(
+                            text(move || {
+                                let m = model.get();
+                                if m.copied {
+                                    m.word(Msg::Copied).into()
+                                } else {
+                                    m.read_time()
+                                }
+                            })
+                            .style_when(move || model.get().operator.open, |s| s.hidden())
+                            .text_size(px(ui::scale::text::CAPTION))
+                            .text_color(move || palette(model).muted),
+                        ),
+                ),
         )
-        .child(control(model, Msg::Reconnect, move || reconnect(model)))
-        .child(control(model, Msg::Settings, move || {
-            model.update(|m| {
-                m.operator.open = false;
-                m.operator.review = None;
-                m.sessions = false;
-                m.session.confirm_start = false;
-                m.settings = !m.settings;
-                m.connection_editor = false;
-            })
-        }))
-        .child(control(model, Msg::Connection, move || {
-            model.update(|m| {
-                m.operator.open = false;
-                m.operator.review = None;
-                m.sessions = false;
-                m.session.confirm_start = false;
-                m.connection_editor = !m.connection_editor;
-                m.settings = false;
-            });
-            if model.get().connection_editor {
-                connection::opened(model);
-            }
-        }))
-        .child(word_action(
-            model,
-            Msg::CopyPage,
-            move || {
-                model.get().phase == Phase::Ready
-                    && !model.get().settings
-                    && !model.get().connection_editor
-                    && !model.get().sessions
-                    && !model.get().operator.open
-            },
-            move || copy_page(model),
-        ))
+        .child(
+            view()
+                .flex_row()
+                .gap_2()
+                .child(
+                    ui::button(model, "")
+                        .label_fn(move || model.get().word(Msg::Reconnect).into())
+                        .icon(icons::REFRESH)
+                        .size(ui::ButtonSize::Small)
+                        .on_press(move || reconnect(model)),
+                )
+                .child(
+                    ui::button(model, "")
+                        .label_fn(move || model.get().word(Msg::CopyPage).into())
+                        .size(ui::ButtonSize::Small)
+                        .disabled(move || {
+                            let m = model.get();
+                            m.phase != Phase::Ready
+                                || !matches!(current(&m), Destination::Section(_))
+                        })
+                        .on_press(move || copy_page(model)),
+                ),
+        )
 }
 fn task_input(model: Signal<Model>, task_ref: ElementRef) -> impl IntoElement {
     view()
@@ -276,6 +440,7 @@ pub(crate) fn shell(
     task_ref: ElementRef,
     filter_ref: ElementRef,
 ) -> impl IntoElement {
+    let on = move |d: fn(&Model) -> bool| move || !d(&model.get());
     view()
         .flex_1()
         .bg(move || palette(model).background)
@@ -290,215 +455,71 @@ pub(crate) fn shell(
         .child(
             view()
                 .flex_1()
-                .p_4()
-                .gap_3()
-                .style_when(compact, |s| s.p_2().gap_1())
+                .flex_row()
+                .style_when(compact, |s| s.flex_col())
                 .font_family("sans-serif")
                 .bg(move || palette(model).background)
                 .text_color(move || palette(model).text)
-                .text_size(px(14.0))
+                .text_size(px(ui::scale::text::BODY))
                 .child(
                     view()
-                        .flex_row()
-                        .flex_wrap()
-                        .gap_2()
-                        .child(
-                            text("Agent Control Plane")
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_size(px(20.0)),
-                        )
-                        .child(
-                            text(move || {
-                                format!(
-                                    " / {}",
-                                    model
-                                        .get()
-                                        .selected_project
-                                        .or_else(|| model.get().project().map(|p| p.name.clone()))
-                                        .unwrap_or_else(|| model
-                                            .get()
-                                            .word(Msg::ChooseProject)
-                                            .into())
-                                )
-                            })
-                            .text_color(move || palette(model).muted),
-                        )
-                        .child(control(model, Msg::NextProject, move || {
-                            next_project(model)
-                        })),
+                        .bg(move || palette(model).panel)
+                        .border_color(move || palette(model).border)
+                        .style_when(move || !compact(), |s| s.border_r_1())
+                        .style_when(compact, |s| s.border_b_1())
+                        .child(sidebar(model)),
                 )
                 .child(
                     view()
-                        .flex_row()
-                        .gap_3()
                         .flex_1()
-                        .style_when(compact, |s| s.flex_col().gap_1())
+                        .min_w_0()
+                        .px_6()
+                        .pt_4()
+                        .gap_4()
+                        .style_when(compact, |s| s.px_2().pt_2().gap_2())
+                        .child(header(model))
+                        .child(task_input(model, task_ref))
+                        .child(preference_input(model, filter_ref))
+                        .child(review::panel(model))
                         .child(
-                            view()
-                                .w(move || {
-                                    px(if compact() {
-                                        (window().width.0 - 16.0).max(1.0)
-                                    } else {
-                                        176.0
-                                    })
-                                })
-                                .gap_3()
-                                .child(navigation(model))
-                                .child(
-                                    view()
-                                        .gap_2()
-                                        .style_when(compact, |s| s.hidden())
-                                        .child(
-                                            text(move || model.get().word(Msg::OperatorConsole))
-                                                .text_size(px(12.0))
-                                                .text_color(move || palette(model).muted),
-                                        )
-                                        .child(
-                                            text(move || {
-                                                model.get().word(if model.get().operator.open {
-                                                    Msg::OperatorHelp
-                                                } else if model.get().sessions {
-                                                    Msg::SessionAuthority
-                                                } else {
-                                                    Msg::ReadOnlyHelp
-                                                })
-                                            })
-                                            .text_color(move || palette(model).muted),
-                                        )
-                                        .child(
-                                            text(move || model.get().word(Msg::ConsoleHelp))
-                                                .text_size(px(12.0)),
-                                        ),
-                                ),
-                        )
-                        .child(
-                            view()
+                            scroll()
                                 .flex_1()
-                                .gap_2()
-                                .child(toolbar(model))
+                                .style_when(move || model.get().operator.open, |s| s.hidden())
                                 .child(
                                     view()
-                                        .accessible(true)
-                                        .label("Daemon connection state")
-                                        .gap_1()
+                                        .gap_4()
+                                        .pb_6()
+                                        .flex_shrink_0()
                                         .child(
-                                            text(move || {
-                                                let m = model.get();
-                                                // A WSL link/launch problem names its exact cause on
-                                                // every page, including the open Operator panel.
-                                                if let Some(reason) = m.wsl_reason() {
-                                                    format!(
-                                                        "{} · {}",
-                                                        m.target_label(),
-                                                        m.word(reason)
-                                                    )
-                                                } else if m.operator.open {
-                                                    format!(
-                                                        "{} · {}",
-                                                        m.target_label(),
-                                                        m.word(if m.operator.busy {
-                                                            Msg::OperatorBusy
-                                                        } else if m.operator.error.is_some() {
-                                                            Msg::OperatorFailed
-                                                        } else if m.operator.info.is_some() {
-                                                            Msg::OperatorObserved
-                                                        } else {
-                                                            Msg::OperatorUnobserved
-                                                        })
-                                                    )
-                                                } else {
-                                                    format!(
-                                                        "{} · {} · {}",
-                                                        m.source_label(),
-                                                        m.target_label(),
-                                                        m.read_label()
-                                                    )
-                                                }
-                                            })
-                                            .text_color(move || match model.get().phase {
-                                                _ if model.get().wsl_reason().is_some() => {
-                                                    palette(model).error
-                                                }
-                                                Phase::Error | Phase::Unavailable => {
-                                                    palette(model).error
-                                                }
-                                                Phase::Loading => palette(model).warning,
-                                                _ => palette(model).muted,
-                                            }),
-                                        )
-                                        .child(
-                                            text(move || model.get().read_time())
-                                                .style_when(
-                                                    move || model.get().operator.open,
-                                                    |s| s.hidden(),
-                                                )
-                                                .text_size(px(12.0))
-                                                .text_color(move || palette(model).muted),
-                                        ),
-                                )
-                                .child(task_input(model, task_ref))
-                                .child(preference_input(model, filter_ref))
-                                .child(review::panel(model))
-                                .child(
-                                    scroll()
-                                        .flex_1()
-                                        .style_when(
-                                            move || model.get().operator.open,
-                                            |s| s.hidden(),
+                                            view()
+                                                .style_when(on(|m| m.settings), |s| s.hidden())
+                                                .child(settings::appearance(model)),
                                         )
                                         .child(
                                             view()
-                                                .gap_3()
-                                                .flex_shrink_0()
-                                                .child(
-                                                    view()
-                                                        .style_when(
-                                                            move || !model.get().settings,
-                                                            |s| s.hidden(),
+                                                .style_when(on(|m| m.connection_editor), |s| {
+                                                    s.hidden()
+                                                })
+                                                .child(connection::connection(model)),
+                                        )
+                                        .child(
+                                            view()
+                                                .style_when(on(|m| m.sessions), |s| s.hidden())
+                                                .child(sessions::panel(model)),
+                                        )
+                                        .child(
+                                            view()
+                                                .style_when(
+                                                    move || {
+                                                        !matches!(
+                                                            current(&model.get()),
+                                                            Destination::Section(_)
                                                         )
-                                                        .child(settings::appearance(model)),
+                                                    },
+                                                    |s| s.hidden(),
                                                 )
-                                                .child(
-                                                    view()
-                                                        .style_when(
-                                                            move || !model.get().connection_editor,
-                                                            |s| s.hidden(),
-                                                        )
-                                                        .child(connection::connection(model)),
-                                                )
-                                                .child(
-                                                    view()
-                                                        .style_when(
-                                                            move || !model.get().sessions,
-                                                            |s| s.hidden(),
-                                                        )
-                                                        .child(sessions::panel(model)),
-                                                )
-                                                .child(
-                                                    view()
-                                                        .style_when(
-                                                            move || {
-                                                                model.get().settings
-                                                                    || model.get().sessions
-                                                                    || model.get().operator.open
-                                                                    || model.get().connection_editor
-                                                            },
-                                                            |s| s.hidden(),
-                                                        )
-                                                        .child(dynamic(move || page(model))),
-                                                ),
+                                                .child(dynamic(move || page(model))),
                                         ),
-                                )
-                                .child(
-                                    text(move || {
-                                        model.get().word(if model.get().copied {
-                                            Msg::Copied
-                                        } else {
-                                            Msg::ConsoleHelp
-                                        })
-                                    })
-                                    .text_size(px(12.0))
-                                    .text_color(move || palette(model).muted),
                                 ),
                         ),
                 ),

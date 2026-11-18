@@ -208,7 +208,8 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     app.wait_for("Write grant active").unwrap();
     f.register();
     app.press_key("mod+r").unwrap();
-    app.wait_for(" / alpha").unwrap();
+    // The project menu lists the newly registered project.
+    app.wait_for("alpha").unwrap();
     app.wait_for("Write grant active").unwrap();
     // Suggest record #1 (editor) and apply it.
     app.press_key("alt+k").unwrap();
