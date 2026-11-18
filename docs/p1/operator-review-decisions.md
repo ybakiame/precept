@@ -31,7 +31,7 @@ items without amendment. This document is the recorded reference required by Gat
 | # | Decision | Approved value | Effective stage |
 | --- | --- | --- | --- |
 | D6 | Peer-demotion consent | Disclose at inspect only in S1; binding expected peer IDs requires its own UX cost analysis | S2 copy |
-| D8 | High-risk UI scope | Deprecate + delete in S2; register and Handoff put stay CLI-only | S2 |
+| D8 | High-risk UI scope | Deprecate + delete in S2; register and Handoff put stay CLI-only. **Superseded for registration (2026-11-18):** projects are added and removed in the GUI through the daemon's checked `project.add` / `project.remove` ([project-management plan](project-management-plan.md)); Handoff put stays CLI-only | S2 |
 | D11 | TUI review parity | All five review actions required on all four native surfaces; a terminal that cannot deliver the chord is BLOCKED, never NOT_APPLICABLE; desktop-only needs an explicit owner amendment | S2 acceptance |
 
 ## Boundaries preserved

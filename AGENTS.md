@@ -28,7 +28,12 @@ Read these before changing architecture or persisted behavior:
 - MCP retains exactly the two project-bound read-only tools. Agents, prompts,
   Handoffs and session context cannot confirm or mutate profile state.
 - Profile creation is an explicit operator action. Never scan for, adopt, migrate,
-  reset, delete or overwrite an existing profile automatically.
+  reset, delete or overwrite an existing profile automatically. The daemon selects
+  a Profile at start only when the operator explicitly asked for that one path
+  ("Select at start"); write access is never remembered.
+- Projects live in the daemon's private state, changed only by the operator-write
+  `project.add` / `project.remove` after a daemon-side check of the one chosen path.
+  No GUI, bridge or agent scans directories (docs/p1/project-management-plan.md).
 - No Python rollback owner, Python read-only adapter, schema downgrade, or
   daemon-unavailable direct-write fallback.
 

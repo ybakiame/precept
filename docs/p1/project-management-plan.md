@@ -1,8 +1,7 @@
 # Daemon-owned state: projects and the startup Profile, managed from any GUI
 
-Status: **accepted plan (2026-11-18), owner-requested.** Step 1 (daemon) is
-implemented; steps 2 and 3 are not yet. One design replaces the startup allowlist
-and `daemon.env`; see Decisions.
+Status: **accepted plan (2026-11-18), owner-requested; steps 1–3 implemented on
+`dev`.** One design replaces the startup allowlist and `daemon.env`; see Decisions.
 
 ## Principles
 

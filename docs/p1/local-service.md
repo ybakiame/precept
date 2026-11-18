@@ -24,55 +24,48 @@ flowchart LR
 
 ## Build and synthetic operator demo
 
-Prerequisites: pinned Rust 1.99.1, native C compiler for bundled SQLite, Python
-3.11+ and Git. No API key or package outside the Cargo lockfile is required.
-From the checkout, build once:
+Prerequisites: pinned Rust 1.99.1, a native C compiler for bundled SQLite, and Git.
+No API key or package outside the Cargo lockfile is required. From the checkout,
+build once:
 
 ```bash
 cargo build --workspace --bins --examples --locked
 ```
 
-Linux/macOS, terminal 1 (DEMO must be outside the checkout; use a short socket path):
+Linux/macOS, terminal 1. DEMO is a private directory outside any checkout, with a
+short path so the socket path stays short. The daemon checks project roots against
+its user's home, so this demo runs the daemon with DEMO as its home:
 
 ```bash
 DEMO=$(mktemp -d /tmp/acpd-demo.XXXXXX)
 export DEMO
-PYTHONPATH=src python tools/sqlite_fixture.py "$DEMO/fixture"
-./target/debug/acp-daemon --database "$DEMO/fixture/state/context.sqlite3" \
-  --runtime-dir "$DEMO/run" --endpoint "$DEMO/run/control.sock" \
-  --allow-project alpha --allow-project beta
+mkdir -p "$DEMO/alpha/.git" && printf 'Synthetic contract.\n' > "$DEMO/alpha/AGENTS.md"
+HOME="$DEMO" ./target/debug/acp-daemon --state-dir "$DEMO/daemon" \
+  --runtime-dir "$DEMO/run" --endpoint "$DEMO/run/control.sock"
 ```
 
-The daemon creates run with private permissions; do not precreate it with 0755.
-Keep this foreground process running. In terminal 2, set DEMO to the same temporary
-path (a path is not a token), then query:
+The daemon creates `daemon` and `run` with private permissions; do not precreate
+them with 0755. Keep this foreground process running. In terminal 2, set DEMO to
+the same temporary path (a path is not a token), then create a Profile, enable
+writes for this run, and add the project (each step is an explicit operator action):
 
 ```bash
-./target/debug/acp-query --runtime-dir "$DEMO/run" --endpoint "$DEMO/run/control.sock" health
-./target/debug/acp-query --runtime-dir "$DEMO/run" --endpoint "$DEMO/run/control.sock" projects
-./target/debug/acp-query --runtime-dir "$DEMO/run" --endpoint "$DEMO/run/control.sock" context alpha --include-documents
-./target/debug/acp-query --runtime-dir "$DEMO/run" --endpoint "$DEMO/run/control.sock" handoff alpha shared
+Q="./target/debug/acp-query --runtime-dir $DEMO/run --endpoint $DEMO/run/control.sock"
+$Q health
+mkdir -m 700 "$DEMO/state"
+$Q profile create "$DEMO/state/profile.sqlite3"
+$Q profile info   # copy profile_id and generation
+$Q profile write enable --profile-id <id> --generation <generation> --confirm
+$Q project check "$DEMO/alpha"
+$Q project add alpha "$DEMO/alpha"
+$Q projects
+$Q context alpha --include-documents
 ```
 
-Windows PowerShell, terminal 1:
-
-```powershell
-$demo = Join-Path $env:TEMP ("acpd-demo-" + [guid]::NewGuid().ToString("N"))
-$env:PYTHONPATH = "src"
-python tools/sqlite_fixture.py (Join-Path $demo "fixture")
-.\target\debug\acp-daemon.exe --database (Join-Path $demo "fixture\state\context.sqlite3") `
-  --runtime-dir (Join-Path $demo "run") --endpoint demo `
-  --allow-project alpha --allow-project beta
-```
-
-Windows endpoint is a validated bare pipe label. Internally it becomes a per-user
-SID-hash-prefixed kernel pipe name; no TCP is used. Terminal 2 uses the same $demo:
-
-```powershell
-.\target\debug\acp-query.exe --runtime-dir (Join-Path $demo "run") --endpoint demo health
-.\target\debug\acp-query.exe --runtime-dir (Join-Path $demo "run") --endpoint demo context alpha --include-documents
-.\target\debug\acp-query.exe --runtime-dir (Join-Path $demo "run") --endpoint demo handoff alpha shared
-```
+Windows PowerShell follows the same steps with `--endpoint demo` (a bare pipe
+label), `$env:USERPROFILE` as the daemon user's home (keep the demo folder under
+it) and `.exe` binaries. The Windows endpoint becomes a per-user SID-hash-prefixed
+kernel pipe name; no TCP is used.
 
 For an MCP stdio client, use `target/debug/acp-mcp` (Windows: `.exe`) with args:
 
@@ -87,10 +80,10 @@ with a legacy initialize + notifications/initialized or stateless 2026 metadata;
 stdout contains JSON-RPC only. An external harness's configuration format is its
 own; no claim is made that Codex/Kimi was installed or started in Cloud.
 
-The entire synthetic demo/negative suite is reproducible in one command after build:
+The synthetic demo and negative cases are covered by the real-process daemon tests:
 
 ```bash
-PYTHONPATH=src python tools/test_local_service.py -v
+cargo test --workspace --locked
 ```
 
 Stop the foreground daemon with Ctrl-C (Unix SIGTERM is also handled; Windows
@@ -119,12 +112,13 @@ api_version, nullable id, result and error, with exactly one result/error active
 | context.get | `{project, include_documents?:bool}` | `{include_documents?:bool}` |
 | handoff.get | `{project, task_id}` | `{task_id}` |
 
-The daemon enforces its launch allowlist and the capability binding server-side.
-Even an operator cannot select an existing but non-allowlisted project. An agent
+The daemon enforces its project set and the capability binding server-side. Even
+an operator cannot select a project outside the daemon's set; only an operator
+write (`project.add`, after the daemon's check of that one path) changes the set. An agent
 cannot add project/project_id, request listing, claim operator authority or invoke
 writes. The bridge never forwards a project from an MCP message. Launch labels
 are restricted to 1–64 ASCII alphanumeric/underscore/dash/dot characters (not . or
-..), with no ASCII case-folded duplicates in a launch allowlist (to prevent
+..), with no ASCII case-folded duplicates in the project set (to prevent
 credential filename collisions on Windows/macOS); this is a Rust runtime-label limitation, not a Python CLI behavior change.
 
 Errors are enum categories: InvalidRequest, Version, Unauthorized, Unsupported,

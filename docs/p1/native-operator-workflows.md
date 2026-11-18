@@ -135,9 +135,10 @@ cargo build --manifest-path apps/ui/Cargo.toml --features native,tui --bins --lo
 Use a fresh owned synthetic checkout and an existing private Profile parent (0700
 on Unix; protected current-user owner/DACL on Windows). Do not substitute a real
 ACP DB. The CLI never creates a default parent or repairs permissions. Start the
-daemon explicitly with the selected private runtime/endpoint, `--allow-project
-alpha` and independently configured `--allow-root alpha=ABSOLUTE_ROOT`. Endpoint is
-an absolute socket inside the runtime on Unix, a simple pipe label on Windows.
+daemon explicitly with the selected private runtime/endpoint and its private
+`--state-dir`. Endpoint is an absolute socket inside the runtime on Unix, a simple
+pipe label on Windows. The synthetic checkout is a Git repository root inside the
+daemon user's home.
 
 Every following command also takes the same explicit `--runtime-dir RUNTIME
 --endpoint ENDPOINT` global arguments. Uppercase tokens below are placeholders:
@@ -147,6 +148,8 @@ acp-query profile create ABSOLUTE_FRESH_PROFILE_PATH
 acp-query profile info
 acp-query profile write enable --profile-id PROFILE_ID --generation GENERATION --confirm
 acp-query profile info
+acp-query project check ABSOLUTE_ROOT
+acp-query project add alpha CANONICAL_ROOT_FROM_CHECK
 acp-query preferences list --scope project --project alpha --after-id 0
 acp-query preferences get ID --scope project --project alpha
 acp-query handoff-record alpha EXACT_TASK
@@ -158,7 +161,6 @@ also requires `--profile-id PROFILE_ID --generation GENERATION --owner-epoch EPO
 --operation-id UNIQUE_ID`; these flags are omitted in the next block for readability:
 
 ```text
-acp-query project-register alpha CANONICAL_ROOT
 acp-query preference-suggest --scope project --project alpha --key editor --value synthetic --source operator --origin agent_reported
 acp-query preference-confirm ID --scope project --project alpha --expected-revision REVISION --proposal-digest FULL_PROPOSAL_DIGEST --confirm
 acp-query preference-reject ID --scope project --project alpha --expected-revision REVISION --proposal-digest FULL_PROPOSAL_DIGEST --confirm
@@ -168,12 +170,14 @@ acp-query handoff-put alpha EXACT_TASK --expected-absent --input OWNED_INPUT_FIL
 acp-query handoff-put alpha EXACT_TASK --expected-revision REVISION --input OWNED_INPUT_FILE
 ```
 
-Registration sends the **exact native canonical root** matching the independent
-launch policy, not a guessed alias. In the Windows validation fixture this uses
-Rust's extended-length canonical spelling (`\\?\C:\…`); normal and extended
-spellings are not silently equated in mutation admission. No client silently
-changes the daemon allowlist. Preserve the original root bytes for receipt retry,
-including when the registered directory later becomes unavailable.
+`project add` (an operator write, after the grant) sends the **exact native
+canonical root** that `project check` returned, not a guessed alias; on Windows
+this is Rust's extended-length spelling (`\\?\C:\…`), and normal and extended
+spellings are not silently equated. It adds the name to the daemon's project set
+and registers it in the Profile in one step (a Profile that already records it only
+rejoins). `project remove` takes it out of the set and revokes its agent
+credential; the Profile keeps its records. `project-register` remains for a name
+already in the set. No client changes the set any other way.
 
 `--scope global` forbids `--project`. Inspect the exact current suggested record
 before confirm/reject; only confirmed records can be deprecated. Deletion is a

@@ -20,7 +20,15 @@ is **not an OS sandbox** or a credential isolation boundary.
   Operator read/control and write grants are separate; disabling drains admitted
   writes. Same-epoch receipts/CAS prevent silently changing or duplicating a request.
 - CLI/UI never receive writable SQLite or fall back to a retired runtime. Startup
-  does not automatically enable writes or adopt incompatible prototype profiles.
+  does not automatically enable writes or adopt incompatible prototype profiles;
+  it selects a Profile only when the operator asked for that path, and never
+  remembers write access.
+- The daemon's project set and startup choice live in its private `--state-dir`
+  (0700/0600, strict JSON, bounded to 256 projects, written atomically); a damaged
+  file refuses start and is never repaired. Adding a project is an operator-write
+  action on one chosen path, checked daemon-side (Git root inside the daemon user's
+  home; system, other-filesystem, foreign-owned and control paths refused). GUIs and
+  the Windows bridge never list or scan directories; agents cannot check or add.
 - Exactly two project-bound read-only MCP tools; no administrative previews, profile
   mutations, context-driven approval or tool-supplied project selector.
 - Preference confirmation binds the exact record/revision/scope. Only confirmed

@@ -444,7 +444,7 @@ test fixture, and no raw diagnostic is echoed by CLI or UI.
 | D5 | Actor attribution | closed `channel` label only / free-text actor | **`channel` only**; no forgeable actor name | S1 |
 | D6 | Peer-demotion consent | disclose at inspect only / bind expected peer IDs | **disclose only** in S1; peer binding needs its own UX cost analysis | S2 copy |
 | D7 | Decision history after deletion | remove rows / retain without digest | **remove in the same transaction** | S1 |
-| D8 | Which high-risk operations gain UI | deprecate+delete in S2 / all four including register and Handoff put | **deprecate+delete in S2**; register and Handoff put stay CLI-only | S2 |
+| D8 | Which high-risk operations gain UI | deprecate+delete in S2 / all four including register and Handoff put | **deprecate+delete in S2**; register and Handoff put stay CLI-only (registration superseded 2026-11-18 by the [project-management plan](project-management-plan.md)) | S2 |
 | D9 | 4096 receipts per generation with review decisions | keep ceiling and prove `Capacity` refusal / raise it | **keep**; raising it is an owner-only policy change | S3 wording |
 | D10 | Queue consistency across pages | watermark disclosure / held read snapshot | **watermark disclosure** | S1 |
 | D11 | Review actions on the TUI surfaces | required on all four surfaces, chord delivery proven per surface (BLOCKED if a terminal cannot deliver it) / desktop-only with a documented TUI read-only panel | **required on all four surfaces**, as frozen in section 8 and matrix section 2; desktop-only needs an explicit owner amendment | S2 acceptance |

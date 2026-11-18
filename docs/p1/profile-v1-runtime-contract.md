@@ -188,7 +188,7 @@ Profile management is an operator IPC operation, not a database API in `acp-quer
 - `acp-daemon` supports an explicit unselected/control-only state when no profile is supplied at startup. In this state only health and profile create/select management requests are available; project reads, sessions, MCP context and writes are unavailable.
 - `acp-query profile create --path <absolute-path>` sends a typed `profile.create` request. The daemon creates a new v1 profile through its private `acp-write` capability and selects it only after independent reopen/verification succeeds.
 - `acp-query profile select --path <absolute-path>` sends a typed `profile.select` request. The daemon opens an existing exact v1 profile read-only and selects it only after validation. It never creates a missing file.
-- A daemon started with an explicit `--database <path>` is already explicitly selected at startup. It must validate the existing v1 profile and must not create it implicitly.
+- A daemon selects a Profile at startup only when the operator explicitly asked for that path (`profile.create`/`profile.select` with `remember`, kept in the daemon's private `startup.json`; `profile.startup.forget` stops it). The startup selection uses exactly the `profile.select` validation and must not create, repair or adopt a file; a missing or failing path starts unselected with a fixed reason. Write access is never remembered. (This replaced the retired `--database` startup flag on 2026-11-18; see the [project-management plan](project-management-plan.md).)
 - One daemon process serves one selected profile. Switching profiles requires an orderly daemon restart; no hot-switch may leave readers, sessions, capabilities or transactions bound to the previous profile.
 - Profile creation requires a non-existing destination and a deliberate operator request. It must not overwrite an existing file, follow a symlink/reparse point, accept a hard-linked database, or touch a different profile. Use an exclusive temporary file in the selected parent and publish without replacement only after schema initialization and verification.
 - The selected path is canonicalized and bound to the opened file identity. Private storage and lock files use current-user-only permissions/ACLs. Unix database/lock files are mode 0600 in a mode-0700 directory; Windows uses an explicit current-user-only DACL and rejects reparse points. Do not claim protection from a hostile process running as the same user.
@@ -219,7 +219,7 @@ best-effort durability mechanisms, not hardware/power-loss certification.
 ### 3.1 Later daemon selection: path identity acceptance gate
 
 The path/file binding above applies to **both** explicit existing-profile selection
-and startup `--database`, not just fresh creation. The later daemon slice must
+and the remembered startup Profile (formerly `--database`), not just fresh creation. The later daemon slice must
 validate an explicit absolute existing regular file, canonical parent/path and
 all path components; refuse symlinks/reparse points, database hardlinks, unsafe
 owner/permissions/ACLs and unknown file identity. Use the same native identity

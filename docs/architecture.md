@@ -80,7 +80,7 @@ authority over a repository contract.
 | --- | --- | --- |
 | Personal preferences, including project-scoped personal choices | Human-reviewed user-local SQLite | Explicit operator action; never tracked profile files |
 | Project contracts | Repository-owned AGENTS/docs/accepted ADRs and reviewed engineering configuration | Live bounded reads; optional exact Markdown source under the [accepted P1-N boundary](p1/project-contract-integration.md); no required directory or automatic prose interpretation |
-| Project registration | User-local SQLite plus explicit daemon launch allowlist | Registration is not permission to discover or share every project |
+| Project registration | User-local SQLite plus the daemon-owned project set (`--state-dir/projects.json`), changed only by the operator-write `project.add` / `project.remove` after a daemon-side scope check (Git root in the daemon user's home, no control or system path) | Registration is not permission to discover or share every project; the daemon checks only the one path the operator chose |
 | Suggestions and reviews | User-local SQLite proposal/review records (generalized model planned) | Approval binds exact content/version/scope; project proposals still need repository review |
 | Effective context | Derived view of current sources and review state | Optional cache must carry source versions and invalidation; never outranks source |
 | Session constraints and Handoff | Historical local snapshots (constraint snapshots planned) | Frozen references/content versions, not live policy or execution authority |

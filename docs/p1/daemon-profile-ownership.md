@@ -12,6 +12,12 @@ It does not authorize real-profile use, release, or completion of parent M2.
 
 ## Bootstrap and selection
 
+> **Superseded in part (2026-11-18).** `--database`, `--allow-project` and
+> `--allow-root` are retired. The daemon keeps its project set and the Profile the
+> operator asked to select at start in its private `--state-dir`; projects are
+> added with the operator-write `project.add` after a daemon-side scope check. See
+> the [project-management plan](project-management-plan.md). The selection, attachment and ownership rules below still hold.
+
 - `--database` becomes optional. Without it, only operator health and strict
   profile management are usable. Project/session/MCP requests cannot run.
 - Startup `--database` and `profile.select` open an existing exact v1 read-only;
@@ -34,6 +40,9 @@ It does not authorize real-profile use, release, or completion of parent M2.
   identical profile metadata is refused on subsequent admissions/reads.
 
 ## Explicit project roots and control files
+
+(Historical: the daemon's project set in `projects.json` replaced both flags; the
+control-location checks below still apply to every root in it.)
 
 - Retain `--allow-project NAME` as the independent project-name allowlist.
   Existing registered roots are pinned on selection, canonicalized and checked
