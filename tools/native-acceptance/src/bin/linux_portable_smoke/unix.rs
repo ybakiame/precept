@@ -101,20 +101,17 @@ impl Fixture {
         f
     }
     fn daemon(bins: &Path, root: &Path, location: &Location) -> Owned {
+        let state = root.join("daemon-state");
+        acp_native_acceptance::daemon_state::write(
+            &state,
+            &[("synthetic", &root.join("synthetic"))],
+            None,
+        );
         let mut cmd = command(&bins.join("acp-daemon"));
         cmd.arg("--runtime-dir")
             .arg(&location.runtime_dir)
-            .args([
-                "--endpoint",
-                &location.endpoint,
-                "--allow-project",
-                "synthetic",
-                "--allow-root",
-            ])
-            .arg(format!(
-                "synthetic={}",
-                root.join("synthetic").to_str().unwrap()
-            ))
+            .args(["--endpoint", &location.endpoint, "--state-dir"])
+            .arg(&state)
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         #[cfg(windows)]

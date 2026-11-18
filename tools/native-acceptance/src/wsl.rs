@@ -193,7 +193,20 @@ impl Remote {
     /// Explicit daemon start inside WSL (never performed by the GUI or bridge).
     fn start_daemon(&mut self) {
         let config = format!("{}/agents.toml", self.base);
-        let root = format!("alpha={}", self.alpha);
+        // The daemon's private state: alpha is its one project.
+        let state = format!("{}/daemon-state", self.base);
+        self.wsl
+            .ok("/usr/bin/install", &["-d", "-m", "0700", &state]);
+        let projects = format!("{state}/projects.json");
+        self.wsl.ok("/usr/bin/rm", &["-f", &projects]);
+        self.wsl
+            .ok("/usr/bin/install", &["-m", "0600", "/dev/null", &projects]);
+        self.wsl.write(
+            &projects,
+            json!({"format":1,"projects":[{"name":"alpha","root":self.alpha}]})
+                .to_string()
+                .as_bytes(),
+        );
         let child = self
             .wsl
             .command(
@@ -203,10 +216,8 @@ impl Remote {
                     &self.runtime,
                     "--endpoint",
                     &self.endpoint,
-                    "--allow-project",
-                    "alpha",
-                    "--allow-root",
-                    &root,
+                    "--state-dir",
+                    &state,
                     "--agent-config",
                     &config,
                     // Trusted read-only context bridge; sharing still needs a

@@ -145,18 +145,16 @@ impl Fixture {
             .arg(runtime)
             .arg("--endpoint")
             .arg(endpoint);
-        if let Some(db) = db {
-            c.arg("--database").arg(db);
-        }
-        for name in ["alpha", "beta"] {
-            c.arg("--allow-project")
-                .arg(name)
-                .arg("--allow-root")
-                .arg(format!(
-                    "{name}={}",
-                    base.join(name).canonicalize().unwrap().to_str().unwrap()
-                ));
-        }
+        // Each daemon has its own private state directory beside its runtime;
+        // `db` is the Profile the operator asked to select at start.
+        let state = runtime.with_extension("state");
+        let (alpha, beta) = (base.join("alpha"), base.join("beta"));
+        acp_native_acceptance::daemon_state::write(
+            &state,
+            &[("alpha", &alpha), ("beta", &beta)],
+            db,
+        );
+        c.arg("--state-dir").arg(&state);
         Owned(
             c.stdout(Stdio::null())
                 .stderr(Stdio::null())
