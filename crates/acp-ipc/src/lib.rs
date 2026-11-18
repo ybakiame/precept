@@ -285,38 +285,78 @@ impl RuntimeLease {
         })
     }
     pub fn credentials(&mut self, projects: &[String]) -> Result<Vec<Credential>> {
-        let accesses = std::iter::once(Access::Operator).chain(
-            projects
-                .iter()
-                .map(|p| Access::Agent { project: p.clone() }),
-        );
-        for access in accesses {
-            let path = self.location.credential_path(match &access {
-                Access::Operator => None,
-                Access::Agent { project } => Some(project),
-                Access::OperatorWrite { .. } => return Err(Error::Unauthorized),
+        self.issue(Access::Operator)?;
+        for project in projects {
+            self.issue(Access::Agent {
+                project: project.clone(),
             })?;
-            if path.exists() {
-                let _ = load_credential(&self.location, &path)?;
-            }
-            let mut token = [0; 32];
-            getrandom::fill(&mut token).map_err(|_| Error::Unavailable)?;
-            let c = Credential {
-                format: 1,
-                binding: None,
-                access,
-                token,
-            };
-            let pending = path.with_extension("pending");
-            let mut file = transport::new_private(&pending)?;
-            file.write_all(&serde_json::to_vec(&c).map_err(|_| Error::Unavailable)?)
-                .map_err(|_| Error::Unavailable)?;
-            file.sync_all().map_err(|_| Error::Unavailable)?;
-            drop(file);
-            fs::rename(pending, &path).map_err(|_| Error::Unavailable)?;
-            self.credentials.push((path, c));
         }
-        Ok(self.credentials.iter().map(|(_, c)| c.clone()).collect())
+        Ok(self.current())
+    }
+    /// Every credential this lease currently publishes.
+    pub fn current(&self) -> Vec<Credential> {
+        self.credentials.iter().map(|(_, c)| c.clone()).collect()
+    }
+    /// Publishes a fresh agent credential for a project added at run time.
+    pub fn issue_agent(&mut self, project: &str) -> Result<Credential> {
+        if !valid_project(project) {
+            return Err(Error::InvalidRequest);
+        }
+        self.issue(Access::Agent {
+            project: project.into(),
+        })
+    }
+    /// Withdraws a project's agent credential (the project was removed): the
+    /// file goes only if it is still this lease's token; new connections with
+    /// it are refused at once.
+    pub fn revoke_agent(&mut self, project: &str) -> Result<()> {
+        let access = Access::Agent {
+            project: project.into(),
+        };
+        let Some(index) = self
+            .credentials
+            .iter()
+            .position(|(_, c)| c.access == access)
+        else {
+            return Ok(());
+        };
+        let (path, c) = self.credentials.remove(index);
+        if load_credential(&self.location, &path)
+            .is_ok_and(|disk| bool::from(disk.token.ct_eq(&c.token)))
+        {
+            fs::remove_file(&path).map_err(|_| Error::Unavailable)?;
+        }
+        Ok(())
+    }
+    fn issue(&mut self, access: Access) -> Result<Credential> {
+        if self.credentials.iter().any(|(_, c)| c.access == access) {
+            return Err(Error::InvalidRequest);
+        }
+        let path = self.location.credential_path(match &access {
+            Access::Operator => None,
+            Access::Agent { project } => Some(project),
+            Access::OperatorWrite { .. } => return Err(Error::Unauthorized),
+        })?;
+        if path.exists() {
+            let _ = load_credential(&self.location, &path)?;
+        }
+        let mut token = [0; 32];
+        getrandom::fill(&mut token).map_err(|_| Error::Unavailable)?;
+        let c = Credential {
+            format: 1,
+            binding: None,
+            access,
+            token,
+        };
+        let pending = path.with_extension("pending");
+        let mut file = transport::new_private(&pending)?;
+        file.write_all(&serde_json::to_vec(&c).map_err(|_| Error::Unavailable)?)
+            .map_err(|_| Error::Unavailable)?;
+        file.sync_all().map_err(|_| Error::Unavailable)?;
+        drop(file);
+        fs::rename(pending, &path).map_err(|_| Error::Unavailable)?;
+        self.credentials.push((path, c.clone()));
+        Ok(c)
     }
 }
 impl Drop for RuntimeLease {

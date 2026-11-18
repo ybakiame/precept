@@ -755,6 +755,7 @@ mod tests {
                 owner_epoch: 1,
             }),
             write_enabled: true,
+            ..Default::default()
         });
         let binding = m.operator.info.as_ref().unwrap().binding.clone().unwrap();
         m.operator.page = Some(PreferencePage {

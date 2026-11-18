@@ -75,9 +75,11 @@ fn checkpoint_daemon_child() {
     runtime
         .block_on(run(Args {
             location: location(&base),
-            database: None,
-            projects: vec!["alpha".into()],
-            roots: vec![format!("alpha={}", base.join("alpha").to_str().unwrap())],
+            state_dir: crate::test_state(
+                &base.join("daemon-state"),
+                &[("alpha", base.join("alpha").as_path())],
+                None,
+            ),
             agent_config: None,
             context_mcp: None,
             context_lease_seconds: 300,

@@ -591,13 +591,15 @@ fn missing_legacy_and_unsafe_startup_never_create_or_repair() {
     cases.push(linked);
     for (n, path) in cases.iter().enumerate() {
         let before = fs::read(path).ok();
+        // A remembered Profile that fails its checks never stops the daemon and
+        // is never created or repaired: it starts unselected and says why.
         let mut d = Daemon::launch(f.temp.path(), &format!("bad-{n}"), Some(path), false);
-        let deadline = Instant::now() + Duration::from_secs(15);
-        while d.child.try_wait().unwrap().is_none() {
-            assert!(Instant::now() < deadline);
-            thread::sleep(Duration::from_millis(10));
-        }
-        assert!(!d.location.runtime_dir.join("operator.cap").exists());
+        d.ready();
+        let info = d.control("profile.info", json!({})).unwrap();
+        assert_eq!(info["selected"], false, "{n}");
+        assert!(info["startup_failure"].is_string(), "{n}: {info}");
+        assert_eq!(info["write_enabled"], false);
+        d.kill();
         assert!(
             fs::read(path).ok() == before,
             "refused profile must remain unchanged"

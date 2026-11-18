@@ -1,7 +1,8 @@
 # Daemon-owned state: projects and the startup Profile, managed from any GUI
 
-Status: **accepted plan (2026-11-18), owner-requested.** Not implemented yet. One
-design replaces the startup allowlist and `daemon.env`; see Decisions.
+Status: **accepted plan (2026-11-18), owner-requested.** Step 1 (daemon) is
+implemented; steps 2 and 3 are not yet. One design replaces the startup allowlist
+and `daemon.env`; see Decisions.
 
 ## Principles
 
@@ -129,15 +130,20 @@ The `toml` crate joins the daemon closure and the notice ledger review.
 
 | Method | Access | Purpose |
 | --- | --- | --- |
-| `project.check {root}` | Operator read | Validates one user-chosen path with the scope rules and answers `ok` plus a suggested name (the folder name), or one fixed refusal reason. It reads only that path and its ancestors (stat, `.git`, owner, mount); it never lists a directory. |
-| `RegisterProject` (existing mutation) | OperatorWrite + grant | If the name is not yet in the set: validate the root, register it in the Profile, persist `projects.json`, mint the project's agent credential, extend session/bridge roots. Same receipts, CAS and replay rules as today. |
-| `project.remove {name}` (new mutation) | OperatorWrite + grant | Removes the name from the set: stops its sessions, revokes its agent credential and context leases, persists. Profile records stay; re-adding the same root restores access. |
+| `project.check {root}` | Operator read | Validates one user-chosen path with the scope rules and answers `{ok, root, name, known}`: the canonical root, a suggested name (the folder name, or the name a Profile record already has at that root, `known: true`), or `{ok: false, reason}` with one fixed code. It reads only that path and its ancestors (stat, `.git`, owner, mount); it never lists a directory. |
+| `project.add {name, root}` | OperatorWrite + grant | Validates the canonical root (exactly what `check` returned) with the scope and session checks, registers it in the Profile unless the Profile already has exactly this name at this root, persists `projects.json`, applies it and mints the agent credential. Answers `{added, root, registered, receipt}`. |
+| `project.remove {name}` | OperatorWrite + grant | Removes the name from the set: stops its session, revokes its agent credential and context lease, persists. Profile records stay; adding the same root again only rejoins the set. |
 | `profile.select` / `profile.create` `{…, remember}` | Operator (as today) | As today, plus remembering the Profile for start. |
 | `profile.startup.forget` | Operator | Removes `startup.json`. |
 
-Order inside an add: validate → Profile transaction → persist `projects.json` →
-apply in memory → mint the credential. A crash between steps leaves a registered
-but unlisted project, which is inert and repaired by adding it again.
+`RegisterProject` keeps its meaning: it registers a name already in the set at
+its exact root (a CLI path for a Profile created after the project was added).
+
+Order inside an add: validate → Profile transaction (if needed) → persist
+`projects.json` → apply in memory → mint the credential. A crash between steps
+leaves a registered but unlisted project, which is inert; adding it again only
+rejoins the set. An entry whose root no longer resolves to the same directory
+loads as `unavailable`: listed, never served, removable.
 
 ### Clients and GUI
 

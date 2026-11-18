@@ -374,8 +374,15 @@ impl Supervisor {
     }
     pub async fn shutdown(&self) {
         self.revoke_context();
+        let project = self.inner.lock().unwrap().view.project.clone();
+        self.stop_project(&project).await;
+    }
+    /// Stops `project`'s session, if it is the current one, and revokes its
+    /// context lease (the project was removed from the daemon).
+    pub async fn stop_project(&self, project: &str) {
+        self.invalidate_context(project);
         let v = self.inner.lock().unwrap().view.clone();
-        if v.process_alive {
+        if v.project == project && v.process_alive {
             let p = Params {
                 session_api_version: SESSION_API,
                 project: v.project,

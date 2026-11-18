@@ -34,6 +34,32 @@ fn exe(name: &str) -> PathBuf {
         .join("../../target/debug")
         .join(file)
 }
+/// The daemon's state directory for a test: its projects and, when given, the
+/// Profile the operator asked to select at start.
+fn daemon_state(dir: &Path, projects: &[(&str, &Path)], profile: Option<&Path>) -> PathBuf {
+    acp_ipc::transport::private_dir(dir, true).unwrap();
+    let list: Vec<serde_json::Value> = projects
+        .iter()
+        .map(|(n, r)| serde_json::json!({"name":n,"root":r.canonicalize().unwrap()}))
+        .collect();
+    let write = |name: &str, value: serde_json::Value| {
+        let path = dir.join(name);
+        let _ = std::fs::remove_file(&path);
+        let mut file = acp_ipc::transport::new_private(&path).unwrap();
+        std::io::Write::write_all(&mut file, value.to_string().as_bytes()).unwrap();
+    };
+    write(
+        "projects.json",
+        serde_json::json!({"format":1,"projects":list}),
+    );
+    if let Some(profile) = profile {
+        write(
+            "startup.json",
+            serde_json::json!({"format":1,"profile":profile}),
+        );
+    }
+    dir.to_path_buf()
+}
 struct Fixture {
     _temp: tempfile::TempDir,
     location: Location,
@@ -80,9 +106,18 @@ impl Fixture {
             .arg(&location.runtime_dir)
             .arg("--endpoint")
             .arg(&location.endpoint)
-            .arg("--database")
-            .arg(db)
-            .args(["--allow-project", "alpha", "--allow-project", "beta"])
+            .arg("--state-dir")
+            .arg({
+                let base = location.runtime_dir.parent().unwrap();
+                daemon_state(
+                    &base.join("daemon-state"),
+                    &[
+                        ("alpha", &base.join("fixture/alpha")),
+                        ("beta", &base.join("fixture/beta")),
+                    ],
+                    Some(db),
+                )
+            })
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()

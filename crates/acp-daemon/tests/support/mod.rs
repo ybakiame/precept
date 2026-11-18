@@ -63,6 +63,35 @@ pub fn logical(path: &Path) -> Vec<u8> {
     }
     hash.finalize().to_vec()
 }
+/// The daemon's state for this test: the projects (`base/<name>`) and, like
+/// an operator who asked for it, the Profile to select at start.
+pub fn daemon_state(base: &Path, names: &[&str], profile: Option<&Path>) -> std::path::PathBuf {
+    let dir = base.join("daemon-state");
+    acp_ipc::transport::private_dir(&dir, true).unwrap();
+    let projects: Vec<Value> = names
+        .iter()
+        .map(|name| json!({"name":name,"root":base.join(name).canonicalize().unwrap()}))
+        .collect();
+    replace_private(
+        &dir.join("projects.json"),
+        json!({"format":1,"projects":projects}),
+    );
+    match profile {
+        Some(profile) => replace_private(
+            &dir.join("startup.json"),
+            json!({"format":1,"profile":profile}),
+        ),
+        None => {
+            let _ = std::fs::remove_file(dir.join("startup.json"));
+        }
+    }
+    dir
+}
+fn replace_private(path: &Path, value: Value) {
+    let _ = std::fs::remove_file(path);
+    let mut file = acp_ipc::transport::new_private(path).unwrap();
+    std::io::Write::write_all(&mut file, value.to_string().as_bytes()).unwrap();
+}
 pub struct Daemon {
     pub child: Child,
     pub location: Location,
@@ -79,6 +108,15 @@ impl Daemon {
         session: bool,
         ttl: u64,
     ) -> Self {
+        daemon_state(base, &["alpha", "beta"], database);
+        Self::start(base, id, session, ttl)
+    }
+    /// Starts again on the state the previous daemon left (no rewrite).
+    #[allow(dead_code)]
+    pub fn relaunch(base: &Path, id: &str) -> Self {
+        Self::start(base, id, false, 300)
+    }
+    fn start(base: &Path, id: &str, session: bool, ttl: u64) -> Self {
         let runtime_dir = base.join(id);
         let endpoint = if cfg!(windows) {
             format!("s2-{}-{id}", base.file_name().unwrap().to_string_lossy())
@@ -98,19 +136,11 @@ impl Daemon {
             .arg(&location.runtime_dir)
             .arg("--endpoint")
             .arg(&location.endpoint);
-        if let Some(db) = database {
-            command.arg("--database").arg(db);
-        }
-        for name in ["alpha", "beta"] {
-            command
-                .arg("--allow-project")
-                .arg(name)
-                .arg("--allow-root")
-                .arg(format!(
-                    "{name}={}",
-                    base.join(name).canonicalize().unwrap().to_str().unwrap()
-                ));
-        }
+        // The test's private base is the daemon user's home for scope checks.
+        command
+            .arg("--state-dir")
+            .arg(base.join("daemon-state"))
+            .env("HOME", base);
         if session {
             command
                 .arg("--agent-config")

@@ -6,25 +6,30 @@ use acp_ipc::{
 use clap::Parser;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::{collections::HashSet, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    collections::HashSet,
+    path::PathBuf,
+    sync::{Arc, Mutex, RwLock},
+    time::Duration,
+};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 #[cfg(test)]
 mod ownership_tests;
 #[cfg(test)]
 mod process_tests;
 mod profiles;
+mod scope;
+mod state;
 mod worktree;
 #[derive(Parser)]
 struct Args {
     #[command(flatten)]
     location: Location,
+    /// The daemon's private state directory: the project set and the
+    /// remembered startup Profile live here, changed only through the daemon.
     #[arg(long)]
-    database: Option<PathBuf>,
-    #[arg(long = "allow-project")]
-    projects: Vec<String>,
-    #[arg(long = "allow-root")]
-    roots: Vec<String>,
-    /// Explicit private operator configuration; absent disables execution.
+    state_dir: PathBuf,
+    /// Private TOML session configuration; no path or no file disables execution.
     #[arg(long)]
     agent_config: Option<PathBuf>,
     /// Trusted absolute stdio bridge; per-start share_context opt-in is still required.
@@ -36,7 +41,8 @@ struct Args {
 #[derive(Clone)]
 struct Service {
     profiles: Arc<profiles::Profiles>,
-    projects: Vec<String>,
+    lease: Arc<Mutex<RuntimeLease>>,
+    credentials: Arc<RwLock<Vec<acp_ipc::Credential>>>,
     agent_config: Option<PathBuf>,
     context_mcp: Option<PathBuf>,
     context_lease_seconds: u64,
@@ -127,7 +133,7 @@ impl Service {
         if p.session_api_version != acp_session::SESSION_API {
             return Err(Error::Version);
         }
-        if !self.projects.contains(&p.project) {
+        if !self.profiles.allowed(&p.project) {
             return Err(Error::Unauthorized);
         }
         match request.method.as_str() {
@@ -188,12 +194,15 @@ impl Service {
         let access = authority.access();
         let session_bound = authority.is_session();
         let params = request.params;
-        if request.method.starts_with("profile.") {
+        if request.method.starts_with("profile.")
+            || matches!(
+                request.method.as_str(),
+                "project.check" | "project.add" | "project.remove"
+            )
+        {
             return self
                 .profiles
-                .handle(authority, &request.method, params, &|roots| {
-                    self.validate_roots(roots)
-                });
+                .handle(authority, &request.method, params, self);
         }
         if matches!(access, Access::OperatorWrite { .. }) {
             return Err(Error::Unauthorized);
@@ -233,12 +242,7 @@ impl Service {
             if access != Access::Operator {
                 return Err(Error::Unauthorized);
             }
-            return Ok(json!(
-                self.projects
-                    .iter()
-                    .map(|p| json!({"name":p}))
-                    .collect::<Vec<_>>()
-            ));
+            return Ok(self.profiles.list());
         }
         let (project, include, task, selector) = match (request.method.as_str(), access) {
             ("context.get", Access::Operator) => {
@@ -259,7 +263,7 @@ impl Service {
             }
             _ => return Err(Error::Unsupported),
         };
-        if !self.projects.contains(&project) {
+        if !self.profiles.allowed(&project) {
             return Err(Error::Unauthorized);
         }
         selector.validate().map_err(|_| Error::InvalidRequest)?;
@@ -313,12 +317,33 @@ impl Service {
         })
     }
 }
-async fn peer(
-    mut stream: Stream,
-    credentials: Arc<Vec<acp_ipc::Credential>>,
-    service: Service,
-    permit: Arc<OwnedSemaphorePermit>,
-) {
+impl profiles::Hooks for Service {
+    fn validate_roots(&self, roots: &[PathBuf]) -> acp_ipc::Result<()> {
+        Service::validate_roots(self, roots)
+    }
+    fn added(&self, name: &str) -> acp_ipc::Result<()> {
+        let credential = self.lease.lock().unwrap().issue_agent(name)?;
+        self.credentials.write().unwrap().push(credential);
+        Ok(())
+    }
+    fn removed(&self, name: &str) {
+        let _ = self.lease.lock().unwrap().revoke_agent(name);
+        self.credentials
+            .write()
+            .unwrap()
+            .retain(|c| !matches!(&c.access, Access::Agent { project } if project == name));
+        let sessions = self.sessions.clone();
+        let project = name.to_owned();
+        // Revoke the context lease now; stop its session off this thread.
+        sessions.invalidate_context(&project);
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move { sessions.stop_project(&project).await });
+        }
+    }
+}
+async fn peer(mut stream: Stream, service: Service, permit: Arc<OwnedSemaphorePermit>) {
+    // A snapshot: credentials added or revoked later apply to new connections.
+    let credentials = service.credentials.read().unwrap().clone();
     let authority = match service.grants.accept(&mut stream, &credentials).await {
         Ok(a) => a,
         Err(e) => {
@@ -430,24 +455,11 @@ async fn stop() {
     }
 }
 async fn run(args: Args) -> acp_ipc::Result<()> {
-    if args.projects.len() > 64
-        || args.projects.iter().any(|p| !acp_ipc::valid_project(p))
-        || args
-            .projects
-            .iter()
-            .map(|p| p.to_ascii_lowercase())
-            .collect::<HashSet<_>>()
-            .len()
-            != args.projects.len()
-    {
-        return Err(Error::InvalidRequest);
-    }
+    let state_dir = state::StateDir::open(&args.state_dir)?;
     let grants = acp_ipc::session_lease::Registry::default();
     let profiles = Arc::new(profiles::Profiles::new(
         args.location.clone(),
-        args.projects.clone(),
-        &args.roots,
-        args.database.as_deref(),
+        state_dir,
         grants.1.clone(),
     )?);
     #[cfg(test)]
@@ -466,16 +478,24 @@ async fn run(args: Args) -> acp_ipc::Result<()> {
         &roots,
     )?;
     let mut listener = acp_ipc::transport::Listener::bind(&args.location).await?;
-    let credentials = Arc::new(lease.credentials(&args.projects)?);
+    let credentials = Arc::new(RwLock::new(lease.credentials(&profiles.names())?));
     let service = Service {
         profiles,
+        lease: Arc::new(Mutex::new(lease)),
+        credentials,
         agent_config: args.agent_config,
         context_mcp: args.context_mcp,
         context_lease_seconds: args.context_lease_seconds,
-        projects: args.projects,
         sessions,
         grants,
     };
+    // The Profile the operator asked to select at start, if any.
+    {
+        let service = service.clone();
+        tokio::task::spawn_blocking(move || service.profiles.select_remembered(&service))
+            .await
+            .map_err(|_| Error::Unavailable)?;
+    }
     let slots = Arc::new(Semaphore::new(MAX_PEERS));
     let mut tasks = tokio::task::JoinSet::new();
     let shutdown = stop();
@@ -487,7 +507,7 @@ async fn run(args: Args) -> acp_ipc::Result<()> {
             Some(_)=tasks.join_next(),if !tasks.is_empty()=>(),
             accepted=listener.accept()=>{
                 match accepted {
-                    Ok(stream)=>{if let Ok(slot)=slots.clone().try_acquire_owned(){tasks.spawn(peer(stream,credentials.clone(),service.clone(),Arc::new(slot)));}},
+                    Ok(stream)=>{if let Ok(slot)=slots.clone().try_acquire_owned(){tasks.spawn(peer(stream,service.clone(),Arc::new(slot)));}},
                     Err(Error::Unauthorized)=>(),
                     Err(_)=>tokio::time::sleep(Duration::from_millis(10)).await,
                 }
@@ -501,6 +521,7 @@ async fn run(args: Args) -> acp_ipc::Result<()> {
     let _ = tokio::task::spawn_blocking(move || profiles.disable()).await;
     service.sessions.shutdown().await;
     drop(listener);
+    let Service { lease, .. } = service;
     drop(lease);
     Ok(())
 }
@@ -520,23 +541,57 @@ fn main() {
     }
 }
 
+/// Test state: writes the project set and the remembered startup Profile into
+/// a new private state directory, as the daemon would after operator actions.
+#[cfg(test)]
+pub(crate) fn test_state(
+    dir: &std::path::Path,
+    projects: &[(&str, &std::path::Path)],
+    profile: Option<&std::path::Path>,
+) -> PathBuf {
+    let state = state::StateDir::open(dir).unwrap();
+    let set = projects
+        .iter()
+        .map(|(n, r)| ((*n).to_owned(), r.canonicalize().unwrap()))
+        .collect();
+    state.save_projects(&set).unwrap();
+    if let Some(profile) = profile {
+        state.save_startup(profile).unwrap();
+    }
+    dir.to_path_buf()
+}
 #[cfg(test)]
 mod tests {
     use super::*;
     #[tokio::test]
     async fn case_insensitive_capability_filename_collisions_fail_before_storage_open() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = temp.path().join("state");
+        acp_ipc::transport::private_dir(&state, true).unwrap();
+        let mut file = acp_ipc::transport::new_private(&state.join(state::PROJECTS)).unwrap();
+        std::io::Write::write_all(
+            &mut file,
+            br#"{"format":1,"projects":[{"name":"alpha","root":"/a"},{"name":"ALPHA","root":"/b"}]}"#,
+        )
+        .unwrap();
         let args = Args {
             location: Location {
-                runtime_dir: PathBuf::new(),
-                endpoint: String::new(),
+                runtime_dir: temp.path().join("runtime"),
+                endpoint: temp
+                    .path()
+                    .join("runtime/control.sock")
+                    .to_string_lossy()
+                    .into(),
             },
-            database: None,
-            roots: Vec::new(),
-            projects: vec!["alpha".into(), "ALPHA".into()],
+            state_dir: state,
             agent_config: None,
             context_mcp: None,
             context_lease_seconds: 300,
         };
         assert_eq!(run(args).await, Err(Error::InvalidRequest));
+        assert!(
+            !temp.path().join("runtime").exists(),
+            "refused before the runtime"
+        );
     }
 }

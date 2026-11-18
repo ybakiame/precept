@@ -5,12 +5,11 @@ use std::sync::Barrier;
 
 async fn open(
     service: &Service,
-    credentials: Arc<Vec<acp_ipc::Credential>>,
     credential: &acp_ipc::Credential,
 ) -> (tokio::io::DuplexStream, Value) {
     let (server, mut client) = tokio::io::duplex(8192);
     let permit = Arc::new(Arc::new(Semaphore::new(1)).acquire_owned().await.unwrap());
-    tokio::spawn(peer(Box::new(server), credentials, service.clone(), permit));
+    tokio::spawn(peer(Box::new(server), service.clone(), permit));
     let token = serde_json::to_value(credential).unwrap()["token"].clone();
     write_frame(
         &mut client,
@@ -48,20 +47,27 @@ async fn revoke_closes_admissions_drains_and_preserves_admitted_committed_respon
     let mut runtime = RuntimeLease::acquire(&location).unwrap();
     let credentials = Arc::new(runtime.credentials(&[]).unwrap());
     let grants = acp_ipc::session_lease::Registry::default();
+    let state = test_state(&t.path().join("daemon-state"), &[], Some(&db));
     let profiles = Arc::new(
-        profiles::Profiles::new(location.clone(), vec![], &[], Some(&db), grants.1.clone())
-            .unwrap(),
+        profiles::Profiles::new(
+            location.clone(),
+            state::StateDir::open(&state).unwrap(),
+            grants.1.clone(),
+        )
+        .unwrap(),
     );
     let service = Service {
         profiles: profiles.clone(),
-        projects: vec![],
+        lease: Arc::new(Mutex::new(runtime)),
+        credentials: Arc::new(RwLock::new(credentials.to_vec())),
         agent_config: None,
         context_mcp: None,
         context_lease_seconds: 300,
         sessions: Default::default(),
         grants,
     };
-    let (mut operator, ack) = open(&service, credentials.clone(), &credentials[0]).await;
+    profiles.select_remembered(&service);
+    let (mut operator, ack) = open(&service, &credentials[0]).await;
     assert_eq!(ack["ready"], true);
     send(&mut operator, "info", "profile.info", json!({})).await;
     let info = read_frame(&mut operator).await.unwrap()["result"].clone();
@@ -69,7 +75,7 @@ async fn revoke_closes_admissions_drains_and_preserves_admitted_committed_respon
     let enabled = read_frame(&mut operator).await.unwrap()["result"].clone();
     let c = acp_ipc::load_credential(&location, &location.runtime_dir.join("operator-write.cap"))
         .unwrap();
-    let (mut writer, ack) = open(&service, credentials.clone(), &c).await;
+    let (mut writer, ack) = open(&service, &c).await;
     assert_eq!(ack["ready"], true);
     let (reached, observed) = std::sync::mpsc::channel();
     let release = Arc::new(Barrier::new(2));
@@ -86,7 +92,7 @@ async fn revoke_closes_admissions_drains_and_preserves_admitted_committed_respon
     send(&mut operator, "disable", "profile.write.disable", json!({})).await;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
     loop {
-        let (_, ack) = open(&service, credentials.clone(), &c).await;
+        let (_, ack) = open(&service, &c).await;
         if ack["error"] == "Unauthorized" {
             break;
         }
@@ -144,30 +150,35 @@ async fn s3_root_drift_between_initial_check_and_final_admission_refuses_review(
         let mut runtime = RuntimeLease::acquire(&location).unwrap();
         let credentials = Arc::new(runtime.credentials(&["alpha".into()]).unwrap());
         let grants = acp_ipc::session_lease::Registry::default();
+        let state = test_state(
+            &temp.path().join("daemon-state"),
+            &[("alpha", root.as_path())],
+            Some(&db),
+        );
         let profiles = Arc::new(
             profiles::Profiles::new(
                 location.clone(),
-                vec!["alpha".into()],
-                &[format!("alpha={}", root.to_str().unwrap())],
-                Some(&db),
+                state::StateDir::open(&state).unwrap(),
                 grants.1.clone(),
             )
             .unwrap(),
         );
         let service = Service {
             profiles: profiles.clone(),
-            projects: vec!["alpha".into()],
+            lease: Arc::new(Mutex::new(runtime)),
+            credentials: Arc::new(RwLock::new(credentials.to_vec())),
             agent_config: None,
             context_mcp: None,
             context_lease_seconds: 300,
             sessions: Default::default(),
             grants,
         };
+        profiles.select_remembered(&service);
         let operator = credentials
             .iter()
             .find(|credential| credential.access == Access::Operator)
             .unwrap();
-        let (mut operator, ack) = open(&service, credentials.clone(), operator).await;
+        let (mut operator, ack) = open(&service, operator).await;
         assert_eq!(ack["ready"], true);
         send(&mut operator, "info", "profile.info", json!({})).await;
         let info = read_frame(&mut operator).await.unwrap()["result"].clone();
@@ -186,7 +197,7 @@ async fn s3_root_drift_between_initial_check_and_final_admission_refuses_review(
         let credential =
             acp_ipc::load_credential(&location, &location.runtime_dir.join("operator-write.cap"))
                 .unwrap();
-        let (mut writer, ack) = open(&service, credentials, &credential).await;
+        let (mut writer, ack) = open(&service, &credential).await;
         assert_eq!(ack["ready"], true);
         let scope = json!({"kind":"project","name":"alpha"});
         for (operation, command) in [

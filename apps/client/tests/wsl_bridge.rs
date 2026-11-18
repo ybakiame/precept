@@ -21,6 +21,29 @@ fn bin(name: &str) -> PathBuf {
 const HELPER: &str = env!("CARGO_BIN_EXE_acp-wsl-bridge");
 
 /// Private synthetic root removed on drop; never a user directory.
+/// The daemon's state directory for a test: its projects and, when given, the
+/// Profile the operator asked to select at start.
+fn daemon_state(
+    dir: &std::path::Path,
+    projects: &[(&str, &std::path::Path)],
+) -> std::path::PathBuf {
+    acp_ipc::transport::private_dir(dir, true).unwrap();
+    let list: Vec<serde_json::Value> = projects
+        .iter()
+        .map(|(n, r)| serde_json::json!({"name":n,"root":r.canonicalize().unwrap()}))
+        .collect();
+    let path = dir.join("projects.json");
+    let _ = std::fs::remove_file(&path);
+    let mut file = acp_ipc::transport::new_private(&path).unwrap();
+    std::io::Write::write_all(
+        &mut file,
+        serde_json::json!({"format":1,"projects":list})
+            .to_string()
+            .as_bytes(),
+    )
+    .unwrap();
+    dir.to_path_buf()
+}
 struct Root(PathBuf);
 impl Root {
     fn new() -> Self {
@@ -95,8 +118,12 @@ impl Daemon {
                 .iter()
                 .map(|(id, args)| json!({"id":id,"executable":bin("acp-fake-agent"),"args":args,"env":{}}))
                 .collect();
-            file.write_all(toml::to_string(&json!({"version":1,"programs":list})).unwrap().as_bytes())
-                .unwrap();
+            file.write_all(
+                toml::to_string(&json!({"version":1,"programs":list}))
+                    .unwrap()
+                    .as_bytes(),
+            )
+            .unwrap();
             extra.extend(["--agent-config".into(), config.into()]);
         }
         if context {
@@ -110,21 +137,10 @@ impl Daemon {
         let child = command
             .arg("--runtime-dir")
             .arg(&runtime)
-            .args([
-                "--endpoint",
-                &endpoint,
-                "--allow-project",
-                "alpha",
-                "--allow-root",
-            ])
-            .arg(format!(
-                "alpha={}",
-                root.0
-                    .join("alpha")
-                    .canonicalize()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
+            .args(["--endpoint", &endpoint, "--state-dir"])
+            .arg(daemon_state(
+                &root.0.join("daemon-state"),
+                &[("alpha", &root.0.join("alpha"))],
             ))
             .stdout(Stdio::null())
             .stderr(Stdio::null())

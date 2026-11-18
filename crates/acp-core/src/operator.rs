@@ -188,13 +188,22 @@ pub struct HandoffPreview {
     pub binding: Binding,
     pub record: Option<HandoffRecord>,
 }
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProfileInfo {
     pub selected: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub binding: Option<Binding>,
     pub write_enabled: bool,
+    /// The selected Profile is the one selected at every daemon start.
+    #[serde(default)]
+    pub remembered: bool,
+    /// A Profile is remembered for start (selected now or not).
+    #[serde(default)]
+    pub startup_profile: bool,
+    /// Why the remembered Profile was not selected at start, as a fixed code.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub startup_failure: Option<String>,
 }
 /// Client serialization only; daemon-owned Request validation is authoritative.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]

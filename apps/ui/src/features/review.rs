@@ -1672,6 +1672,7 @@ mod tests {
             selected: true,
             binding: Some(binding()),
             write_enabled: true,
+            ..Default::default()
         });
         m.operator.queue = Some(ReviewQueue {
             binding: binding(),

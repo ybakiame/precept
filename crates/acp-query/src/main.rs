@@ -19,6 +19,10 @@ enum Query {
         #[command(subcommand)]
         command: operator::Preferences,
     },
+    Project {
+        #[command(subcommand)]
+        command: operator::Project,
+    },
     HandoffRecord {
         project: String,
         task: String,
@@ -65,6 +69,7 @@ enum Query {
 async fn run(args: Args) -> acp_ipc::Result<serde_json::Value> {
     match args.command {
         Query::Profile { command } => return operator::profile(&args.location, command).await,
+        Query::Project { command } => return operator::project(&args.location, command).await,
         Query::Preferences { command } => {
             return operator::preferences(&args.location, command).await;
         }

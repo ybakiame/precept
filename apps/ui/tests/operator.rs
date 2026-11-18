@@ -9,6 +9,29 @@ use std::{
     process::{Child, Command, Stdio},
     time::{Duration, Instant},
 };
+/// The daemon's state directory for a test: its projects and, when given, the
+/// Profile the operator asked to select at start.
+fn daemon_state(
+    dir: &std::path::Path,
+    projects: &[(&str, &std::path::Path)],
+) -> std::path::PathBuf {
+    acp_ipc::transport::private_dir(dir, true).unwrap();
+    let list: Vec<serde_json::Value> = projects
+        .iter()
+        .map(|(n, r)| serde_json::json!({"name":n,"root":r.canonicalize().unwrap()}))
+        .collect();
+    let path = dir.join("projects.json");
+    let _ = std::fs::remove_file(&path);
+    let mut file = acp_ipc::transport::new_private(&path).unwrap();
+    std::io::Write::write_all(
+        &mut file,
+        serde_json::json!({"format":1,"projects":list})
+            .to_string()
+            .as_bytes(),
+    )
+    .unwrap();
+    dir.to_path_buf()
+}
 struct Fixture {
     child: Child,
     location: Location,
@@ -49,17 +72,10 @@ impl Fixture {
             .arg(&location.runtime_dir)
             .arg("--endpoint")
             .arg(&location.endpoint)
-            .arg("--allow-project")
-            .arg("alpha")
-            .arg("--allow-root")
-            .arg(format!(
-                "alpha={}",
-                root.path()
-                    .join("alpha")
-                    .canonicalize()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
+            .arg("--state-dir")
+            .arg(daemon_state(
+                &root.path().join("daemon-state"),
+                &[("alpha", &root.path().join("alpha"))],
             ))
             .stdout(Stdio::null())
             .stderr(Stdio::null())

@@ -17,6 +17,8 @@ pub async fn control(location: &Location, method: &str, params: Value) -> Result
             | "profile.review.queue"
             | "profile.review.inspect"
             | "profile.handoff.get"
+            | "profile.startup.forget"
+            | "project.check"
     ) {
         return Err(Error::Unsupported);
     }
@@ -54,6 +56,26 @@ pub async fn mutate(location: &Location, request: &Mutation) -> Result<Value> {
         .await
         .map_err(connect_error)?;
     client.request("profile.mutate", params).await
+}
+/// Adds or removes a project in the daemon's set: an operator write, sent with
+/// the current write credential (the daemon re-checks the exact grant).
+pub async fn project_write(location: &Location, method: &str, params: Value) -> Result<Value> {
+    if !matches!(method, "project.add" | "project.remove") {
+        return Err(Error::Unsupported);
+    }
+    let path = location.root()?.join("operator-write.cap");
+    // No write credential means writes are not enabled: a refusal, not a fault.
+    if std::fs::symlink_metadata(&path).is_err() {
+        return Err(Error::Unauthorized);
+    }
+    let cap = load_credential(location, &path)?;
+    if !matches!(cap.access, Access::OperatorWrite { .. }) {
+        return Err(Error::Unauthorized);
+    }
+    let mut client = Client::connect(location, &cap)
+        .await
+        .map_err(connect_error)?;
+    client.request(method, params).await
 }
 /// Fresh random operation identity for an explicitly reviewed UI request only.
 pub fn operation_id() -> Result<String> {

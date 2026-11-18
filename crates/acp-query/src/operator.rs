@@ -38,11 +38,19 @@ impl ScopeArgs {
 pub enum Profile {
     Create {
         path: PathBuf,
+        /// Select this Profile again whenever the daemon starts.
+        #[arg(long)]
+        remember: bool,
     },
     Select {
         path: PathBuf,
+        /// Select this Profile again whenever the daemon starts.
+        #[arg(long)]
+        remember: bool,
     },
     Info,
+    /// Stop selecting a remembered Profile at start.
+    ForgetStartup,
     Write {
         #[command(subcommand)]
         command: Write,
@@ -155,9 +163,14 @@ struct HandoffInput {
 }
 pub async fn profile(location: &Location, command: Profile) -> Result<Value> {
     let (method, params) = match command {
-        Profile::Create { path } => ("profile.create", json!({"path":path})),
-        Profile::Select { path } => ("profile.select", json!({"path":path})),
+        Profile::Create { path, remember } => {
+            ("profile.create", json!({"path":path,"remember":remember}))
+        }
+        Profile::Select { path, remember } => {
+            ("profile.select", json!({"path":path,"remember":remember}))
+        }
         Profile::Info => ("profile.info", json!({})),
+        Profile::ForgetStartup => ("profile.startup.forget", json!({})),
         Profile::Write {
             command:
                 Write::Enable {
@@ -174,6 +187,35 @@ pub async fn profile(location: &Location, command: Profile) -> Result<Value> {
         } => ("profile.write.disable", json!({})),
     };
     acp_ipc::operator::control(location, method, params).await
+}
+/// The daemon's project set. `check` is a read; `add` and `remove` need the
+/// current Profile's write grant (`profile write enable`).
+#[derive(Subcommand)]
+pub enum Project {
+    /// Whether a directory may become a project, and its suggested name.
+    Check { root: PathBuf },
+    /// Add a project (a Git repository root inside your home).
+    Add { name: String, root: PathBuf },
+    /// Remove a project from the set; its Profile records are kept.
+    Remove { name: String },
+}
+pub async fn project(location: &Location, command: Project) -> Result<Value> {
+    match command {
+        Project::Check { root } => {
+            acp_ipc::operator::control(location, "project.check", json!({"root":root})).await
+        }
+        Project::Add { name, root } => {
+            acp_ipc::operator::project_write(
+                location,
+                "project.add",
+                json!({"name":name,"root":root}),
+            )
+            .await
+        }
+        Project::Remove { name } => {
+            acp_ipc::operator::project_write(location, "project.remove", json!({"name":name})).await
+        }
+    }
 }
 pub async fn preferences(location: &Location, command: Preferences) -> Result<Value> {
     let (method, params) = match command {

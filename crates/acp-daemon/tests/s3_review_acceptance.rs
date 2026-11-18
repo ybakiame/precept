@@ -515,9 +515,11 @@ fn s3_symlink_or_junction_swapped_root_and_foreign_registration_refuse() {
     let alpha = f.temp.path().join("alpha");
     let beta = f.temp.path().join("beta");
     let before = logical(&f.db);
-    for (name, root) in [
-        ("alpha", beta.canonicalize().unwrap()),
-        ("outside", beta.canonicalize().unwrap()),
+    // A listed name cannot move to another root, and a name outside the set
+    // cannot be registered (only `project.add` adds one). Neither writes.
+    for (name, root, refusal) in [
+        ("alpha", beta.canonicalize().unwrap(), Error::Unauthorized),
+        ("outside", beta.canonicalize().unwrap(), Error::Unauthorized),
     ] {
         assert_eq!(
             f.daemon.mutate(
@@ -529,7 +531,7 @@ fn s3_symlink_or_junction_swapped_root_and_foreign_registration_refuse() {
                     expected: Expected::Absent,
                 },
             ),
-            Err(Error::Unauthorized)
+            Err(refusal)
         );
     }
     fs::rename(&alpha, f.temp.path().join("alpha-original")).unwrap();

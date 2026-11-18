@@ -154,6 +154,21 @@ impl SqliteStore {
             Ok(record)
         })
     }
+    /// The registered project whose root is exactly `root`, if any (a project
+    /// the daemon's set no longer lists keeps its Profile record).
+    pub fn project_at_root(&self, root: &std::path::Path) -> Result<Option<String>> {
+        let Some(root) = root.to_str() else {
+            return Ok(None);
+        };
+        self.snapshot(|_| {
+            self.db
+                .query_row("SELECT name FROM projects WHERE root=?1", [root], |r| {
+                    r.get::<_, String>(0)
+                })
+                .optional()
+                .map_err(|_| Error::InvalidRecord)
+        })
+    }
     /// Returns only structurally scoped records; the core applies confirmed-only
     /// filtering, precedence and ID ordering. Invalid review states fail closed.
     pub fn read_preferences(&self, project: &str) -> Result<Vec<Preference>> {
