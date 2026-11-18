@@ -48,9 +48,11 @@ export function licensePolicy(expression) {
   return { permissive, ids: [...ids].sort() };
 }
 
-// License texts and attribution NOTICE files are distinct: a directory resolves a
-// package only when it holds at least one non-empty license text. NOTICE files ship
-// alongside, never instead. Empty or whitespace-only candidates refuse.
+// License texts and attribution NOTICE files are distinct: a package resolves only
+// when its resolved set holds at least one non-empty license text. NOTICE files never
+// resolve a package alone, but every NOTICE seen on the way to the license (crate
+// directory, intermediate checkout directories) ships with it. Empty or
+// whitespace-only candidates refuse.
 const LICENSE_FILE = /^(licen[sc]e|copying|unlicense)([.-]|$)/i;
 const ATTRIBUTION_FILE = /^notice([.-]|$)/i;
 function noticeFiles(directory) {
@@ -64,8 +66,9 @@ function noticeFiles(directory) {
     need(bytes.toString('utf8').trim().length > 0, `Empty ${kind} file ${name}`);
     return [{ name, kind, bytes }];
   });
-  return found.some(f => f.kind === 'license') ? found : [];
+  return found;
 }
+const hasLicense = files => files.some(f => f.kind === 'license');
 /// Splits a pinned GitHub blob URL into repository, full commit and upstream path.
 export function githubProvenance(url) {
   const m = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/blob\/([0-9a-f]{40})\/(.+)$/.exec(url ?? '');
@@ -120,20 +123,31 @@ export function noticeLedger(entries, noticesDir, repo, write) {
     const policy = licensePolicy(pkg.license);
     need(policy.permissive, `${pkg.name} ${pkg.version}: license outside the permissive policy (${pkg.license})`);
     const local = (f, at) => store(f.bytes, { kind: f.kind, upstream_path: at ? `${at}/${f.name}` : f.name });
-    let texts = noticeFiles(path.dirname(pkg.manifest_path)).map(f => local(f));
-    let origin = 'crate-local';
-    let note;
+    const crateDir = path.dirname(pkg.manifest_path);
     const root = gitCheckoutRoot(pkg.manifest_path);
-    if (!texts.length && root && pkg.source.startsWith('git+')) {
-      // Walk up from the crate to the pinned checkout root; first directory with texts wins.
-      for (let d = path.dirname(path.dirname(pkg.manifest_path)); d.length >= root.length; d = path.dirname(d)) {
+    const where = d => (root && pkg.source.startsWith('git+') ? path.relative(root, d).split(path.sep).join('/') : '');
+    const crateFiles = noticeFiles(crateDir);
+    // NOTICE files collected so far; they ship with whatever license resolves the package.
+    let notices = crateFiles.filter(f => f.kind === 'notice').map(f => local(f, where(crateDir)));
+    let texts = [];
+    let origin;
+    let note;
+    if (hasLicense(crateFiles)) {
+      texts = crateFiles.map(f => local(f, where(crateDir)));
+      notices = [];
+      origin = 'crate-local';
+    } else if (root && pkg.source.startsWith('git+')) {
+      // Walk up from the crate to the pinned checkout root; the first directory with a
+      // license text resolves it, together with every NOTICE seen on the way.
+      for (let d = path.dirname(crateDir); d.length >= root.length; d = path.dirname(d)) {
         const found = noticeFiles(d);
-        if (found.length) {
-          const at = path.relative(root, d).split(path.sep).join('/');
-          texts = found.map(f => local(f, at));
+        if (hasLicense(found)) {
+          texts = [...notices, ...found.map(f => local(f, where(d)))];
+          notices = [];
           origin = 'pinned-git-checkout-root';
           break;
         }
+        notices.push(...found.map(f => local(f, where(d))));
         if (d === root) break;
       }
     }
@@ -145,6 +159,7 @@ export function noticeLedger(entries, noticesDir, repo, write) {
       if (s.no_text_required) {
         need(policy.ids.includes(s.no_text_required), `${pkg.name}: no-text license not declared`);
         origin = `no-notice-required (${s.no_text_required})`;
+        texts = notices; // no license text is required, but found attribution still ships
       } else {
         if (s.election) need(policy.ids.includes(s.election) && PERMISSIVE.has(s.election), `${pkg.name}: invalid election`);
         texts = s.texts.map(t => {
@@ -161,6 +176,7 @@ export function noticeLedger(entries, noticesDir, repo, write) {
           return store(bytes, { kind: t.kind ?? 'license', upstream });
         });
         need(texts.some(t => t.kind === 'license'), `${pkg.name}: supplement has no license text`);
+        texts = [...notices, ...texts];
         origin = s.election ? `elected ${s.election}; verbatim license text` : 'reviewed upstream text pinned to commit';
       }
     }

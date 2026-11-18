@@ -80,8 +80,10 @@ test('ledger resolves crate-local, checkout-root, supplement, election and no-te
     { workspace: 'w', linkage: 'linked', pkg: pkg('mac', '0.1.1', 'MIT/Apache-2.0', f.crate('reg/mac')) },
     { workspace: 'w', linkage: 'linked', pkg: pkg('hexf-parse', '0.2.1', 'CC0-1.0', f.crate('reg/hexf')) },
     { workspace: 'w', linkage: 'linked', pkg: pkg('ratex-font', '0.1.15', 'MIT', f.crate('reg/ratex-font')) },
+    { workspace: 'w', linkage: 'linked', pkg: pkg('wuff', '0.2.10', 'MIT', f.crate('reg/wuff', { NOTICE: 'wuff attribution' })) },
   ];
   fs.writeFileSync(path.join(f.root, 'git/checkouts/nsh-1/abc/LICENSE-APACHE'), 'Apache text');
+  fs.writeFileSync(path.join(f.root, 'git/checkouts/nsh-1/abc/crates/NOTICE'), 'Workspace attribution');
   const ledger = noticeLedger(entries, f.notices, repo, f.write);
   const by = Object.fromEntries(ledger.packages.map(p => [p.package, p]));
   assert.match(by.first.review, /^FIRST-PARTY/);
@@ -89,7 +91,9 @@ test('ledger resolves crate-local, checkout-root, supplement, election and no-te
   assert.deepEqual(by.local.texts.map(x => [x.upstream_path, x.kind]), [['LICENSE-MIT', 'license'], ['NOTICE', 'notice']]);
   assert.equal(by['nsh-core'].notice_source, 'pinned-git-checkout-root');
   assert.equal(by['nsh-core'].git_commit, 'b'.repeat(40));
-  assert.deepEqual(by['nsh-core'].texts.map(x => [x.upstream_path, x.kind]), [['LICENSE-APACHE', 'license']]);
+  assert.deepEqual(by['nsh-core'].texts.map(x => [x.upstream_path, x.kind]),
+    [['crates/nsh-core/NOTICE', 'notice'], ['crates/NOTICE', 'notice'], ['LICENSE-APACHE', 'license']],
+    'crate-local and intermediate NOTICE files ship with the inherited checkout-root license');
   assert.equal(by.taffy.notice_source, 'reviewed upstream text pinned to commit');
   assert.deepEqual(by.taffy.texts[0].upstream, {
     url: 'https://github.com/DioxusLabs/taffy/blob/0064bd54cbe38bf1d8bcd6ec6ab0704d45fb048a/LICENSE',
@@ -101,7 +105,10 @@ test('ledger resolves crate-local, checkout-root, supplement, election and no-te
   assert.equal(by['ratex-font'].texts.length, 3, 'MIT + KaTeX font notice + SIL OFL');
   assert.deepEqual(by['ratex-font'].texts.map(x => x.kind), ['license', 'notice', 'license']);
   assert.deepEqual(ledger.policy.exceptions, { 'LLVM-exception': ['Apache-2.0'] });
-  assert.equal(ledger.summary.reviewed, 6);
+  assert.deepEqual(by.wuff.texts.map(x => [x.upstream_path ?? x.upstream.path, x.kind]),
+    [['NOTICE', 'notice'], ['LICENSE', 'license']], 'crate-local NOTICE ships with a supplement license');
+  assert.equal(by.wuff.notice_source, 'reviewed upstream text pinned to commit');
+  assert.equal(ledger.summary.reviewed, 7);
   for (const p of ledger.packages) for (const x of p.texts)
     assert.equal(sha(fs.readFileSync(path.join(f.notices, path.basename(x.file)))), x.sha256);
 });
@@ -120,6 +127,9 @@ test('ledger refuses NOTICE-only and empty license files instead of marking them
   const one = p => noticeLedger([{ workspace: 'w', linkage: 'linked', pkg: p }], f.notices, repo, f.write);
   assert.throws(() => one(pkg('notice-only', '1.0.0', 'Apache-2.0', f.crate('reg/n', { NOTICE: 'Attribution only' }))),
     /no notice text and no reviewed supplement/);
+  // A NOTICE-only git checkout with no license anywhere up to the root still refuses.
+  assert.throws(() => one(pkg('git-notice', '1.0.0', 'MIT', f.crate('git/checkouts/g-1/rev/crates/x', { NOTICE: 'a' }),
+    `git+https://github.com/o/g?rev=rev#${'c'.repeat(40)}`)), /no notice text and no reviewed supplement/);
   assert.throws(() => one(pkg('empty', '1.0.0', 'MIT', f.crate('reg/e', { LICENSE: '' }))), /Empty license file LICENSE/);
   assert.throws(() => one(pkg('blank', '1.0.0', 'MIT', f.crate('reg/b', { 'LICENSE-MIT': ' \n\t\n' }))), /Empty license file/);
   assert.throws(() => one(pkg('blank-notice', '1.0.0', 'MIT', f.crate('reg/bn', { LICENSE: 'MIT text', NOTICE: '\n' }))), /Empty notice file/);
