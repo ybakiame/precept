@@ -7,9 +7,9 @@
 //! the unit exist and whether the daemon answers a health read. On Windows it
 //! runs those modes through `wsl.exe --exec` with a fixed argument vector: no
 //! shell, no TCP, no credential in argv, environment or output.
+use acp_operator_core::connection::Discovery;
 #[cfg(target_os = "windows")]
 use acp_operator_core::connection::wsl_status as status;
-use acp_operator_core::connection::Discovery;
 
 /// The packaged systemd user unit.
 pub const UNIT: &str = "acp-daemon.service";
