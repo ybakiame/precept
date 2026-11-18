@@ -53,8 +53,17 @@ are daemon-owned, private (0600), written atomically and bounded:
 
 | File | Content | Changed by |
 | --- | --- | --- |
-| `projects.json` | `{format: 1, projects: [{name, root}]}`, at most 64 | Add / remove project |
+| `projects.json` | `{format: 1, projects: [{name, root}]}`, at most 256 | Add / remove project |
 | `startup.json` | `{format: 1, profile: "/abs/profile.sqlite3"}` or absent | Select / create Profile with "Select at start", or Forget |
+
+The 256-project bound is a defensive limit, not a product promise: it keeps a
+damaged or runaway file from making the daemon mint unbounded agent credentials
+and keeps per-request root checks linear and small. The real capacities are
+bounded elsewhere (16 IPC peers; 4096 Profile commits per generation, one per
+registration). Reaching it is a fixed, explained refusal. (The former 64 was an
+undocumented bound on startup arguments.) Both state files stay JSON: only the
+daemon writes them, so comments would not survive and a second format buys
+nothing.
 
 A malformed, non-private or out-of-bounds file refuses to start (exit 2, no
 restart loop) with a fixed reason; the daemon never repairs or rewrites state to
@@ -105,12 +114,16 @@ A root is accepted only if, after canonicalizing:
 
 ### Sessions
 
-The unit passes `--context-mcp /usr/bin/acp-mcp --agent-config %E/acp/agents.json`.
+The unit passes `--context-mcp /usr/bin/acp-mcp --agent-config %E/acp/agents.toml`.
 Daemon change: an absent agent config file at start means sessions are disabled
 (today it refuses to start); a present file that is invalid, non-private or
-inside a project root still refuses to start. Creating that JSON file
-(`~/.config/acp/agents.json`, the existing session config format) is how sessions
-are turned on; each start still needs the explicit context-share opt-in.
+inside a project root still refuses to start. The session config moves from JSON to TOML: it is the one file the operator writes
+by hand (trusted executables, arguments, why each is allowed), and TOML keeps
+comments and lists of tables readable. Same version-1 content and validation,
+`deny_unknown_fields`, the same private-file and size checks; the JSON reader is
+removed (no compatibility layer). Creating `~/.config/acp/agents.toml` is how
+sessions are turned on; each start still needs the explicit context-share opt-in.
+The `toml` crate joins the daemon closure and the notice ledger review.
 
 ### New daemon methods
 
@@ -178,7 +191,7 @@ but unlisted project, which is inert and repaired by adding it again.
 
 1. Daemon: `--state-dir`, `projects.json` and `startup.json`, the project set behind
    one lock, the validator, `project.check`, add through `RegisterProject`,
-   `project.remove`, remembered Profile, optional agent config; retire
+   `project.remove`, remembered Profile, optional TOML agent config; retire
    `--allow-*` / `--database` and migrate the daemon, MCP, client and UI tests.
 2. Client and GUI: bridge methods, drafts, the folder dialog and path mapping,
    Workspace page, Profile "Select at start", dialogs.
@@ -196,6 +209,8 @@ but unlisted project, which is inert and repaired by adding it again.
 - **Startup Profile:** remembered only when the operator explicitly asks; write
   access is never remembered.
 - **Sessions:** fixed conventional paths (`/usr/bin/acp-mcp`,
-  `~/.config/acp/agents.json`); no file means no sessions.
+  `~/.config/acp/agents.toml`); no file means no sessions. TOML for this
+  hand-written file; JSON stays for daemon-written state.
+- **Project bound:** 256, documented as a defensive limit.
 - **Windows-local daemon:** the same rules with `%USERPROFILE%` later; out of scope
   for the WSL dogfooding target.
