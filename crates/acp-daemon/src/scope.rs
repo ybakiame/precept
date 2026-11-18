@@ -17,8 +17,12 @@ pub enum Refusal {
     NoHome,
     OutsideHome,
     IsHome,
+    // Built by the Unix-only checks; the codes stay stable on every platform.
+    #[cfg_attr(not(unix), allow(dead_code))]
     SystemPath,
+    #[cfg_attr(not(unix), allow(dead_code))]
     OtherFilesystem,
+    #[cfg_attr(not(unix), allow(dead_code))]
     NotOwner,
     NotGitRoot,
     OverlapsDaemon,
