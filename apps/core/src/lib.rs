@@ -9,6 +9,7 @@ pub mod connection;
 pub mod i18n;
 pub mod operator;
 pub mod presentation;
+pub mod profile;
 pub mod projects;
 pub mod session;
 
@@ -30,6 +31,9 @@ pub struct Preference {
     pub key: String,
     pub value: String,
     pub scope: String,
+    /// Absent from live effective context: the daemon keeps a preference's
+    /// source private (b9775e9). Present only in local fixtures.
+    #[serde(default)]
     pub source: String,
     pub status: String,
 }
@@ -184,6 +188,7 @@ pub struct Model {
     /// Workspace page: adding a project, and the project armed for removal.
     pub project_add: projects::AddDraft,
     pub project_remove: Option<String>,
+    pub profile_setup: profile::ProfileDraft,
     /// Why the last applied connection could not be saved for the next launch.
     pub save_failure: Option<&'static str>,
     pub theme: appearance::ThemeId,
@@ -236,6 +241,7 @@ impl Model {
             connection_advanced: false,
             project_add: Default::default(),
             project_remove: None,
+            profile_setup: Default::default(),
             save_failure: None,
             theme: Default::default(),
             color_mode: appearance::ColorMode::Dark,
@@ -668,6 +674,19 @@ impl Model {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn live_context_without_a_preference_source_still_reads() {
+        // The daemon's effective context omits the private source and adds an id.
+        let context: Context = serde_json::from_value(serde_json::json!({
+            "project":"alpha",
+            "preferences":[{"id":1,"key":"editor","value":"v","scope":"project","status":"confirmed"}],
+            "repository":{},
+            "documents":[],
+            "warnings":[]
+        }))
+        .unwrap();
+        assert_eq!(context.preferences[0].source, "");
+    }
     #[test]
     fn cancel_invalidates_pending_results_and_detail_follows_visible_scope() {
         let mut m = Model::fixture();
