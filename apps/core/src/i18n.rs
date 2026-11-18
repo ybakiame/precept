@@ -351,6 +351,7 @@ catalog! {
     StateRefused => ("Access refused", "访问被拒绝"),
     StateSelected => ("Selected", "已选择"),
     StateUnselected => ("None selected", "未选择"),
+    StateUnknown => ("Unknown", "未知"),
     StartDaemon => ("Start", "启动"),
     Connect => ("Connect", "连接"),
     Connected => ("Connected", "已连接"),

@@ -438,10 +438,11 @@ fn found(model: Signal<Model>, d: &Discovery) -> AnyElement {
             Some(Msg::HintProfile),
             None,
         ),
+        // Without a daemon answer the Profile is not observed, not "none".
         _ => row(
             model,
             Msg::CheckProfile,
-            Msg::StateUnselected,
+            Msg::StateUnknown,
             Neutral,
             None,
             None,
