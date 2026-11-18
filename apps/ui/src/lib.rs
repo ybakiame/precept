@@ -577,8 +577,16 @@ mod tests {
         app.press("Connection").unwrap();
         // Choosing this computer runs the read-only check; nothing connects yet.
         app.press("This computer").unwrap();
-        app.wait_for("Checks").unwrap();
-        app.wait_for("Daemon service").unwrap();
+        if cfg!(unix) {
+            app.wait_for("Checks").unwrap();
+            app.wait_for("Daemon service").unwrap();
+        } else {
+            // A Windows-local daemon is not discovered: manual coordinates only.
+            app.wait_for(
+                "Enter the private runtime directory and endpoint of a daemon on this computer.",
+            )
+            .unwrap();
+        }
         app.press("Advanced").unwrap();
         // The check may already have filled the fields; replace them by hand.
         app.clear("Private runtime directory").unwrap();
