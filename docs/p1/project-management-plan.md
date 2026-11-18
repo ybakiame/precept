@@ -9,15 +9,17 @@ daemon user's home; every GUI only talks to the trusted daemon; see Decisions.
 1. **The daemon owns its host's directories.** A project root is always a path on
    the daemon's own system. The Windows GUI driving a WSL daemon and the WSLg GUI
    driving the same daemon see and choose the same Linux directories, through the
-   daemon. No GUI opens a file picker, reads the filesystem or sends a path it
-   resolved itself; Windows paths never reach a Linux daemon.
+   daemon. A GUI never reads the filesystem itself: the user picks one folder in
+   the operating system's own folder dialog (or types a path), and the daemon
+   alone decides whether that one path is acceptable. The daemon never lists or
+   walks directories for a client. Windows paths never reach a Linux daemon.
 2. **GUIs are thin clients of a trusted daemon.** HWND (through `acp-wsl-bridge`),
    WSLg/Linux (local IPC) and the TUI call the same daemon methods and get the
    same answers and refusals. The bridge forwards typed requests; it decides
    nothing.
-3. **Authority stays layered.** Browsing directories is an Operator read. Adding or
+3. **Authority stays layered.** Checking one chosen path is an Operator read. Adding or
    removing a project is an operator write: the current Profile's explicit write
-   grant plus an exact confirmation. Agents and MCP never browse, add or remove;
+   grant plus an exact confirmation. Agents and MCP never check, add or remove;
    an agent credential is only ever minted for a project after it exists.
 
 ## Today
@@ -46,7 +48,7 @@ daemon user's home; every GUI only talks to the trusted daemon; see Decisions.
 - The set moves behind one lock shared by the five consumers above, so an add or
   remove applies to all of them at once, without a restart.
 
-### Scope rules (one validator, daemon-side, used by browse and add)
+### Scope rules (one validator, daemon-side, used by check and add)
 
 A root is accepted only if, after canonicalizing:
 
@@ -63,7 +65,7 @@ A root is accepted only if, after canonicalizing:
 
 | Method | Access | Purpose |
 | --- | --- | --- |
-| `project.browse {path?}` | Operator read | Lists subdirectories of one directory inside `$HOME` (default `$HOME`): name, `git_root`, `registered`; at most 256 entries, hidden directories excluded, no file names or contents. The path is daemon-resolved and re-validated on every call. |
+| `project.check {root}` | Operator read | Validates one user-chosen path with the scope rules and answers `ok` plus a suggested name (the folder name), or one fixed refusal reason. It reads only that path and its ancestors (stat, `.git`, owner, mount); it never lists a directory. |
 | `RegisterProject` (existing mutation) | OperatorWrite + grant | If the name is not yet in the set and `--projects-file` is configured: validate the root, register it in the Profile, persist the set, mint the project's agent credential, extend session/bridge roots. Same receipts, CAS and replay rules as today. |
 | `project.remove {name}` (new mutation) | OperatorWrite + grant | Removes the name from the set: stops its sessions, revokes its agent credential and context leases, persists. Profile records stay; re-adding the same root restores access. The seed (`daemon.env`) cannot be removed from the GUI. |
 
@@ -73,14 +75,26 @@ unallowed project, which is inert and repaired by adding it again.
 
 ### Clients and GUI
 
-- `client`: `project.browse` joins the bridge's `CONTROL_METHODS`; `project.remove`
+- `client`: `project.check` joins the bridge's `CONTROL_METHODS`; `project.remove`
   joins the mutation path. Error strings stay in the fixed bridge vocabulary.
-- `core`: a browser model (current directory, entries, selection, epoch-guarded
-  replies like the connection probe) and the add/remove drafts.
+- `core`: the add draft (path, name, check state with epoch-guarded replies like
+  the connection probe) and the remove draft.
+- **Choosing the folder.** "Choose folder…" opens the system folder dialog
+  (`nsh_core::pick_paths(OpenDialog::folders())`), starting in the daemon user's
+  home:
+  - Windows HWND with a WSL daemon: `IFileOpenDialog` starts at
+    `\\wsl.localhost\<distribution>\home\<user>`; the GUI maps a returned
+    `\\wsl.localhost\<distribution>\…` or `\\wsl$\<distribution>\…` path to
+    `/…` and refuses, before sending anything, any path outside the connected
+    distribution (a `C:\` folder, another distribution).
+  - WSLg / Linux: the GTK or portal folder chooser returns the Linux path.
+  - TUI, or a Linux without a file-chooser portal: no dialog; the path field.
+  The path field is always present (the dialog fills it; pasting works). The
+  mapping is a convenience only: the daemon validates whatever arrives.
 - `ui`, Workspace page: the project list (name, root, state) and **Add project…**,
-  a dialog with a daemon-backed folder browser (breadcrumb from home, subfolders,
-  Git badge, registered badge), the name prefilled from the folder and validated
-  like `valid_project`, and a confirmation naming both. Without a write grant the
+  a dialog with the folder field and "Choose folder…", the daemon's check result
+  beside it, the name prefilled from the folder and validated like
+  `valid_project`, and a confirmation naming both. Without a write grant the
   button explains why and links to Profile & review. Remove is a destructive
   `AlertDialog` naming the project and stating that Profile records are kept.
 - The same flow on Windows HWND, WSLg/Linux and the TUI (a keyboard list there).
@@ -93,7 +107,9 @@ unallowed project, which is inert and repaired by adding it again.
   foreign owner); no write grant; agent and MCP credentials refused; add applies
   to credentials, sessions and the context bridge without restart; persistence
   and seed conflicts across restart; crash between steps; remove revokes.
-- Bridge integration test for browse/add/remove parity with local IPC.
+- Bridge integration test for check/add/remove parity with local IPC.
+- UNC-to-Linux mapping unit tests: both prefixes, case, other distribution, drive
+  paths, `..`, trailing separators; the daemon refusal still applies after it.
 - Headless UI tests for the dialog states; Windows HWND and WSLg captures.
 - Docs: architecture and security (the allowlist is daemon-owned state with a
   seed), D8 superseded for registration only (Handoff put stays CLI-only), the
@@ -102,8 +118,9 @@ unallowed project, which is inert and repaired by adding it again.
 ## Order of work
 
 1. Daemon: project set behind one lock, `--projects-file`, the validator,
-   `project.browse`, add through `RegisterProject`, `project.remove`, tests.
-2. Client and GUI: bridge methods, browser model, Workspace page and dialogs.
+   `project.check`, add through `RegisterProject`, `project.remove`, tests.
+2. Client and GUI: bridge methods, the add draft, the folder dialog and path
+   mapping, Workspace page and dialogs.
 3. Packaging and docs: the unit argument, `daemon.env` as seed, README, acceptance.
 
 ## Decisions (owner, 2026-11-18)
@@ -112,6 +129,8 @@ unallowed project, which is inert and repaired by adding it again.
   destructive confirmation.
 - **Seed:** `--allow-*` in `daemon.env` stays a read-only seed merged at start;
   seeded projects show in the GUI but cannot be removed there.
-- **Discovery:** browse only; no scan of the home directory.
+- **Choosing a folder:** the system folder dialog (or a typed path), then one
+  daemon check; the daemon never browses or scans the home directory
+  (owner, 2026-11-18, replacing the earlier browse design).
 - **Windows-local daemon:** the same rules with `%USERPROFILE%` later; out of scope
   for the WSL dogfooding target.
