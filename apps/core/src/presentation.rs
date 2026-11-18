@@ -85,9 +85,7 @@ impl Model {
                 lines.extend(p.context.warnings.iter().take(8).cloned());
             }
             Section::Projects => {
-                lines.push(
-                    "Only daemon-allowlisted projects; switching clears the task lookup.".into(),
-                );
+                lines.push("Only the daemon's projects; switching clears the task lookup.".into());
                 lines.push(
                     "Repository facts are observed at read time; Unknown is not a clean checkout."
                         .into(),

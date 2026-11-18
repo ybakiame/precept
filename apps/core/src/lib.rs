@@ -558,7 +558,7 @@ impl Model {
     fn connection_status(&self) -> String {
         match self.phase {
             Phase::Loading => "Loading — read-only query in progress".into(),
-            Phase::Empty => "Empty — no allowlisted projects".into(),
+            Phase::Empty => "Empty — no projects yet".into(),
             Phase::Error => {
                 "Error — invalid task ID; use 1–120 characters without control characters".into()
             }

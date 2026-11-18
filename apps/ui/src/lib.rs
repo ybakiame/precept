@@ -538,7 +538,7 @@ mod tests {
         app.wait_for("Empty — no confirmed preferences match")
             .unwrap();
         app.press_key("alt+2").unwrap();
-        app.wait_for("Only daemon-allowlisted projects; switching clears the task lookup.")
+        app.wait_for("Only the daemon's projects; switching clears the task lookup.")
             .unwrap();
         app.press_key("mod+f").unwrap();
         app.press_key("mod+d").unwrap();
@@ -547,7 +547,7 @@ mod tests {
         for (key, label) in [
             (
                 "alt+2",
-                "Only daemon-allowlisted projects; switching clears the task lookup.",
+                "Only the daemon's projects; switching clears the task lookup.",
             ),
             (
                 "alt+3",

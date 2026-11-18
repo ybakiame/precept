@@ -146,7 +146,7 @@ fn destination(model: Signal<Model>, item: Destination, path: &'static str) -> i
         move || go(model, item),
     )
 }
-/// The project menu: the daemon's allowlisted projects, the current one checked.
+/// The project menu: the daemon's ready projects, the current one checked.
 fn projects(model: Signal<Model>) -> impl IntoElement {
     let names = computed(move || model.get().project_names.clone());
     dynamic(move || {
