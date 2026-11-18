@@ -273,7 +273,7 @@ per concrete gap where possible.
 | --- | --- | --- |
 | S1 package inventory and assembly | Revised S0 accepted and a separately scoped S1 task; confirmed platform/Windows ZIP direction | Expose and finalize relevant D1–D4/D6 choices from import/dependency/clean-target evidence; portable Windows ZIP, local-only Linux `.tar.gz` recipe/validation, both surfaces; no generated Linux archive upload. Select applicable G01–G03/G07–G11; no installer/service/auto-update |
 | S2 native human-use gaps | Approved D1/D2/D4/D5; runnable S1 package for packaged acceptance | Timebox baseline human tasks, fix only observed keyboard/paste/IME/AT/scaling issues, affected-surface smoke (G12–G17). No redesign or toolkit upgrade by default |
-| S3 release process/security/performance | Approved budgets/claims; S1 release-profile binaries | G03–G08/G10/G18/G19 real process/adversarial/measurement work; do not repeat unrelated UI cases or speculate M3 recovery |
+| S3 release process/security/performance | S1 release-profile binaries and approved claims; for G18 only, owner-approved budgets | G03–G08/G10/G19 real process/offline/adversarial work. G18 follows as a separate step: measured release-build baseline, E-proposed budgets, owner approval, then the gated run. Do not repeat unrelated UI cases or speculate M3 recovery |
 | S4 clean candidate and owner review | S1 and required S2/S3 gates; one clean RC SHA | G20 and approved clean-target checks; reference earlier scoped evidence accurately. A materially changed shared UI or explicitly accepted RC UI gate triggers one complete native matrix |
 
 Routine documents use source/link/diff checks only. Backend changes use focused

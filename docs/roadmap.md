@@ -254,7 +254,9 @@ reviews the third-party notice ledger for both recipes
 ([evidence](evaluation/p1-m5-s1d-notice-review.md)).
 
 **Next, in order (each as a narrow Issue/branch; owner merges):**
-1. S3 release-build process and security gates (G03–G07, G10, G19).
+1. S3 release-build process and security gates (G03–G08, G10, G19). G08 (offline
+   runtime closure, no silent network) covers the selected Windows → WSL2 and WSLg
+   targets.
 2. G18: measure a release-build baseline, propose budgets for owner approval, and
    only then run the gated measurement.
 3. S4 release-candidate evidence ledger (G20) on one clean candidate SHA.
