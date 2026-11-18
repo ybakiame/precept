@@ -32,10 +32,14 @@ replaces the duplicated Windows/Linux loops.
    - Unknown, unparsable or non-permissive expressions refuse.
 2. **Notice source, in order:**
    1. Crate-local license texts (`LICENSE*`, `COPYING*`, `UNLICENSE*`). Attribution
-      `NOTICE*` files ship alongside them but never resolve a package on their own.
-      An empty or whitespace-only candidate refuses packaging.
+      `NOTICE*` files never resolve a package on their own. An empty or
+      whitespace-only candidate refuses packaging.
    2. For Cargo git dependencies, the nearest license texts up to the pinned
       checkout root, under the same rules.
+
+   Every `NOTICE` seen on the way to the license ships with it: crate-local, from
+   intermediate checkout directories, and also when a supplement or no-text record
+   resolves the package.
    3. A reviewed supplement for that exact package and version
       ([`notice-supplements/supplements.json`](../../tools/portable/notice-supplements/supplements.json)).
       Each text in it is:
@@ -70,16 +74,17 @@ All other third-party entries ship crate-local texts. Every declared expression 
 both closures satisfies the policy. No copyleft license (GPL/LGPL/MPL) appears, and
 `CDLA-Permissive-2.0` and `BSL-1.0` texts ship crate-locally.
 
-## Results (clean source `c44f2f6`, after review fixes)
+## Results (clean source `efadcb2`, after review fixes)
 
 | Recipe | Third-party | Reviewed | Pending | By notice source | Archive |
 | --- | ---: | ---: | ---: | --- | --- |
-| Windows ZIP (`s1d-windows-02`, native Windows host) | 419 | 419 | 0 | crate-local 398; checkout root 7; pinned upstream 12; election 1; no-notice 1 | 264 entries, `e53ae598…0a09`, extracted inventory PASS |
-| Linux `.tar.gz` (`s1d-linux-02`, builder `acp-s1b-ubuntu`) | 448 | 448 | 0 | crate-local 430; checkout root 7; pinned upstream 9; election 1; no-notice 1 | 276 entries, `7dbec3f1…8cfd`, extracted inventory and listing policy PASS |
+| Windows ZIP (`s1d-windows-03`, native Windows host) | 419 | 419 | 0 | crate-local 398; checkout root 7; pinned upstream 12; election 1; no-notice 1 | 264 entries, `7669f0a8…7fb0`, extracted inventory PASS |
+| Linux `.tar.gz` (`s1d-linux-04`, builder `acp-s1b-ubuntu`) | 448 | 448 | 0 | crate-local 430; checkout root 7; pinned upstream 9; election 1; no-notice 1 | 276 entries, `8bd47088…6df2`, extracted inventory and listing policy PASS |
 
 Texts by kind: Windows 745 license / 1 notice, Linux 782 license / 1 notice (the
 KaTeX font notice). No real crate in either closure ships a NOTICE-only or empty
-license file. Each archive gained one entry over the first S1-D run (`18c8e87`:
+license file, and none has a NOTICE beside an inherited license, so the NOTICE
+retention fix changes no shipped text today. Each archive gained one entry over the first S1-D run (`18c8e87`:
 263 / 275 entries): the shared `UNLICENSE` text of 7 crates (`aho-corasick`,
 `byteorder-lite`, `globset`, `ignore`, `memchr`, `same-file`, `walkdir`). The old
 filename pattern missed it, though their `LICENSE-MIT` text already shipped.
@@ -94,10 +99,10 @@ these archives.
 
 | Check | Platform | Result |
 | --- | --- | --- |
-| `node --test tools/portable/*.test.mjs` | Linux/WSL | **25 PASS** |
+| `node --test tools/portable/*.test.mjs` | Linux/WSL dev host (Node 26) and builder `acp-s1b-ubuntu` (Node 18) | **25 PASS** each. The builder run exposed a Node 18 incompatibility (`import.meta.dirname`) in a test; fixed |
 | Same | Windows | **24 PASS, 1 skipped** (the `readelf` comparison is Linux-only) |
 | New tests | both | license policy (slash, nesting, `WITH`, refusals); checkout-root detection (POSIX and Windows paths); committed supplements hash-exact and commit-pinned; every notice source; refusal of unresolved texts, another version, non-permissive licenses, and an undeclared no-text license |
-| Review regressions | both | unknown/mispaired exception behind a permissive `OR`; NOTICE-only crate and checkout; empty and whitespace-only license or notice; empty, ambiguous and notice-only supplements; non-pinned supplement URL; serialized kinds, upstream paths, git commit and supplement provenance |
+| Review regressions | both | unknown/mispaired exception behind a permissive `OR`; NOTICE-only crate and checkout; crate-local and intermediate NOTICE retained with a checkout-root or supplement license; empty and whitespace-only license or notice; empty, ambiguous and notice-only supplements; non-pinned supplement URL; serialized kinds, upstream paths, git commit and supplement provenance |
 | Both recipes end to end | Windows; builder | PASS, 0 pending (above) |
 
 Not run: clean-target re-acceptance of these archives, legal review, signing,
