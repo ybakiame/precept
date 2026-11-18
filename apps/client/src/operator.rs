@@ -39,7 +39,74 @@ pub async fn operator_at(
     .map_err(operator_error)
 }
 
+/// `project.add` / `project.remove` against the daemon at `location`, with the
+/// write credential. Authorization stays entirely daemon-side.
+pub async fn project_write_at(
+    location: &acp_ipc::Location,
+    method: &str,
+    params: Value,
+) -> Result<Value, &'static str> {
+    acp_ipc::operator::project_write(location, method, params)
+        .await
+        .map_err(operator_error)
+}
+
 impl crate::native::Inputs {
+    /// A project-set request: `project.check` / `profile.startup.forget`
+    /// (Operator) or `project.add` / `project.remove` (OperatorWrite), locally
+    /// or through the WSL bridge. Explicit user actions, so a lost bridge may be
+    /// restarted; a write whose reply is lost is `OutcomeUnknown`.
+    pub fn project_call(&self, method: &str, params: Value) -> Result<Value, &'static str> {
+        use crate::bridge::{CallError, Op, PROJECT_WRITES};
+        let write = PROJECT_WRITES.contains(&method);
+        if !write
+            && !matches!(
+                method,
+                "project.check" | "profile.startup.forget" | "profile.info"
+            )
+        {
+            return Err("Unsupported");
+        }
+        if self.wsl_distribution.is_some() {
+            let Ok(bridge) = self.wsl_bridge(true) else {
+                return Err("Unavailable");
+            };
+            let op = if write {
+                Op::ProjectWrite {
+                    method: method.into(),
+                    params,
+                }
+            } else {
+                Op::Control {
+                    method: method.into(),
+                    params,
+                }
+            };
+            return bridge
+                .call(op, std::time::Duration::from_secs(30))
+                .map_err(|e| match e {
+                    CallError::Remote(code) => code,
+                    CallError::Lost | CallError::Timeout if write => "OutcomeUnknown",
+                    _ => "Unavailable",
+                });
+        }
+        let Some(runtime_dir) = self.runtime_dir.clone() else {
+            return Err("Unauthorized");
+        };
+        let location = acp_ipc::Location {
+            runtime_dir,
+            endpoint: self.endpoint.clone().ok_or("Unauthorized")?,
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|_| "Unavailable")?;
+        if write {
+            runtime.block_on(project_write_at(&location, method, params))
+        } else {
+            runtime.block_on(operator_at(&location, method, params, None))
+        }
+    }
     pub fn operator_call(&self, request: &Review) -> Result<Value, &'static str> {
         use crate::bridge::{CallError, Op};
         if self.wsl_distribution.is_some() {

@@ -2,7 +2,6 @@
 use acp_ipc::{Access, Client, Location, load_credential};
 use acp_operator_core::*;
 use clap::Parser;
-use serde::Deserialize;
 use std::path::PathBuf;
 
 #[derive(Clone, Parser, Default)]
@@ -434,13 +433,25 @@ async fn fetch(
     let mut client = connected?;
     let health = serde_json::from_value(client.request("daemon.health", json!({})).await?)
         .map_err(|_| Error::Unavailable)?;
-    #[derive(Deserialize)]
+    let directory: Vec<ProjectEntry> =
+        serde_json::from_value(client.request("project.list", json!({})).await?)
+            .map_err(|_| Error::Unavailable)?;
+    if directory.len() > 256 {
+        return Err(Error::Unavailable);
+    }
     struct Name {
         name: String,
     }
-    let names: Vec<Name> = serde_json::from_value(client.request("project.list", json!({})).await?)
-        .map_err(|_| Error::Unavailable)?;
-    if names.len() > 64 || selected.is_some_and(|p| !names.iter().any(|n| n.name == p)) {
+    // Only served projects are navigation entries; the rest stay in the
+    // directory for the Workspace page.
+    let names: Vec<Name> = directory
+        .iter()
+        .filter(|p| p.state == "ready")
+        .map(|p| Name {
+            name: p.name.clone(),
+        })
+        .collect();
+    if selected.is_some_and(|p| !names.iter().any(|n| n.name == p)) {
         return Err(Error::Unauthorized);
     }
     let selected = selected
@@ -502,7 +513,11 @@ async fn fetch(
             handoff,
         });
     }
-    let data = Snapshot { health, projects };
+    let data = Snapshot {
+        health,
+        projects,
+        directory,
+    };
     data.validate().map_err(|_| Error::Unavailable)?;
     Ok(data)
 }

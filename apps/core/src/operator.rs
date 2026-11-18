@@ -49,6 +49,8 @@ pub struct Operator {
     pub global: bool,
     pub after_id: i64,
     pub path: String,
+    /// Create/select also remembers the Profile for every daemon start.
+    pub remember: bool,
     pub key: String,
     pub value: String,
     pub source: String,
@@ -292,7 +294,7 @@ impl Model {
                 } else {
                     "profile.select"
                 },
-                json!({"path":self.operator.path}),
+                json!({"path":self.operator.path,"remember":self.operator.remember}),
                 None,
             ),
             "enable" if info.selected && !info.write_enabled => {

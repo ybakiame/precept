@@ -9,6 +9,7 @@ pub mod connection;
 pub mod i18n;
 pub mod operator;
 pub mod presentation;
+pub mod projects;
 pub mod session;
 
 pub const PAGE_SIZE: usize = 12;
@@ -67,13 +68,24 @@ pub struct Project {
 pub struct Snapshot {
     pub health: Health,
     pub projects: Vec<Project>,
+    /// The daemon's whole project set (`project.list`), including projects
+    /// not served yet (`unregistered`) or any more (`unavailable`).
+    #[serde(default)]
+    pub directory: Vec<ProjectEntry>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ProjectEntry {
+    pub name: String,
+    pub root: String,
+    pub state: String,
 }
 impl Snapshot {
     pub fn validate(&self) -> Result<(), &'static str> {
         let mut seen = std::collections::HashSet::new();
         if self.health.api_version != 2
             || !self.health.ready
-            || self.projects.len() > 64
+            || self.projects.len() > 256
+            || self.directory.len() > 256
             || serde_json::to_vec(self).map_or(true, |v| v.len() > 4 * 1024 * 1024)
         {
             return Err("Unsupported snapshot");
@@ -169,6 +181,9 @@ pub struct Model {
     pub probe_epoch: u64,
     /// The manual fields of the connection page are shown.
     pub connection_advanced: bool,
+    /// Workspace page: adding a project, and the project armed for removal.
+    pub project_add: projects::AddDraft,
+    pub project_remove: Option<String>,
     /// Why the last applied connection could not be saved for the next launch.
     pub save_failure: Option<&'static str>,
     pub theme: appearance::ThemeId,
@@ -219,6 +234,8 @@ impl Model {
             probe: Probe::Idle,
             probe_epoch: 0,
             connection_advanced: false,
+            project_add: Default::default(),
+            project_remove: None,
             save_failure: None,
             theme: Default::default(),
             color_mode: appearance::ColorMode::Dark,

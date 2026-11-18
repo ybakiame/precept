@@ -5,7 +5,7 @@ use crate::*;
 pub(crate) mod chrome;
 use acp_operator_core::i18n::Msg;
 use acp_operator_core::{PAGE_SIZE, Section};
-use features::{connection, page, review, sessions, settings};
+use features::{connection, page, projects, review, sessions, settings};
 use tokens::{compact, palette};
 
 pub(crate) fn action(
@@ -120,10 +120,12 @@ pub(crate) fn go(model: Signal<Model>, destination: Destination) {
             leave_workspaces(m);
             m.settings = true;
         }),
-        Destination::Section(section) => model.update(|m| {
-            leave_workspaces(m);
-            m.set_section(section)
-        }),
+        Destination::Section(section) => {
+            model.update(|m| {
+                leave_workspaces(m);
+                m.set_section(section)
+            });
+        }
     }
 }
 fn title_key(destination: Destination) -> Msg {
@@ -481,6 +483,7 @@ pub(crate) fn shell(
                         .child(task_input(model, task_ref))
                         .child(preference_input(model, filter_ref))
                         .child(review::panel(model))
+                        .child(projects::remove_dialog(model))
                         .child(
                             scroll()
                                 .flex_1()
@@ -506,6 +509,19 @@ pub(crate) fn shell(
                                             view()
                                                 .style_when(on(|m| m.sessions), |s| s.hidden())
                                                 .child(sessions::panel(model)),
+                                        )
+                                        .child(
+                                            view()
+                                                .style_when(
+                                                    move || {
+                                                        current(&model.get())
+                                                            != Destination::Section(
+                                                                Section::Projects,
+                                                            )
+                                                    },
+                                                    |s| s.hidden(),
+                                                )
+                                                .child(projects::page(model)),
                                         )
                                         .child(
                                             view()

@@ -137,6 +137,8 @@ impl Daemon {
         let child = command
             .arg("--runtime-dir")
             .arg(&runtime)
+            // The test's private root is the daemon user's home for scope checks.
+            .env("HOME", &root.0)
             .args(["--endpoint", &endpoint, "--state-dir"])
             .arg(daemon_state(
                 &root.0.join("daemon-state"),
@@ -1108,4 +1110,58 @@ fn context_lease_expires_while_the_session_runs() {
     );
     s.stop(&id);
     c.close(Duration::from_secs(5));
+}
+
+#[test]
+fn project_check_add_and_remove_through_the_bridge() {
+    let d = Daemon::start();
+    let c = d.client();
+    let gamma = d.root.0.join("gamma");
+    std::fs::create_dir_all(gamma.join(".git")).unwrap();
+    let gamma = gamma.canonicalize().unwrap();
+    let write = |method: &str, params: Value| {
+        c.call(
+            Op::ProjectWrite {
+                method: method.into(),
+                params,
+            },
+            Duration::from_secs(15),
+        )
+    };
+    // The same check answers as over local IPC; agents' methods are refused.
+    let check = control(&c, "project.check", json!({"root":gamma})).unwrap();
+    assert_eq!(check["ok"], true);
+    assert_eq!(check["name"], "gamma");
+    assert_eq!(
+        control(&c, "project.check", json!({"root":d.root.0.join("state")})).unwrap()["reason"],
+        "not_git_root"
+    );
+    // No write grant yet: the helper finds no write credential.
+    assert_eq!(
+        write("project.add", json!({"name":"gamma","root":gamma})),
+        Err(CallError::Remote("Unauthorized"))
+    );
+    writable(&d, &c);
+    let added = write("project.add", json!({"name":"gamma","root":gamma})).unwrap();
+    assert_eq!(added["added"], "gamma");
+    assert!(d.runtime.join("agent-gamma.cap").exists());
+    assert_eq!(
+        write("project.add", json!({"name":"gamma","root":gamma})),
+        Err(CallError::Remote("Conflict"))
+    );
+    assert_eq!(
+        write("project.remove", json!({"name":"gamma"})).unwrap()["removed"],
+        "gamma"
+    );
+    assert!(!d.runtime.join("agent-gamma.cap").exists());
+    // Only the two project writes travel as ProjectWrite.
+    assert_eq!(
+        write("profile.write.disable", json!({})),
+        Err(CallError::Remote("Unsupported"))
+    );
+    // Forgetting a startup Profile that was never remembered is harmless.
+    assert_eq!(
+        control(&c, "profile.startup.forget", json!({})).unwrap()["startup_profile"],
+        false
+    );
 }

@@ -4,13 +4,14 @@ pub(crate) mod connection;
 pub(crate) mod handoff;
 pub(crate) mod overview;
 pub(crate) mod preferences;
+pub(crate) mod projects;
 pub(crate) mod review;
 pub(crate) mod sessions;
 pub(crate) mod settings;
 
 use crate::*;
+use acp_operator_core::Section;
 use acp_operator_core::i18n::Msg;
-use acp_operator_core::{Section, presentation::sanitize};
 use handoff::handoff;
 use overview::{daemon, dashboard};
 use preferences::preferences;
@@ -42,25 +43,6 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
     }
     if current.section == Section::Preferences {
         return body.child(preferences(model));
-    }
-    if current.section == Section::Projects {
-        body = body.child(
-            view().flex_row().flex_wrap().gap_2().children(
-                current
-                    .project_names
-                    .iter()
-                    .cloned()
-                    .enumerate()
-                    .map(move |(index, name)| {
-                        action(
-                            model,
-                            sanitize(&name, 120),
-                            || true,
-                            move || switch_project(model, index),
-                        )
-                    }),
-            ),
-        );
     }
     if matches!(current.section, Section::Handoff | Section::Diagnostics) {
         body = body.child(

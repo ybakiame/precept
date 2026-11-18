@@ -31,7 +31,7 @@ pub const SESSION_METHODS: [&str; 6] = [
     "session.stop",
 ];
 /// The exact Operator control/read methods (the daemon client re-checks this list).
-pub const CONTROL_METHODS: [&str; 10] = [
+pub const CONTROL_METHODS: [&str; 12] = [
     "profile.info",
     "profile.create",
     "profile.select",
@@ -42,7 +42,11 @@ pub const CONTROL_METHODS: [&str; 10] = [
     "profile.review.queue",
     "profile.review.inspect",
     "profile.handoff.get",
+    "profile.startup.forget",
+    "project.check",
 ];
+/// The project-set writes, sent with the write credential inside WSL.
+pub const PROJECT_WRITES: [&str; 2] = ["project.add", "project.remove"];
 /// Every error string a helper may return. Anything else is replaced by
 /// `Unavailable` on the Windows side: helper text is never displayed verbatim.
 pub const KNOWN_ERRORS: [&str; 28] = [
@@ -110,6 +114,11 @@ pub enum Op {
     Mutate {
         mutation: Box<Mutation>,
     },
+    /// `project.add` / `project.remove` (OperatorWrite; the daemon checks the grant).
+    ProjectWrite {
+        method: String,
+        params: Value,
+    },
     Session {
         project: String,
         method: String,
@@ -169,6 +178,14 @@ pub fn admit(op: &Op) -> Result<(), &'static str> {
         }
         Op::Control { method, params } => {
             if !CONTROL_METHODS.contains(&method.as_str()) {
+                return Err("Unsupported");
+            }
+            if !params.is_object() {
+                return Err("InvalidRequest");
+            }
+        }
+        Op::ProjectWrite { method, params } => {
+            if !PROJECT_WRITES.contains(&method.as_str()) {
                 return Err("Unsupported");
             }
             if !params.is_object() {
@@ -398,6 +415,9 @@ mod native_bridge {
                     Some(&mutation),
                 )
                 .await
+            }
+            Op::ProjectWrite { method, params } => {
+                crate::operator::project_write_at(location, &method, params).await
             }
             Op::Session {
                 project,

@@ -44,6 +44,7 @@ pub struct Button {
     icon: Option<&'static str>,
     selected: StateFn,
     full_width: bool,
+    spoken: Option<LabelFn>,
     // Explicit native-acceptance observer only; never a control or authority.
     #[cfg(not(target_arch = "wasm32"))]
     probe: Option<(std::path::PathBuf, String)>,
@@ -63,6 +64,7 @@ pub fn button(model: Signal<Model>, label: impl Into<SharedString>) -> Button {
         icon: None,
         selected: Rc::new(|| false),
         full_width: false,
+        spoken: None,
         #[cfg(not(target_arch = "wasm32"))]
         probe: None,
     }
@@ -104,6 +106,12 @@ impl Button {
     /// trigger): a fill distinct from hover, announced to screen readers.
     pub fn selected(mut self, selected: impl Fn() -> bool + 'static) -> Self {
         self.selected = Rc::new(selected);
+        self
+    }
+    /// What screen readers say when the visible label alone is ambiguous,
+    /// e.g. "Remove alpha" for one of several "Remove…" rows.
+    pub fn spoken(mut self, spoken: impl Fn() -> SharedString + 'static) -> Self {
+        self.spoken = Some(Rc::new(spoken));
         self
     }
     /// Fill the caller's width with the content at the leading edge (rows of
@@ -229,8 +237,8 @@ impl IntoElement for Button {
         let model = self.model;
         let variant = self.variant;
         let size = self.size;
-        let label = self.label.clone();
-        let label_child = label.clone();
+        let label = self.spoken.clone().unwrap_or_else(|| self.label.clone());
+        let label_child = self.label.clone();
         let disabled = self.disabled.clone();
         let loading = self.loading.clone();
         let loading_disabled = loading.clone();

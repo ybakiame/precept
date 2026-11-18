@@ -310,6 +310,33 @@ reader, larger text sizes.
 | Connection: check running / done | Button loading spinner; rows replace the "Checking…" line | continuous / none | Spinner rests |
 | Connection: Start pressed | Button press, then "Starting…" until the report | `FAST` | Instant |
 
+## Workspace: projects (2026-11)
+
+**Task.** Make a repository available to agents, or stop it. Object: the daemon's
+project set, on the daemon's own system. The folder comes from the operating
+system's dialog or the path field; the daemon checks it (`project.check`) and
+answers with a fixed reason; Add and Remove need the Profile's write grant.
+
+- One list: name (opens the project when it is ready), root, state badge
+  (Ready / Not in this Profile / Folder missing), Remove…. Rows keep fixed lanes;
+  each Remove is spoken with its project ("Remove alpha").
+- "Add project…" reveals one form: Folder (field + Choose folder… + Check), the
+  check result as a badge, Name (prefilled; a Profile record's name wins), Add
+  (primary, disabled until the check passed and writes are enabled) with the
+  reason and "Open Profile & review" beside it, Cancel.
+- Remove is a destructive `AlertDialog` beside the scroll region, naming the
+  project and that its Profile records stay.
+
+Motion inventory (written with the code in this pass, not before it):
+
+| Change | Motion tool | Tokens | Reduced motion |
+| --- | --- | --- | --- |
+| Buttons hover / press / focus | Transition (`motion::feedback`) | `FAST`, `SETTLE`, `PRESS` | Instant |
+| Add form reveals / hides | None (an instant swap; candidate for a LayoutAnimation later) | — | — |
+| Check running / result | Button loading spinner; result badge replaces the idle state | continuous / none | Spinner rests |
+| Remove confirmation | `AlertDialog` grow + scrim (existing) | `SLOW` in, `ENTER`, `RISE`; scrim `FAST` | At rest |
+| List after add / remove | Rows replace after the re-read; no wave (a data change, not an entrance) | — | — |
+
 ## Motion inventory — review panel (Queue / Detail / History)
 
 Written before the screen code (Commit A). Each state change names its tool and
