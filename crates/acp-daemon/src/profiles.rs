@@ -238,8 +238,16 @@ impl Profiles {
             .projects
             .iter()
             .map(|(name, root)| {
-                let registered = s.roots.contains_key(name);
-                json!({"name":name,"root":root,"state":if registered {"ready"} else {"unregistered"}})
+                // Without a selected Profile nothing is registered; a missing
+                // root still reads as unavailable.
+                let state = if s.roots.contains_key(name) {
+                    "ready"
+                } else if root.is_dir() {
+                    "unregistered"
+                } else {
+                    "unavailable"
+                };
+                json!({"name":name,"root":root,"state":state})
             })
             .collect();
         out.extend(

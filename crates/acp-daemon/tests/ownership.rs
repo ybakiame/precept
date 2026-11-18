@@ -60,9 +60,15 @@ fn unselected_bootstrap_strict_selection_and_no_implicit_grant() {
         f.daemon.control("profile.info", json!({})).unwrap()["selected"],
         false
     );
-    assert_eq!(
-        f.daemon.control("project.list", json!({})),
-        Err(Error::Unavailable)
+    // The daemon's own project set is listed without a Profile (nothing is
+    // registered yet); every Profile-backed read stays unavailable.
+    let listed = f.daemon.control("project.list", json!({})).unwrap();
+    assert!(
+        listed
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|p| p["state"] == "unregistered")
     );
     let agent = f.daemon.credential("agent-alpha.cap");
     assert_eq!(

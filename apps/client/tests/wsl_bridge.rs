@@ -327,22 +327,25 @@ fn operator_profile_review_and_session_parity_through_the_bridge() {
             Duration::from_secs(20),
         )
     };
-    // Before a Profile exists the daemon lists no projects: the bridge reports the
-    // same explicit unavailable state as the local client (no fixture fallback).
+    // Before a Profile exists the read still succeeds (a connected daemon is
+    // not "unreachable"): no navigable project, the daemon's set unregistered,
+    // and the bridge answers exactly as the local client (no fixture fallback).
     let local = acp_operator_client::native::Inputs {
         runtime_dir: Some(d.runtime.clone()),
         endpoint: Some(d.endpoint.clone()),
         ..Default::default()
     };
-    assert_eq!(
-        local.fetch().err(),
-        Some("Local daemon unavailable or access refused")
+    let before = local.fetch().unwrap();
+    assert!(before.projects.is_empty());
+    assert!(
+        !before.directory.is_empty() && before.directory.iter().all(|p| p.state == "unregistered")
     );
+    let bridged: acp_operator_core::Snapshot =
+        serde_json::from_value(snapshot(&c).unwrap()).unwrap();
+    assert!(bridged.projects.is_empty());
     assert_eq!(
-        snapshot(&c),
-        Err(CallError::Remote(
-            "Local daemon unavailable or access refused"
-        ))
+        serde_json::to_value(&bridged.directory).unwrap(),
+        serde_json::to_value(&before.directory).unwrap()
     );
     // No implicit Profile, selection or write grant.
     let info = control(&c, "profile.info", json!({})).unwrap();

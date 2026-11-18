@@ -229,6 +229,15 @@ impl Service {
                 json!({"api_version":acp_ipc::API_VERSION,"service":"acp-daemon","version":env!("CARGO_PKG_VERSION"),"schema":schema,"ready":true,"profile_selected":selected,"worktree_fingerprint":"on-demand-acp-worktree-v1"}),
             );
         }
+        // The daemon's own project set needs no Profile: an operator connecting
+        // before creating or selecting one must still get a successful read.
+        if request.method == "project.list" {
+            let _: Empty = decode(params)?;
+            if access != Access::Operator {
+                return Err(Error::Unauthorized);
+            }
+            return Ok(self.profiles.list());
+        }
         let (store, roots) = self.profiles.read().inspect_err(|_| {
             // Full Profile validation can refuse an unavailable registered root
             // before the per-project check below. Established session authority
@@ -237,13 +246,6 @@ impl Service {
                 self.sessions.invalidate_context(project);
             }
         })?;
-        if request.method == "project.list" {
-            let _: Empty = decode(params)?;
-            if access != Access::Operator {
-                return Err(Error::Unauthorized);
-            }
-            return Ok(self.profiles.list());
-        }
         let (project, include, task, selector) = match (request.method.as_str(), access) {
             ("context.get", Access::Operator) => {
                 let p: OperatorContext = decode(params)?;

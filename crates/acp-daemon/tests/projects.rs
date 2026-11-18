@@ -335,3 +335,13 @@ fn a_vanished_root_is_listed_unavailable_never_served_and_removable() {
     let saved = fs::read_to_string(base.join("daemon-state/projects.json")).unwrap();
     assert!(!saved.contains("gamma"));
 }
+
+#[test]
+fn the_project_set_is_listed_before_any_profile_is_selected() {
+    let f = Fixture::unselected(false);
+    // An operator connecting to a fresh daemon gets a successful read.
+    let listed = f.daemon.control("project.list", json!({})).unwrap();
+    assert_eq!(listed[0]["name"], "alpha");
+    assert_eq!(listed[0]["state"], "unregistered");
+    assert_eq!(listed.as_array().unwrap().len(), 2);
+}

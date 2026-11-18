@@ -19,7 +19,8 @@ It does not authorize real-profile use, release, or completion of parent M2.
 > the [project-management plan](project-management-plan.md). The selection, attachment and ownership rules below still hold.
 
 - `--database` becomes optional. Without it, only operator health and strict
-  profile management are usable. Project/session/MCP requests cannot run.
+  profile management are usable (since 2026-11-18 also the operator's
+  `project.list` of the daemon-owned set, all unregistered). Project/session/MCP requests cannot run.
 - Startup `--database` and `profile.select` open an existing exact v1 read-only;
   missing/legacy/unsafe files fail without creation or repair. `profile.create`
   alone uses S1's exclusive fresh creator, never overwriting a target.
