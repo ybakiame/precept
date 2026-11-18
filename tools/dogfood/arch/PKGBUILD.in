@@ -26,7 +26,10 @@ build() {
   cd "$srcdir/acp-@SHORT@"
   export CARGO_TARGET_DIR="$srcdir/target"
   # Keep build-host paths out of the binaries.
-  export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$srcdir=/acp/build --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo"
+  # The toolchain sysroot too: with rust-src installed, std paths resolve under ~/.rustup.
+  local sysroot
+  sysroot=$(rustc --print sysroot)
+  export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$srcdir=/acp/build --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$sysroot=/rust-sysroot"
   cargo build --frozen --release -p acp-daemon -p acp-query -p acp-mcp --bins
   cargo build --frozen --release --manifest-path apps/operator/Cargo.toml \
     -p acp-operator-model --bin acp-wsl-bridge --features acp-operator-model/native
