@@ -232,7 +232,7 @@ owner issue closure do not re-execute either cohort or establish independent hum
 clean-machine, standalone Linux, IME/AT or production acceptance. M3 remains
 conditional; no speculative backup/import/restore/retention is bundled here.
 
-## Stage 6 — P1-M5 release readiness / Issue #67 (S0 active)
+## Stage 6 — P1-M5 release readiness / Issue #67 (S0 accepted, S1 complete; S3/S4 next)
 
 **Progress (2026-11-17):** S1-A Windows portable ZIP ([#70](https://github.com/ybakiame/agent-control-plane/issues/70))
 merged in [PR #71](https://github.com/ybakiame/agent-control-plane/pull/71). Owner decision: the **primary**
@@ -242,7 +242,30 @@ workflow is the Windows HWND GUI operating a daemon inside WSL2 — S1-B
 local-only Linux `.tar.gz` build/validation follows as the secondary S1-C [#72](https://github.com/ybakiame/agent-control-plane/issues/72)
 ([evidence](evaluation/p1-m5-s1c-wslg-wayland-portable.md); WSLg target only, standalone Linux still NOT_RUN). Generated archives remain ignored and are not PR/Release assets; formal distribution is deferred to an approved release stage.
 
-[S0 #68](https://github.com/ybakiame/agent-control-plane/issues/68) audits merged
+**Progress (2026-11-18):** S1 complete. Owner scope decision for the first candidate:
+- Windows HWND/ConPTY plus the primary Windows GUI → WSL2 workflow are in scope.
+- WSLg stays secondary.
+- Standalone Linux is deferred and is not an M5 blocker.
+- G13–G16 human/IME/AT gates are NOT_RUN under that narrowed claim.
+- G18 waits for owner-approved budgets.
+
+S1-D [#76](https://github.com/ybakiame/agent-control-plane/issues/76)
+reviews the third-party notice ledger for both recipes
+([evidence](evaluation/p1-m5-s1d-notice-review.md)).
+
+**Next, in order (each as a narrow Issue/branch; owner merges):**
+1. S3 release-build process and security gates (G03–G08, G10, G19). G08 (offline
+   runtime closure, no silent network) covers the selected Windows → WSL2 and WSLg
+   targets.
+2. G18: measure a release-build baseline, propose budgets for owner approval, and
+   only then run the gated measurement.
+3. S4 release-candidate evidence ledger (G20) on one clean candidate SHA.
+
+S2 human-use work (G13–G16) is out of the narrowed first-candidate claim. M5 and any
+release/real-Profile go/no-go remain separate owner decisions.
+
+*Historical S0 scope (2026-11-16), kept for record; standalone Linux in it is
+superseded by the 2026-11-18 decision above:* [S0 #68](https://github.com/ybakiame/agent-control-plane/issues/68) audits merged
 main `6d8000153107c67edfa5ff3bc77da15f196623d3` without behavior changes. Deliver
 the [candidate support and release plan](p1/release-readiness-plan.md) and
 [verifiable gap inventory](evaluation/p1-m5-s0-gap-inventory.md). Windows HWND and
@@ -257,10 +280,11 @@ import/clean-target evidence; scope human IME/AT, numeric budgets, notices and
 audience/tag before the respective RC/release gate. These gaps do not block the S0
 documentation contract and no development PASS implies a support commitment.
 
-After revised S0 approval, propose independent S1 packaging, S2 human input/accessibility,
-S3 security/performance and S4 clean-candidate Issues with real dependencies.
-Do not implement or open them automatically, replace the build system, assume an
-installer/OS baseline, introduce M3 work or authorize production state/distribution.
+*Historical S0 sequencing:* after S0 approval, independent S1 packaging, S2 human
+input/accessibility, S3 security/performance and S4 clean-candidate Issues were to be
+proposed with real dependencies; S0 and S1 are now done (above). Still in force: do
+not replace the build system, assume an installer/OS baseline, introduce M3 work or
+authorize production state/distribution.
 Document-only S0 uses diff/source/link checks. G01–G20 are a risk/claim inventory,
 not twenty blocking checks per PR. Later tests follow change impact;
 the complete four-native-surface UI matrix runs once for a material shared NSH
