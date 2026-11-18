@@ -9,7 +9,7 @@
 //! shell, no TCP, no credential in argv, environment or output.
 #[cfg(target_os = "windows")]
 use acp_operator_core::connection::wsl_status as status;
-use acp_operator_core::connection::{DISCOVERY_VERSION, DaemonStatus, Discovery};
+use acp_operator_core::connection::Discovery;
 
 /// The packaged systemd user unit.
 pub const UNIT: &str = "acp-daemon.service";
@@ -22,6 +22,7 @@ pub use acp_operator_core::connection::discovery_status::{
 #[cfg(unix)]
 mod host {
     use super::*;
+    use acp_operator_core::connection::{DISCOVERY_VERSION, DaemonStatus};
     use std::path::{Path, PathBuf};
 
     fn state_dir() -> Option<PathBuf> {
@@ -318,6 +319,7 @@ fn run_wsl(args: &[&str], timeout: std::time::Duration) -> Result<Output, &'stat
 #[cfg(test)]
 mod tests {
     use super::*;
+    use acp_operator_core::connection::{DISCOVERY_VERSION, DaemonStatus};
     fn sample() -> Discovery {
         Discovery {
             version: DISCOVERY_VERSION,
