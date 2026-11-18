@@ -12,8 +12,9 @@ support, signing or clean-machine claim.
 | WSL2 Arch | `arch-package.sh` (pacman package from one clean commit) | explicit `sudo pacman -U`, then the systemd **user** unit `acp-daemon.service` |
 
 The Arch package ships `acp-daemon`, `acp-query`, `acp-mcp`, `acp-wsl-bridge` and
-`acp-nsh-tui` in `/usr/bin`, the unit in `/usr/lib/systemd/user/`, and
-`daemon.env.example` plus this file in `/usr/share/doc/agent-control-plane/`.
+`acp-nsh-tui` in `/usr/bin`, the unit in `/usr/lib/systemd/user/`, the default
+configuration `/etc/acp/daemon.env` (a pacman backup file: upgrades keep your
+edits) and this file in `/usr/share/doc/agent-control-plane/`.
 Runtime dependencies are checked against the built binaries' direct libraries.
 
 ## Build
@@ -36,18 +37,21 @@ installed manifest, and keeps unknown files.
 
 ## Daemon service (WSL2)
 
-1. Configure projects (private, never committed):
-   ```sh
-   install -d -m 700 ~/.config/acp
-   install -m 600 /usr/share/doc/agent-control-plane/daemon.env.example ~/.config/acp/daemon.env
-   $EDITOR ~/.config/acp/daemon.env
-   ```
-2. Start it, and keep the user manager running without an open WSL shell, so the
-   daemon is up when the Desktop connects:
+1. Start it as installed (the default `/etc/acp/daemon.env` runs it with no
+   projects and no Profile), and keep the user manager running without an open
+   WSL shell, so the daemon is up when the Desktop connects:
    ```sh
    systemctl --user daemon-reload
    systemctl --user enable --now acp-daemon.service
    sudo loginctl enable-linger "$USER"
+   ```
+2. Add your projects. Either edit `/etc/acp/daemon.env` (`sudoedit`), or keep a
+   private per-user copy, which wins when it exists:
+   ```sh
+   install -d -m 700 ~/.config/acp
+   install -m 600 /etc/acp/daemon.env ~/.config/acp/daemon.env
+   $EDITOR ~/.config/acp/daemon.env
+   systemctl --user restart acp-daemon
    ```
 3. Create a Profile once, explicitly (the daemon never does it by itself):
    ```sh

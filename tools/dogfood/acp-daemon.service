@@ -16,10 +16,11 @@ Type=simple
 StateDirectory=acp
 StateDirectoryMode=0700
 UMask=0077
-# Operator configuration: allowlisted projects/roots, optional --database and
-# session options. Copy /usr/share/doc/agent-control-plane/daemon.env.example
-# to ~/.config/acp/daemon.env (mode 0600) and edit it.
+# Operator configuration (projects, optional --database, session options):
+# the packaged default /etc/acp/daemon.env (starts with no projects), then the
+# optional per-user ~/.config/acp/daemon.env, whose values win.
 Environment=ACP_DAEMON_ARGS=
+EnvironmentFile=-/etc/acp/daemon.env
 EnvironmentFile=-%E/acp/daemon.env
 ExecStart=/usr/bin/acp-daemon --runtime-dir %S/acp/runtime --endpoint %S/acp/runtime/control.sock $ACP_DAEMON_ARGS
 # SIGTERM is a graceful stop: owned sessions are shut down, capabilities removed,

@@ -26,9 +26,9 @@ out="$parent/$name"
 mkdir -m 700 "$out" || die "attempt $name already exists; use a new name"
 
 git -C "$repo" archive --format=tar --prefix="acp-$short/" -o "$out/acp-$short.tar" "$sha"
-cp "$here/acp-daemon.service" "$here/daemon.env.example" "$here/README.md" "$out/"
+cp "$here/acp-daemon.service" "$here/daemon.env" "$here/README.md" "$out/"
 sums=""
-for f in "acp-$short.tar" acp-daemon.service daemon.env.example README.md; do
+for f in "acp-$short.tar" acp-daemon.service daemon.env README.md; do
   sums+="'$(sha256sum "$out/$f" | cut -d' ' -f1)' "
 done
 # Runtime dependencies, verified against the built binaries below.
