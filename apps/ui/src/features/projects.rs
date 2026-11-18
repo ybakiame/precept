@@ -64,9 +64,10 @@ pub(crate) fn opened(model: Signal<Model>) {
         return;
     }
     call(model, "profile.info", serde_json::json!({}), |m, r| {
-        m.project_add.write_enabled = r
-            .ok()
-            .and_then(|v| v.get("write_enabled").and_then(|w| w.as_bool()));
+        let info = r.ok();
+        let flag = |key: &str| info.as_ref().and_then(|v| v.get(key)?.as_bool());
+        m.project_add.write_enabled = flag("write_enabled");
+        m.project_add.profile_selected = flag("selected");
     });
 }
 
@@ -373,7 +374,13 @@ fn add_form(model: Signal<Model>) -> impl IntoElement {
                 })
             }))
             .child(note(model, move |m| {
-                (m.project_add.write_enabled != Some(true)).then_some(Msg::NeedsWrite)
+                if m.project_add.write_enabled == Some(true) {
+                    None
+                } else if m.project_add.profile_selected == Some(false) {
+                    Some(Msg::NeedsProfile)
+                } else {
+                    Some(Msg::NeedsWrite)
+                }
             }))
             .child(
                 view()

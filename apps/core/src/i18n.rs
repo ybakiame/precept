@@ -241,6 +241,7 @@ catalog! {
     RemoveTitle => ("Remove this project?", "移除此项目？"),
     RemoveBody => ("Agents lose access to it and its session stops. Its Profile records are kept; adding the same folder again restores it.", "Agent 将失去对它的访问权限，其会话会停止。Profile 中的记录会保留，重新添加同一文件夹即可恢复。"),
     RemoveConfirm => ("Remove", "移除"),
+    NeedsProfile => ("Adding a project needs a Profile with write access. Create or select one in Profile & review, then enable writes.", "添加项目需要一个已开启写入的 Profile。请先在“Profile 与审阅”中创建或选择 Profile，再开启写入。"),
     NeedsWrite => ("Adding or removing a project needs write access. Enable it in Profile & review.", "添加或移除项目需要写入授权，请在“Profile 与审阅”中开启。"),
     OpenProfile => ("Open Profile & review", "打开 Profile 与审阅"),
     NoProjectsYet => ("No projects yet. Add a Git repository to give agents its context.", "还没有项目。添加一个 Git 仓库，让 Agent 获得它的上下文。"),

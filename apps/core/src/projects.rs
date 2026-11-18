@@ -36,6 +36,8 @@ pub struct AddDraft {
     pub error: Option<String>,
     /// Whether the selected Profile's writes are enabled (`None`: not read yet).
     pub write_enabled: Option<bool>,
+    /// Whether a Profile is selected (`None`: not read yet).
+    pub profile_selected: Option<bool>,
 }
 
 impl AddDraft {
@@ -106,9 +108,11 @@ impl AddDraft {
     pub fn reset(&mut self) {
         let epoch = self.epoch.wrapping_add(1);
         let write_enabled = self.write_enabled;
+        let profile_selected = self.profile_selected;
         *self = Self {
             epoch,
             write_enabled,
+            profile_selected,
             ..Self::default()
         };
     }
