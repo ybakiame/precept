@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { apacheLicenseSha256, binaries, builderPathScan, cargoEnvironment, digest, freshDirectory, normalClosure, peImports,
   regular, removeOwnedProduct, vcRuntimeImports, verifyInventory } from './windows-package.mjs';
 
@@ -52,7 +53,7 @@ test('shipping contract is exactly five product entrypoints', () => {
 });
 
 test('committed first-party LICENSE is the verbatim Apache-2.0 text and NOTICE names the holder', () => {
-  const repo = path.resolve(import.meta.dirname, '../..');
+  const repo = fileURLToPath(new URL('../..', import.meta.url));
   assert.equal(digest(fs.readFileSync(path.join(repo, 'LICENSE'))), apacheLicenseSha256);
   assert.match(fs.readFileSync(path.join(repo, 'NOTICE'), 'utf8'), /^Agent Control Plane\nCopyright 2026 ybakiame\n/);
 });
