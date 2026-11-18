@@ -25,94 +25,6 @@ pub(crate) fn open(model: Signal<Model>) {
     });
     refresh(model, "profile.info");
 }
-/// "Select at start" before create/select, and the remembered Profile after.
-fn startup(model: Signal<Model>) -> impl IntoElement {
-    let caption = |key: fn(&Model) -> Option<Msg>| {
-        text(move || {
-            let m = model.get();
-            key(&m).map(|k| m.word(k)).unwrap_or_default()
-        })
-        .text_size(px(ui::scale::text::CAPTION))
-        .text_color(move || tokens::palette(model).muted)
-    };
-    view()
-        .flex_row()
-        .flex_wrap()
-        .items_center()
-        .gap_2()
-        .child(
-            view()
-                .style_when(
-                    move || {
-                        model
-                            .get()
-                            .operator
-                            .info
-                            .as_ref()
-                            .is_none_or(|i| i.selected)
-                    },
-                    |s| s.hidden(),
-                )
-                .child(
-                    ui::button(model, "")
-                        .label_fn(move || model.get().word(Msg::SelectAtStart).into())
-                        .size(ui::ButtonSize::Small)
-                        .selected(move || model.get().operator.remember)
-                        .on_press(move || {
-                            model.update(|m| m.operator.remember = !m.operator.remember)
-                        }),
-                ),
-        )
-        .child(caption(|m| {
-            m.operator
-                .info
-                .as_ref()
-                .is_some_and(|i| i.remembered)
-                .then_some(Msg::SelectedAtStart)
-        }))
-        .child(
-            view()
-                .style_when(
-                    move || {
-                        !model
-                            .get()
-                            .operator
-                            .info
-                            .as_ref()
-                            .is_some_and(|i| i.startup_profile)
-                    },
-                    |s| s.hidden(),
-                )
-                .child(
-                    ui::button(model, "")
-                        .label_fn(move || model.get().word(Msg::ForgetStartup).into())
-                        .size(ui::ButtonSize::Small)
-                        .on_press(move || forget(model)),
-                ),
-        )
-        .child(caption(|m| {
-            m.operator
-                .info
-                .as_ref()
-                .and_then(|i| i.startup_failure.as_deref())
-                .map(acp_operator_core::projects::refusal)
-        }))
-}
-fn forget(model: Signal<Model>) {
-    #[cfg(feature = "ipc")]
-    {
-        let inputs = acp_operator_client::native::Inputs::from_connection(&model.get().connection);
-        spawn(async move {
-            let _ = blocking(move || {
-                inputs.and_then(|i| i.project_call("profile.startup.forget", serde_json::json!({})))
-            })
-            .await;
-            refresh(model, "profile.info");
-        });
-    }
-    #[cfg(not(feature = "ipc"))]
-    let _ = model;
-}
 fn available(model: Signal<Model>) -> bool {
     let m = model.get();
     m.operator.open
@@ -349,14 +261,12 @@ fn field(
 ) -> impl IntoElement {
     let reference = element_ref();
     let shortcut = match key {
-        Msg::ProfilePath => "alt+p",
         Msg::OperatorKey => "alt+k",
         Msg::OperatorValue => "alt+w",
         Msg::OperatorSource => "alt+f",
         _ => "alt+t",
     };
     let pane = match key {
-        Msg::ProfilePath => Pane::Profile,
         Msg::OperatorTask => Pane::Handoff,
         _ => Pane::Preferences,
     };
@@ -971,10 +881,6 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
         }
     });
     for (key, action) in [
-        ("alt+shift+u", "create"),
-        ("alt+shift+m", "select"),
-        ("alt+shift+e", "enable"),
-        ("alt+shift+x", "disable"),
         ("alt+shift+s", "suggest"),
         ("alt+shift+y", "confirm"),
         ("alt+shift+n", "reject"),
@@ -1150,7 +1056,6 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
         .child(
             view().flex_row().flex_wrap().gap_2().children(
                 [
-                    (Pane::Profile, Msg::ProfileOperator),
                     (Pane::Preferences, Msg::OperatorPreferences),
                     (Pane::Handoff, Msg::OperatorSavedHandoff),
                 ]
@@ -1265,72 +1170,6 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
             }
             body
         }))
-        .child(
-            view()
-                .gap_2()
-                .style_when(
-                    move || {
-                        model.get().operator.pane != Pane::Profile
-                            || model.get().operator.review.is_some()
-                            || model.get().operator.outcome_unknown
-                    },
-                    |s| s.hidden().invisible(),
-                )
-                .child(field(
-                    model,
-                    Msg::ProfilePath,
-                    |o| &o.path,
-                    |o, v| o.path = v,
-                    32768,
-                ))
-                .child(startup(model))
-                .child(
-                    view()
-                        .flex_row()
-                        .flex_wrap()
-                        .gap_2()
-                        .child(word_action(
-                            model,
-                            Msg::ProfileCreate,
-                            move || {
-                                available(model)
-                                    && model.get().operator.info.is_some_and(|i| !i.selected)
-                            },
-                            move || review(model, "create"),
-                        ))
-                        .child(word_action(
-                            model,
-                            Msg::ProfileSelect,
-                            move || {
-                                available(model)
-                                    && model.get().operator.info.is_some_and(|i| !i.selected)
-                            },
-                            move || review(model, "select"),
-                        ))
-                        .child(word_action(
-                            model,
-                            Msg::WriteEnable,
-                            move || {
-                                available(model)
-                                    && model
-                                        .get()
-                                        .operator
-                                        .info
-                                        .is_some_and(|i| i.selected && !i.write_enabled)
-                            },
-                            move || review(model, "enable"),
-                        ))
-                        .child(word_action(
-                            model,
-                            Msg::WriteDisable,
-                            move || {
-                                available(model)
-                                    && model.get().operator.info.is_some_and(|i| i.write_enabled)
-                            },
-                            move || review(model, "disable"),
-                        )),
-                ),
-        )
         .child(
             view()
                 .gap_2()

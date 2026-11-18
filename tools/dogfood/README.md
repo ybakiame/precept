@@ -46,16 +46,19 @@ installed manifest, and keeps unknown files.
    systemctl --user enable --now acp-daemon.service
    sudo loginctl enable-linger "$USER"
    ```
-2. Create a Profile once, explicitly, in the Desktop's **Profile & review**
-   (with **Select at start**, so every daemon start selects it), or:
+2. Create a Profile once, explicitly: the Desktop shows **Set up your Profile**
+   (Dashboard, Workspaces, Connection) with the daemon's suggested path and
+   **Select at start** on, so every daemon start selects it. Or:
    ```sh
    R=~/.local/state/acp/runtime
    acp-query --runtime-dir $R --endpoint $R/control.sock profile create --remember ~/.local/state/acp/profile.sqlite3
    ```
    The daemon never creates or adopts a Profile by itself. **Forget** (or
    `profile forget-startup`) stops selecting it at start; the Profile stays.
-3. Turn on writes for this run (Desktop, or `acp-query ... profile write enable
-   --profile-id ... --generation ... --confirm`). Write access is never remembered.
+3. Writes are per daemon run and never remembered. **Enable writes and add** in
+   Workspaces turns them on with the add; Connection → Profile turns them on or
+   off directly (or `acp-query ... profile write enable --profile-id ...
+   --generation ... --confirm`).
 4. Add projects in **Workspaces → Add project…**: choose a folder (a Git
    repository root in your Linux home; on Windows the dialog opens in
    `\\wsl.localhost\<distro>\home\<user>`) or type its path; the daemon checks

@@ -58,17 +58,9 @@ fn call(
     }
 }
 
-/// Learns whether writes are enabled, so Add can explain itself.
-pub(crate) fn opened(model: Signal<Model>) {
-    if !model.get().live {
-        return;
-    }
-    call(model, "profile.info", serde_json::json!({}), |m, r| {
-        let info = r.ok();
-        let flag = |key: &str| info.as_ref().and_then(|v| v.get(key)?.as_bool());
-        m.project_add.write_enabled = flag("write_enabled");
-        m.project_add.profile_selected = flag("selected");
-    });
+/// Whether this run's writes are on (adding or removing turns them on first).
+fn writes_on(model: Signal<Model>) -> bool {
+    model.get().project_add.write_enabled == Some(true)
 }
 
 fn check(model: Signal<Model>) {
@@ -129,7 +121,19 @@ fn choose(model: Signal<Model>) {
     });
 }
 
+/// Add; with writes off, the operator's one click turns them on for this run
+/// first (the label says so), then adds.
 fn add(model: Signal<Model>) {
+    if model.get().project_add.ready().is_none() {
+        return;
+    }
+    if writes_on(model) {
+        add_now(model);
+    } else {
+        super::profile::enable_writes(model, add_now);
+    }
+}
+fn add_now(model: Signal<Model>) {
     let Some((name, root)) = model.get().project_add.ready() else {
         return;
     };
@@ -153,6 +157,16 @@ fn add(model: Signal<Model>) {
 }
 
 fn remove(model: Signal<Model>) {
+    if model.get().project_remove.is_none() {
+        return;
+    }
+    if writes_on(model) {
+        remove_now(model);
+    } else {
+        super::profile::enable_writes(model, remove_now);
+    }
+}
+fn remove_now(model: Signal<Model>) {
     let Some(name) = model.get().project_remove.clone() else {
         return;
     };
@@ -336,7 +350,7 @@ fn add_form(model: Signal<Model>) -> impl IntoElement {
                 .loading(move || model.get().project_add.check == Check::Checking)
                 .on_press(move || check(model)),
         );
-    let write_ok = move || model.get().project_add.write_enabled == Some(true);
+    let has_profile = move || model.get().project_add.profile_selected == Some(true);
     surface(model).title_fn(word(model, Msg::AddProject)).child(
         view()
             .gap_4()
@@ -373,14 +387,10 @@ fn add_form(model: Signal<Model>) -> impl IntoElement {
                     }
                 })
             }))
-            .child(note(model, move |m| {
-                if m.project_add.write_enabled == Some(true) {
-                    None
-                } else if m.project_add.profile_selected == Some(false) {
-                    Some(Msg::NeedsProfile)
-                } else {
-                    Some(Msg::NeedsWrite)
-                }
+            .child(note(model, move |m| match m.project_add.profile_selected {
+                Some(false) => Some(Msg::NeedsProfile),
+                Some(true) if m.project_add.write_enabled != Some(true) => Some(Msg::NeedsWrite),
+                _ => None,
             }))
             .child(
                 view()
@@ -389,20 +399,24 @@ fn add_form(model: Signal<Model>) -> impl IntoElement {
                     .gap_2()
                     .child(
                         button(model, "")
-                            .label_fn(word(model, Msg::AddConfirm))
+                            .label_fn(move || {
+                                model
+                                    .get()
+                                    .word(if writes_on(model) {
+                                        Msg::AddConfirm
+                                    } else {
+                                        Msg::EnableAndAdd
+                                    })
+                                    .into()
+                            })
                             .variant(ButtonVariant::Primary)
                             .disabled(move || {
-                                !write_ok() || model.get().project_add.ready().is_none()
+                                !has_profile()
+                                    || model.get().project_add.ready().is_none()
+                                    || model.get().profile_setup.busy
                             })
                             .loading(move || model.get().project_add.busy)
                             .on_press(move || add(model)),
-                    )
-                    .child(
-                        view().style_when(write_ok, |s| s.hidden()).child(
-                            button(model, "")
-                                .label_fn(word(model, Msg::OpenProfile))
-                                .on_press(move || shell::go(model, shell::Destination::Review)),
-                        ),
                     )
                     .child(
                         button(model, "")
@@ -416,21 +430,6 @@ fn add_form(model: Signal<Model>) -> impl IntoElement {
 /// The Workspace page (mounted by the shell, outside the per-change page
 /// rebuild, so its fields keep focus while typing).
 pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
-    // Each time the page becomes visible on a live connection, learn whether
-    // writes are enabled (they may have changed in Profile & review).
-    let visible = computed(move || {
-        let m = model.get();
-        m.live
-            && shell::current(&m)
-                == shell::Destination::Section(acp_operator_core::Section::Projects)
-    });
-    // Only `visible` is tracked: reading the model inside `opened` must not
-    // make every reply re-run this effect (a request loop).
-    effect(move || {
-        if visible.get() {
-            untracked(|| opened(model));
-        }
-    });
     view()
         .gap_6()
         .max_w(px(scale::layout::FORM))
@@ -473,7 +472,16 @@ pub(crate) fn remove_dialog(model: Signal<Model>) -> impl IntoElement {
             .into()
         })
         .cancel_fn(word(model, Msg::Cancel))
-        .confirm_fn(word(model, Msg::RemoveConfirm))
+        .confirm_fn(move || {
+            model
+                .get()
+                .word(if writes_on(model) {
+                    Msg::RemoveConfirm
+                } else {
+                    Msg::EnableAndRemove
+                })
+                .into()
+        })
         .confirm_disabled(move || model.get().project_add.busy)
         .open(move || model.get().project_remove.is_some())
         .on_cancel(move || model.update(|m| m.project_remove = None))

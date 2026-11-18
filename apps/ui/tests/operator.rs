@@ -161,27 +161,36 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     cfg.viewport = Size::new(px(1080.0), px(760.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
     app.wait_for("No Profile selected").unwrap();
-    app.type_text(
-        "Explicit Profile path",
-        f.root
-            .path()
-            .join("state/profile.sqlite3")
-            .to_str()
-            .unwrap(),
-    )
-    .unwrap();
-    app.press_key("alt+shift+u").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
-        .unwrap();
+    // Profile setup lives on the Connection page: the daemon suggests a path
+    // in its private state folder; nothing exists until the operator's click.
+    app.press("Connection").unwrap();
+    app.wait_for("Set up your Profile").unwrap();
+    let suggested = app
+        .screen()
+        .input_text("Profile file")
+        .unwrap()
+        .unwrap()
+        .to_owned();
+    assert!(suggested.ends_with("profile.sqlite3"));
+    assert!(!std::path::Path::new(&suggested).exists());
     assert_eq!(f.info()["selected"], false);
-    app.press_key("alt+shift+v").unwrap();
-    app.wait_for("Profile selected").unwrap();
-    assert_eq!(f.info()["write_enabled"], false);
-    app.press_key("alt+shift+e").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
-        .unwrap();
-    assert_eq!(f.info()["write_enabled"], false);
-    app.press_key("alt+shift+v").unwrap();
+    app.press("Create Profile").unwrap();
+    app.wait_for("Selected at every daemon start").unwrap();
+    assert_eq!(f.info()["selected"], true);
+    assert_eq!(
+        f.info()["remembered"],
+        true,
+        "select at start is on by default"
+    );
+    assert_eq!(
+        f.info()["write_enabled"],
+        false,
+        "creation never enables writes"
+    );
+    app.press("Enable writes").unwrap();
+    app.wait_for("Writes on for this daemon run").unwrap();
+    assert_eq!(f.info()["write_enabled"], true);
+    app.press_key("alt+o").unwrap();
     app.wait_for("Write grant active").unwrap();
     f.register();
     app.press_key("mod+r").unwrap();
@@ -286,11 +295,14 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
             .iter()
             .any(|t| t.contains("Saved synthetic history"))
     );
-    app.press_key("alt+shift+x").unwrap();
+    // Writes are turned off where the Profile lives (Connection).
+    app.press("Connection").unwrap();
     assert_eq!(f.info()["write_enabled"], true);
-    app.press_key("alt+shift+v").unwrap();
-    app.wait_for("Write grant off").unwrap();
+    app.press("Disable writes").unwrap();
+    app.wait_for("Writes off").unwrap();
     assert_eq!(f.info()["write_enabled"], false);
+    app.press_key("alt+o").unwrap();
+    app.wait_for("Write grant off").unwrap();
     app.press_key("mod+l").unwrap();
     app.wait_for("写入授权关闭").unwrap();
     app.press_key("Escape").unwrap();

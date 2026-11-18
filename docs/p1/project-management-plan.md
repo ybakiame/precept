@@ -166,11 +166,18 @@ loads as `unavailable`: listed, never served, removable.
 - `ui`, Workspace page: the project list (name, root, state) and **Add project…**,
   a dialog with the folder field and "Choose folder…", the daemon's check result
   beside it, the name prefilled from the folder and validated like
-  `valid_project`, and a confirmation naming both. Without a write grant the
-  button explains why and links to Profile & review. Remove is a destructive
-  `AlertDialog` naming the project and stating that Profile records are kept.
-- `ui`, Profile & review: create/select get a "Select at start" checkbox (a new
-  `ui` Checkbox); the current Profile shows "Selected at start" with **Forget**.
+  `valid_project`, and a confirmation naming both. With writes off the primary
+  button reads "Enable writes and add" (one explicit click: enable for this run,
+  then add); Remove likewise. Remove is a destructive `AlertDialog` naming the
+  project and stating that Profile records are kept.
+- `ui`, Profile (owner decision 2026-11-19: the Profile is application-wide and
+  set up once, not mixed into the review page): while none is selected, a "Set
+  up your Profile" card on Dashboard, Workspaces and Connection, prefilled with
+  the daemon's suggestion (`profile.info.suggested_path`, inside its private
+  state directory; never created by the daemon) and "Select at start" on by
+  default. Once selected, the Connection page shows the startup choice with
+  **Forget** and this run's writes (enable/disable). The review page keeps only
+  a read-only Profile summary.
 - The same flows on Windows HWND, WSLg/Linux and the TUI (a keyboard list there).
   Motion inventory and finishing checklist per the Design Guides before code.
 

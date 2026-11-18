@@ -8,8 +8,10 @@ use serde_json::{Value, json};
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub enum Pane {
-    #[default]
+    /// Profile actions moved to the Connection page and Workspaces (direct,
+    /// explicit calls); the review workspace starts on its records.
     Profile,
+    #[default]
     Preferences,
     Handoff,
 }

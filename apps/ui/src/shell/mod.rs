@@ -5,7 +5,7 @@ use crate::*;
 pub(crate) mod chrome;
 use acp_operator_core::i18n::Msg;
 use acp_operator_core::{PAGE_SIZE, Section};
-use features::{connection, page, projects, review, sessions, settings};
+use features::{connection, page, profile, projects, review, sessions, settings};
 use tokens::{compact, palette};
 
 pub(crate) fn action(
@@ -442,6 +442,7 @@ pub(crate) fn shell(
     task_ref: ElementRef,
     filter_ref: ElementRef,
 ) -> impl IntoElement {
+    profile::watch(model);
     let on = move |d: fn(&Model) -> bool| move || !d(&model.get());
     view()
         .flex_1()
@@ -503,12 +504,31 @@ pub(crate) fn shell(
                                                 .style_when(on(|m| m.connection_editor), |s| {
                                                     s.hidden()
                                                 })
-                                                .child(connection::connection(model)),
+                                                .gap_4()
+                                                .child(connection::connection(model))
+                                                .child(profile::section(model)),
                                         )
                                         .child(
                                             view()
                                                 .style_when(on(|m| m.sessions), |s| s.hidden())
                                                 .child(sessions::panel(model)),
+                                        )
+                                        .child(
+                                            // First-run Profile setup where it is needed.
+                                            view()
+                                                .style_when(
+                                                    move || {
+                                                        !matches!(
+                                                            current(&model.get()),
+                                                            Destination::Section(
+                                                                Section::Dashboard
+                                                                    | Section::Projects
+                                                            )
+                                                        )
+                                                    },
+                                                    |s| s.hidden(),
+                                                )
+                                                .child(profile::setup_when_needed(model)),
                                         )
                                         .child(
                                             view()

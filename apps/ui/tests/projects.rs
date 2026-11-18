@@ -156,15 +156,8 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     let gamma = f.root.path().join("gamma");
     std::fs::create_dir_all(gamma.join(".git")).unwrap();
     std::fs::write(gamma.join("AGENTS.md"), "Synthetic contract.\n").unwrap();
-    let db = f.root.path().join("state/profile.sqlite3");
-    acp_ipc::transport::private_dir(db.parent().unwrap(), true).unwrap();
-    f.call("profile.create", json!({"path":db})).unwrap();
-    let b = f.info()["binding"].clone();
-    f.call(
-        "profile.write.enable",
-        json!({"profile_id":b["profile_id"],"generation":b["generation"],"confirm":true}),
-    )
-    .unwrap();
+    // A fresh daemon: no Profile, no writes. Everything below is the GUI.
+    assert_eq!(f.info()["selected"], false);
     acp_operator_ui::INPUTS
         .set(acp_operator_client::native::Inputs {
             runtime_dir: Some(f.location.runtime_dir.clone()),
@@ -180,6 +173,8 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     // the Workspace page must still be reachable to add one.
     app.wait_for("Daemon status").unwrap();
     app.press_key("alt+2").unwrap();
+    // The Profile is set up where it is needed, from the daemon's suggestion.
+    app.wait_for("Set up your Profile").unwrap();
     app.wait_for("Add project…").unwrap();
     app.press("Add project…").unwrap();
     // A folder that is not a repository root is refused by the daemon.
@@ -196,7 +191,26 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     app.press("Check").unwrap();
     contains(&mut app, "This folder can be added.");
     assert_eq!(app.screen().input_text("Name").unwrap(), Some("gamma"));
-    app.press("Add").unwrap();
+    contains(&mut app, "Set up your Profile above first");
+    app.press("Create Profile").unwrap();
+    let start = Instant::now();
+    while f.info()["selected"] != true {
+        assert!(start.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(
+        f.info()["remembered"],
+        true,
+        "select at start is on by default"
+    );
+    assert_eq!(
+        f.info()["write_enabled"],
+        false,
+        "creating never enables writes"
+    );
+    // With writes off, the one explicit click enables them for this run and adds.
+    app.wait_for("Enable writes and add").unwrap();
+    app.press("Enable writes and add").unwrap();
     // The daemon's list now has gamma, ready, and its agent credential.
     contains(&mut app, "gamma");
     let start = Instant::now();
@@ -204,6 +218,7 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         assert!(start.elapsed() < Duration::from_secs(10));
         std::thread::sleep(Duration::from_millis(20));
     }
+    assert_eq!(f.info()["write_enabled"], true);
     // Each row's Remove names its project for screen readers.
     app.press("Remove alpha").unwrap();
     app.wait_for("Remove this project?").unwrap();

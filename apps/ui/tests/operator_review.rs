@@ -203,24 +203,36 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     cfg.viewport = Size::new(px(1080.0), px(760.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
     app.wait_for("No Profile selected").unwrap();
-    app.type_text(
-        "Explicit Profile path",
-        f.root
-            .path()
-            .join("state/profile.sqlite3")
-            .to_str()
-            .unwrap(),
-    )
-    .unwrap();
-    app.press_key("alt+shift+u").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
-        .unwrap();
-    app.press_key("alt+shift+v").unwrap();
-    app.wait_for("Profile selected").unwrap();
-    app.press_key("alt+shift+e").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
-        .unwrap();
-    app.press_key("alt+shift+v").unwrap();
+    // Profile setup lives on the Connection page: the daemon suggests a path
+    // in its private state folder; nothing exists until the operator's click.
+    app.press("Connection").unwrap();
+    app.wait_for("Set up your Profile").unwrap();
+    let suggested = app
+        .screen()
+        .input_text("Profile file")
+        .unwrap()
+        .unwrap()
+        .to_owned();
+    assert!(suggested.ends_with("profile.sqlite3"));
+    assert!(!std::path::Path::new(&suggested).exists());
+    assert_eq!(f.info()["selected"], false);
+    app.press("Create Profile").unwrap();
+    app.wait_for("Selected at every daemon start").unwrap();
+    assert_eq!(f.info()["selected"], true);
+    assert_eq!(
+        f.info()["remembered"],
+        true,
+        "select at start is on by default"
+    );
+    assert_eq!(
+        f.info()["write_enabled"],
+        false,
+        "creation never enables writes"
+    );
+    app.press("Enable writes").unwrap();
+    app.wait_for("Writes on for this daemon run").unwrap();
+    assert_eq!(f.info()["write_enabled"], true);
+    app.press_key("alt+o").unwrap();
     app.wait_for("Write grant active").unwrap();
     f.register();
     app.press_key("mod+r").unwrap();
@@ -462,10 +474,11 @@ fn terminal_channel_and_revoked_delete(f: &Fixture) {
     assert_eq!(f.inspect(3, 3)["record"]["status"], "deprecated");
     app.press_key("alt+shift+r").unwrap();
     app.wait_for("Write grant off").unwrap();
-    app.press_key("alt+shift+e").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
-        .unwrap();
-    app.press_key("alt+shift+v").unwrap();
+    // A new grant from the Connection page, then back to the review.
+    app.press("Connection").unwrap();
+    app.press("Enable writes").unwrap();
+    app.wait_for("Writes on for this daemon run").unwrap();
+    app.press_key("alt+o").unwrap();
     app.wait_for("Write grant active").unwrap();
     app.press_key("alt+shift+l").unwrap();
     app.press("#3 · terminal-editor · deprecated · r3").unwrap();

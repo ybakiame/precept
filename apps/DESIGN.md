@@ -289,7 +289,7 @@ owns the only scroll region.
 Built on this shell: the sidebar and page header, the project menu, Overview
 (facts as `ui::properties`), Connection (pick, check, start, connect; saved for
 the next launch) and Settings. Still in their earlier layout inside the new
-shell: Workspace, Preferences, Profile & review (its sub-pane buttons, cards and
+shell: Workspace, Preferences, Review (its sub-pane buttons, cards and
 inputs), Handoff, Diagnostics and Sessions; each gets its own pass with its own
 motion inventory. Verified: headless tests (incl. the 10k-row workload), the
 TUI in a real terminal, and Windows HWND captures in dark/light, zh-CN/en and a
@@ -322,8 +322,13 @@ answers with a fixed reason; Add and Remove need the Profile's write grant.
   each Remove is spoken with its project ("Remove alpha").
 - "Add project…" reveals one form: Folder (field + Choose folder… + Check), the
   check result as a badge, Name (prefilled; a Profile record's name wins), Add
-  (primary, disabled until the check passed and writes are enabled) with the
-  reason and "Open Profile & review" beside it, Cancel.
+  (primary, disabled until the check passed and a Profile is selected; reads
+  "Enable writes and add" while writes are off) with the reason, Cancel.
+- The Profile is application-wide, so it is not a step of this form: while none
+  is selected a "Set up your Profile" card sits above the page (also on
+  Dashboard and Connection): what a Profile is, the daemon's suggested file,
+  "Select at start" (on), Create Profile / Use existing Profile. Once selected,
+  Connection shows the startup choice (Forget) and this run's writes.
 - Remove is a destructive `AlertDialog` beside the scroll region, naming the
   project and that its Profile records stay.
 
@@ -336,6 +341,8 @@ Motion inventory (written with the code in this pass, not before it):
 | Check running / result | Button loading spinner; result badge replaces the idle state | continuous / none | Spinner rests |
 | Remove confirmation | `AlertDialog` grow + scrim (existing) | `SLOW` in, `ENTER`, `RISE`; scrim `FAST` | At rest |
 | List after add / remove | Rows replace after the re-read; no wave (a data change, not an entrance) | — | — |
+| Setup card appears / leaves | None (an instant swap when the Profile state changes) | — | — |
+| Writes badge on / off | Badge swaps in place (`computed` region; no layout shift) | — | — |
 
 ## Motion inventory — review panel (Queue / Detail / History)
 

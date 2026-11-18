@@ -62,7 +62,13 @@ impl crate::native::Inputs {
         if !write
             && !matches!(
                 method,
-                "project.check" | "profile.startup.forget" | "profile.info"
+                "project.check"
+                    | "profile.startup.forget"
+                    | "profile.info"
+                    | "profile.create"
+                    | "profile.select"
+                    | "profile.write.enable"
+                    | "profile.write.disable"
             )
         {
             return Err("Unsupported");

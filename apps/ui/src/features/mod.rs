@@ -4,6 +4,7 @@ pub(crate) mod connection;
 pub(crate) mod handoff;
 pub(crate) mod overview;
 pub(crate) mod preferences;
+pub(crate) mod profile;
 pub(crate) mod projects;
 pub(crate) mod review;
 pub(crate) mod sessions;
