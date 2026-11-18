@@ -1,8 +1,8 @@
 # Daemon-owned projects: add and manage projects from any GUI
 
-Status: **proposed plan (2026-11-18), owner-requested.** Not implemented. Owner
-decisions so far: one GUI flow adds a project end to end; only Git repositories
-under the daemon user's home; every GUI only talks to the trusted daemon.
+Status: **accepted plan (2026-11-18), owner-requested.** Not implemented yet. Owner
+decisions: one GUI flow adds a project end to end; only Git repositories under the
+daemon user's home; every GUI only talks to the trusted daemon; see Decisions.
 
 ## Principles
 
@@ -106,13 +106,12 @@ unallowed project, which is inert and repaired by adding it again.
 2. Client and GUI: bridge methods, browser model, Workspace page and dialogs.
 3. Packaging and docs: the unit argument, `daemon.env` as seed, README, acceptance.
 
-## Open decisions
+## Decisions (owner, 2026-11-18)
 
-- **Remove:** allowlist-only removal that keeps Profile records (proposed), or no
-  remove in the first version.
-- **Seed:** keep `--allow-*` in `daemon.env` as a read-only seed (proposed), or
-  migrate it into `projects.json` and retire the flags.
-- **Discovery:** browse only (proposed), or also a bounded "Git repositories found
-  under home" list (depth ≤ 3, ≤ 200 results).
+- **Remove:** in the first version; allowlist-only, Profile records kept, behind a
+  destructive confirmation.
+- **Seed:** `--allow-*` in `daemon.env` stays a read-only seed merged at start;
+  seeded projects show in the GUI but cannot be removed there.
+- **Discovery:** browse only; no scan of the home directory.
 - **Windows-local daemon:** the same rules with `%USERPROFILE%` later; out of scope
   for the WSL dogfooding target.
