@@ -251,7 +251,10 @@ mod tests {
     #[test]
     fn discovery_fills_a_valid_draft_and_refuses_unsafe_reports() {
         let d = report();
-        assert!(d.validate(true) && d.validate(false) && d.ready());
+        assert!(d.validate(true) && d.ready());
+        // A local (in-process) report exists only on Unix, where these paths are
+        // absolute; on Windows the local target is never discovered.
+        assert_eq!(d.validate(false), cfg!(unix));
         let mut draft = Connection::default();
         d.fill_wsl(&mut draft, "archlinux");
         assert!(draft.validate());
