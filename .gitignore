@@ -35,3 +35,6 @@ __pycache__/
 /.rpi/.resource-lease
 
 /artifacts/local-p1-m5/
+
+# Private dogfooding packages (tools/dogfood); never commit or upload.
+/artifacts/local-dogfood/
