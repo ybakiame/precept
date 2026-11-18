@@ -32,7 +32,7 @@ for f in "acp-$short.tar" acp-daemon.service daemon.env.example README.md; do
   sums+="'$(sha256sum "$out/$f" | cut -d' ' -f1)' "
 done
 # Runtime dependencies, verified against the built binaries below.
-depends="glibc gcc-libs"
+depends="glibc libgcc"
 sed -e "s/@PKGVER@/$pkgver/" -e "s/@SHORT@/$short/g" -e "s/@SUMS@/${sums% }/" -e "s/@DEPENDS@/$depends/" \
   "$here/arch/PKGBUILD.in" > "$out/PKGBUILD"
 
