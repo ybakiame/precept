@@ -114,7 +114,7 @@ impl Daemon {
         if session {
             command
                 .arg("--agent-config")
-                .arg(base.join("agent.json"))
+                .arg(base.join("agent.toml"))
                 .arg("--context-mcp")
                 .arg(exe("acp-mcp"))
                 .arg("--context-lease-seconds")
@@ -228,7 +228,7 @@ impl Fixture {
         }
         acp_ipc::transport::private_dir(&temp.path().join("state"), true).unwrap();
         if session {
-            private_bytes(&temp.path().join("agent.json"),json!({"version":1,"programs":[{"id":"fake","executable":exe("acp-fake-agent"),"args":["mcp"],"env":{}}]}).to_string().as_bytes());
+            private_bytes(&temp.path().join("agent.toml"),toml::to_string(&json!({"version":1,"programs":[{"id":"fake","executable":exe("acp-fake-agent"),"args":["mcp"],"env":{}}]})).unwrap().as_bytes());
         }
         let mut daemon = Daemon::launch(temp.path(), "run-a", None, session);
         daemon.ready();

@@ -25,7 +25,7 @@ impl Session {
             .control("profile.write.disable", json!({}))
             .unwrap();
         f.daemon.kill();
-        private_bytes(&f.temp.path().join("agent.json"), json!({"version":1,"programs":modes.iter().map(|mode|json!({"id":mode,"executable":exe("acp-fake-agent"),"args":[mode,"--test-context"],"env":{}})).collect::<Vec<_>>()}).to_string().as_bytes());
+        private_bytes(&f.temp.path().join("agent.toml"), toml::to_string(&json!({"version":1,"programs":modes.iter().map(|mode|json!({"id":mode,"executable":exe("acp-fake-agent"),"args":[mode,"--test-context"],"env":{}})).collect::<Vec<_>>()})).unwrap().as_bytes());
         f.daemon = Daemon::launch_with_ttl(f.temp.path(), "sessions", Some(&f.db), true, ttl);
         f.daemon.ready();
         let before = logical(&f.db);

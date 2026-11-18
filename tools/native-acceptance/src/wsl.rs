@@ -164,15 +164,15 @@ impl Remote {
             &format!("{base}/alpha/AGENTS.md"),
             b"Synthetic S1-B contract\n",
         );
-        let config = format!("{base}/agents.json");
+        let config = format!("{base}/agents.toml");
         wsl.write(
             &config,
-            json!({"version":1,"programs":[
+            toml::to_string(&json!({"version":1,"programs":[
                 {"id":"ctx","executable":wsl.bin("acp-fake-agent"),"args":["mcp"],"env":{}},
                 {"id":"fake","executable":wsl.bin("acp-fake-agent"),"args":["permission"],"env":{}},
                 {"id":"slow","executable":wsl.bin("acp-fake-agent"),"args":["mcp-cancel"],"env":{}}
-            ]})
-            .to_string()
+            ]}))
+            .unwrap()
             .as_bytes(),
         );
         wsl.ok("/usr/bin/chmod", &["0600", &config]);
@@ -192,7 +192,7 @@ impl Remote {
     }
     /// Explicit daemon start inside WSL (never performed by the GUI or bridge).
     fn start_daemon(&mut self) {
-        let config = format!("{}/agents.json", self.base);
+        let config = format!("{}/agents.toml", self.base);
         let root = format!("alpha={}", self.alpha);
         let child = self
             .wsl

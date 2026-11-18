@@ -23,3 +23,6 @@ path = "src/bin/acp_wsl_bridge.rs"
 [[bin]]
 name = "acp-ui-snapshot"
 path = "src/bin/acp_ui_snapshot.rs"
+
+[dev-dependencies]
+toml = "1.2"

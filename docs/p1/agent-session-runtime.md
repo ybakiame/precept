@@ -51,7 +51,8 @@ Agents execute with the local user's privileges and can access files themselves.
 Protocol permission mediation is not an OS policy firewall.
 
 Execution is disabled unless the operator explicitly supplies a private bounded
-JSON `--agent-config` file. Config version 1 contains trusted named executables,
+TOML `--agent-config` file (the packaged unit passes `~/.config/acp/agents.toml`;
+a path where no file exists also disables execution). Config version 1 contains trusted named executables,
 fixed argv arrays and an explicit environment allowlist. Absolute canonical regular
 executable paths only; no shell, script wrapper on Windows, PATH executable search,
 download, repository configuration discovery or repository-derived arguments.
@@ -109,9 +110,18 @@ ADR-0003 remains Proposed. No niri/mobile or hosted Actions; Draft PR only.
 
 An example **shape**, not an installed agent or an executable to download:
 
-```json
-{"version":1,"programs":[{"id":"trusted-agent","executable":"/absolute/trusted/acp-agent","args":["--acp"],"env":{"HOME":"/explicit/operator-selected/home"}}]}
+```toml
+# ~/.config/acp/agents.toml (mode 600): why each program is trusted belongs here.
+version = 1
+
+[[programs]]
+id = "trusted-agent"
+executable = "/absolute/trusted/acp-agent"
+args = ["--acp"]                                      # optional, default []
+env = { HOME = "/explicit/operator-selected/home" }   # optional, default {}
 ```
+
+Until 2026-11 this file was JSON; there is no JSON reader any more.
 
 The actual executable's documented ACP invocation must be supplied by its operator;
 `--acp` above is illustrative, not a Codex/Claude compatibility claim. Windows uses

@@ -84,7 +84,7 @@ impl Daemon {
         let mut extra: Vec<std::ffi::OsString> = Vec::new();
         if !programs.is_empty() {
             use std::os::unix::fs::OpenOptionsExt;
-            let config = root.0.join("agents.json");
+            let config = root.0.join("agents.toml");
             let mut file = std::fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
@@ -95,7 +95,7 @@ impl Daemon {
                 .iter()
                 .map(|(id, args)| json!({"id":id,"executable":bin("acp-fake-agent"),"args":args,"env":{}}))
                 .collect();
-            file.write_all(json!({"version":1,"programs":list}).to_string().as_bytes())
+            file.write_all(toml::to_string(&json!({"version":1,"programs":list})).unwrap().as_bytes())
                 .unwrap();
             extra.extend(["--agent-config".into(), config.into()]);
         }

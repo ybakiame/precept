@@ -42,7 +42,9 @@ fn bounded(s: &str, n: usize) -> bool {
 struct Program {
     id: String,
     executable: PathBuf,
+    #[serde(default)]
     args: Vec<String>,
+    #[serde(default)]
     env: BTreeMap<String, String>,
 }
 #[derive(Deserialize)]
@@ -84,12 +86,19 @@ struct Control {
     ack: oneshot::Sender<Result<()>>,
 }
 impl Supervisor {
+    /// The operator's session configuration (TOML, version 1). No path, or a
+    /// path where no file exists, disables execution; a present file that is
+    /// invalid, shared, oversized or inside a project root refuses.
     pub fn configured(path: Option<&Path>, roots: &[PathBuf]) -> Result<Self> {
         let Some(path) = path else {
             return Ok(Self::default());
         };
         if !path.is_absolute() {
             return Err(Error::InvalidRequest);
+        }
+        match std::fs::symlink_metadata(path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Self::default()),
+            _ => {}
         }
         let canonical = path.canonicalize().map_err(|_| Error::Unavailable)?;
         if roots.iter().any(|r| canonical.starts_with(r)) {
@@ -108,7 +117,8 @@ impl Supervisor {
         if raw.len() > 65536 {
             return Err(Error::TooLarge);
         }
-        let c: Config = serde_json::from_slice(&raw).map_err(|_| Error::InvalidRequest)?;
+        let text = std::str::from_utf8(&raw).map_err(|_| Error::InvalidRequest)?;
+        let c: Config = toml::from_str(text).map_err(|_| Error::InvalidRequest)?;
         if c.version != 1 || c.programs.len() > 8 {
             return Err(Error::Version);
         }
@@ -679,5 +689,79 @@ async fn read_line<R: tokio::io::AsyncBufRead + Unpin>(r: &mut R) -> Result<Valu
         if done {
             return serde_json::from_slice(&raw).map_err(|_| Error::InvalidRequest);
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod config_tests {
+    use super::*;
+    use std::io::Write;
+    fn scratch(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("acp-session-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        acp_ipc::transport::private_dir(&d, true).unwrap();
+        d
+    }
+    fn write(path: &Path, text: &str) {
+        let mut f = acp_ipc::transport::new_private(path).unwrap();
+        f.write_all(text.as_bytes()).unwrap();
+    }
+    const VALID: &str = "# Trusted agents; comments are why this is TOML.\nversion = 1\n\n[[programs]]\nid = \"shell\"\nexecutable = \"/bin/sh\"\nargs = [\"-c\", \"true\"]\n";
+    #[test]
+    fn a_missing_file_disables_sessions_and_toml_loads() {
+        let d = scratch("load");
+        let none = Supervisor::configured(Some(&d.join("agents.toml")), &[]).unwrap();
+        assert!(none.programs.is_empty());
+        write(&d.join("agents.toml"), VALID);
+        let s = Supervisor::configured(Some(&d.join("agents.toml")), &[]).unwrap();
+        assert_eq!(s.programs.keys().collect::<Vec<_>>(), ["shell"]);
+        // args and env may be left out of a hand-written entry.
+        write(
+            &d.join("min.toml"),
+            "version = 1\n[[programs]]\nid = \"min\"\nexecutable = \"/bin/sh\"\n",
+        );
+        assert!(Supervisor::configured(Some(&d.join("min.toml")), &[]).is_ok());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+    #[test]
+    fn json_unknown_fields_shared_files_and_project_roots_refuse() {
+        let d = scratch("refuse");
+        write(&d.join("old.toml"), r#"{"version":1,"programs":[]}"#);
+        assert_eq!(
+            Supervisor::configured(Some(&d.join("old.toml")), &[]).err(),
+            Some(Error::InvalidRequest)
+        );
+        write(
+            &d.join("extra.toml"),
+            "version = 1\nprograms = []\ntoken = \"x\"\n",
+        );
+        assert_eq!(
+            Supervisor::configured(Some(&d.join("extra.toml")), &[]).err(),
+            Some(Error::InvalidRequest)
+        );
+        write(&d.join("v2.toml"), "version = 2\nprograms = []\n");
+        assert_eq!(
+            Supervisor::configured(Some(&d.join("v2.toml")), &[]).err(),
+            Some(Error::Version)
+        );
+        write(&d.join("shared.toml"), VALID);
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(
+            d.join("shared.toml"),
+            std::fs::Permissions::from_mode(0o644),
+        )
+        .unwrap();
+        assert!(Supervisor::configured(Some(&d.join("shared.toml")), &[]).is_err());
+        write(&d.join("agents.toml"), VALID);
+        let root = d.canonicalize().unwrap();
+        assert_eq!(
+            Supervisor::configured(Some(&d.join("agents.toml")), &[root]).err(),
+            Some(Error::UnsafeRuntime)
+        );
+        assert_eq!(
+            Supervisor::configured(Some(Path::new("relative.toml")), &[]).err(),
+            Some(Error::InvalidRequest)
+        );
+        let _ = std::fs::remove_dir_all(&d);
     }
 }
