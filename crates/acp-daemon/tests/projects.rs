@@ -345,3 +345,22 @@ fn the_project_set_is_listed_before_any_profile_is_selected() {
     assert_eq!(listed[0]["state"], "unregistered");
     assert_eq!(listed.as_array().unwrap().len(), 2);
 }
+
+#[test]
+fn an_unselected_daemon_suggests_a_profile_in_its_state_directory_and_never_creates_it() {
+    let f = Fixture::unselected(false);
+    let info = f.daemon.control("profile.info", json!({})).unwrap();
+    let suggested = Path::new(info["suggested_path"].as_str().unwrap()).to_path_buf();
+    assert_eq!(info["suggested_exists"], false);
+    assert!(suggested.starts_with(f.temp.path().join("daemon-state").canonicalize().unwrap()));
+    assert!(!suggested.exists(), "a suggestion is never created");
+    // The operator's explicit create at the suggestion works and is selected.
+    let created = f
+        .daemon
+        .control("profile.create", json!({"path":suggested,"remember":true}))
+        .unwrap();
+    assert_eq!(created["selected"], true);
+    let info = f.daemon.control("profile.info", json!({})).unwrap();
+    assert!(info.get("suggested_path").is_none());
+    assert_eq!(info["remembered"], true);
+}

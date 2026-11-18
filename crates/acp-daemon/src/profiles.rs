@@ -36,6 +36,9 @@ struct State {
     startup_failure: Option<&'static str>,
 }
 /// What the daemon does around a project-set change, outside the Profile.
+/// The file name offered (never created) for a first Profile in the state directory.
+pub const SUGGESTED_PROFILE: &str = "profile.sqlite3";
+
 pub trait Hooks {
     /// Session configuration and context bridge checks for these roots.
     fn validate_roots(&self, roots: &[PathBuf]) -> Result<()>;
@@ -310,9 +313,18 @@ impl Profiles {
     fn info(&self, s: &State) -> Result<Value> {
         let startup = self.state_dir.load_startup().ok().flatten();
         let Some(selected) = &s.selected else {
-            return Ok(
-                json!({"selected":false,"write_enabled":false,"startup_profile":startup.is_some(),"startup_failure":s.startup_failure}),
-            );
+            // A suggestion for the operator's explicit create/select, inside the
+            // daemon's own private state directory (so its parent always exists
+            // and is private on this system). Never created or selected here.
+            let suggested = self.state_dir.path().join(SUGGESTED_PROFILE);
+            return Ok(json!({
+                "selected":false,
+                "write_enabled":false,
+                "startup_profile":startup.is_some(),
+                "startup_failure":s.startup_failure,
+                "suggested_path":suggested,
+                "suggested_exists":suggested.exists(),
+            }));
         };
         let remembered = startup.as_deref() == Some(selected.path());
         let binding = selected

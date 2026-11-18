@@ -204,6 +204,12 @@ pub struct ProfileInfo {
     /// Why the remembered Profile was not selected at start, as a fixed code.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub startup_failure: Option<String>,
+    /// While none is selected: where the daemon suggests a first Profile (its
+    /// private state directory) and whether a file is already there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggested_path: Option<String>,
+    #[serde(default)]
+    pub suggested_exists: bool,
 }
 /// Client serialization only; daemon-owned Request validation is authoritative.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
