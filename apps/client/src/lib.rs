@@ -2,6 +2,8 @@
 //! stdio bridge (`bridge`), and the operator/session request paths over either.
 //! Authorization stays daemon-side; this crate never opens SQLite or the Writer.
 pub mod bridge;
+pub mod discover;
 pub mod native;
 pub mod operator;
 pub mod session;
+pub mod settings;

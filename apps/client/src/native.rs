@@ -285,7 +285,7 @@ impl Inputs {
 /// Whether `wsl.exe --list --quiet` lists `name` (case-insensitive, as WSL is).
 /// `None` if the list itself is unavailable. Windows only; read-only.
 #[cfg(target_os = "windows")]
-fn registered_distribution(name: &str) -> Option<bool> {
+pub(crate) fn registered_distribution(name: &str) -> Option<bool> {
     use std::os::windows::process::CommandExt;
     let executable = std::env::var_os("SystemRoot")
         .map(PathBuf::from)?
@@ -303,13 +303,15 @@ fn registered_distribution(name: &str) -> Option<bool> {
         .then(|| parse_distribution_list(&output.stdout, name))
 }
 #[cfg(not(target_os = "windows"))]
-fn registered_distribution(_: &str) -> Option<bool> {
+pub(crate) fn registered_distribution(_: &str) -> Option<bool> {
     None
 }
 /// `wsl.exe --list` writes UTF-16LE (optionally with a BOM).
 // Used at runtime on Windows; unit-tested everywhere.
+/// Distribution names from `wsl.exe --list --quiet` output (UTF-16LE, optional
+/// BOM), in WSL's order, skipping blanks.
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-pub(crate) fn parse_distribution_list(raw: &[u8], name: &str) -> bool {
+pub(crate) fn distribution_names(raw: &[u8]) -> Vec<String> {
     let units: Vec<u16> = raw
         .as_chunks::<2>()
         .0
@@ -320,6 +322,14 @@ pub(crate) fn parse_distribution_list(raw: &[u8], name: &str) -> bool {
         .trim_start_matches('\u{feff}')
         .lines()
         .map(|l| l.trim_matches(|c: char| c.is_whitespace() || c == '\0'))
+        .filter(|l| !l.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub(crate) fn parse_distribution_list(raw: &[u8], name: &str) -> bool {
+    distribution_names(raw)
+        .iter()
         .any(|l| l.eq_ignore_ascii_case(name))
 }
 

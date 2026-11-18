@@ -5,8 +5,8 @@
 //! render and the destructive dialog opens and dismisses.
 use super::prelude::*;
 use super::{
-    BadgeVariant, ButtonSize, ButtonVariant, alert_dialog, badge, button, empty, input, surface,
-    tabs,
+    BadgeVariant, ButtonSize, ButtonVariant, alert_dialog, badge, button, empty, field, input,
+    radio_group, surface, tabs,
 };
 use acp_operator_core::appearance::{ColorMode, ThemeId};
 
@@ -173,6 +173,24 @@ pub fn Gallery() -> impl IntoElement {
         )
         .into_element();
 
+    let choice = signal(0usize);
+    let radios = ["archlinux", "Ubuntu-24.04", "Debian"]
+        .into_iter()
+        .enumerate()
+        .fold(
+            radio_group(model, || "Distribution".into()),
+            |group, (i, name)| group.option(name, move || choice.get() == i, move || choice.set(i)),
+        )
+        .into_element();
+    let labeled = field(
+        model,
+        || "Linux runtime directory".into(),
+        input(model, "Linux runtime directory")
+            .value(|| "/home/operator/.local/state/acp/runtime".into()),
+    )
+    .help(|| "An absolute path private to this user.".into())
+    .into_element();
+
     let empty_state = empty(model, "No pending reviews")
         .description("New suggestions appear here for an explicit decision.")
         .icon(INBOX)
@@ -250,6 +268,8 @@ pub fn Gallery() -> impl IntoElement {
                         .child(row(model, "Tabs", vec![tab_bar]))
                         .child(row(model, "Badges", vec![badges]))
                         .child(row(model, "Inputs", vec![fields]))
+                        .child(row(model, "Field", vec![labeled]))
+                        .child(row(model, "Radio group", vec![radios]))
                         .child(row(model, "Empty", vec![empty_state]))
                         .child(row(model, "Destructive", vec![destructive]))
                         .child(cards)
@@ -285,12 +305,17 @@ mod tests {
             "Rejected",
             "No pending reviews",
             "Toggle invalid",
+            "Linux runtime directory",
+            "An absolute path private to this user.",
+            "Ubuntu-24.04",
         ] {
             assert!(
                 app.screen().texts().iter().any(|t| t.contains(label)),
                 "gallery missing {label}"
             );
         }
+        // A radio press checks its option (the app owns the value).
+        app.press("Ubuntu-24.04").unwrap();
         // Tabs move the selection by keyboard activation.
         app.press("Detail").unwrap();
         app.wait_for("Selected tab: Detail").unwrap();

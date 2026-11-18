@@ -140,6 +140,18 @@ impl Section {
         }
     }
 }
+/// Connection discovery on the connection page. Each check carries the epoch
+/// it was started with; a result for an older selection is dropped.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum Probe {
+    #[default]
+    Idle,
+    Checking,
+    /// The explicit `systemctl --user start` is in flight.
+    Starting,
+    Found(connection::Discovery),
+    Failed(&'static str),
+}
 #[derive(Clone, Debug, PartialEq)]
 pub struct Model {
     pub operator: operator::Operator,
@@ -151,6 +163,14 @@ pub struct Model {
     pub connection_invalid: bool,
     pub settings: bool,
     pub connection_editor: bool,
+    /// Registered WSL distributions (`None` until listed on this page).
+    pub distributions: Option<Result<Vec<String>, &'static str>>,
+    pub probe: Probe,
+    pub probe_epoch: u64,
+    /// The manual fields of the connection page are shown.
+    pub connection_advanced: bool,
+    /// Why the last applied connection could not be saved for the next launch.
+    pub save_failure: Option<&'static str>,
     pub theme: appearance::ThemeId,
     pub color_mode: appearance::ColorMode,
     pub locale: i18n::Locale,
@@ -195,6 +215,11 @@ impl Model {
             connection_invalid: false,
             settings: false,
             connection_editor: false,
+            distributions: None,
+            probe: Probe::Idle,
+            probe_epoch: 0,
+            connection_advanced: false,
+            save_failure: None,
             theme: Default::default(),
             color_mode: appearance::ColorMode::Dark,
             locale: Default::default(),
@@ -245,6 +270,62 @@ impl Model {
         i18n::tr(self.locale, key)
     }
     /// A target transition invalidates pending reads, scope, evidence and timestamps together.
+    /// Starts a discovery check (or the explicit daemon start) for the current
+    /// draft; returns the epoch its result must carry.
+    pub fn begin_probe(&mut self, starting: bool) -> u64 {
+        self.probe_epoch = self.probe_epoch.wrapping_add(1);
+        self.probe = if starting {
+            Probe::Starting
+        } else {
+            Probe::Checking
+        };
+        self.probe_epoch
+    }
+    /// A discovery result. Ignored if a newer check started since; a valid
+    /// report fills the draft's coordinates for its target.
+    pub fn finish_probe(
+        &mut self,
+        epoch: u64,
+        result: Result<connection::Discovery, &'static str>,
+    ) {
+        if epoch != self.probe_epoch {
+            return;
+        }
+        let wsl = self.connection_draft.target == connection::Target::Wsl;
+        self.probe = match result {
+            Ok(d) if d.validate(wsl) => {
+                if wsl {
+                    let distribution = self.connection_draft.distribution.clone();
+                    d.fill_wsl(&mut self.connection_draft, &distribution);
+                } else {
+                    d.fill_local(&mut self.connection_draft);
+                }
+                self.connection_invalid = false;
+                Probe::Found(d)
+            }
+            Ok(_) => Probe::Failed(connection::discovery_status::INVALID_REPORT),
+            Err(e) => Probe::Failed(e),
+        };
+    }
+    /// A manual edit of the draft. An in-flight check can no longer overwrite it.
+    pub fn edit_draft(&mut self, edit: impl FnOnce(&mut connection::Connection)) {
+        edit(&mut self.connection_draft);
+        self.connection_invalid = false;
+        if matches!(self.probe, Probe::Checking) {
+            self.probe_epoch = self.probe_epoch.wrapping_add(1);
+            self.probe = Probe::Idle;
+        }
+    }
+    /// Selecting another target or distribution forgets the previous check.
+    pub fn select_target(&mut self, target: connection::Target, distribution: Option<&str>) {
+        self.connection_draft.target = target;
+        if let Some(d) = distribution {
+            self.connection_draft.distribution = d.into();
+        }
+        self.connection_invalid = false;
+        self.probe_epoch = self.probe_epoch.wrapping_add(1);
+        self.probe = Probe::Idle;
+    }
     pub fn apply_connection(&mut self) -> bool {
         if !self.connection_draft.validate() {
             self.connection_invalid = true;
@@ -774,6 +855,64 @@ mod tests {
         let row = s.projects[0].context.preferences[0].clone();
         s.projects[0].context.preferences = vec![row; MAX_ROWS + 1];
         assert!(s.validate().is_err());
+    }
+}
+
+#[cfg(test)]
+mod probe_tests {
+    use super::*;
+    use connection::{DISCOVERY_VERSION, DaemonStatus, Discovery, Target};
+    fn report() -> Discovery {
+        Discovery {
+            version: DISCOVERY_VERSION,
+            user: "operator".into(),
+            helper: "/usr/bin/acp-wsl-bridge".into(),
+            runtime: "/home/operator/.local/state/acp/runtime".into(),
+            endpoint: "/home/operator/.local/state/acp/runtime/control.sock".into(),
+            systemd: true,
+            unit_installed: true,
+            daemon: DaemonStatus::Ready {
+                profile_selected: false,
+            },
+        }
+    }
+    #[test]
+    fn stale_or_superseded_checks_never_overwrite_the_draft() {
+        let mut m = Model::loading();
+        m.select_target(Target::Wsl, Some("archlinux"));
+        let first = m.begin_probe(false);
+        // Another distribution is chosen before the first result arrives.
+        m.select_target(Target::Wsl, Some("Ubuntu-24.04"));
+        let second = m.begin_probe(false);
+        m.finish_probe(first, Ok(report()));
+        assert_eq!(m.probe, Probe::Checking);
+        assert!(m.connection_draft.wsl_runtime.is_empty());
+        m.finish_probe(second, Ok(report()));
+        assert!(matches!(m.probe, Probe::Found(_)));
+        assert_eq!(m.connection_draft.distribution, "Ubuntu-24.04");
+        assert!(m.connection_draft.validate());
+        // A manual edit during a check wins over its late result.
+        let third = m.begin_probe(false);
+        m.edit_draft(|d| d.wsl_runtime = "/srv/acp/runtime".into());
+        m.finish_probe(third, Ok(report()));
+        assert_eq!(m.connection_draft.wsl_runtime, "/srv/acp/runtime");
+        assert_eq!(m.probe, Probe::Idle);
+        // An invalid report fails closed and changes nothing.
+        let fourth = m.begin_probe(false);
+        m.finish_probe(
+            fourth,
+            Ok(Discovery {
+                user: "-x".into(),
+                ..report()
+            }),
+        );
+        assert_eq!(
+            m.probe,
+            Probe::Failed(connection::discovery_status::INVALID_REPORT)
+        );
+        assert_eq!(m.connection_draft.wsl_runtime, "/srv/acp/runtime");
+        // Applying never happens implicitly.
+        assert_eq!(m.connection.target, Target::Synthetic);
     }
 }
 

@@ -1,12 +1,17 @@
-//! Session-only connection drafts. Credentials are never fields in this model.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+//! Connection drafts, discovery reports and the saved choice. Credentials are
+//! never fields in this model: capabilities stay inside the daemon host.
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Target {
     #[default]
     Synthetic,
     Local,
     Wsl,
 }
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct Connection {
     pub target: Target,
     pub runtime: String,
@@ -16,6 +21,8 @@ pub struct Connection {
     pub helper: String,
     pub wsl_runtime: String,
     pub wsl_endpoint: String,
+    /// Offline fixture size; a launch option only, never saved.
+    #[serde(skip)]
     pub synthetic_rows: Option<u32>,
 }
 impl Connection {
@@ -55,6 +62,118 @@ impl Connection {
         }
     }
 }
+/// Version of the read-only discovery report (`acp-wsl-bridge --discover`).
+pub const DISCOVERY_VERSION: u32 = 1;
+
+/// Whether the daemon answered a health read through the host's operator
+/// credential. `Refused` is an ownership/permission refusal of the runtime.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "state")]
+pub enum DaemonStatus {
+    #[default]
+    NotRunning,
+    Refused,
+    Ready {
+        profile_selected: bool,
+    },
+}
+
+/// What a fixed, read-only check of one daemon host reports: who runs there,
+/// the conventional paths of the packaged systemd user unit
+/// (`$XDG_STATE_HOME/acp/runtime`), whether systemd and the unit are present and
+/// whether the daemon answers. No credential, Profile path or preference value.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Discovery {
+    pub version: u32,
+    pub user: String,
+    /// Absolute path of the helper that answered (WSL only; empty locally).
+    pub helper: String,
+    pub runtime: String,
+    pub endpoint: String,
+    pub systemd: bool,
+    pub unit_installed: bool,
+    pub daemon: DaemonStatus,
+}
+impl Discovery {
+    /// Fills the WSL fields of `draft` from this report. The draft still goes
+    /// through `Connection::validate` before it is applied.
+    pub fn fill_wsl(&self, draft: &mut Connection, distribution: &str) {
+        draft.target = Target::Wsl;
+        draft.distribution = distribution.into();
+        draft.user = self.user.clone();
+        draft.helper = self.helper.clone();
+        draft.wsl_runtime = self.runtime.clone();
+        draft.wsl_endpoint = self.endpoint.clone();
+    }
+    /// Fills the local fields of `draft` (a daemon on this machine).
+    pub fn fill_local(&self, draft: &mut Connection) {
+        draft.target = Target::Local;
+        draft.runtime = self.runtime.clone();
+        draft.endpoint = self.endpoint.clone();
+    }
+    pub fn ready(&self) -> bool {
+        matches!(self.daemon, DaemonStatus::Ready { .. })
+    }
+    /// Structural check of a report received from another process.
+    pub fn validate(&self, wsl: bool) -> bool {
+        let mut probe = Connection::default();
+        if wsl {
+            self.fill_wsl(&mut probe, "probe");
+        } else {
+            self.fill_local(&mut probe);
+        }
+        self.version == DISCOVERY_VERSION && probe.validate()
+    }
+}
+
+/// The connection kept between launches (`connection.json` in the private state
+/// or config directory). Only the target and its non-secret coordinates.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Saved {
+    pub format: u32,
+    pub connection: Connection,
+}
+impl Saved {
+    pub const FORMAT: u32 = 1;
+    pub fn new(connection: &Connection) -> Self {
+        Self {
+            format: Self::FORMAT,
+            connection: Connection {
+                synthetic_rows: None,
+                ..connection.clone()
+            },
+        }
+    }
+    /// The saved connection, if it is this format and still valid.
+    pub fn connection(self) -> Option<Connection> {
+        (self.format == Self::FORMAT && self.connection.validate()).then_some(self.connection)
+    }
+}
+
+/// Fixed reasons a discovery or daemon start can fail with. They cross the
+/// WSL boundary as these exact strings and map to localized messages.
+pub mod discovery_status {
+    use crate::i18n::Msg;
+    pub const NO_SYSTEMD: &str = "systemd is not running in this Linux environment";
+    pub const NO_UNIT: &str = "The acp-daemon user service is not installed";
+    pub const START_FAILED: &str = "systemd could not start acp-daemon";
+    pub const START_TIMEOUT: &str = "acp-daemon did not become ready";
+    pub const INVALID_REPORT: &str = "Invalid discovery report";
+    pub const KNOWN: [&str; 4] = [NO_SYSTEMD, NO_UNIT, START_FAILED, START_TIMEOUT];
+    pub fn message(reason: &str) -> Option<Msg> {
+        Some(match reason {
+            NO_SYSTEMD => Msg::HintSystemd,
+            NO_UNIT => Msg::HintService,
+            START_FAILED => Msg::DiscoveryStartFailed,
+            START_TIMEOUT => Msg::DiscoveryStartTimeout,
+            INVALID_REPORT => Msg::DiscoveryInvalid,
+            _ => return None,
+        })
+    }
+}
+
 /// Explicit WSL connection states. Fixed strings: they travel from the native
 /// layer as read-failure reasons and map to localized messages.
 pub mod wsl_status {
@@ -115,6 +234,90 @@ pub mod wsl_status {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn report() -> Discovery {
+        Discovery {
+            version: DISCOVERY_VERSION,
+            user: "operator".into(),
+            helper: "/usr/bin/acp-wsl-bridge".into(),
+            runtime: "/home/operator/.local/state/acp/runtime".into(),
+            endpoint: "/home/operator/.local/state/acp/runtime/control.sock".into(),
+            systemd: true,
+            unit_installed: true,
+            daemon: DaemonStatus::Ready {
+                profile_selected: false,
+            },
+        }
+    }
+    #[test]
+    fn discovery_fills_a_valid_draft_and_refuses_unsafe_reports() {
+        let d = report();
+        assert!(d.validate(true) && d.validate(false) && d.ready());
+        let mut draft = Connection::default();
+        d.fill_wsl(&mut draft, "archlinux");
+        assert!(draft.validate());
+        assert_eq!(draft.wsl_endpoint, d.endpoint);
+        for bad in [
+            Discovery {
+                version: 2,
+                ..report()
+            },
+            Discovery {
+                user: "-root".into(),
+                ..report()
+            },
+            Discovery {
+                user: "a b".into(),
+                ..report()
+            },
+            Discovery {
+                runtime: "relative/runtime".into(),
+                ..report()
+            },
+            Discovery {
+                endpoint: "/a/../b".into(),
+                ..report()
+            },
+            Discovery {
+                helper: "acp-wsl-bridge".into(),
+                ..report()
+            },
+        ] {
+            assert!(!bad.validate(true), "{bad:?}");
+        }
+        // Unknown fields from a newer or hostile helper refuse to parse.
+        let mut v = serde_json::to_value(report()).unwrap();
+        v["token"] = "x".into();
+        assert!(serde_json::from_value::<Discovery>(v).is_err());
+        let json = serde_json::to_value(DaemonStatus::Ready {
+            profile_selected: true,
+        })
+        .unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({"state":"ready","profile_selected":true})
+        );
+    }
+    #[test]
+    fn saved_connection_round_trips_without_fixture_rows_and_refuses_invalid() {
+        let mut c = Connection::default();
+        report().fill_wsl(&mut c, "archlinux");
+        c.synthetic_rows = Some(10);
+        let text = serde_json::to_string(&Saved::new(&c)).unwrap();
+        assert!(!text.contains("synthetic_rows"));
+        let back: Saved = serde_json::from_str(&text).unwrap();
+        let restored = back.connection().unwrap();
+        assert_eq!(restored.synthetic_rows, None);
+        assert_eq!(restored.distribution, "archlinux");
+        let mut invalid = Saved::new(&c);
+        invalid.connection.wsl_runtime = "relative".into();
+        assert!(invalid.connection().is_none());
+        let mut future = Saved::new(&c);
+        future.format = 2;
+        assert!(future.connection().is_none());
+        assert!(
+            serde_json::from_str::<Saved>(r#"{"format":1,"connection":{},"extra":1}"#).is_err()
+        );
+    }
     #[test]
     fn wsl_launch_failures_are_classified_from_the_exit_status_only() {
         use wsl_status::*;

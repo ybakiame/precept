@@ -47,6 +47,12 @@ pub mod control {
     pub const LG: f32 = 38.0;
 }
 
+/// Region widths (points): how wide a column may grow before it stops helping.
+pub mod layout {
+    /// A form or settings column: labels, fields and their help stay scannable.
+    pub const FORM: f32 = 640.0;
+}
+
 /// Icon sizes (points), one step below the text they sit beside.
 pub mod icon {
     pub const SM: f32 = 14.0;

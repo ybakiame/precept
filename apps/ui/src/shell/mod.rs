@@ -178,7 +178,10 @@ fn toolbar(model: Signal<Model>) -> impl IntoElement {
                 m.session.confirm_start = false;
                 m.connection_editor = !m.connection_editor;
                 m.settings = false;
-            })
+            });
+            if model.get().connection_editor {
+                connection::opened(model);
+            }
         }))
         .child(word_action(
             model,

@@ -227,6 +227,23 @@ pub fn App() -> impl IntoElement {
         initial.connection = inputs.connection();
         initial.connection_draft = initial.connection.clone();
         initial.live = inputs.is_live();
+        // Explicit launch arguments win; otherwise the saved connection, and on a
+        // first desktop launch the connection page. Never in unit tests, which
+        // must not read or write the developer's settings.
+        #[cfg(not(test))]
+        if !inputs.is_live() && inputs.synthetic_rows.is_none() {
+            match acp_operator_client::settings::load() {
+                Some(saved) => {
+                    initial.live = saved.target != acp_operator_core::connection::Target::Synthetic;
+                    initial.connection = saved.clone();
+                    initial.connection_draft = saved;
+                }
+                None if !TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed) => {
+                    initial.connection_editor = true;
+                }
+                None => {}
+            }
+        }
         initial.task_id = inputs.task_id.unwrap_or_default();
         initial.selected_project = inputs.project;
     }
@@ -237,6 +254,9 @@ pub fn App() -> impl IntoElement {
         _ => Appearance::Dark,
     });
     let model = signal(initial);
+    if model.get_untracked().connection_editor {
+        features::connection::opened(model);
+    }
     load(model);
     sessions::poll(model);
     #[cfg(feature = "ipc")]
@@ -547,29 +567,36 @@ mod tests {
     fn real_console_edits_connection_without_implicit_reads_and_localizes() {
         let mut app = nsh_testing::Headless::start(EngineConfig::new(Root::of::<App>())).unwrap();
         app.wait_for("Project: alpha").unwrap();
-        app.press("Connection target").unwrap();
-        app.press("Local daemon").unwrap();
-        app.press("Apply and read").unwrap();
-        app.wait_for("Invalid connection fields; the active target is unchanged.")
+        app.press("Connection").unwrap();
+        // Choosing this computer runs the read-only check; nothing connects yet.
+        app.press("This computer").unwrap();
+        app.wait_for("Checks").unwrap();
+        app.wait_for("Daemon service").unwrap();
+        app.press("Advanced").unwrap();
+        // The check may already have filled the fields; replace them by hand.
+        app.clear("Private runtime directory").unwrap();
+        app.type_text("Private runtime directory", "relative/runtime")
             .unwrap();
-        // Invalid drafts cannot clear a usable snapshot or replace its source.
-        app.wait_for("OFFLINE_SYNTHETIC · Offline synthetic · Synthetic snapshot ready")
-            .unwrap();
-        app.type_text("Private runtime directory", "/synthetic/runtime")
-            .unwrap();
+        app.clear("IPC endpoint").unwrap();
         app.type_text("IPC endpoint", "synthetic").unwrap();
         assert_eq!(
             app.screen()
                 .input_text("Private runtime directory")
                 .unwrap(),
-            Some("/synthetic/runtime")
+            Some("relative/runtime")
         );
         assert_eq!(
             app.screen().input_text("IPC endpoint").unwrap(),
             Some("synthetic")
         );
-        app.press("Offline synthetic").unwrap();
-        app.press("Apply and read").unwrap();
+        app.press("Connect").unwrap();
+        app.wait_for("Invalid connection fields; the active target is unchanged.")
+            .unwrap();
+        // Invalid drafts cannot clear a usable snapshot or replace its source.
+        app.wait_for("OFFLINE_SYNTHETIC · Demo data · Synthetic snapshot ready")
+            .unwrap();
+        app.press("Demo data").unwrap();
+        app.press("Use demo data").unwrap();
         app.press_key("Escape").unwrap();
         app.wait_for("Project: alpha").unwrap();
         app.press("Settings").unwrap();
