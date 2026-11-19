@@ -17,7 +17,9 @@ tui = ["ipc", "dep:nsh-platform-tui", "dep:ratatui-core", "dep:ratatui-crossterm
 serde_json = "1"
 acp-operator-core = { path = "../core" }
 acp-operator-client = { path = "../client", optional = true }
-# NSH 0.5-based upstream keyboard fix; owner-approved immutable revision.
+# NSH v0.6.0, owner-approved immutable revision. 0.6.0 gates SVG rendering
+# behind the platform crates' `svg` feature (default off here): the native
+# platforms enable it, or every icon silently draws nothing.
 nsh-core = { git = "https://github.com/longbridge/nsh", rev = "554163758e30d2f62f814096a6327937dcb4fe49" }
 nsh-base = { git = "https://github.com/longbridge/nsh", rev = "554163758e30d2f62f814096a6327937dcb4fe49", default-features = false }
 nsh-platform-tui = { git = "https://github.com/longbridge/nsh", rev = "554163758e30d2f62f814096a6327937dcb4fe49", default-features = false, features = ["run-app"], optional = true }
@@ -26,11 +28,11 @@ ratatui-crossterm = { version = "=0.1.2", optional = true }
 crossterm = { version = "0.29", optional = true }
 
 [target.'cfg(target_os="linux")'.dependencies]
-nsh-platform-linux = { git = "https://github.com/longbridge/nsh", rev = "554163758e30d2f62f814096a6327937dcb4fe49", default-features = false, optional = true }
+nsh-platform-linux = { git = "https://github.com/longbridge/nsh", rev = "554163758e30d2f62f814096a6327937dcb4fe49", default-features = false, features = ["svg"], optional = true }
 [target.'cfg(target_os="macos")'.dependencies]
-nsh-platform-macos = { git = "https://github.com/longbridge/nsh", rev = "554163758e30d2f62f814096a6327937dcb4fe49", default-features = false, optional = true }
+nsh-platform-macos = { git = "https://github.com/longbridge/nsh", rev = "554163758e30d2f62f814096a6327937dcb4fe49", default-features = false, features = ["svg"], optional = true }
 [target.'cfg(target_os="windows")'.dependencies]
-nsh-platform-windows = { git = "https://github.com/longbridge/nsh", rev = "554163758e30d2f62f814096a6327937dcb4fe49", default-features = false, optional = true }
+nsh-platform-windows = { git = "https://github.com/longbridge/nsh", rev = "554163758e30d2f62f814096a6327937dcb4fe49", default-features = false, features = ["svg"], optional = true }
 
 [target.'cfg(target_arch="wasm32")'.dependencies]
 nsh-platform-web = { git = "https://github.com/longbridge/nsh", rev = "554163758e30d2f62f814096a6327937dcb4fe49", default-features = false }

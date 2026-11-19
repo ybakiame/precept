@@ -59,11 +59,19 @@ for (const file of files) {
 // historical reports or archived manifests. This validates pins, never resolves them.
 const nshDependencies = [...readFileSync('apps/ui/Cargo.toml', 'utf8')
   .matchAll(/^(nsh-[\w-]+)\s*=\s*\{([^\n]+)\}\s*$/gm)]
-  .map(([, name, fields]) => ({ name, revision:fields.match(/\brev\s*=\s*"([0-9a-f]{40})"/)?.[1] }));
+  .map(([, name, fields]) => ({ name, body:fields, revision:fields.match(/\brev\s*=\s*"([0-9a-f]{40})"/)?.[1] }));
 const nshPin = nshDependencies.find(dependency => dependency.name === 'nsh-core')?.revision;
 requireCheck(!!nshPin, 'Missing immutable NSH Cargo core pin');
 for (const dependency of nshDependencies) {
   requireCheck(!!nshPin && dependency.revision === nshPin, `NSH Cargo dependency pin mismatch: ${dependency.name}`);
+}
+// NSH 0.6.0 gates SVG rendering behind the native platform crates' `svg`
+// feature; without it every icon silently draws nothing (test builds hide this:
+// dev-dependencies unify the feature in).
+for (const platform of ['nsh-platform-linux', 'nsh-platform-macos', 'nsh-platform-windows']) {
+  const dependency = nshDependencies.find(d => d.name === platform);
+  requireCheck(!!dependency && /features\s*=\s*\[[^\]]*"svg"/.test(dependency.body),
+    `NSH native platform without the svg feature (icons would not draw): ${platform}`);
 }
 const packagerPin = readFileSync('tools/package_ui_web.mjs', 'utf8')
   .match(/^const pin = '([0-9a-f]{40})';$/m)?.[1];
