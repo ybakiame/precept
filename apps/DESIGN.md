@@ -318,8 +318,15 @@ Two menus, by what the operator is doing (owner request):
   daemon read: 1. Connection (daemon reachable) → 2. Profile (selected) →
   3. Workspaces (a served project) → 4. Agents (a shared project). Screen readers
   and tests use the stable name "Step N: Name".
-- **Project**: the project switcher, then Dashboard, Preferences, Review, Handoff,
-  Sessions — the current project's work.
+- **Project**: the project switcher, then Dashboard, Preferences, Handoff,
+  Sessions — the current project's work. Preferences shows what agents receive:
+  the project's own preferences and the personal ones it inherits (labeled "This
+  project" / "Personal · all projects"), with "Manage project preferences" and
+  "Manage personal preferences".
+- **Personal**: Personal preferences (the review workspace fixed to global
+  scope) and To review (the workspace with the scope switch: suggestions waiting
+  in either scope). Adding is two explicit steps: save (suggested), then the new
+  exact record opens in Detail to inspect and confirm.
 - Foot: Diagnostics, Settings.
 
 The Profile page (step 2) is the Profile section (setup card while none is

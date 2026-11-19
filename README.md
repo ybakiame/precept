@@ -29,9 +29,11 @@ cargo test --workspace --all-targets --locked
 Profile setup and all seven typed commands are documented in the
 [native operator guide](docs/p1/native-operator-workflows.md). Creation, selection
 and write enablement are separate explicit operator actions. NSH shares one
-Desktop/TUI model; its Profile panel supports exact preference inspection,
-suggestion and confirm/reject. Registration, deprecate/delete and Handoff put are
-CLI-only at S3. The Windows HWND GUI operates a daemon inside WSL2 with the same
+Desktop/TUI model, organized as **Set up** (connection, Profile, workspaces, agent
+access), **Project** (dashboard, effective preferences, Handoff, sessions) and
+**Personal** (personal preferences across projects, and the review of suggestions).
+Adding a preference is two explicit steps: it is saved as suggested, then the exact
+record is confirmed. Handoff put stays CLI-only. The Windows HWND GUI operates a daemon inside WSL2 with the same
 Operator and Sessions controls through the typed `acp-wsl-bridge` helper
 ([interfaces](docs/interfaces.md#windows-gui--wsl2-bridge)); offline and Web targets remain read-only.
 

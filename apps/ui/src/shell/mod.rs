@@ -83,11 +83,19 @@ pub(crate) enum Destination {
     Connection,
     Profile,
     Agents,
+    PersonalPreferences,
     Settings,
 }
 pub(crate) fn current(m: &Model) -> Destination {
     if m.operator.open {
-        Destination::Review
+        // The workspace's entry decides where the window is.
+        match m.operator.mode {
+            acp_operator_core::operator::ReviewMode::Inbox => Destination::Review,
+            acp_operator_core::operator::ReviewMode::Personal => Destination::PersonalPreferences,
+            acp_operator_core::operator::ReviewMode::Project => {
+                Destination::Section(acp_operator_core::Section::Preferences)
+            }
+        }
     } else if m.sessions {
         Destination::Sessions
     } else if m.settings {
@@ -116,6 +124,9 @@ fn leave_workspaces(m: &mut Model) {
 pub(crate) fn go(model: Signal<Model>, destination: Destination) {
     match destination {
         Destination::Review => review::open(model),
+        Destination::PersonalPreferences => {
+            review::open_mode(model, acp_operator_core::operator::ReviewMode::Personal)
+        }
         Destination::Sessions => sessions::open(model),
         Destination::Connection => {
             model.update(|m| {
@@ -152,6 +163,7 @@ fn title_key(destination: Destination) -> Msg {
         Destination::Connection => Msg::Connection,
         Destination::Profile => Msg::ProfileSection,
         Destination::Agents => Msg::AgentsDestination,
+        Destination::PersonalPreferences => Msg::PersonalPreferences,
         Destination::Settings => Msg::Settings,
     }
 }
@@ -276,9 +288,14 @@ fn sidebar(model: Signal<Model>) -> impl IntoElement {
     let work = [
         (Section(S::Dashboard), icons::section_path(S::Dashboard)),
         (Section(S::Preferences), icons::section_path(S::Preferences)),
-        (Review, icons::REVIEW),
         (Section(S::Handoff), icons::section_path(S::Handoff)),
         (Sessions, icons::SESSIONS),
+    ];
+    // Personal: yours across projects — global preferences and the decisions
+    // agents' suggestions wait for.
+    let personal = [
+        (PersonalPreferences, icons::section_path(S::Preferences)),
+        (Review, icons::REVIEW),
     ];
     let foot = [
         (Section(S::Diagnostics), icons::section_path(S::Diagnostics)),
@@ -297,6 +314,11 @@ fn sidebar(model: Signal<Model>) -> impl IntoElement {
     );
     let work_group = row().children(
         work.into_iter()
+            .map(move |(d, path)| destination(model, d, path)),
+    );
+    let personal_group = row().children(
+        personal
+            .into_iter()
             .map(move |(d, path)| destination(model, d, path)),
     );
     let foot_group = row().children(
@@ -335,6 +357,12 @@ fn sidebar(model: Signal<Model>) -> impl IntoElement {
                 .child(group_label(model, Msg::ProjectGroup))
                 .child(view().px_2().child(projects(model)))
                 .child(work_group),
+        )
+        .child(
+            view()
+                .gap_1()
+                .child(group_label(model, Msg::PersonalGroup))
+                .child(personal_group),
         )
         .child(view().flex_1().style_when(compact, |s| s.hidden()))
         .child(foot_group)

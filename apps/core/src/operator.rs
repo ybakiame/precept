@@ -37,8 +37,25 @@ impl std::fmt::Debug for DeleteArm {
         f.write_str("DeleteArm(redacted)")
     }
 }
+/// Which entry opened the review workspace: it fixes the scope shown.
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub enum ReviewMode {
+    /// Personal → To review: both scopes, the scope switch shown.
+    #[default]
+    Inbox,
+    /// Personal → Personal preferences: global scope only.
+    Personal,
+    /// Project → Preferences → Manage: the selected project only.
+    Project,
+}
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct Operator {
+    pub mode: ReviewMode,
+    /// A preference just saved (suggested): open it for confirmation once the
+    /// queue shows it.
+    pub follow: Option<i64>,
+    /// The read the UI sends next to continue that path (never a write).
+    pub follow_up: Option<&'static str>,
     pub pane: Pane,
     pub open: bool,
     pub busy: bool,
@@ -163,6 +180,8 @@ impl Operator {
     }
     pub fn invalidate(&mut self) {
         self.serial += 1;
+        self.follow = None;
+        self.follow_up = None;
         self.review = None;
         self.info = None;
         self.page = None;
@@ -551,6 +570,17 @@ impl Model {
                     self.operator.digest_expanded = false;
                     self.operator.page = None;
                     self.operator.queue = Some(queue);
+                    if let Some(id) = self.operator.follow.take()
+                        && self
+                            .operator
+                            .queue
+                            .as_ref()
+                            .is_some_and(|q| q.records.iter().any(|r| r.id == id))
+                    {
+                        self.operator.selected_id = Some(id);
+                        self.operator.review_tab = ReviewTab::Detail;
+                        self.operator.follow_up = Some("profile.review.inspect");
+                    }
                     if self.operator.selected_id.is_some() && self.operator.record().is_none() {
                         self.operator.selected_id = None;
                     }
@@ -662,6 +692,19 @@ impl Model {
                         })
                     {
                         return Err("OutcomeUnknown");
+                    }
+                    // Save, then confirm: a preference the operator just saved
+                    // opens as the exact record to confirm (two explicit steps).
+                    if let Command::SuggestPreference { .. } = &mutation.command {
+                        self.operator.follow = receipt
+                            .affected
+                            .iter()
+                            .find(|a| a.kind == "preference" && !a.deleted)
+                            .and_then(|a| a.record_id.parse().ok());
+                        if self.operator.follow.is_some() {
+                            self.operator.queue_after_id = 0;
+                            self.operator.follow_up = Some("profile.review.queue");
+                        }
                     }
                     self.operator.receipt = Some(receipt);
                     self.operator.pending = None;
@@ -1597,6 +1640,42 @@ mod tests {
         assert!(m.complete_operator(&retry, Ok(receipt.clone())));
         assert!(!m.complete_operator(&retry, Ok(receipt.clone())));
         assert!(!m.complete_operator(&request, Ok(receipt)));
+    }
+    #[test]
+    fn a_saved_preference_opens_as_the_exact_record_to_confirm() {
+        let mut m = model();
+        m.operator.key = "editor".into();
+        m.operator.value = "synthetic".into();
+        m.operator.source = "operator".into();
+        assert!(m.operator_review("suggest", "s-op"));
+        let request = m.operator_confirm().unwrap();
+        let affected = json!([{"kind":"preference","project":"","record_id":"9","revision":1,"deleted":false}]);
+        assert!(m.complete_operator(&request, Ok(receipt_json("s-op", 4, affected))));
+        // Step one is done (saved as suggested); nothing is confirmed.
+        assert_eq!(m.operator.follow, Some(9));
+        assert_eq!(m.operator.follow_up, Some("profile.review.queue"));
+        let next = m.operator.follow_up.take().unwrap();
+        let read = m.operator_read(next).unwrap();
+        assert_eq!(read.method, "profile.review.queue");
+        let queue = queue_of(
+            vec![
+                synthetic_record(3, &Scope::Global, "suggested", 1),
+                synthetic_record(9, &Scope::Global, "suggested", 1),
+            ],
+            5,
+            None,
+        );
+        assert!(m.complete_operator(&read, Ok(serde_json::to_value(queue).unwrap())));
+        // Step two is offered: the exact record, in Detail, to inspect and confirm.
+        assert_eq!(m.operator.selected_id, Some(9));
+        assert_eq!(m.operator.review_tab, ReviewTab::Detail);
+        assert_eq!(m.operator.follow_up, Some("profile.review.inspect"));
+        assert!(m.operator.follow.is_none());
+        // A refresh that does not show it never selects something else.
+        let mut m = model();
+        m.operator.follow = Some(42);
+        assert!(complete_queue(&mut m, queue_of(vec![], 5, None)));
+        assert!(m.operator.follow.is_none() && m.operator.follow_up.is_none());
     }
     #[test]
     fn queue_sourced_selection_drives_detail_and_confirm() {

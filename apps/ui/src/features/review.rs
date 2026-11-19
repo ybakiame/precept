@@ -6,7 +6,8 @@ use acp_operator_core::{
     connection::Target,
     i18n::{Locale, Msg, tr},
     operator::{
-        Channel, Command, DecisionAction, DeleteArm, Origin, Pane, Review, ReviewTab, Scope,
+        Channel, Command, DecisionAction, DeleteArm, Origin, Pane, Review, ReviewMode, ReviewTab,
+        Scope,
     },
     presentation::sanitize,
 };
@@ -15,7 +16,28 @@ use shell::{action, card, word_action};
 use tokens::{mix, palette};
 
 pub(crate) fn open(model: Signal<Model>) {
+    open_mode(model, ReviewMode::Inbox);
+}
+/// Opens the workspace from one entry: To review (both scopes), Personal
+/// preferences (global only) or a project's preferences (that project only).
+pub(crate) fn open_mode(model: Signal<Model>, mode: ReviewMode) {
     model.update(|m| {
+        let global = match mode {
+            ReviewMode::Inbox => m.operator.global,
+            ReviewMode::Personal => true,
+            ReviewMode::Project => false,
+        };
+        if global != m.operator.global
+            || (mode != ReviewMode::Inbox && m.operator.pane != Pane::Preferences)
+        {
+            m.operator.invalidate();
+            m.operator.global = global;
+            m.operator.after_id = 0;
+        }
+        if mode != ReviewMode::Inbox {
+            m.operator.pane = Pane::Preferences;
+        }
+        m.operator.mode = mode;
         m.operator.open = true;
         m.sessions = false;
         m.settings = false;
@@ -79,9 +101,15 @@ fn send(model: Signal<Model>, request: Review) {
                 let _ = connection;
                 Err("Unauthorized")
             };
+            let mut next = None;
             model.update(|m| {
                 m.complete_operator(&request, result);
+                next = m.operator.follow_up.take();
             });
+            // Save, then confirm: continue with the read the model asked for.
+            if let Some(method) = next {
+                refresh(model, method);
+            }
             // Explicit Refresh updates effective context after inspection. Do not
             // destroy retained uncertain request identity through an automatic read.
         });
@@ -1056,28 +1084,37 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
                 .text_color(move || tokens::palette(model).muted),
         )
         .child(
-            view().flex_row().flex_wrap().gap_2().children(
-                [
-                    (Pane::Preferences, Msg::OperatorPreferences),
-                    (Pane::Handoff, Msg::OperatorSavedHandoff),
-                ]
-                .into_iter()
-                .map(move |(pane, key)| {
-                    word_action(
-                        model,
-                        key,
-                        move || !model.get().operator.busy,
-                        move || {
-                            model.update(|m| {
-                                m.operator.pane = pane;
-                                m.operator.review = None;
-                                m.operator.delete_arm = None;
-                                m.operator.serial += 1;
-                            })
-                        },
-                    )
-                }),
-            ),
+            view()
+                .flex_row()
+                .flex_wrap()
+                .gap_2()
+                // Only the inbox switches panes; the scoped entries are records.
+                .style_when(
+                    move || model.get().operator.mode != ReviewMode::Inbox,
+                    |s| s.hidden(),
+                )
+                .children(
+                    [
+                        (Pane::Preferences, Msg::OperatorPreferences),
+                        (Pane::Handoff, Msg::OperatorSavedHandoff),
+                    ]
+                    .into_iter()
+                    .map(move |(pane, key)| {
+                        word_action(
+                            model,
+                            key,
+                            move || !model.get().operator.busy,
+                            move || {
+                                model.update(|m| {
+                                    m.operator.pane = pane;
+                                    m.operator.review = None;
+                                    m.operator.delete_arm = None;
+                                    m.operator.serial += 1;
+                                })
+                            },
+                        )
+                    }),
+                ),
         )
         .child(word_action(
             model,
@@ -1188,6 +1225,12 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
                         .flex_row()
                         .flex_wrap()
                         .gap_2()
+                        // The scope is fixed by the scoped entries; only the
+                        // inbox switches it.
+                        .style_when(
+                            move || model.get().operator.mode != ReviewMode::Inbox,
+                            |s| s.hidden(),
+                        )
                         .child(word_action(
                             model,
                             Msg::OperatorGlobal,
