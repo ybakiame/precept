@@ -3,7 +3,7 @@
 Owner-only local setup for daily use of the primary workflow: the Windows HWND
 Desktop operates an ACP daemon inside an Arch Linux WSL2 distribution through
 `acp-wsl-bridge` (`wsl.exe --exec`, no shell, no TCP). This is **not** a release:
-outputs stay in ignored `artifacts/`, are never committed or uploaded, and carry no
+outputs stay in ignored `.tmp/artifacts/`, are never committed or uploaded, and carry no
 support, signing or clean-machine claim.
 
 | Side | Build | Install |
@@ -23,13 +23,13 @@ Runtime dependencies are checked against the built binaries' direct libraries.
 ```sh
 # WSL2 Arch, clean committed checkout, offline with the existing Cargo cache
 tools/dogfood/arch-package.sh dogfood-linux-01
-sudo pacman -U artifacts/local-dogfood/dogfood-linux-01/agent-control-plane-*.pkg.tar.zst
+sudo pacman -U .tmp/artifacts/local-dogfood/dogfood-linux-01/agent-control-plane-*.pkg.tar.zst
 ```
 
 ```powershell
 # Windows checkout at the same commit (PowerShell 7)
-./tools/portable/windows-package.ps1 -OutputParent artifacts/local-p1-m5 -Name dogfood-windows-01
-./tools/dogfood/windows-deploy.ps1 -AttemptDir artifacts/local-p1-m5/dogfood-windows-01 -Distribution <distro> -User <linux-user>
+./tools/portable/windows-package.ps1 -OutputParent .tmp/artifacts/local-p1-m5 -Name dogfood-windows-01
+./tools/dogfood/windows-deploy.ps1 -AttemptDir .tmp/artifacts/local-p1-m5/dogfood-windows-01 -Distribution <distro> -User <linux-user>
 ```
 
 To update the Desktop later, close it, build a new attempt and rerun

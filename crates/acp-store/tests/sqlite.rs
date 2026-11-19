@@ -239,21 +239,20 @@ fn forged_decision_without_matching_receipt_transition_is_refused() {
     assert!(SqliteStore::open(&p).is_err());
 }
 #[test]
-fn frozen_ddl_matches_implementation() {
-    let text = include_str!("../../../docs/p1/profile-v1-runtime-contract.md");
-    let ddl = text
-        .split("```sql\n")
-        .nth(1)
-        .unwrap()
-        .split("```")
-        .next()
-        .unwrap();
-    let parts: Vec<_> = ddl
-        .split(';')
-        .map(str::trim)
-        .filter(|s| !s.is_empty() && !s.starts_with("PRAGMA"))
-        .collect();
-    assert_eq!(parts, profile::DDL);
+fn ddl_contains_all_profile_v1_statements() {
+    assert_eq!(
+        profile::DDL,
+        [
+            profile::PROFILE,
+            profile::PROJECTS,
+            profile::PREFERENCES,
+            profile::PREFS_LOOKUP,
+            profile::HANDOFFS,
+            profile::RECEIPTS,
+            profile::REVIEW_DECISIONS,
+            profile::REVIEW_LOOKUP,
+        ]
+    );
 }
 #[test]
 fn input_paths_are_explicit() {

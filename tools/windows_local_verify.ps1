@@ -1,6 +1,6 @@
 param(
     [ValidateSet('Core', 'UI', 'All')][string]$Suite = 'All',
-    [string]$ReportDir = 'artifacts/local-p1-m2/s5-windows',
+    [string]$ReportDir = '.tmp/artifacts/local-p1-m2/s5-windows',
     [string]$DiffBase
 )
 $ErrorActionPreference = 'Stop'

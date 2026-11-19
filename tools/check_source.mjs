@@ -10,12 +10,6 @@ const listed = execFileSync('git', ['ls-files', '--cached', '--others', '--exclu
 const files = [...new Set(listed)].filter(file => existsSync(file));
 const failures = [];
 const requireCheck = (condition, message) => { if (!condition) failures.push(message); };
-const historicalNames = new Set(['docs/adr/0002-local-ipc-capabilities.md', 'docs/adr/0005-local-storage-and-write-ownership.md', 'docs/adr/0006-rust-only-runtime.md']);
-const archive = new Set(JSON.parse(readFileSync('docs/archive-index.json')).documents);
-for (const file of archive) {
-  requireCheck(files.includes(file), `Missing archival document: ${file}`);
-  requireCheck(readFileSync(file, 'utf8').includes('Historical record — not a current runbook.'), `Unmarked archive: ${file}`);
-}
 for (const file of files) {
   requireCheck(!file.endsWith('.py'), `Tracked executable prototype: ${file}`);
   requireCheck(!['pyproject.toml', 'setup.py', 'setup.cfg', 'requirements.txt'].includes(file), `Retired packaging: ${file}`);
@@ -28,16 +22,15 @@ for (const file of files) {
       requireCheck(existsSync(path.resolve(path.dirname(file), target)), `Broken Markdown target: ${file} -> ${target}`);
     }
   }
-  // Frozen deletion inventory is explanatory reference text, not a runbook. The
-  // scanner's own deny patterns likewise do not execute the banned commands.
-  if (archive.has(file) || file === 'docs/p1/python-retirement.md' || file === 'tools/check_source.mjs') continue;
-  requireCheck(!/\bacpctl\b/.test(text) || historicalNames.has(file), `Unexplained retired entrypoint name: ${file}`);
+  // The scanner's own deny patterns do not execute the banned commands.
+  if (file === 'tools/check_source.mjs') continue;
+  requireCheck(!/\bacpctl\b/.test(text), `Unexplained retired entrypoint name: ${file}`);
   const obsolete = /\bPYTHONPATH\b|\bACP_TEST_PYTHON\b|agent_control_plane|setup-python|tools\/[\w-]+\.py|\bpython(?:3(?:\.\d+)?)?\s+(?:-m|-c|tools\/)|\bpip3?\s+install/;
   requireCheck(!obsolete.test(text), `Unexplained active prototype reference: ${file}`);
   // Mentioning retired schema names in refusal fixtures or historical prose is
   // intentional. Only executable obsolete target/example commands are rejected.
   requireCheck(!/(?:-p\s+acp-rehearsal|--example\s+(?:synthetic_rehearsal|contract_reader|sqlite_reader))/.test(text), `Removed Cargo target invocation: ${file}`);
-  for (const match of text.matchAll(/--manifest-path[ '\"]+([\w./-]+Cargo\.toml)/g)) {
+  for (const match of text.matchAll(/--manifest-path[ '"]+([\w./-]+Cargo\.toml)/g)) {
     requireCheck(existsSync(match[1]), `Missing Cargo manifest: ${file} -> ${match[1]}`);
   }
   if (file.startsWith('.github/workflows/')) {
@@ -55,8 +48,8 @@ for (const file of files) {
     }
   }
 }
-// Cargo's core dependency is the authority; compare every active consumer, not
-// historical reports or archived manifests. This validates pins, never resolves them.
+// Cargo's core dependency is the authority; compare every active consumer.
+// This validates pins, never resolves them.
 const nshDependencies = [...readFileSync('apps/ui/Cargo.toml', 'utf8')
   .matchAll(/^(nsh-[\w-]+)\s*=\s*\{([^\n]+)\}\s*$/gm)]
   .map(([, name, fields]) => ({ name, body:fields, revision:fields.match(/\brev\s*=\s*"([0-9a-f]{40})"/)?.[1] }));
@@ -86,4 +79,4 @@ const rendererPins = (webWorkflow.jobs?.web?.steps || []).flatMap(step =>
 requireCheck(!!nshPin && rendererPins.length === 1 && rendererPins[0] === nshPin,
   'NSH workflow renderer pin differs from Cargo');
 if (failures.length) { console.error(failures.join('\n')); process.exitCode = 1; }
-else console.log(`PASS: ${files.length} source paths; zero tracked prototype executables/packaging; ${archive.size} explicit archives; active refs, local Markdown links, workflow YAML/targets and immutable NSH consumer pins checked`);
+else console.log(`PASS: ${files.length} source paths; zero tracked prototype executables/packaging; active refs, local Markdown links, workflow YAML/targets and immutable NSH consumer pins checked`);

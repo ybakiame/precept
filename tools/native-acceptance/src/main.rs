@@ -1454,7 +1454,7 @@ fn main() {
     let dirty = !git(&["status", "--porcelain"]).is_empty();
     assert!(!dirty || development, "clean source required");
     let artifact_root = repo
-        .join("artifacts/local-p1-m4")
+        .join(".tmp/artifacts/local-p1-m4")
         .canonicalize()
         .expect("existing owned artifact root");
     assert!(
@@ -1563,7 +1563,7 @@ fn wsl_desktop(a: &[String]) {
     let dirty = !git(&["status", "--porcelain"]).is_empty();
     assert!(!dirty || development, "clean source required");
     let artifact_root = repo
-        .join("artifacts/local-p1-m5")
+        .join(".tmp/artifacts/local-p1-m5")
         .canonicalize()
         .expect("existing owned artifact root");
     assert!(

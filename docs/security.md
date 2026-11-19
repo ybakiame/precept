@@ -1,9 +1,9 @@
 # Threat model and privacy limitations — Rust-native validation runtime
 
-Accepted ADR-0004 defines repository authority, user-local review and independent
-evidence distinctions. ADR-0006 retires the disposable prototype without migration.
-Current controls are native Profile v1, scoped IPC v2 and a daemon-exclusive writer;
-this is validation evidence, not enterprise enforcement or production activation.
+The [product charter](product.md) defines repository authority, user-local review
+and independent evidence distinctions. Current controls are native Profile v1,
+scoped IPC v2 and a daemon-exclusive writer; validation evidence is not enterprise
+enforcement or production activation.
 
 ## Threat model
 
@@ -32,8 +32,7 @@ is **not an OS sandbox** or a credential isolation boundary.
 - External agent access is switched per project by the operator
   (`project.agents`): an unshared project has no agent credential, and a held
   token is refused. `acp-mcp` is stdio-only (no port); the GUI shows client
-  configuration to copy and never writes other tools' files
-  ([agent access](p1/agent-access.md)).
+  configuration to copy and never writes other tools' files.
 - Exactly two project-bound read-only MCP tools; no administrative previews, profile
   mutations, context-driven approval or tool-supplied project selector.
 - Preference confirmation binds the exact record/revision/scope. Only confirmed
@@ -64,7 +63,7 @@ is **not an OS sandbox** or a credential isolation boundary.
 Never persist secrets, raw transcripts or private identifiers in tracked fixtures.
 Source retirement does not delete real databases, local auth or runtime directories.
 
-## Optional P1-G operator session boundary
+## Optional native operator sessions
 
 The native Rust daemon can explicitly opt into one ACP v1 agent through a private
 trusted `--agent-config`; default remains disabled. This adds operator-only local
@@ -72,19 +71,18 @@ session controls, separate from project-bound MCP credentials. MCP still exposes
 only its two read-only tools; Profile writes require the independent native grant.
 The child has local user privileges, **not an OS sandbox**. Permission mediation
 cannot contain an agent's independent filesystem/network access or descendants.
-No Windows→WSL execution bridge, credential inheritance, shell or auto-launch.
-See [the capability/lifetime/failure contract](p1/agent-session-runtime.md).
+The Windows→WSL typed bridge provides no credential inheritance, shell or
+auto-launch. Session capability and lifetime boundaries are defined in
+[interfaces](interfaces.md#optional-native-sessions).
 
-
-P1-H never retains agent-auth method IDs, descriptions, login argv/env or raw auth
-errors. It records only bounded method types/known capability bits and content-free
+The daemon never retains agent-auth method IDs, descriptions, login argv/env or raw
+auth errors. It records only bounded method types/known capability bits and content-free
 activity counters. Private agent HOME is an explicit operator choice, not inherited
 or copied credentials. The agent may access it with user privileges; authentication
 and a successful session do not confer permission approval. Client login remains
-disabled; P1-I below adds a separately opted-in context attachment. See [auth boundaries](p1/agent-authentication.md).
+disabled; context attachment is separately opted in.
 
-
-P1-I session context never reuses startup/operator credentials. A separate format-2
+Session context never reuses startup/operator credentials. A separate format-2
 capability belongs to one selected native project/agent/generation, expires by a
 monotonic deadline and is checked for every request and response admission. Stop,
 prompt Cancel, failure, root drift and shutdown revoke it; restart rejects cached
@@ -92,5 +90,4 @@ secrets and cleans recognized private files under the runtime lock. An establish
 peer cannot retain session authority after revoke. Earlier-admitted responses may
 finish writing, and delivered data cannot be recalled. Format-1 non-session users
 retain their prior per-launch behavior; they do not gain revocation guarantees.
-Same-user filesystem access remains outside this transport boundary. See
-[the session bridge threat model](p1/session-context-bridge.md).
+Same-user filesystem access remains outside this transport boundary.

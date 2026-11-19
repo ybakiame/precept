@@ -8,7 +8,7 @@ Portable mode: no installer, service, PATH, registry, Start menu or startup entr
 State stays in WSL (the daemon is the only Profile write owner); nothing here creates,
 selects or write-enables a Profile.
 
-  ./tools/dogfood/windows-deploy.ps1 -AttemptDir <artifacts\local-p1-m5\NAME> `
+  ./tools/dogfood/windows-deploy.ps1 -AttemptDir <.tmp\artifacts\local-p1-m5\NAME> `
       -Distribution <wsl-distro> -User <linux-user> [-Destination <dir>] [-Replace]
 
 -Replace removes only the files listed in the installed runtime\manifest.json (after

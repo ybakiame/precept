@@ -1,102 +1,96 @@
 # Agent Control Plane
 
-ACP is a local-first context and policy layer for coding agents: current repository
-rules, confirmed personal preferences and honest task Handoffs. It is not an Agent
-harness or an OS sandbox. Repository contracts and accepted ADRs outrank preferences
-and historical Handoffs.
+Agent Control Plane (ACP) is a local-first context and policy layer for coding
+agents. It combines current repository rules, confirmed personal preferences and
+explicit task Handoffs while preserving the difference between current facts,
+historical claims and independent verification. It is not an agent harness or an OS
+sandbox.
 
-The active product runtime is **Rust**. M2 S1–S3 are merged through PR #47 at
-`58750f346bf2288d79f9ff29754ca110ebca52d0`: fresh Profile v1, daemon-exclusive
-writer/lease/grants, native CLI and shared NSH Desktop/TUI operator workflows.
-S4 removes the disposable prototype package/tests/probes and replaces active CI and
-local validation. [Issue #40](https://github.com/ybakiame/agent-control-plane/issues/40)
-still requires separate final integrated M2 acceptance. This is `0.0.x-rc` validation,
-not production activation or a release.
+ACP is validation-stage software, not a production release. The supported product
+runtime is Rust, with a native daemon, operator CLI, read-only MCP bridge and NSH
+Desktop/TUI operator app.
 
-## Development
+## What it provides
 
-Use the [Rust-only developer runbook](docs/p1/rust-only-development.md) for exact
-Cargo, Windows/WSL and optional offline Web gates. Local helpers invoke Cargo
-directly; verification creates only owned synthetic test state, never a default
-user Profile or a real agent. Do not dispatch hosted Actions while quota is exhausted;
-commits use `[skip ci]`.
+- Explicit project registration and bounded inspection of repository facts and
+  contract sources.
+- Personal preferences with global or project scope, provenance and exact-record
+  human review.
+- Effective context that explains applicable, masked, conflicting and unknown rules
+  without letting personal or session state override repository contracts.
+- Exactly two project-bound, read-only MCP tools: `get_effective_context` and
+  `get_handoff`.
+- Historical Handoffs with revision, branch, worktree and content-drift warnings.
+- Optional, explicitly configured native agent sessions with separate Start,
+  authentication, permission and context-sharing decisions.
+- A Windows Desktop workflow that operates a daemon inside WSL2 through the typed
+  `acp-wsl-bridge` helper, without TCP or shell forwarding.
+
+## Build from source
+
+Install the pinned Rust toolchain from `rust-toolchain.toml`, then build the product
+binaries:
 
 ```text
 cargo build --workspace --bins --locked
-cargo test --workspace --all-targets --locked
 ```
 
-Profile setup and all seven typed commands are documented in the
-[native operator guide](docs/p1/native-operator-workflows.md). Creation, selection
-and write enablement are separate explicit operator actions. NSH shares one
-Desktop/TUI model, organized as **Set up** (connection, Profile, workspaces, agent
-access), **Project** (dashboard, effective preferences, Handoff, sessions) and
-**Personal** (personal preferences across projects, and the review of suggestions).
-Adding a preference is two explicit steps: it is saved as suggested, then the exact
-record is confirmed. Handoff put stays CLI-only. The Windows HWND GUI operates a daemon inside WSL2 with the same
-Operator and Sessions controls through the typed `acp-wsl-bridge` helper
-([interfaces](docs/interfaces.md#windows-gui--wsl2-bridge)); offline and Web targets remain read-only.
+The operator app is a separate Cargo workspace. Build its native Desktop and TUI
+with:
+
+```text
+cargo build --manifest-path apps/Cargo.toml --workspace \
+  --features acp-operator-ui/native,acp-operator-ui/tui --bins --locked
+```
+
+The optional Web target is an offline synthetic preview. It has no daemon API,
+native IPC, Profile data or agent credentials.
+
+## Operator model
+
+Create or select a Profile explicitly. Startup selection and per-run write
+enablement are separate choices; the daemon never creates or adopts a Profile by
+itself. Only fresh Rust-native Profile v1 is supported, with no automatic discovery,
+migration, repair or direct-write fallback.
+
+Add a project by choosing one checkout. The daemon validates that path and owns the
+registered project set; the UI and agents do not scan for repositories. Sharing a
+project with agents is a separate operator action.
+
+Preferences begin as **suggested**. Inspect the exact value, scope, source and
+revision before confirming or rejecting them. Project-scoped personal preferences
+mask compatible global preferences, but neither can override repository contracts.
+Handoff records remain historical and must be revalidated against the current
+checkout.
+
+The operator app groups navigation into **Set up**, **Project** and **Personal**,
+with Diagnostics and Settings available separately. See the
+[operator app guide](apps/README.md) for its review workflow.
 
 ## Data and trust
 
-- Only explicitly created fresh Rust-native **Profile v1** is supported. The retired
-  prototype's v1 and M1 synthetic v2 are incompatible. No discovery, adoption,
-  migration/import, dual runtime, repair or unavailable-daemon write fallback.
-- Only the native daemon links the production writer. CLI/UI use typed local IPC;
-  operator read/control authority never implies the separate epoch-bound write grant.
-- Preferences begin suggested and require exact-record human confirmation. Project
-  choices mask global ones but never override repository contracts.
-- MCP exposes exactly `get_effective_context` and `get_handoff`, bound to one project.
-  Agents/session grants cannot inspect administrative previews or mutate Profiles.
-- Live document contents require explicit opt-in, narrow allowlists and bounded,
-  contained reads. Handoff checks and fingerprints are historical observations,
-  not fresh verification, execution authorization or complete worktree attestation.
-- No secrets, credentials, device identifiers, raw conversations or real profile
-  data belong in tracked files. Source retirement does not delete local user data.
+- Only the native daemon writes Profile state, through typed local IPC and an
+  independent epoch-bound write grant. CLI and UI clients never open writable
+  SQLite connections.
+- Operator control, operator writes, agent reads and optional session context use
+  distinct authority. One grant never implies another.
+- Document bodies require explicit opt-in and bounded, allowlisted reads.
+- Agent-reported actions, daemon observations and independent verification are
+  different claims. A saved PASS is not a current PASS.
+- ACP does not provide OS sandboxing, credential isolation from same-user processes,
+  hidden telemetry, remote synchronization or automatic repository rewriting.
+- Keep secrets, credentials, raw conversations, device identifiers and real Profile
+  data out of tracked files.
 
-## Source layout
+## Documentation
 
-```text
-crates/
-  acp-core/       # domain, typed resolver and bounded pure Fingerprint v1
-  acp-store/      # strict read-only Profile v1 access
-  acp-write/      # private transactions, daemon-only owner
-  acp-ipc/        # local transport, scoped credentials, grants and leases
-  acp-daemon/     # service and sole write owner
-  acp-query/      # explicit native operator CLI
-  acp-mcp/        # project-bound read-only stdio bridge
-  acp-session/    # optional native ACP session supervisor
-apps/            # operator app workspace (NSH Desktop/TUI/Web): core/, client/, ui/,
-                 # web-smoke/; see apps/README.md
- tools/          # native validation helpers and Node maintenance checks
- docs/           # contracts, ADRs, current runbooks and marked historical evidence
-```
-
-## Design and evidence
-
-- [Product](docs/product.md), [architecture](docs/architecture.md), [interfaces](docs/interfaces.md), [security](docs/security.md), [roadmap](docs/roadmap.md)
-- [ADR-0004 trust](docs/adr/0004-product-domain-trust.md), [ADR-0006 Rust-only runtime](docs/adr/0006-rust-only-runtime.md), [accepted NSH direction](docs/adr/0003-ui-framework-selection.md)
-- [Profile v1 contract](docs/p1/profile-v1-runtime-contract.md), [S4 inventory/replacement map](docs/p1/python-retirement.md)
-- [S3 native evidence](docs/evaluation/p1-m2-s3-native-operator.md), [S4 evidence](docs/evaluation/p1-m2-s4-retire-python.md)
-
-Historical evidence retains its original date, SHA and result. It is not runnable
-current setup or a fresh platform/model claim. S3 recorded Windows/ConPTY and WSLg
-native Wayland/PTY; S4 distinguishes native process/headless coverage from actual
-GUI/TTY observations. macOS, mobile, niri, full IME/accessibility, installation and
-release remain unverified at the current source unless explicitly recorded.
-
-Optional native sessions require a trusted explicit configuration and reviewed
-Start. Authentication, a single permission decision and opt-in revocable context
-are independent. Closing the UI does not stop the child. No shell, automatic agent
-startup, persistent resume or remote WSL execution. See [session](docs/p1/agent-session-runtime.md),
-[auth](docs/p1/agent-authentication.md) and [context lease](docs/p1/session-context-bridge.md)
-contracts; older vendor results remain in their original reports.
-
-The separate [agent-development-protocol](https://github.com/ybakiame/agent-development-protocol)
-remains authoritative for neutral engineering procedures. ACP consumes those rules;
-it never rewrites a project's AGENTS.md, dependencies or CI automatically.
+- [Product charter](docs/product.md)
+- [Architecture and data ownership](docs/architecture.md)
+- [Interfaces and conformance boundary](docs/interfaces.md)
+- [Security and privacy limitations](docs/security.md)
+- [Operator UI standards](docs/product-ui.md)
 
 ## License
 
-Licensed under the [Apache License, Version 2.0](LICENSE). Copyright 2026 ybakiame; see
-[NOTICE](NOTICE). Third-party dependencies keep their own licenses.
+Licensed under the [Apache License, Version 2.0](LICENSE). Copyright 2026 ybakiame;
+see [NOTICE](NOTICE). Third-party dependencies retain their own licenses.

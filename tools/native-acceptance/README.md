@@ -1,8 +1,8 @@
-# S3 owned native acceptance driver
+# Owned native acceptance driver
 
 Repository maintenance only; not a product launcher, terminal emulator or transport.
-See the [frozen matrix](../../docs/p1/rust-only-integrated-acceptance.md) and
-[development gates](../../docs/p1/rust-only-development.md). No Python is required.
+Follow the [repository validation requirements](../../AGENTS.md#engineering-and-validation).
+No Python is required.
 
 Build the root daemon/query and NSH native,tui binaries from the same clean commit
 before running this standalone manifest. Its only ACP dependency is the IPC client;

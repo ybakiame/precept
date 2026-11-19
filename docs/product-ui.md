@@ -1,101 +1,203 @@
-# Product UI information architecture
+# Operator UI standards
 
-Status: P1-J target navigation for review, **not implemented screens**. Follow the
-[charter](product.md), [domain ADR](adr/0004-product-domain-trust.md) and accepted
-[NSH decision](adr/0003-ui-framework-selection.md). Preserve the shared Rust model,
-Instrument / Ledger / Harbor, Light / Dark / System + high contrast, and English /
-Simplified Chinese [identity](brand/identity.md). No visual redesign or new framework.
+These are the current design and interaction contracts for the ACP operator app.
+Follow them together with the NSH Design Guides when changing a screen. Product
+authority comes from the [charter](product.md), [architecture](architecture.md) and
+[security](security.md); UI state never creates authority of its own.
+
+Screens are composed from the app's shared `apps/ui/src/ui/` layer above NSH base
+components. Features reuse shared controls and tokens rather than importing base
+controls or inventing local styling. Colors come from semantic tokens, geometry
+from scales and motion from motion tokens. Raw hex belongs only in theme
+definitions in `apps/core/src/appearance.rs`.
+
+## Visual language
+
+The interface is quiet, precise and information-first: a native developer inspector
+with a small, explicit set of writes, not a web dashboard.
+
+- Establish hierarchy through size, weight, spacing and hairlines before color or
+  containers. Avoid nested cards and decorative shadows.
+- Give each surface one clear focal point. Accent and strong color are scarce;
+  primary action, selection and next step remain understandable without color.
+- Use `background` for the window floor, `panel` for cards/popups and `inset` for
+  recessed control fills. Shadows explain floating layers only.
+- Draw a container hairline once. Interactive controls use a visible boundary and
+  focus treatment.
+- Preserve geometry, typography and data across themes; only color changes.
+
+The Instrument, Ledger and Harbor themes each support light, dark and high-contrast
+modes. Status and meaning always include text, never color alone.
+
+## Tokens and geometry
+
+Semantic color roles include `background`, `panel`, `inset`, `text`, `muted`,
+`border`, `accent`/`primary`, `on_accent`/`on_primary`, `warning`, `error`,
+`success`, `danger` and `danger_foreground`/`on_danger`. Destructive action colors
+are distinct from error-state colors. Derived washes come from token mixing, not
+new literal colors.
+
+Use the platform sans-serif font for interface text and monospace for identifiers,
+shortcuts and aligned numbers. The shared scale is:
+
+| Token | Size | Use |
+| --- | --- | --- |
+| `CAPTION` | 12 pt | Secondary metadata, help and badges |
+| `BODY` | 14 pt | Body text and control labels |
+| `SUBTITLE` | 16 pt | Subtitles, large labels and dialog titles |
+| `TITLE` | 20 pt | Section and page titles |
+| `DISPLAY` | 22 pt | Principal window title |
+
+Use at most three or four sizes and two weights on a screen. Do not use a smaller
+size as the only hierarchy cue or text below 12 pt for reading.
+
+Spacing follows the shared 4 pt scale: 4 within controls, 8 between related
+controls, 12 within a content group, 16 between groups or for panel padding, and
+24–32 between sections or around empty states. Padding belongs to components; gaps
+belong to parents. Peers share alignment and repeated rows keep stable lanes.
+
+Radii come from `ui::scale::radius`: `SMALL` 3 pt, `CONTROL` 6 pt, `CONTAINER` 8 pt
+and `PILL` only for intentional pills. Nested radii remain concentric and children
+stay inside their surface.
+
+Desktop controls use shared small/medium/large heights and one size setting for
+height, padding, text, icon and radius. Compact layouts tighten padding without
+changing control height. TUI layout snaps to whole cells, with no fractional
+spacing, radii or shadows.
+
+## Shared controls and states
+
+Use the shared button, navigation item, menu, radio group, field, properties, input,
+tabs, badge, empty state, surface, dialog, sheet, notification, information popup,
+Markdown input, icon and motion components. Add a variant or size to the shared
+layer when a feature needs a new reusable treatment.
+
+Every interactive control defines rest, hover, pressed, visible focus, selected,
+disabled, loading, validation and destructive states as applicable. Hover is weaker
+than selection and never the only cue. Press and loading do not shift layout.
+Disabled and loading controls prevent duplicate submission. Destructive actions use
+the danger treatment and deliberate confirmation.
+
+Icons are original outline vectors on a 24×24 grid using `currentColor`; they
+supplement labels. Icon-only controls require accessible names. Terminal surfaces
+use text labels rather than depending on glyphs.
+
+All commands are keyboard reachable with logical Tab order, arrows within groups,
+Enter/Space activation and Escape dismissal. Focus remains visible, dialogs trap
+and restore focus, and pointer-only approval is forbidden.
 
 ## Navigation and scope
 
-Organize around developer tasks rather than one page for each data type. A persistent
-scope strip identifies the applied daemon target, selected project/worktree and,
-when relevant, exact task/session generation. Personal scope is explicitly labeled;
-a selected project must not turn a personal action into a repository write.
+Organize navigation around the operator's task:
 
-| Destination | User question / grouped concepts | Relationship to implemented UI |
-| --- | --- | --- |
-| Overview | What project am I viewing, what was last read, and what needs attention? Project/daemon summary, conflicts, pending reviews, resume warnings | Evolve Dashboard; only show counts backed by actual scoped data |
-| Projects | Which checkout owns this work? Registration/onboarding, observed Git facts, contract-source inventory | Existing allowlisted Projects is read-only; guided registration is future operator work |
-| Context & Rules | Why does this rule apply? Effective context plus Project contracts; source/review/conflict detail | Existing confirmed Preferences and document disclosures are a subset; no current structured rule engine |
-| Personal Preferences | Which user choices follow me? Global/project personal scopes and full lifecycle | Separate user scope from project contracts; initially an explicit CLI workflow, future operator review UI |
-| Review | What change am I approving? Suggestions, exact diff, destination, rationale, conflicts and review history | Planned; a pending badge links here only after a real queue exists |
-| Sessions & Handoff | What is running, what was shared, and how do I resume? Native session control plus exact-task continuity | Existing Sessions auxiliary panel and Handoff lookup; no invented history/task enumeration |
-| Connections & Settings | Which explicit target am I using? Connection drafts/applied target, diagnostics, appearance and language | Existing connection/settings panels and Diagnostics; credentials never displayed |
+- **Set up:** Connection, Profile, Workspaces and Agents. Numbered setup steps use
+  stable accessible names and reflect fresh daemon observations.
+- **Project:** project switcher, Dashboard, Preferences, Handoff and Sessions for
+  the selected project.
+- **Personal:** personal preferences across projects and the review workspace for
+  suggestions in either scope.
+- **Foot:** Diagnostics and Settings.
 
-Provenance and Evidence are contextual detail views reachable from rules, reviews,
-sessions and Handoff, with links back to the selected item and scope. They need not
-be independent top-level pages. Conflicts belong beside the affected rule/context
-with an Overview entry point. This keeps causal explanation near the decision.
-The grouping is a target IA; it is not a requirement to add all destinations at once.
+A persistent scope indicator identifies the applied daemon target and selected
+project/worktree, plus task/session generation when relevant. Personal scope is
+explicit. Selecting a project never turns a personal action into a repository
+write.
 
-```text
-Overview → select project → Projects → Context & Rules → source / conflict detail
-                                          │
-                                          └→ Review → exact change and destination
-Personal Preferences → review decision → updated effective-context explanation
-Sessions & Handoff → exact task / generation → evidence → verifier / method / limits
-Connections & Settings → draft target → explicit Apply → fresh scoped read
-```
+Desktop uses a persistent sidebar beside one page; compact and terminal layouts use
+a wrapped destination row. The active workspace owns one primary scroll region.
+Project/target switches clear stale task, session and record detail and invalidate
+late completions. Draft connection settings remain distinct from the applied
+target.
 
-## Main flows and decision surfaces
+## Main decision surfaces
 
-- **Project onboarding:** select an explicit existing checkout, inspect canonical
-  identity and ownership, preview the bounded sources to share, then register through
-  an operator action. No current project means guidance, not an arbitrary path editor
-  for writing contracts. Templates/scaffolds never run automatically.
-- **Rule explanation:** show kind, personal/project scope, source/version/digest,
-  applicability result, review state, masking/conflict reason and current vs frozen
-  source. Distinguish metadata-only references from requested document bodies.
-- **Human review:** show exact proposed value/content, target scope/project and diff,
-  author/reporter, rationale, affected rules and source freshness. Confirm/reject are
-  deliberate actions; edit invalidates previous approval. Provide view/confirm/
-  reject/deprecate/delete and provenance inspection before automatic suggestions.
-  A project proposal requires repository review; local confirmation is not a commit.
-- **Managed session:** keep auth-required, Start review, permission request and context
-  sharing separate. Show native-only controls and exact generation. Sharing is off by
-  default; today's UI Start sends no sharing opt-in. Show lease active/revoked/expired
-  from daemon observations, not an agent's assurance. Cancel revokes the whole context
-  lease; fresh sharing needs Stop and a new opted-in Start.
-- **Handoff resume:** exact task lookup, objective/next action, current vs recorded
-  HEAD/branch/worktree/source versions, constraint differences, then checks to rerun.
-  Acknowledging receipt is not permission approval or independent verification.
-- **Evidence inspection:** display result, origin class, subject revision/platform,
-  reporter, observer/verifier and method/limits together. A transport event and a
-  model-generated test claim must never share an unexplained green “verified” badge.
+### Projects and agent access
 
-## Honest states and interactions
+Add one existing checkout through an OS folder chooser or explicit path field. The
+daemon checks the chosen path and returns a fixed reason; Check, Add and Remove are
+distinct states. Add requires the appropriate Profile write grant. Removing a
+project is destructive confirmation and does not claim to erase its Profile
+records.
 
-Use separate textual dimensions: review (`Suggested`, `Confirmed`, `Rejected`,
-`Deprecated`), resolution (`Applies`, `Masked`, `Conflict`, `Unknown`), connection
-(`Loading`, `Unavailable`, `Refused`, `Last successful read`), lease (`Off`, `Active`,
-`Revoked`, `Expired`) and evidence origin (`Agent-reported`, `Daemon-observed`,
-`Independently verified`). These are target UI labels, not new IPC enum values.
-Historical PASS is labeled historical with its source/time; `BLOCKED`/`UNSUPPORTED`
-in an evaluation report does not change the current Handoff wire status enum.
+Agent sharing is a separate per-project operator switch. Configuration text can be
+copied, but ACP never writes another tool's configuration automatically. Credentials
+are never displayed.
 
-An empty result, unavailable source, permission refusal and not-yet-implemented
-capability need different explanations. Do not show unavailable review actions as
-working buttons, fabricate agent presence, infer a healthy connection from an old
-read, or relabel unknown fingerprints as clean. Pending counts must say whether
-they are personal, selected-project or an explicit aggregate; unknown is not zero.
+### Preferences and review
 
-Project/target switches clear task/session detail and old snapshots. Preserve the
-existing epoch/project/task rejection of late completions; a draft target is labeled
-separately from the applied connection. Permission or source changes invalidate
-affected decisions before the user confirms them.
+Adding a preference is two explicit steps: save it as suggested, then inspect and
+confirm the exact new record. Queue absence means not inspected, not an empty queue.
+Pages expose their observed watermark and do not pretend to share one snapshot.
 
-## Desktop/TUI and implementation gates
+The records list selects; Detail is the immutable-content inspector and owns the
+confirm/reject/deprecate/delete actions. Show exact value, scope, project, source,
+revision, proposal digest and peer effects before a decision. Stale or missing
+inspection only triggers a fresh read, never an automatic mutation.
 
-Both surfaces use the same navigation concepts, resolution results, review state,
-evidence labels and authority checks. Desktop can show adjacent detail; compact/TUI
-uses progressive disclosure and return navigation, with bounded visible content.
-Only current-task controls are shown. Keyboard order follows the visible controls;
-focus remains visible, detail close returns focus to its trigger, and meaning uses
-text as well as color. Never add a pointer-only approval or TUI-specific business rule.
+Delete requires a separate destructive tier and retyping the exact preference ID.
+Escape cancels consent. Profile, grant, target, project, task, scope, selection,
+source or watermark drift invalidates prepared work and delayed replies. The daemon
+independently rechecks authority at mutation admission.
 
-Reuse existing theme/i18n tokens and bounds; project data stays in its original
-language. Full IME and screen-reader behavior remain unverified. Future UI tasks
-must exercise scope switches, stale completion/refusal states, every decision by
-keyboard, both locales/themes and native/terminal behavior on each claimed host.
-No screenshots or usability scores are fabricated by this document-only task.
+An uncertain commit retains only the exact same-epoch request for deliberate replay.
+Changing its bytes, authority or scope discards replay authority. Receipts prove
+transactions, not reviewer identity; channel/source labels are not authentication
+or independent verification.
+
+### Sessions, Handoff and evidence
+
+Keep authentication-required, Start review, permission requests and context sharing
+separate. Sharing is off by default. Display lease state from daemon observations,
+not agent assurances, and identify the exact session generation. Cancel, Stop,
+expiry and revocation are distinct from permission approval.
+
+Handoff resume uses exact task lookup and presents objective, next action, current
+versus recorded HEAD/branch/worktree/source versions and checks to rerun.
+Acknowledging receipt is neither permission approval nor independent verification.
+
+Evidence displays result, origin, source revision/platform, reporter,
+observer/verifier, method and limitations together. Agent-reported,
+daemon-observed and independently verified claims must not share an unexplained
+success badge. Historical PASS remains labeled historical.
+
+## Overlays and feedback
+
+Use a sheet for record detail/history beside a list, a dialog for a short focused
+form or Apply decision, and an alert dialog for destructive confirmation. Avoid
+stacked panels for one job. Notifications report outcomes but never replace an
+inline uncertain outcome or a required decision. Longer page explanations belong
+behind an information control rather than obscuring the primary workflow.
+
+Native modals remain mounted for one open interval; label and validation updates do
+not restart entrance motion. Initial focus is requested after the input and modal
+focus scope exist. Hidden controls cannot receive focus.
+
+## Motion
+
+Use shared motion tokens and helpers. Animate opacity and transform rather than
+layout where possible; state feedback is lighter than entrances, and exits are
+faster than entrances. Do not animate frequently updating data or routine list
+refreshes as decorative entrances.
+
+Every motion honors reduced-motion settings: durations collapse, scale/translation
+rests and state remains understandable. Spinner motion rests while its loading
+label remains. Motion never confirms a mutation, focus, connection or rendered
+result by itself.
+
+## Platform and honest states
+
+Desktop and Web share the desktop interaction idiom; TUI adapts the same semantics
+to a keyboard-first character grid. Mobile is not a current target. The Web target
+is offline and synthetic, with no daemon gateway.
+
+Keep review (`Suggested`, `Confirmed`, `Rejected`, `Deprecated`), resolution
+(`Applies`, `Masked`, `Conflict`, `Unknown`), connection, lease and evidence origin
+as separate textual dimensions. Empty, unavailable, refused and not implemented
+are different states. Never fabricate agent presence, infer health from an old
+read, turn unknown into zero or relabel an unknown fingerprint as clean.
+
+Reuse shared theme, localization and content bounds. Project data remains in its
+original language. Validate affected behavior with shared headless tests and real
+IPC integration, then inspect the running Desktop and TUI for visual and input
+behavior. Headless success is not proof of a mapped window, physical keyboard,
+terminal restoration, IME, screen reader or platform support.

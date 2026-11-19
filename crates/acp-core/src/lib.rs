@@ -170,7 +170,7 @@ impl PermissionEvaluator for ReadOnlyPermissions {
     }
 }
 
-pub const AUTHORITY: &str = "Current repository files and accepted ADRs outrank preferences and task handoffs; verify conflicts.";
+pub const AUTHORITY: &str = "Current repository files and contracts outrank preferences and task handoffs; verify conflicts.";
 pub const WARNINGS: [&str; 3] = [
     "Only confirmed preferences are included.",
     "Documents are live references, not a complete project audit.",

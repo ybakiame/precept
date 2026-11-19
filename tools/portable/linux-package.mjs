@@ -1,4 +1,4 @@
-// Developer-only Linux x86_64 portable recipe (P1-M5/S1-C). No install, activation or publish.
+// Developer-only Linux x86_64 portable recipe. No install, activation or publish.
 //
 // Archive: one top-level ACP/ directory inside a .tar.gz
 //   ACP/bin/                    six product executables (0755)

@@ -11,7 +11,7 @@
     {
       "name": "alpha",
       "context": {
-        "authority": "Current repository files and accepted ADRs outrank preferences and task handoffs; verify conflicts.",
+        "authority": "Current repository files and contracts outrank preferences and task handoffs; verify conflicts.",
         "documents": [
           {
             "bytes": 22,
@@ -155,7 +155,7 @@
     {
       "name": "beta",
       "context": {
-        "authority": "Current repository files and accepted ADRs outrank preferences and task handoffs; verify conflicts.",
+        "authority": "Current repository files and contracts outrank preferences and task handoffs; verify conflicts.",
         "documents": [
           {
             "bytes": 21,

@@ -1,77 +1,110 @@
 # AGENTS.md — Agent Control Plane
 
+## Repository records
+
+Write all repository records in English, including documentation, code comments,
+tests, fixtures, commit messages and local work records.
+
+Keep only durable, currently maintained contracts in tracked documentation:
+product behavior, architecture, operator/agent interfaces, security boundaries and
+current UI standards. Put development plans, design drafts, architectural decision
+records, test records, ad-hoc analyses and work logs in `.tmp/work/`. Put generated
+local output in `.tmp/artifacts/`. Both locations are ignored; tracked source,
+builds and tests must never require their contents.
+
+Do not put process material in `docs/` or application directories. README,
+CHANGELOG and release notes are for people using the software, not milestone
+histories, design deliberations or validation ledgers. When moving or removing a
+document, update every tracked reference and check the final diff and links.
+
 ## Product and authority
 
-Keep ACP a local-first developer context and policy layer, not another agent harness.
-Current repository facts, project-owned contracts and accepted ADRs outrank stored
-preferences or Handoffs. Never infer project truth from stale memory.
+ACP is a local-first developer context and policy layer, not another agent harness.
+Current code and tracked project contracts are authoritative. Material under
+`.tmp/` is local or historical context only; it never overrides the active tree and
+is not fresh validation evidence.
 
-Read these before changing architecture or persisted behavior:
+Read the relevant contracts before making changes:
+
 - [Product charter](docs/product.md)
-- [Architecture](docs/architecture.md)
-- [ADR-0004: domain, ownership and evidence trust](docs/adr/0004-product-domain-trust.md)
-- [ADR-0005: storage ownership](docs/adr/0005-local-storage-and-write-ownership.md), only where not superseded
-- [ADR-0006: Rust-only runtime and Python prototype retirement](docs/adr/0006-rust-only-runtime.md)
+- [Architecture and data ownership](docs/architecture.md) before architecture or
+  persisted-behavior changes
+- [Interfaces](docs/interfaces.md) before IPC, MCP, CLI or session changes
+- [Security and privacy](docs/security.md) before authorization, filesystem,
+  credential or process-boundary changes
+- [UI standards](docs/product-ui.md) before operator UI changes
 
-## Accepted runtime direction
+Repository contracts and current repository facts outrank personal preferences and
+Handoffs. Session constraints may narrow work but never grant permissions or weaken
+contracts. Code/contract disagreements require explicit human resolution.
 
-- Rust is the only supported product runtime. S4 retires the Python prototype,
-  package, tests and executable probes. Do not restore a Python runtime, validation
-  dependency, compatibility shim or release path.
-- The first Rust-native product Profile schema is v1 (`PRAGMA user_version=1`). It is a fresh schema, not compatible with the retired Python prototype's legacy v1 or M1's synthetic v2. M1 v2 is historical only; do not add legacy readers, migration, downgrade, or compatibility fallback.
-- The native daemon is the only production write owner. Only the daemon may invoke
-  the private `acp-write` implementation.
-- `acp-store` remains read-only. UI, `acp-query`, MCP and agents never receive
-  writable SQLite connections or raw SQL access.
-- Operator writes use a separately versioned, typed, profile-scoped local IPC
+## Runtime invariants
+
+- Rust is the only supported product runtime. Do not restore the retired Python
+  runtime, validation dependency, compatibility shim or release path.
+- The only product schema is fresh Rust-native Profile v1
+  (`PRAGMA user_version=1`). Legacy Python v1 and synthetic v2 are incompatible
+  historical formats. Do not add legacy readers, migration, downgrade or fallback.
+- The native daemon is the only production write owner and the only caller of the
+  private `acp-write` implementation. `acp-store` remains read-only.
+- UI, `acp-query`, MCP and agents never receive writable SQLite connections or raw
+  SQL access. There is no daemon-unavailable direct-write fallback.
+- Operator writes require a separately versioned, typed, profile-scoped local IPC
   capability. Operator read/session grants do not imply write authority.
-- MCP retains exactly the two project-bound read-only tools. Agents, prompts,
-  Handoffs and session context cannot confirm or mutate profile state.
-- Profile creation is an explicit operator action. Never scan for, adopt, migrate,
-  reset, delete or overwrite an existing profile automatically. The daemon selects
-  a Profile at start only when the operator explicitly asked for that one path
-  ("Select at start"); write access is never remembered.
-- Projects live in the daemon's private state, changed only by the operator-write
-  `project.add` / `project.remove` after a daemon-side check of the one chosen path.
-  No GUI, bridge or agent scans directories (docs/p1/project-management-plan.md).
-- No Python rollback owner, Python read-only adapter, schema downgrade, or
-  daemon-unavailable direct-write fallback.
-
-Historical reports retain their original evidence; they are not runnable current
-instructions. Use docs/p1/rust-only-development.md for native gates. Do not delete
-ignored local data or authentication/runtime directories during source retirement.
+- MCP exposes exactly the two project-bound read-only tools. Agents, prompts,
+  Handoffs and session context cannot confirm or mutate Profile state.
+- Profile creation and selection are explicit operator actions. Never discover,
+  adopt, migrate, reset, delete or overwrite a Profile automatically. Startup
+  selection occurs only for the explicitly requested path; write access is never
+  remembered.
+- Projects live in daemon-private state and change only through operator-write
+  `project.add` / `project.remove` after a daemon-side check of the chosen path.
+  No GUI, bridge or agent scans directories.
+- Preference proposals start as suggested. Confirmation requires an explicit
+  operator action on the exact record and revision.
 
 ## Engineering and validation
 
-Use Rust workspace conventions and the repository CI as the source of truth.
-For Rust changes, run formatting, Clippy with warnings denied, workspace/package
-tests, and targeted real-process IPC/daemon/MCP tests appropriate to the change. During
-validation, coordinated IPC/session/MCP and Profile schema breaking changes are
-acceptable; do not add old/new version support or migration layers.
-For UI changes, run the affected NSH and shared presentation checks. Run native
-Windows and Linux/WSL acceptance when the changed boundary is platform-sensitive.
-Do not claim hosted CI, macOS, device, model, or clean-machine results unless they
-actually ran.
+Use the Rust workspaces and repository CI as the source of truth. The root product
+crates and `apps/` are separate Cargo workspaces with separate lockfiles.
+
+For root Rust changes, run:
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --all-targets --locked
+```
+
+For UI changes, run the equivalent `apps/Cargo.toml` format, Clippy and test gates
+with `acp-operator-ui/native,acp-operator-ui/tui`, plus affected shared presentation
+and real-daemon integration checks. Run native Windows and Linux/WSL acceptance
+when the changed boundary is platform-sensitive. Headless tests do not prove native
+window, keyboard, terminal, accessibility or device behavior.
+
+For documentation or source-layout changes, run `node tools/check_source.mjs` after
+installing the locked `apps/web-smoke` Node dependencies when they are absent.
+Store validation output under `.tmp/`, not in tracked documentation.
 
 Add regressions for scope isolation, stale worktrees, malformed requests,
 authorization/revocation, schema refusal, CAS/replay, process concurrency and
-recovery where applicable. Check the final diff, links, secret handling and scope.
-Report exact source revision, commands, platform, PASS/FAIL/BLOCKED/NOT_RUN and
-limitations honestly.
+recovery where applicable. Coordinated IPC/session/MCP and Profile schema breaking
+changes are acceptable during validation; do not add old/new version support or
+migration layers.
+
+Report the exact source revision, commands, platform and honest
+PASS/FAIL/BLOCKED/NOT_RUN outcomes. Never claim hosted CI, macOS, device, model or
+clean-machine results unless they actually ran. Historical results are not fresh
+evidence.
 
 ## Security and data handling
 
-Do not write personal profile data to tracked repository files. Persistent profile
-state stays in user-local storage. Never log raw SQLite diagnostics, private paths,
-preference values, Handoff bodies, credentials, raw agent conversations or device
-identifiers. Do not store secrets or personal data in test fixtures.
+Do not write personal Profile data to tracked files. Persistent Profile state stays
+in user-local storage. Never log raw SQLite diagnostics, private paths, preference
+values, Handoff bodies, credentials, raw agent conversations or device identifiers.
+Do not store secrets or personal data in fixtures.
 
-All preference proposals start as suggested. Confirmation requires an explicit
-operator action on the exact record/revision. Preserve ADR-0004 authority ordering:
-repository contracts outrank personal preferences; session constraints may narrow
-work but never grant permissions or weaken contracts. Historical Handoff validation
-is not fresh evidence.
-
-No agent-facing MCP writes, automatic preference approval, network listener,
-automatic repository rewriting, shell execution, OS sandbox claim, or broad
-execution permission is implied by the Rust-only migration.
+Do not delete ignored local data, authentication directories or runtime directories
+as part of source cleanup. No agent-facing MCP writes, automatic preference
+approval, network listener, automatic repository rewriting, shell execution, OS
+sandbox claim or broad execution permission is implied by the current architecture.

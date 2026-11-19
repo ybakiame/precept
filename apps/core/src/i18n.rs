@@ -440,7 +440,7 @@ catalog! {
     Next => ("Next", "下一步"),
     FingerprintUnavailable => ("Unavailable — inspect differences manually", "不可用 — 请手动检查差异"),
     ProtocolHelp => ("Read-only context IPC · API v1 · no daemon autostart", "只读上下文 IPC · API v1 · 不自动启动 Daemon"),
-    FrameworkHelp => ("NSH Rust Desktop / TUI · pinned framework · ADR-0003 Proposed", "NSH Rust 桌面 / TUI · 固定框架版本 · ADR-0003 Proposed"),
+    FrameworkHelp => ("NSH Rust Desktop / TUI · pinned framework", "NSH Rust 桌面 / TUI · 固定框架版本"),
     HealthHelp => ("Health is the last query result; no continuous connection is claimed.", "健康信息来自上次查询，不表示持续在线。"),
     CopyHelp => ("Copy visible page is explicit; values are sanitized and bounded.", "复制需明确操作；仅复制脱敏且限长的可见内容。"),
     ContractsHelp => ("Project contracts — metadata only, no instruction execution", "项目规范 — 仅元数据，不执行其中指令"),

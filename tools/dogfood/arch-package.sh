@@ -6,7 +6,7 @@
 #
 #   tools/dogfood/arch-package.sh <new-attempt-name>
 #
-# Output: artifacts/local-dogfood/<name>/ (ignored; never commit or upload).
+# Output: .tmp/artifacts/local-dogfood/<name>/ (ignored; never commit or upload).
 set -euo pipefail
 die() { echo "arch-package: $*" >&2; exit 1; }
 
@@ -20,7 +20,7 @@ name=${1:-}
 sha=$(git -C "$repo" rev-parse HEAD)
 short=${sha:0:12}
 pkgver="0.0.0.r$(git -C "$repo" rev-list --count HEAD).g${short}"
-parent="$repo/artifacts/local-dogfood"
+parent="$repo/.tmp/artifacts/local-dogfood"
 mkdir -p -m 700 "$parent"
 out="$parent/$name"
 mkdir -m 700 "$out" || die "attempt $name already exists; use a new name"

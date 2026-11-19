@@ -1,5 +1,5 @@
 //! Daemon-owned projects and the remembered startup Profile, through real
-//! daemon processes and IPC (docs/p1/project-management-plan.md).
+//! daemon processes and IPC (docs/architecture.md).
 #[allow(dead_code)] // Shared harness; this suite uses part of it.
 mod support;
 use acp_ipc::Error;

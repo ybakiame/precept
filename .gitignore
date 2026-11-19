@@ -1,40 +1,24 @@
-# Keep pre-retirement local generated metadata private; never build/package it.
-__pycache__/
-*.egg-info/
-*.sqlite3
-*.sqlite3-shm
-*.sqlite3-wal
-.env
-.env.*
-*.log
+# Folders
+.devenv
+.direnv/
+**/.tmp/
+**/.nsh/
+**/.kotlin/
+**/.gradle/
+**/.android/
+**/dist/
+**/build/
+**/target/
+**/node_modules/
 
-/target/
-/artifacts/local-p1-e2/
-/artifacts/local-p1-e3/
-
-/artifacts/local-p1-e4/
-/artifacts/local-p1-f/
-
-/artifacts/local-p1-g/
-
-/artifacts/local-p1-h/
-
-/artifacts/local-p1-i/
-
-/artifacts/local-p1-k/
-
-/artifacts/local-p1-l/
-
-/artifacts/local-p1-m1/
-
-/artifacts/local-p1-m2/
-
-/artifacts/local-p1-m4/
-
-# Local resource-arbitration lock, not product source; preserve it in place.
-/.rpi/.resource-lease
-
-/artifacts/local-p1-m5/
-
-# Private dogfooding packages (tools/dogfood); never commit or upload.
-/artifacts/local-dogfood/
+# Files
+.env*
+devenv.local.*
+!.env.example
+*.key
+*.pem
+*.keystore
+*.jks
+**/local.properties
+*.db*
+*.sqlite*

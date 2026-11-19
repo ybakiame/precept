@@ -108,7 +108,7 @@ impl Model {
             Section::Diagnostics => {
                 lines.extend([
                     "Read-only context IPC · API v1 · no daemon autostart".into(),
-                    "NSH Rust Desktop / TUI · pinned framework · ADR-0003 Proposed".into(),
+                    "NSH Rust Desktop / TUI · pinned framework".into(),
                     "Ctrl R reconnect · P project · F filter · K task · D theme · Shift H contrast"
                         .into(),
                     "Alt 1–5 pages · Escape blur · Alt arrows preference pages · Ctrl Q close"

@@ -3,12 +3,12 @@
 ## Native local operator
 
 `acp-query` talks to an explicitly addressed native daemon through authenticated
-IPC v2. Profile create/select/info, independent write enable/disable, exact scoped
-Preference/Handoff previews and all seven typed mutations are described in the
-[operator contract and syntax](p1/native-operator-workflows.md).
-Operator control/read is distinct from the profile/generation/epoch-bound write
-credential. Only the daemon invokes the private writer. No SQL/JSON patch, default
-Profile, automatic grant/startup, remote WSL writes or direct database fallback.
+IPC v2. It supports Profile create/select/info, independent write enable/disable,
+exact scoped Preference/Handoff previews and typed mutations. Use its command help
+for current syntax. Operator control/read is distinct from the
+profile/generation/epoch-bound write credential. Only the daemon invokes the
+private writer. No SQL/JSON patch, default Profile, automatic grant/startup,
+generic bridge forwarding or direct database fallback.
 
 Preview methods `profile.preferences.list`, `profile.preferences.get` and
 `profile.handoff.get` are Operator-only, bounded and exact-scope/revision. They are
@@ -32,8 +32,8 @@ queries fail rather than widen applicability. Project/root/session overrides are
 refused. Operator `context.get` supplies its authorized project separately; Agent
 `context.get` derives it from the capability and accepts the same optional selector.
 
-The [accepted ProjectContract boundary](p1/project-contract-integration.md) specifies
-the optional exact `ACP.contracts.md` source. It is enforced even when
+The [repository contract boundary](architecture.md#repository-contracts-and-context-resolution)
+specifies the optional exact `ACP.contracts.md` source. It is enforced even when
 `include_documents` is false. `contract_resolution.status` distinguishes `ready`,
 `partial`, `not_configured`, `invalid_source`, `source_unavailable`, `source_changed`.
 Whole-source refusal returns empty `preferences` and `effective_contracts`; partial
@@ -57,8 +57,8 @@ expected-absent or exact revision and a bounded typed file. Saved objective,
 completed work, next action, validation JSON and snapshot remain historical.
 Recognized check states are PASS/FAIL/SKIPPED/NOT_RUN; a saved PASS is not current PASS.
 
-The [frozen Fingerprint v1](p1/worktree-fingerprint-v1.md) detects bounded content
-drift alongside separate HEAD/branch/dirty warnings. It stores a digest rather than
+Fingerprint v1 detects bounded content drift alongside separate
+HEAD/branch/dirty warnings. It stores a digest rather than
 raw diffs, filenames or content. Missing data or exceeded bounds remain unverified.
 Ignored files, submodule internals and external/device state are not attested.
 
@@ -68,8 +68,7 @@ The operator-only `session.*` extension uses session API v2 inside IPC v2. It ne
 explicit trusted executable configuration and confirmed Start. Reads, prompt,
 permission-once/deny, cancel, stop and opt-in context controls remain separate.
 A Windows GUI reaches a WSL daemon's sessions only through the typed bridge below;
-the daemon's executable configuration, policy and leases stay authoritative. See the
-[session runtime](p1/agent-session-runtime.md) and [auth contract](p1/agent-authentication.md).
+the daemon's executable configuration, policy and leases stay authoritative.
 Authentication is observed readiness; no login RPC, credential UI or automatic retry.
 
 Optional context uses a distinct expiring session credential for one
@@ -77,14 +76,14 @@ project/agent/generation. Admission and response publication recheck authority;
 Stop, Cancel, failure, root validation failure, expiry and restart revoke it.
 Established peers retain no authority after revoke, though already delivered bytes
 cannot be recalled. Ordinary operator/project credentials have their own per-launch
-semantics and never gain write authority. See the [lease contract](p1/session-context-bridge.md).
+semantics and never gain write authority.
 
-The retired prototype interfaces are available only in marked historical reports
-and Git history. Current build/setup/verification is [Rust-only](p1/rust-only-development.md).
+Retired prototype interfaces exist only in Git history and local historical
+material. Current build and setup instructions are in the [README](../README.md).
 
 ## Windows GUI → WSL2 bridge
 
-P1-M5/S1-B. One long-lived `acp-wsl-bridge` process per active WSL connection,
+One long-lived `acp-wsl-bridge` process serves each active WSL connection,
 started only by an explicit user action (connect, Reconnect, navigation, or an
 Operator action) as `wsl.exe --distribution D --user U --exec /abs/acp-wsl-bridge
 --runtime-dir R --endpoint E`. The distribution, user and three paths are validated
@@ -124,8 +123,8 @@ explicit inputs; project, task and request data never appear in argv.
   unavailable state. Closing the GUI or leaving the WSL target closes the helper
   (stdin EOF; in-flight work finishes briefly) without stopping the WSL daemon or
   touching Profile, auth or runtime files.
-- **Non-goals:** no daemon start, Profile selection, write enable, agent launch or
-  authentication by the bridge; no MCP writes. Context sharing is a per-start
+- **Non-goals:** no implicit daemon start, Profile selection, write enable, agent
+  launch or authentication by the bridge; no MCP writes. Context sharing is a per-start
   operator opt-in (off by default) carried as `share_context` on `session.start`;
   a refresh reports the daemon's `session.context` lease. The daemon's lease
   contract is unchanged.

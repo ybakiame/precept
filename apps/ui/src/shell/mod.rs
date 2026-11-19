@@ -1,5 +1,5 @@
 //! The window shell: a sidebar of destinations beside one page with its header
-//! and the only scroll region (see DESIGN.md, "Window shell"). Also the shared
+//! and the only scroll region (see docs/product-ui.md). Also the shared
 //! action helpers the feature pages use.
 use crate::*;
 pub(crate) mod chrome;

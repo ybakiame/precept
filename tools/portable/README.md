@@ -1,9 +1,8 @@
-# Windows portable prototype (M5/S1-A)
+# Portable package tooling
 
-Developer-only tooling for [Issue #70](https://github.com/ybakiame/agent-control-plane/issues/70),
-after the [S0 contract](../../docs/p1/release-readiness-plan.md). No installation,
-release, real Profile, provider, agent HOME or platform configuration is required
-or authorized. Product source/UI/schema/authority are unchanged.
+Developer-only tooling for local package and clean-target validation. No
+installation, release, real Profile, provider, agent HOME or platform configuration
+is required or authorized. Product source/UI/schema/authority are unchanged.
 
 Use a clean committed **native Windows x86_64 checkout**, existing pinned stock
 Rust 1.99.1/MSVC/SDK, PowerShell 7, Node and Git. Helpers temporarily select the
@@ -11,7 +10,7 @@ stock toolchain instead of any global Cargo fork, work offline with existing cac
 and restore the caller's environment. Missing tools/cache fail, never install or
 change pins/locks. They do not provision a VM or call hosted workflows.
 
-Create an existing owned output parent under ignored `artifacts/local-p1-m5/`.
+Create an existing owned output parent under ignored `.tmp/artifacts/local-p1-m5/`.
 Each attempt name must be NEW. The recipe exclusively creates/protects its private
 output, builds into a new Cargo target, copies only actual Cargo artifact messages
 for five product executables into independent regular files, audits x86_64 PE
@@ -45,10 +44,10 @@ checkout, home, Cargo-home or build-output bytes (ASCII or UTF-16) in a binary
 **refuse the build**.
 
 ```powershell
-./tools/portable/windows-package.ps1 -OutputParent artifacts/local-p1-m5 -Name zip-attempt-01
-./tools/portable/windows-smoke.ps1 -PackageDir artifacts/local-p1-m5/zip-attempt-01/extracted -ReportDir artifacts/local-p1-m5/zip-attempt-01/smoke-01
-./tools/portable/windows-retention.ps1 -AttemptDir artifacts/local-p1-m5/zip-attempt-01 -SmokeName smoke-01
-./tools/portable/windows-sandbox.ps1 -AttemptDir artifacts/local-p1-m5/zip-attempt-01 -Name sandbox-01
+./tools/portable/windows-package.ps1 -OutputParent .tmp/artifacts/local-p1-m5 -Name zip-attempt-01
+./tools/portable/windows-smoke.ps1 -PackageDir .tmp/artifacts/local-p1-m5/zip-attempt-01/extracted -ReportDir .tmp/artifacts/local-p1-m5/zip-attempt-01/smoke-01
+./tools/portable/windows-retention.ps1 -AttemptDir .tmp/artifacts/local-p1-m5/zip-attempt-01 -SmokeName smoke-01
+./tools/portable/windows-sandbox.ps1 -AttemptDir .tmp/artifacts/local-p1-m5/zip-attempt-01 -Name sandbox-01
 ```
 
 `windows-sandbox.ps1` is the disposable clean-target acceptance. It needs Windows
@@ -96,7 +95,7 @@ or user-data erasure exists. The operation is developer tooling, not a shipped
 uninstaller. An example for a disposable extracted package, after smoke exits:
 
 ```powershell
-node tools/portable/windows-package.mjs --remove-owned-product artifacts/local-p1-m5/zip-attempt-01/extracted artifacts/local-p1-m5/zip-attempt-01/archive-inventory.json
+node tools/portable/windows-package.mjs --remove-owned-product .tmp/artifacts/local-p1-m5/zip-attempt-01/extracted .tmp/artifacts/local-p1-m5/zip-attempt-01/archive-inventory.json
 ```
 
 Local checks: `node --test tools/portable/windows-package.test.mjs`, PowerShell AST
@@ -112,13 +111,12 @@ matrix, or upload the generated archive as a PR/Release asset.
 
 ## Linux x86_64 `.tar.gz` (M5/S1-C)
 
-[Issue #72](https://github.com/ybakiame/agent-control-plane/issues/72);
-[evidence](../../docs/evaluation/p1-m5-s1c-wslg-wayland-portable.md). Run on a clean
-committed checkout inside a native Linux x86_64 builder with the pinned stock toolchain,
+Run on a clean committed checkout inside a native Linux x86_64 builder with the
+pinned stock toolchain,
 Node, and GTK 4/GStreamer development headers:
 
 ```sh
-node tools/portable/linux-package.mjs "$PWD" "$PWD/artifacts/local-p1-m5" s1c-attempt-01 "$HOME/.cargo/bin/cargo"
+node tools/portable/linux-package.mjs "$PWD" "$PWD/.tmp/artifacts/local-p1-m5" s1c-attempt-01 "$HOME/.cargo/bin/cargo"
 ```
 
 The generated `.tar.gz`, inventory and checksum sidecars stay under the ignored local

@@ -145,7 +145,7 @@ try {
             if ($nonce -or $command.nonce -notmatch '^[0-9a-f]{16}$') { throw 'Invalid one-time nonce' }
             $nonce = $command.nonce; $expected = [uint32]$command.pid; $remote = [bool]$command.remote
             if (-not $remote -and $expected -eq 0) { throw 'Explicit native PID required' }
-            $images = Join-Path (Split-Path -Parent $PSScriptRoot) "artifacts/local-p1-m2/s5-window-$nonce"
+            $images = Join-Path (Split-Path -Parent $PSScriptRoot) ".tmp/artifacts/local-p1-m2/s5-window-$nonce"
             if (Test-Path -LiteralPath $images) { throw 'Window capture directory must be new' }
             New-Item -ItemType Directory -Path $images | Out-Null
             @{status='ok';rpc_id=$rid;images=$images} | ConvertTo-Json -Compress
