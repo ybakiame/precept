@@ -16,7 +16,7 @@ use acp_write::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
@@ -34,6 +34,8 @@ struct State {
     unavailable: Roots,
     /// Why the remembered startup Profile was not selected, if it was not.
     startup_failure: Option<&'static str>,
+    /// Projects whose agent credential is not published (external agents off).
+    withheld: BTreeSet<String>,
 }
 /// What the daemon does around a project-set change, outside the Profile.
 /// The file name offered (never created) for a first Profile in the state directory.
@@ -42,6 +44,9 @@ pub const SUGGESTED_PROFILE: &str = "profile.sqlite3";
 pub trait Hooks {
     /// Session configuration and context bridge checks for these roots.
     fn validate_roots(&self, roots: &[PathBuf]) -> Result<()>;
+    /// External agent access to a project was turned off: withdraw only its
+    /// agent credential (the project stays; ACP sessions are unaffected).
+    fn withheld(&self, name: &str);
     /// A project joined the set: publish its agent credential.
     fn added(&self, name: &str) -> Result<()>;
     /// A project left the set: revoke its credential, leases and session.
@@ -73,6 +78,12 @@ struct RootParams {
 #[serde(deny_unknown_fields)]
 struct NameParams {
     name: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AgentsParams {
+    name: String,
+    enabled: bool,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -156,7 +167,8 @@ impl Profiles {
         .map_err(|_| Error::UnsafeRuntime)?;
         let mut projects = Roots::new();
         let mut unavailable = Roots::new();
-        for (name, root) in state_dir.load_projects()? {
+        let (listed, withheld) = state_dir.load_projects()?;
+        for (name, root) in listed {
             match root.canonicalize() {
                 Ok(c) if c == root && c.is_dir() => {
                     projects.insert(name, c);
@@ -186,6 +198,7 @@ impl Profiles {
                 projects,
                 unavailable,
                 startup_failure: None,
+                withheld,
             }),
             location,
             runtime,
@@ -225,14 +238,17 @@ impl Profiles {
     pub fn allowed(&self, name: &str) -> bool {
         self.state.lock().unwrap().projects.contains_key(name)
     }
-    pub fn names(&self) -> Vec<String> {
-        self.state
-            .lock()
-            .unwrap()
-            .projects
+    /// Projects whose agent credential is published (shared with agents).
+    pub fn shared_names(&self) -> Vec<String> {
+        let s = self.state.lock().unwrap();
+        s.projects
             .keys()
+            .filter(|n| !s.withheld.contains(*n))
             .cloned()
             .collect()
+    }
+    pub fn location(&self) -> &Location {
+        &self.location
     }
     /// The project set for `project.list`: name, root and state.
     pub fn list(&self) -> Value {
@@ -243,6 +259,7 @@ impl Profiles {
             .map(|(name, root)| {
                 // Without a selected Profile nothing is registered; a missing
                 // root still reads as unavailable.
+                let agents = !s.withheld.contains(name);
                 let state = if s.roots.contains_key(name) {
                     "ready"
                 } else if root.is_dir() {
@@ -250,13 +267,15 @@ impl Profiles {
                 } else {
                     "unavailable"
                 };
-                json!({"name":name,"root":root,"state":state})
+                json!({"name":name,"root":root,"state":state,"agents":agents})
             })
             .collect();
         out.extend(
             s.unavailable
                 .iter()
-                .map(|(name, root)| json!({"name":name,"root":root,"state":"unavailable"})),
+                .map(|(name, root)| {
+                    json!({"name":name,"root":root,"state":"unavailable","agents":!s.withheld.contains(name)})
+                }),
         );
         Value::Array(out)
     }
@@ -521,20 +540,55 @@ impl Profiles {
         next.insert(p.name.clone(), root.clone());
         let mut file = next.clone();
         file.extend(s.unavailable.clone());
+        // A project (re)joins shared with agents.
+        let mut withheld = s.withheld.clone();
+        withheld.remove(&p.name);
         self.state_dir
-            .save_projects(&file)
+            .save_projects(&file, &withheld)
             .map_err(|_| Error::OutcomeUnknown)?;
         s.projects = next;
+        s.withheld = withheld;
         s.roots.insert(p.name.clone(), root.clone());
         if hooks.added(&p.name).is_err() {
             s.projects.remove(&p.name);
             s.roots.remove(&p.name);
             let mut file = s.projects.clone();
             file.extend(s.unavailable.clone());
-            let _ = self.state_dir.save_projects(&file);
+            let _ = self.state_dir.save_projects(&file, &s.withheld);
             return Err(Error::OutcomeUnknown);
         }
         Ok(json!({"added":p.name,"root":root,"registered":!registered,"receipt":receipt}))
+    }
+    /// The operator turns external agent access to one project on or off: the
+    /// daemon persists the choice, then publishes or withdraws that project's
+    /// agent credential. No Profile write; a narrowing or restoring of agent
+    /// access the operator controls like context sharing.
+    fn set_agents(&self, params: Value, hooks: &dyn Hooks) -> Result<Value> {
+        let p: AgentsParams = super::decode(params)?;
+        let mut s = self.state.lock().unwrap();
+        if !s.projects.contains_key(&p.name) && !s.unavailable.contains_key(&p.name) {
+            return Err(Error::NotFound);
+        }
+        let mut withheld = s.withheld.clone();
+        let changed = if p.enabled {
+            withheld.remove(&p.name)
+        } else {
+            withheld.insert(p.name.clone())
+        };
+        if changed {
+            let mut file = s.projects.clone();
+            file.extend(s.unavailable.clone());
+            self.state_dir.save_projects(&file, &withheld)?;
+            s.withheld = withheld;
+            let served = s.projects.contains_key(&p.name);
+            drop(s);
+            if !p.enabled {
+                hooks.withheld(&p.name);
+            } else if served {
+                hooks.added(&p.name).map_err(|_| Error::OutcomeUnknown)?;
+            }
+        }
+        Ok(json!({"name":p.name,"agents":p.enabled}))
     }
     pub fn handle(
         &self,
@@ -668,9 +722,12 @@ impl Profiles {
             }
             let mut file = next.clone();
             file.extend(gone.clone());
-            self.state_dir.save_projects(&file)?;
+            let mut withheld = s.withheld.clone();
+            withheld.remove(&p.name);
+            self.state_dir.save_projects(&file, &withheld)?;
             s.projects = next;
             s.unavailable = gone;
+            s.withheld = withheld;
             s.roots.remove(&p.name);
             drop(s);
             hooks.removed(&p.name);
@@ -678,6 +735,9 @@ impl Profiles {
         }
         if access != Access::Operator {
             return Err(Error::Unauthorized);
+        }
+        if method == "project.agents" {
+            return self.set_agents(params, hooks);
         }
         if matches!(
             method,

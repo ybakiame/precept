@@ -9,7 +9,7 @@ use acp_ipc::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     io::{Read, Write},
     path::{Path, PathBuf},
 };
@@ -27,6 +27,13 @@ pub const STARTUP: &str = "startup.json";
 struct ProjectEntry {
     name: String,
     root: PathBuf,
+    /// External agents may connect (its agent credential is published).
+    /// Written explicitly; absent reads as shared.
+    #[serde(default = "shared")]
+    agents: bool,
+}
+fn shared() -> bool {
+    true
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -98,10 +105,11 @@ impl StateDir {
     }
 
     /// The project set as written (names and absolute roots, not yet checked
-    /// against the filesystem). Absent file: no projects.
-    pub fn load_projects(&self) -> Result<BTreeMap<String, PathBuf>> {
+    /// against the filesystem), and the names withheld from external agents.
+    /// Absent file: no projects.
+    pub fn load_projects(&self) -> Result<(BTreeMap<String, PathBuf>, BTreeSet<String>)> {
         let Some(text) = self.read(PROJECTS)? else {
-            return Ok(BTreeMap::new());
+            return Ok(Default::default());
         };
         let file: ProjectsFile = serde_json::from_str(&text).map_err(|_| Error::InvalidRequest)?;
         if file.format != 1 || file.projects.len() > MAX_PROJECTS {
@@ -109,6 +117,7 @@ impl StateDir {
         }
         let mut seen = HashSet::new();
         let mut projects = BTreeMap::new();
+        let mut withheld = BTreeSet::new();
         for entry in file.projects {
             // Names collide case-insensitively, like their credential files.
             if !acp_ipc::valid_project(&entry.name)
@@ -118,11 +127,18 @@ impl StateDir {
             {
                 return Err(Error::InvalidRequest);
             }
+            if !entry.agents {
+                withheld.insert(entry.name.clone());
+            }
             projects.insert(entry.name, entry.root);
         }
-        Ok(projects)
+        Ok((projects, withheld))
     }
-    pub fn save_projects(&self, projects: &BTreeMap<String, PathBuf>) -> Result<()> {
+    pub fn save_projects(
+        &self,
+        projects: &BTreeMap<String, PathBuf>,
+        withheld: &BTreeSet<String>,
+    ) -> Result<()> {
         if projects.len() > MAX_PROJECTS {
             return Err(Error::Capacity);
         }
@@ -133,6 +149,7 @@ impl StateDir {
                 .map(|(name, root)| ProjectEntry {
                     name: name.clone(),
                     root: root.clone(),
+                    agents: !withheld.contains(name),
                 })
                 .collect(),
         };
@@ -186,11 +203,14 @@ mod tests {
     #[test]
     fn projects_round_trip_privately_and_absent_means_none() {
         let (_t, s) = scratch("acp-state-rt-");
-        assert!(s.load_projects().unwrap().is_empty());
+        assert!(s.load_projects().unwrap().0.is_empty());
         let mut p = BTreeMap::new();
         p.insert("alpha".to_string(), PathBuf::from("/home/u/alpha"));
-        s.save_projects(&p).unwrap();
-        assert_eq!(s.load_projects().unwrap(), p);
+        let withheld = BTreeSet::from(["alpha".to_string()]);
+        s.save_projects(&p, &withheld).unwrap();
+        assert_eq!(s.load_projects().unwrap(), (p.clone(), withheld));
+        s.save_projects(&p, &BTreeSet::new()).unwrap();
+        assert!(s.load_projects().unwrap().1.is_empty());
         let mode = std::fs::metadata(s.path().join(PROJECTS))
             .unwrap()
             .permissions()
@@ -249,7 +269,10 @@ mod tests {
         for i in 0..=MAX_PROJECTS {
             big.insert(format!("p{i}"), PathBuf::from(format!("/p{i}")));
         }
-        assert_eq!(s.save_projects(&big).err(), Some(Error::Capacity));
+        assert_eq!(
+            s.save_projects(&big, &BTreeSet::new()).err(),
+            Some(Error::Capacity)
+        );
     }
     #[test]
     fn the_state_directory_must_be_private_absolute_and_outside_git() {

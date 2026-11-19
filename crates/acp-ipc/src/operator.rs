@@ -19,6 +19,8 @@ pub async fn control(location: &Location, method: &str, params: Value) -> Result
             | "profile.handoff.get"
             | "profile.startup.forget"
             | "project.check"
+            | "project.agents"
+            | "project.mcp"
     ) {
         return Err(Error::Unsupported);
     }

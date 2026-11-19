@@ -194,10 +194,16 @@ impl Service {
         let access = authority.access();
         let session_bound = authority.is_session();
         let params = request.params;
+        if request.method == "project.mcp" {
+            if access != Access::Operator {
+                return Err(Error::Unauthorized);
+            }
+            return self.mcp_launch(params);
+        }
         if request.method.starts_with("profile.")
             || matches!(
                 request.method.as_str(),
-                "project.check" | "project.add" | "project.remove"
+                "project.check" | "project.add" | "project.remove" | "project.agents"
             )
         {
             return self
@@ -319,6 +325,42 @@ impl Service {
         })
     }
 }
+impl Service {
+    /// How an MCP client starts `acp-mcp` for one project of this daemon: the
+    /// executable (the configured context bridge, else the `acp-mcp` beside
+    /// this daemon) and its exact arguments. Paths only, never a token.
+    fn mcp_launch(&self, params: serde_json::Value) -> acp_ipc::Result<serde_json::Value> {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct P {
+            name: String,
+        }
+        let p: P = decode(params)?;
+        if !self.profiles.allowed(&p.name) {
+            return Err(Error::NotFound);
+        }
+        let location = self.profiles.location();
+        let capability = location.credential_path(Some(&p.name))?;
+        let executable = self.context_mcp.clone().or_else(|| {
+            let beside = std::env::current_exe()
+                .ok()?
+                .with_file_name(format!("acp-mcp{}", std::env::consts::EXE_SUFFIX));
+            beside.is_file().then_some(beside)
+        });
+        let shared = self.profiles.shared_names().contains(&p.name);
+        Ok(serde_json::json!({
+            "name": p.name,
+            "shared": shared,
+            "executable": executable,
+            "args": [
+                "--runtime-dir", location.runtime_dir,
+                "--endpoint", location.endpoint,
+                "--project", p.name,
+                "--capability-file", capability,
+            ],
+        }))
+    }
+}
 impl profiles::Hooks for Service {
     fn validate_roots(&self, roots: &[PathBuf]) -> acp_ipc::Result<()> {
         Service::validate_roots(self, roots)
@@ -327,6 +369,13 @@ impl profiles::Hooks for Service {
         let credential = self.lease.lock().unwrap().issue_agent(name)?;
         self.credentials.write().unwrap().push(credential);
         Ok(())
+    }
+    fn withheld(&self, name: &str) {
+        let _ = self.lease.lock().unwrap().revoke_agent(name);
+        self.credentials
+            .write()
+            .unwrap()
+            .retain(|c| !matches!(&c.access, Access::Agent { project } if project == name));
     }
     fn removed(&self, name: &str) {
         let _ = self.lease.lock().unwrap().revoke_agent(name);
@@ -480,7 +529,8 @@ async fn run(args: Args) -> acp_ipc::Result<()> {
         &roots,
     )?;
     let mut listener = acp_ipc::transport::Listener::bind(&args.location).await?;
-    let credentials = Arc::new(RwLock::new(lease.credentials(&profiles.names())?));
+    // Agent credentials only for projects shared with external agents.
+    let credentials = Arc::new(RwLock::new(lease.credentials(&profiles.shared_names())?));
     let service = Service {
         profiles,
         lease: Arc::new(Mutex::new(lease)),
@@ -556,7 +606,7 @@ pub(crate) fn test_state(
         .iter()
         .map(|(n, r)| ((*n).to_owned(), r.canonicalize().unwrap()))
         .collect();
-    state.save_projects(&set).unwrap();
+    state.save_projects(&set, &Default::default()).unwrap();
     if let Some(profile) = profile {
         state.save_startup(profile).unwrap();
     }

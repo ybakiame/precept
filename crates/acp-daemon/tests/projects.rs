@@ -164,7 +164,7 @@ fn add_applies_at_once_persists_and_remove_revokes_without_touching_the_profile(
         saved["projects"]
             .as_array()
             .unwrap()
-            .contains(&json!({"name":"gamma","root":gamma}))
+            .contains(&json!({"name":"gamma","root":gamma,"agents":true}))
     );
     assert_eq!(
         add(&f, "gamma", &gamma),
@@ -363,4 +363,79 @@ fn an_unselected_daemon_suggests_a_profile_in_its_state_directory_and_never_crea
     let info = f.daemon.control("profile.info", json!({})).unwrap();
     assert!(info.get("suggested_path").is_none());
     assert_eq!(info["remembered"], true);
+}
+
+#[test]
+fn agent_access_is_switched_per_project_and_persists_without_touching_the_profile() {
+    let mut f = Fixture::created(false);
+    let base = f.temp.path().to_path_buf();
+    let runtime = f.daemon.location.runtime_dir.clone();
+    let listed = |f: &Fixture| f.daemon.control("project.list", json!({})).unwrap();
+    assert_eq!(listed(&f)[0]["agents"], true, "shared by default");
+    let agent = f.daemon.credential("agent-alpha.cap");
+    assert!(f.daemon.call(&agent, "daemon.health", json!({})).is_ok());
+    // The launch line: paths only, the exact capability file, never a token.
+    let mcp = f
+        .daemon
+        .control("project.mcp", json!({"name":"alpha"}))
+        .unwrap();
+    let args: Vec<String> = mcp["args"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a.as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(args[4..6], ["--project".to_owned(), "alpha".to_owned()]);
+    assert!(args[7].ends_with("agent-alpha.cap"));
+    let token = fs::read_to_string(runtime.join("agent-alpha.cap")).unwrap();
+    assert!(!mcp.to_string().contains(token.trim()));
+    // Agents cannot switch or read the launch line.
+    for (method, params) in [
+        ("project.agents", json!({"name":"alpha","enabled":false})),
+        ("project.mcp", json!({"name":"alpha"})),
+    ] {
+        assert_eq!(
+            f.daemon.call(&agent, method, params),
+            Err(Error::Unauthorized)
+        );
+    }
+    // Off: the credential is withdrawn and a held token is refused at once.
+    let before = logical(&f.db);
+    f.daemon
+        .control("project.agents", json!({"name":"alpha","enabled":false}))
+        .unwrap();
+    assert!(!runtime.join("agent-alpha.cap").exists());
+    assert_eq!(
+        f.daemon.call(&agent, "daemon.health", json!({})),
+        Err(Error::Unauthorized)
+    );
+    assert_eq!(listed(&f)[0]["agents"], false);
+    assert_eq!(
+        f.daemon
+            .control("project.mcp", json!({"name":"alpha"}))
+            .unwrap()["shared"],
+        false
+    );
+    assert_eq!(logical(&f.db), before, "switching never writes the Profile");
+    // Persisted: a restart publishes no credential for it.
+    f.daemon.kill();
+    f.daemon = Daemon::relaunch(&base, "run-b");
+    f.daemon.ready();
+    let runtime = f.daemon.location.runtime_dir.clone();
+    assert!(!runtime.join("agent-alpha.cap").exists());
+    assert!(runtime.join("agent-beta.cap").exists() || listed(&f).as_array().unwrap().len() == 1);
+    // On again: a fresh credential works.
+    f.daemon
+        .control("project.agents", json!({"name":"alpha","enabled":true}))
+        .unwrap();
+    f.daemon
+        .control("profile.select", json!({"path":f.db}))
+        .unwrap();
+    let agent = f.daemon.credential("agent-alpha.cap");
+    assert!(f.daemon.call(&agent, "daemon.health", json!({})).is_ok());
+    assert_eq!(
+        f.daemon
+            .control("project.agents", json!({"name":"nope","enabled":true})),
+        Err(Error::NotFound)
+    );
 }

@@ -198,6 +198,12 @@ pub enum Project {
     Add { name: String, root: PathBuf },
     /// Remove a project from the set; its Profile records are kept.
     Remove { name: String },
+    /// Let external agents (MCP) read this project's context again.
+    Share { name: String },
+    /// Stop external agents (MCP) from reading this project's context.
+    Unshare { name: String },
+    /// How an MCP client starts acp-mcp for this project (paths, no token).
+    Mcp { name: String },
 }
 pub async fn project(location: &Location, command: Project) -> Result<Value> {
     match command {
@@ -214,6 +220,25 @@ pub async fn project(location: &Location, command: Project) -> Result<Value> {
         }
         Project::Remove { name } => {
             acp_ipc::operator::project_write(location, "project.remove", json!({"name":name})).await
+        }
+        Project::Share { name } => {
+            acp_ipc::operator::control(
+                location,
+                "project.agents",
+                json!({"name":name,"enabled":true}),
+            )
+            .await
+        }
+        Project::Unshare { name } => {
+            acp_ipc::operator::control(
+                location,
+                "project.agents",
+                json!({"name":name,"enabled":false}),
+            )
+            .await
+        }
+        Project::Mcp { name } => {
+            acp_ipc::operator::control(location, "project.mcp", json!({"name":name})).await
         }
     }
 }

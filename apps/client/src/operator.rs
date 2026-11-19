@@ -69,6 +69,8 @@ impl crate::native::Inputs {
                     | "profile.select"
                     | "profile.write.enable"
                     | "profile.write.disable"
+                    | "project.agents"
+                    | "project.mcp"
             )
         {
             return Err("Unsupported");
