@@ -54,7 +54,7 @@ jobs:
       - name: Fetch exact upstream renderer
         run: |
           git clone https://github.com/longbridge/nsh apps/vendor/nsh
-          git -C apps/vendor/nsh checkout b7f31a08478be262fd7b76ec856036fd5b8ffdb0
+          git -C apps/vendor/nsh checkout 554163758e30d2f62f814096a6327937dcb4fe49
       - run: node tools/package_ui_web.mjs apps/vendor/nsh apps/target/wasm32-unknown-unknown/debug/acp_operator_ui.wasm apps/ui/dist
       - run: node --test apps/web-smoke/static-server.test.mjs
       - run: npx --prefix apps/web-smoke playwright install chromium --with-deps

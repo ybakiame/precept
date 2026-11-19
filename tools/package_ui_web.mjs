@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const [source, wasm, output, ...extra] = process.argv.slice(2);
 if (!source || !wasm || !output || extra.length) throw Error('Usage: node tools/package_ui_web.mjs PINNED_NSH_CHECKOUT WASM NEW_OUTPUT');
-const pin = 'b7f31a08478be262fd7b76ec856036fd5b8ffdb0';
+const pin = '554163758e30d2f62f814096a6327937dcb4fe49';
 if (execFileSync('git', ['-C', source, 'rev-parse', 'HEAD'], { encoding:'utf8' }).trim() !== pin) throw Error('Unexpected NSH revision');
 // Refuse an existing destination rather than adopting/merging stale generated assets.
 await mkdir(output, { recursive:false });
