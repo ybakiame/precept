@@ -185,6 +185,11 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     app.wait_for("Daemon status").unwrap();
     app.press("Personal preferences").unwrap();
     app.wait_for("Write grant active").unwrap();
+    // A daemon read finishing afterwards keeps the chosen entry (it once
+    // reopened the workspace as To review, with the scope switch).
+    app.press("Reconnect").unwrap();
+    app.wait_for("Write grant active").unwrap();
+    app.wait_for("Personal preferences").unwrap();
     // The scope is fixed to personal (global): no switch is offered here.
     assert!(!app.screen().texts().contains(&"Global scope"));
     app.type_text("Preference key", "personal-editor").unwrap();

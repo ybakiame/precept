@@ -116,8 +116,14 @@ fn load(model: Signal<Model>) {
                 m.last_duration_ms = Some(started.elapsed().as_millis() as u64);
             }
         });
-        if model.get().operator.open {
-            review::open(model);
+        // Re-open in the entry the operator chose (a read finishing after a
+        // click must not turn Personal preferences into To review).
+        let (open, mode) = {
+            let m = model.get();
+            (m.operator.open, m.operator.mode)
+        };
+        if open {
+            review::open_mode(model, mode);
         }
     });
 }
