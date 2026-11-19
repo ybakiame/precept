@@ -250,61 +250,9 @@ impl ColorMode {
     }
 }
 
-/// The appearance kept between launches (`appearance.json` beside the saved
-/// connection): presentation only, never data, a path or authority.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SavedAppearance {
-    pub format: u32,
-    pub theme: String,
-    pub mode: String,
-    pub high_contrast: bool,
-}
-impl SavedAppearance {
-    pub const FORMAT: u32 = 1;
-    pub fn new(theme: ThemeId, mode: ColorMode, high_contrast: bool) -> Self {
-        Self {
-            format: Self::FORMAT,
-            theme: theme.id().into(),
-            mode: mode.id().into(),
-            high_contrast,
-        }
-    }
-    /// The saved choice, if it is this format and every value is known.
-    pub fn values(&self) -> Option<(ThemeId, ColorMode, bool)> {
-        (self.format == Self::FORMAT).then_some(())?;
-        Some((
-            ThemeId::from_id(&self.theme)?,
-            ColorMode::from_id(&self.mode)?,
-            self.high_contrast,
-        ))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn saved_appearance_round_trips_and_refuses_unknown_values() {
-        for theme in ThemeId::ALL {
-            let saved = SavedAppearance::new(theme, ColorMode::Light, true);
-            let text = serde_json::to_string(&saved).unwrap();
-            let back: SavedAppearance = serde_json::from_str(&text).unwrap();
-            assert_eq!(back.values(), Some((theme, ColorMode::Light, true)));
-        }
-        let mut odd = SavedAppearance::new(ThemeId::Graphite, ColorMode::Dark, false);
-        odd.theme = "neon".into();
-        assert_eq!(odd.values(), None);
-        odd = SavedAppearance::new(ThemeId::Graphite, ColorMode::Dark, false);
-        odd.format = 2;
-        assert_eq!(odd.values(), None);
-        assert!(
-            serde_json::from_str::<SavedAppearance>(
-                r#"{"format":1,"theme":"graphite","mode":"dark","high_contrast":false,"x":1}"#
-            )
-            .is_err()
-        );
-    }
     fn luminance(rgb: u32) -> f64 {
         [16, 8, 0]
             .into_iter()

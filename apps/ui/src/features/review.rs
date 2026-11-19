@@ -293,22 +293,23 @@ fn field(
 ) -> impl IntoElement {
     let reference = element_ref();
     let shortcut = match key {
-        Msg::OperatorKey => "alt+k",
-        Msg::OperatorValue => "alt+w",
-        Msg::OperatorSource => "alt+f",
-        _ => "alt+t",
+        Msg::OperatorKey => "review.field.key",
+        Msg::OperatorValue => "review.field.value",
+        Msg::OperatorSource => "review.field.source",
+        _ => "review.field.task",
     };
     let pane = match key {
         Msg::OperatorTask => Pane::Handoff,
         _ => Pane::Preferences,
     };
-    on_key_with(
+    crate::shortcuts::bind(
+        model,
         shortcut,
         KeyOptions {
             when: nsh_core::keymap::When::Always,
             ..Default::default()
         },
-        move |_| {
+        move || {
             if model.get().operator.open {
                 model.update(|m| {
                     m.operator.pane = pane;
@@ -815,88 +816,116 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
     // in the shared model so Desktop and TUI enforce one guard.
     let delete_open = signal(false);
     let retype_ref = element_ref();
+    let bind = |id: &'static str, handler: Box<dyn Fn()>| {
+        crate::shortcuts::bind(model, id, global, handler)
+    };
     for (key, action) in [
-        ("alt+shift+s", "suggest"),
-        ("alt+shift+y", "confirm"),
-        ("alt+shift+n", "reject"),
-        ("alt+shift+w", "deprecate"),
+        ("review.suggest", "suggest"),
+        ("review.confirm", "confirm"),
+        ("review.reject", "reject"),
+        ("review.deprecate", "deprecate"),
     ] {
-        on_key_with(key, global, move |_| {
-            if model.get().operator.open {
-                review(model, action);
-            }
-        });
+        bind(
+            key,
+            Box::new(move || {
+                if model.get().operator.open {
+                    review(model, action);
+                }
+            }),
+        );
     }
-    on_key_with("alt+shift+q", global, move |_| {
-        if model.get().operator.open {
-            open_delete(model, delete_open);
-        }
-    });
-    on_key_with("alt+shift+v", global, move |_| {
-        if !model.get().operator.open {
-            return;
-        }
-        // An open, exactly armed delete tier prepares then applies in one chord;
-        // a blind or stale retype prepares nothing and applies nothing.
-        if delete_open.get() && model.get().operator.delete_arm.is_some() {
-            commit_delete(model, delete_open);
-            if model.get().operator.review.is_some() {
-                submit(model);
+    bind(
+        "review.delete",
+        Box::new(move || {
+            if model.get().operator.open {
+                open_delete(model, delete_open);
             }
-            return;
-        }
-        submit(model);
-    });
-    on_key_with("alt+shift+r", global, move |_| {
-        if model.get().operator.open {
-            refresh(model, "profile.info");
-        }
-    });
-    on_key_with("alt+shift+l", global, move |_| {
-        if model.get().operator.open {
-            model.update(|m| m.operator.pane = Pane::Preferences);
-            refresh(model, "profile.preferences.list");
-        }
-    });
+        }),
+    );
+    bind(
+        "review.apply",
+        Box::new(move || {
+            if !model.get().operator.open {
+                return;
+            }
+            // An open, exactly armed delete tier prepares then applies in one chord;
+            // a blind or stale retype prepares nothing and applies nothing.
+            if delete_open.get() && model.get().operator.delete_arm.is_some() {
+                commit_delete(model, delete_open);
+                if model.get().operator.review.is_some() {
+                    submit(model);
+                }
+                return;
+            }
+            submit(model);
+        }),
+    );
+    bind(
+        "review.profile",
+        Box::new(move || {
+            if model.get().operator.open {
+                refresh(model, "profile.info");
+            }
+        }),
+    );
+    bind(
+        "review.records",
+        Box::new(move || {
+            if model.get().operator.open {
+                model.update(|m| m.operator.pane = Pane::Preferences);
+                refresh(model, "profile.preferences.list");
+            }
+        }),
+    );
     // Windows' native Tab chain visits text fields; expose the existing exact
     // saved-Handoff read without depending on a button's platform traversal.
-    on_key_with("alt+shift+h", global, move |_| {
-        let m = model.get();
-        if m.operator.pane == Pane::Handoff && m.selected_project.is_some() && available(model) {
-            refresh(model, "profile.handoff.get");
-        }
-    });
-    on_key_with("alt+shift+z", global, move |_| {
-        if model.get().operator.open {
-            let mut request = None;
-            model.update(|m| request = m.operator_retry());
-            if let Some(r) = request {
-                send(model, r);
+    bind(
+        "review.handoff",
+        Box::new(move || {
+            let m = model.get();
+            if m.operator.pane == Pane::Handoff && m.selected_project.is_some() && available(model)
+            {
+                refresh(model, "profile.handoff.get");
             }
-        }
-    });
-    on_key_with("alt+shift+i", global, move |_| {
-        if model.get().operator.open && available(model) {
-            model.update(|m| {
-                if let Some(page) = &m.operator.page {
-                    let next = m
-                        .operator
-                        .selected_id
-                        .and_then(|id| page.records.iter().position(|r| r.id == id))
-                        .map(|n| (n + 1) % page.records.len().max(1))
-                        .unwrap_or(0);
-                    m.operator.selected_id = page.records.get(next).map(|r| r.id);
-                    m.operator.inspect = None;
-                    m.operator.inspect_revision = 0;
-                    m.operator.digest_expanded = false;
-                    m.operator.serial += 1;
-                    m.operator.review = None;
-                    // A selection change never carries an armed delete forward.
-                    m.operator.delete_arm = None;
+        }),
+    );
+    bind(
+        "review.retry",
+        Box::new(move || {
+            if model.get().operator.open {
+                let mut request = None;
+                model.update(|m| request = m.operator_retry());
+                if let Some(r) = request {
+                    send(model, r);
                 }
-            });
-        }
-    });
+            }
+        }),
+    );
+    bind(
+        "review.next",
+        Box::new(move || {
+            if model.get().operator.open && available(model) {
+                model.update(|m| {
+                    if let Some(page) = &m.operator.page {
+                        let next = m
+                            .operator
+                            .selected_id
+                            .and_then(|id| page.records.iter().position(|r| r.id == id))
+                            .map(|n| (n + 1) % page.records.len().max(1))
+                            .unwrap_or(0);
+                        m.operator.selected_id = page.records.get(next).map(|r| r.id);
+                        m.operator.inspect = None;
+                        m.operator.inspect_revision = 0;
+                        m.operator.digest_expanded = false;
+                        m.operator.serial += 1;
+                        m.operator.review = None;
+                        // A selection change never carries an armed delete forward.
+                        m.operator.delete_arm = None;
+                    }
+                });
+            }
+        }),
+    );
     effect(move || {
         if model.get().operator.delete_arm.is_none() {
             delete_open.set(false);

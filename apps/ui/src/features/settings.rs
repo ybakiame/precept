@@ -162,7 +162,14 @@ pub(crate) fn appearance(model: Signal<Model>) -> impl IntoElement {
         .child(
             surface(model)
                 .title_fn(word(model, Msg::Keyboard))
-                .child(note(model, Msg::ConsoleHelp))
-                .child(note(model, Msg::OperatorKeys)),
+                .child(note(model, Msg::KeysSettingsHelp))
+                .child(
+                    view().items_start().child(
+                        button(model, "")
+                            .label_fn(word(model, Msg::KeysOpenPanel))
+                            .icon(ui::icons::KEYBOARD)
+                            .on_press(move || crate::shortcuts::open(model)),
+                    ),
+                ),
         )
 }

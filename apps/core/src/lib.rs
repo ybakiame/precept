@@ -7,12 +7,14 @@ use std::sync::Arc;
 pub mod appearance;
 pub mod connection;
 pub mod i18n;
+pub mod keys;
 pub mod mcp;
 pub mod operator;
 pub mod presentation;
 pub mod profile;
 pub mod projects;
 pub mod session;
+pub mod settings;
 
 pub const PAGE_SIZE: usize = 12;
 pub const MAX_ROWS: usize = 10_000;
@@ -206,6 +208,13 @@ pub struct Model {
     /// as last counted by the daemon. `None`: not counted (or the daemon could
     /// not say), which is never shown as zero.
     pub review_count: Option<i64>,
+    /// The operator's shortcut overrides (`settings.toml`).
+    pub keymap: keys::Keymap,
+    /// The Shortcuts panel is open.
+    pub shortcuts_open: bool,
+    /// The shortcut whose new keystroke is being recorded; no shortcut is
+    /// bound meanwhile.
+    pub shortcut_recording: Option<&'static str>,
     /// Why the last applied connection could not be saved for the next launch.
     pub save_failure: Option<&'static str>,
     pub theme: appearance::ThemeId,
@@ -264,6 +273,9 @@ impl Model {
             profile_setup: Default::default(),
             profile_info: Default::default(),
             review_count: None,
+            keymap: Default::default(),
+            shortcuts_open: false,
+            shortcut_recording: None,
             save_failure: None,
             theme: Default::default(),
             color_mode: appearance::ColorMode::Dark,

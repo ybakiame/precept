@@ -28,26 +28,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "acp-ui-client"
+name = "acp-session"
 version = "0.1.0"
 dependencies = [
- "acp-core",
- "acp-ipc",
- "acp-ui-core",
- "acp-session",
- "clap",
- "serde",
- "serde_json",
- "tokio",
- "toml 1.2.1+spec-1.1.0",
-]
-
-[[package]]
-name = "acp-ui-core"
-version = "0.1.0"
-dependencies = [
- "acp-core",
- "acp-session",
  "serde",
  "serde_json",
 ]
@@ -77,9 +60,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "acp-session"
+name = "acp-ui-client"
 version = "0.1.0"
 dependencies = [
+ "acp-core",
+ "acp-ipc",
+ "acp-session",
+ "acp-ui-core",
+ "clap",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml 1.2.1+spec-1.1.0",
+]
+
+[[package]]
+name = "acp-ui-core"
+version = "0.1.0"
+dependencies = [
+ "acp-core",
+ "acp-session",
  "serde",
  "serde_json",
 ]

@@ -32,6 +32,9 @@ sudo pacman -U .tmp/artifacts/local-dogfood/dogfood-linux-01/agent-control-plane
 ./tools/dogfood/windows-deploy.ps1 -AttemptDir .tmp/artifacts/local-p1-m5/dogfood-windows-01 -Distribution <distro> -User <linux-user>
 ```
 
+`-Locale en|zh-CN` fixes the language in the shortcut; without it the Desktop uses
+the language saved in its settings.
+
 To update the Desktop later, close it, build a new attempt and rerun
 `windows-deploy.ps1 ... -Replace`. That removes only the files listed in the
 installed manifest, and keeps unknown files.

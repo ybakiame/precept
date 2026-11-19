@@ -21,7 +21,9 @@ param(
   [string] $Destination = (Join-Path $env:LOCALAPPDATA 'Programs\ACP'),
   [string] $WslBridge = '/usr/bin/acp-wsl-bridge',
   [string] $WslStateDir,
-  [ValidateSet('en', 'zh-CN')] [string] $Locale = 'zh-CN',
+  # Optional: fixes the language at every launch. Absent, the Desktop uses
+  # the language saved in its settings.toml (English until one is chosen).
+  [ValidateSet('', 'en', 'zh-CN')] [string] $Locale = '',
   [switch] $Replace
 )
 $ErrorActionPreference = 'Stop'
@@ -98,7 +100,7 @@ try {
 
 # 4. One shortcut inside the product directory (portable; nothing outside it).
 $arguments = @(
-  '--locale', $Locale,
+  $(if ($Locale) { '--locale', $Locale })
   '--wsl-distribution', $Distribution, '--wsl-user', $User, '--wsl-bridge', $WslBridge,
   '--wsl-runtime-dir', "$WslStateDir/runtime", '--wsl-endpoint', "$WslStateDir/runtime/control.sock"
 ) | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }

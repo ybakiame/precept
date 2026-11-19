@@ -4,6 +4,7 @@ use nsh_base::button;
 use nsh_core::prelude::*;
 mod features;
 mod shell;
+mod shortcuts;
 mod ui;
 
 pub use features::brand_preview;
@@ -33,14 +34,14 @@ fn runtime_lines(locale: acp_ui_core::i18n::Locale) -> Vec<String> {
 pub static TERMINAL_SURFACE: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 pub static PROBE_STARTED: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
-/// Set by the native desktop binary only: the theme, color mode and contrast
-/// are read from and written to the private `appearance.json`. Tests, the TUI
-/// and previews never touch the developer's settings.
-pub static PERSIST_APPEARANCE: std::sync::atomic::AtomicBool =
+/// Set by the desktop and terminal binaries: the operator's settings are read
+/// from and written to the private `settings.toml`. Tests and previews never
+/// touch the developer's settings.
+pub static PERSIST_SETTINGS: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 #[cfg(all(feature = "ipc", not(test)))]
-fn persist_appearance() -> bool {
-    PERSIST_APPEARANCE.load(std::sync::atomic::Ordering::Relaxed)
+fn persist_settings() -> bool {
+    PERSIST_SETTINGS.load(std::sync::atomic::Ordering::Relaxed)
 }
 pub fn probe_elapsed() -> f64 {
     PROBE_STARTED
@@ -217,17 +218,26 @@ pub fn App() -> impl IntoElement {
     };
     #[cfg(feature = "ipc")]
     {
-        initial.locale = acp_ui_core::i18n::Locale::parse(&inputs.locale).unwrap_or_default();
-        // Explicit launch arguments win; otherwise the saved appearance.
+        // Saved settings first; explicit launch arguments win over them.
         #[cfg(not(test))]
-        if persist_appearance()
-            && let Some((theme, mode, contrast)) = acp_ui_client::settings::load_appearance()
-                .as_ref()
-                .and_then(acp_ui_core::appearance::SavedAppearance::values)
+        if persist_settings()
+            && let Some(saved) = acp_ui_client::settings::load_settings()
         {
-            initial.theme = theme;
-            initial.color_mode = mode;
-            initial.high_contrast = contrast;
+            saved.apply(
+                &mut initial,
+                acp_ui_core::settings::Explicit {
+                    theme: inputs.theme.is_some(),
+                    mode: inputs.appearance.is_some(),
+                    language: inputs.locale.is_some(),
+                },
+            );
+        }
+        if let Some(locale) = inputs
+            .locale
+            .as_deref()
+            .and_then(acp_ui_core::i18n::Locale::parse)
+        {
+            initial.locale = locale;
         }
         if let Some(theme) = inputs
             .theme
@@ -288,22 +298,19 @@ pub fn App() -> impl IntoElement {
         _ => Appearance::Dark,
     });
     let model = signal(initial);
-    // Remember a changed theme, color mode or contrast (never the first value).
+    // Save the settings (appearance, language, shortcuts) when they change,
+    // never the values the app started with.
     #[cfg(all(feature = "ipc", not(test)))]
-    if persist_appearance() {
-        let chosen = computed(move || {
-            let m = model.get();
-            (m.theme, m.color_mode, m.high_contrast)
-        });
+    if persist_settings() {
+        let chosen = computed(move || acp_ui_core::settings::Settings::of(&model.get()));
         let first = std::cell::Cell::new(true);
         effect(move || {
-            let (theme, mode, contrast) = chosen.get();
+            let settings = chosen.get();
             if first.replace(false) {
                 return;
             }
-            let saved = acp_ui_core::appearance::SavedAppearance::new(theme, mode, contrast);
             // A refused or failed save leaves this session's choice as it is.
-            let _ = acp_ui_client::settings::save_appearance(&saved);
+            let _ = acp_ui_client::settings::save_settings(&settings);
         });
     }
     if model.get_untracked().connection_editor {
@@ -353,127 +360,186 @@ fn wsl_watch(model: Signal<Model>) {
 fn console(model: Signal<Model>) -> impl IntoElement {
     let filter_ref = element_ref();
     let task_ref = element_ref();
-    on_key("mod+r", move |_| reconnect(model));
-    on_key("mod+p", move |_| next_project(model));
-    on_key("mod+f", move |_| {
-        model.update(|m| {
-            m.operator.open = false;
-            m.operator.review = None;
-            m.settings = false;
-            m.sessions = false;
-            m.session.confirm_start = false;
-            m.connection_editor = false;
-            m.profile_page = false;
-            m.agents_page = false;
-            m.set_section(acp_ui_core::Section::Preferences)
-        });
-        filter_ref.focus();
-    });
-    on_key("mod+k", move |_| {
-        model.update(|m| {
-            m.operator.open = false;
-            m.operator.review = None;
-            m.settings = false;
-            m.sessions = false;
-            m.session.confirm_start = false;
-            m.connection_editor = false;
-            m.profile_page = false;
-            m.agents_page = false;
-            m.set_section(acp_ui_core::Section::Handoff)
-        });
-        task_ref.focus();
-    });
-    on_key("mod+l", move |_| {
-        model.update(|m| {
-            m.locale = match m.locale {
-                acp_ui_core::i18n::Locale::En => acp_ui_core::i18n::Locale::ZhCn,
-                _ => acp_ui_core::i18n::Locale::En,
-            }
-        })
-    });
-    for (key, theme) in [
-        ("alt+a", acp_ui_core::appearance::ThemeId::Instrument),
-        ("alt+b", acp_ui_core::appearance::ThemeId::Ledger),
-        ("alt+c", acp_ui_core::appearance::ThemeId::Harbor),
-        ("alt+d", acp_ui_core::appearance::ThemeId::Graphite),
-    ] {
-        on_key(key, move |_| model.update(|m| m.theme = theme));
-    }
-    on_key("alt+0", move |_| {
-        model.update(|m| {
-            m.operator.open = false;
-            m.operator.review = None;
-            m.operator.delete_arm = None;
-            m.sessions = false;
-            m.session.confirm_start = false;
-            m.settings = !m.settings;
-            m.connection_editor = false;
-            m.profile_page = false;
-            m.agents_page = false;
-        })
-    });
-    on_key("mod+shift+h", move |_| toggle_contrast(model));
     let global = KeyOptions {
         when: nsh_core::keymap::When::Always,
         ..Default::default()
     };
-    on_key_with("Escape", global, move |_| {
-        if model.with(|m| m.operator.open && m.operator.delete_arm.is_some()) {
-            model.update(|m| {
-                m.operator.delete_arm = None;
-                m.operator.review = None;
-            });
-            return;
-        }
-        filter_ref.blur();
-        task_ref.blur();
+    let auto = KeyOptions::default();
+    let bind = |id: &'static str, options: KeyOptions, handler: Box<dyn Fn()>| {
+        shortcuts::bind(model, id, options, handler)
+    };
+    // Leaves every workspace for a section (and focuses nothing).
+    let to_section = move |section: acp_ui_core::Section| {
         model.update(|m| {
-            m.cancel_read();
             m.operator.open = false;
             m.operator.review = None;
-            m.operator.delete_arm = None;
             m.settings = false;
             m.sessions = false;
             m.session.confirm_start = false;
             m.connection_editor = false;
             m.profile_page = false;
             m.agents_page = false;
+            m.set_section(section)
         });
-    });
-    for (key, section) in ["alt+1", "alt+2", "alt+3", "alt+4", "alt+5"]
-        .into_iter()
-        .zip(acp_ui_core::Section::ALL)
-    {
-        on_key_with(key, global, move |_| {
-            filter_ref.blur();
-            task_ref.blur();
+    };
+    bind(
+        "shortcuts.open",
+        global,
+        Box::new(move || shortcuts::open(model)),
+    );
+    bind("reconnect", auto, Box::new(move || reconnect(model)));
+    bind("project.next", auto, Box::new(move || next_project(model)));
+    bind(
+        "preferences.filter",
+        auto,
+        Box::new(move || {
+            to_section(acp_ui_core::Section::Preferences);
+            filter_ref.focus();
+        }),
+    );
+    bind(
+        "handoff.task",
+        auto,
+        Box::new(move || {
+            to_section(acp_ui_core::Section::Handoff);
+            task_ref.focus();
+        }),
+    );
+    bind(
+        "language.toggle",
+        auto,
+        Box::new(move || {
+            model.update(|m| {
+                m.locale = match m.locale {
+                    acp_ui_core::i18n::Locale::En => acp_ui_core::i18n::Locale::ZhCn,
+                    _ => acp_ui_core::i18n::Locale::En,
+                }
+            })
+        }),
+    );
+    for (id, theme) in [
+        (
+            "theme.instrument",
+            acp_ui_core::appearance::ThemeId::Instrument,
+        ),
+        ("theme.ledger", acp_ui_core::appearance::ThemeId::Ledger),
+        ("theme.harbor", acp_ui_core::appearance::ThemeId::Harbor),
+        ("theme.graphite", acp_ui_core::appearance::ThemeId::Graphite),
+    ] {
+        bind(
+            id,
+            auto,
+            Box::new(move || model.update(|m| m.theme = theme)),
+        );
+    }
+    bind(
+        "go.settings",
+        auto,
+        Box::new(move || {
             model.update(|m| {
                 m.operator.open = false;
                 m.operator.review = None;
+                m.operator.delete_arm = None;
+                m.sessions = false;
+                m.session.confirm_start = false;
+                m.settings = !m.settings;
+                m.connection_editor = false;
+                m.profile_page = false;
+                m.agents_page = false;
+            })
+        }),
+    );
+    bind(
+        "contrast.toggle",
+        auto,
+        Box::new(move || toggle_contrast(model)),
+    );
+    // Escape is not rebindable. It steps aside while the Shortcuts panel is
+    // open (the panel's sheet hears it) or a keystroke is being recorded.
+    let escape_free = computed(move || {
+        let m = model.get();
+        !m.shortcuts_open && m.shortcut_recording.is_none()
+    });
+    effect(move || {
+        if !escape_free.get() {
+            return;
+        }
+        on_key_with("Escape", global, move |_| {
+            if model.with(|m| m.operator.open && m.operator.delete_arm.is_some()) {
+                model.update(|m| {
+                    m.operator.delete_arm = None;
+                    m.operator.review = None;
+                });
+                return;
+            }
+            filter_ref.blur();
+            task_ref.blur();
+            model.update(|m| {
+                m.cancel_read();
+                m.operator.open = false;
+                m.operator.review = None;
+                m.operator.delete_arm = None;
                 m.settings = false;
                 m.sessions = false;
                 m.session.confirm_start = false;
                 m.connection_editor = false;
                 m.profile_page = false;
                 m.agents_page = false;
-                m.set_section(section)
             });
         });
-    }
-    on_key_with("alt+6", global, move |_| sessions::open(model));
-    on_key_with("alt+o", global, move |_| review::open(model));
-    on_key("mod+d", move |_| toggle_theme(model));
-    on_key("mod+shift+c", move |_| {
-        copy_page(model);
     });
+    for (id, section) in [
+        "go.dashboard",
+        "go.workspaces",
+        "go.preferences",
+        "go.handoff",
+        "go.diagnostics",
+    ]
+    .into_iter()
+    .zip(acp_ui_core::Section::ALL)
+    {
+        bind(
+            id,
+            global,
+            Box::new(move || {
+                filter_ref.blur();
+                task_ref.blur();
+                to_section(section);
+            }),
+        );
+    }
+    bind(
+        "go.sessions",
+        global,
+        Box::new(move || sessions::open(model)),
+    );
+    bind("go.review", global, Box::new(move || review::open(model)));
+    bind(
+        "appearance.toggle",
+        auto,
+        Box::new(move || toggle_theme(model)),
+    );
+    bind(
+        "page.copy",
+        auto,
+        Box::new(move || {
+            copy_page(model);
+        }),
+    );
     // Alt+left/right navigate the review tabs while the operator review workspace
     // is active; otherwise they keep paging the read-only console preferences.
     // The TUI platform names arrows "ArrowLeft/ArrowRight"; the GTK desktop names
-    // them "Left/Right", so both spellings are registered.
-    on_key_with("alt+ArrowRight", global, move |_| review_or_page(model, 1));
-    on_key_with("alt+Right", global, move |_| review_or_page(model, 1));
-    on_key_with("alt+ArrowLeft", global, move |_| review_or_page(model, -1));
-    on_key_with("alt+Left", global, move |_| review_or_page(model, -1));
+    // them "Left/Right", so both spellings are the defaults.
+    bind(
+        "page.next",
+        global,
+        Box::new(move || review_or_page(model, 1)),
+    );
+    bind(
+        "page.previous",
+        global,
+        Box::new(move || review_or_page(model, -1)),
+    );
     #[cfg(not(target_arch = "wasm32"))]
     effect(move || {
         if std::env::var_os("ACP_UI_PROBE").is_some() {

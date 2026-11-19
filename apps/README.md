@@ -14,6 +14,9 @@ visual language, components and motion.
 
 ## Review keyboard flow
 
+These are the default keys; every shortcut can be changed in the Shortcuts panel
+(`Ctrl+/` or `F1`), and changes are kept in the private `settings.toml`.
+
 Alt+O opens the review workspace; Alt+Left/Right switches Queue, Detail and History.
 Load the scoped suggested queue, select a row and inspect the exact revision,
 proposal fields, digest and peer-demotion disclosure before deciding.

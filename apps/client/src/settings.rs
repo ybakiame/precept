@@ -3,18 +3,18 @@
 //! product directory), `$XDG_CONFIG_HOME/acp/connection.json` elsewhere.
 //!
 //! Only the target and its non-secret coordinates are stored (`Saved`); never a
-//! credential, Profile path or preference value. `appearance.json` beside it
-//! keeps the theme, color mode and contrast (`SavedAppearance`). The directory and file must be
+//! credential, Profile path or preference value. `settings.toml` beside it
+//! keeps the operator's settings (appearance, language, shortcuts). The directory and file must be
 //! private (acp-ipc's owner-only checks); anything else refuses rather than
 //! loosening permissions or following a link.
 use acp_ipc::transport::{new_private, open_private, private_dir};
-use acp_ui_core::appearance::SavedAppearance;
 use acp_ui_core::connection::{Connection, Saved};
+use acp_ui_core::settings::Settings;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
 pub const FILE: &str = "connection.json";
-pub const APPEARANCE_FILE: &str = "appearance.json";
+pub const SETTINGS_FILE: &str = "settings.toml";
 pub const NOT_PRIVATE: &str = "Settings directory is not private";
 pub const UNAVAILABLE: &str = "Settings directory unavailable";
 
@@ -64,25 +64,21 @@ fn read(dir: &std::path::Path, name: &str) -> Option<String> {
     Some(text)
 }
 
-/// The saved appearance, if one exists, is private and parses; else `None`.
-pub fn load_appearance() -> Option<SavedAppearance> {
-    load_appearance_from(&directory()?)
+/// The saved settings, if the file exists, is private and parses; else `None`
+/// (the app then starts from its defaults and launch arguments).
+pub fn load_settings() -> Option<Settings> {
+    load_settings_from(&directory()?)
 }
-pub fn load_appearance_from(dir: &std::path::Path) -> Option<SavedAppearance> {
-    let saved = serde_json::from_str::<SavedAppearance>(&read(dir, APPEARANCE_FILE)?).ok()?;
-    saved.values().map(|_| saved)
+pub fn load_settings_from(dir: &std::path::Path) -> Option<Settings> {
+    toml::from_str::<Settings>(&read(dir, SETTINGS_FILE)?).ok()
 }
-/// Saves the appearance privately, as the connection is saved.
-pub fn save_appearance(saved: &SavedAppearance) -> Result<(), &'static str> {
-    save_appearance_to(&directory().ok_or(UNAVAILABLE)?, saved)
+/// Saves the settings privately (a new private file renamed over the old one).
+pub fn save_settings(settings: &Settings) -> Result<(), &'static str> {
+    save_settings_to(&directory().ok_or(UNAVAILABLE)?, settings)
 }
-pub fn save_appearance_to(
-    dir: &std::path::Path,
-    saved: &SavedAppearance,
-) -> Result<(), &'static str> {
-    saved.values().ok_or("Invalid appearance")?;
-    let body = serde_json::to_vec_pretty(saved).map_err(|_| UNAVAILABLE)?;
-    write(dir, APPEARANCE_FILE, &body)
+pub fn save_settings_to(dir: &std::path::Path, settings: &Settings) -> Result<(), &'static str> {
+    let body = toml::to_string(settings).map_err(|_| UNAVAILABLE)?;
+    write(dir, SETTINGS_FILE, body.as_bytes())
 }
 
 /// Saves `connection` (creating the private directory if absent). Written to a
@@ -171,23 +167,49 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
     #[test]
-    fn appearance_saves_privately_beside_the_connection_and_refuses_shared_files() {
-        use acp_ui_core::appearance::{ColorMode, ThemeId};
-        let root = scratch("appearance");
+    fn settings_save_as_private_toml_beside_the_connection_and_refuse_shared_files() {
+        use acp_ui_core::settings::Appearance;
+        let root = scratch("settings");
         let dir = root.join("acp");
-        let saved = SavedAppearance::new(ThemeId::Ledger, ColorMode::Light, false);
-        save_appearance_to(&dir, &saved).unwrap();
+        let settings = Settings {
+            format: Settings::FORMAT,
+            appearance: Appearance {
+                theme: Some("ledger".into()),
+                mode: Some("light".into()),
+                high_contrast: Some(false),
+                language: Some("zh-CN".into()),
+            },
+            shortcuts: [("reconnect".to_owned(), "mod+e".to_owned())].into(),
+        };
+        save_settings_to(&dir, &settings).unwrap();
+        let text = std::fs::read_to_string(dir.join(SETTINGS_FILE)).unwrap();
+        assert!(
+            text.contains("[appearance]") && text.contains("[shortcuts]"),
+            "{text}"
+        );
         let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode(&dir.join(APPEARANCE_FILE)), 0o600);
-        assert_eq!(load_appearance_from(&dir), Some(saved.clone()));
+        assert_eq!(mode(&dir.join(SETTINGS_FILE)), 0o600);
+        assert_eq!(load_settings_from(&dir), Some(settings.clone()));
         save_to(&dir, &wsl()).unwrap();
         assert_eq!(load_from(&dir), Some(wsl()), "the connection is untouched");
+        std::fs::write(dir.join(SETTINGS_FILE), "format = 1\nsurprise = true\n").unwrap();
         std::fs::set_permissions(
-            dir.join(APPEARANCE_FILE),
+            dir.join(SETTINGS_FILE),
+            std::fs::Permissions::from_mode(0o600),
+        )
+        .unwrap();
+        assert_eq!(
+            load_settings_from(&dir),
+            None,
+            "unknown fields refuse the file"
+        );
+        save_settings_to(&dir, &settings).unwrap();
+        std::fs::set_permissions(
+            dir.join(SETTINGS_FILE),
             std::fs::Permissions::from_mode(0o644),
         )
         .unwrap();
-        assert_eq!(load_appearance_from(&dir), None);
+        assert_eq!(load_settings_from(&dir), None, "a shared file is refused");
         let _ = std::fs::remove_dir_all(&root);
     }
     #[test]

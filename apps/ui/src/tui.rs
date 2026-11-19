@@ -22,6 +22,7 @@ fn main() -> io::Result<()> {
     acp_ui::PROBE_STARTED.set(std::time::Instant::now()).ok();
     let preview = acp_ui::brand_preview::configure().map_err(io::Error::other)?;
     if !preview {
+        acp_ui::PERSIST_SETTINGS.store(true, std::sync::atomic::Ordering::Relaxed);
         acp_ui::INPUTS
             .set(acp_ui_client::native::Inputs::parse())
             .ok();

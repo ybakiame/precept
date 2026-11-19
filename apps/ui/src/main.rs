@@ -18,7 +18,7 @@ fn main() -> impl std::process::Termination {
         }
     };
     if !preview {
-        acp_ui::PERSIST_APPEARANCE.store(true, std::sync::atomic::Ordering::Relaxed);
+        acp_ui::PERSIST_SETTINGS.store(true, std::sync::atomic::Ordering::Relaxed);
         acp_ui::INPUTS
             .set(acp_ui_client::native::Inputs::parse())
             .ok();

@@ -88,3 +88,8 @@ pub(crate) const LIST_ORDERED: &str =
     "M10 6H20M10 12H20M10 18H20M4 5L5 4V9M4 14.5A1.2 1.2 0 0 1 6 15C6 16 4 17 4 18H6";
 pub(crate) const QUOTE: &str = "M5 6V18M9 8H19M9 12H19M9 16H15";
 pub(crate) const CODE_BLOCK: &str = "M4 4H20V20H4ZM10 9L7 12L10 15M14 9L17 12L14 15";
+/// The keyboard: shortcuts.
+pub(crate) const KEYBOARD: &str =
+    "M3 7H21V17H3ZM7 10V10.01M10 10V10.01M13 10V10.01M16 10V10.01M8 14H16";
+/// Undo a change back to its default.
+pub(crate) const RESET: &str = "M4 12A8 8 0 1 0 6.3 6.3M4 4V8H8";

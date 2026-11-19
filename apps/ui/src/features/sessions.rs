@@ -275,7 +275,6 @@ fn permissions(model: Signal<Model>) -> impl IntoElement {
                         },
                         p.request_id
                     ),
-                    m.word(Msg::PermissionKeys).to_owned(),
                 ];
                 lines.extend(
                     p.operation
@@ -323,57 +322,74 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
         when: nsh_core::keymap::When::Always,
         ..Default::default()
     };
-    on_key_with("alt+j", global, move |_| {
-        open(model);
-        prompt_ref.focus();
-    });
-    on_key_with("mod+Enter", global, move |_| {
-        if model.get().sessions {
-            send_prompt(model);
-        }
-    });
-    on_key_with("mod+shift+s", global, move |_| {
-        if model.get().sessions {
-            start_review(model);
-        }
-    });
-    on_key_with("mod+shift+Enter", global, move |_| {
-        if model.get().sessions {
-            confirm_start(model);
-        }
-    });
-
-    on_key_with("alt+7", global, move |_| {
-        if model.get().sessions {
-            start_review(model);
-        }
-    });
-    on_key_with("alt+u", global, move |_| review_auth_retry(model));
-    on_key_with("alt+g", global, move |_| toggle_share(model));
-    on_key_with("alt+e", global, move |_| cycle_executable(model));
-    on_key_with("alt+8", global, move |_| {
-        if model.get().sessions {
-            confirm_start(model);
-        }
-    });
-    on_key_with("alt+9", global, move |_| {
-        if model.get().sessions {
-            send_prompt(model);
-        }
-    });
-    on_key_with("alt+q", global, move |_| {
-        if model.get().sessions && enabled(model) {
-            command(model, "session.cancel", json!({}));
-        }
-    });
-    on_key_with("alt+x", global, move |_| {
-        if model.get().sessions && enabled(model) {
-            command(model, "session.stop", json!({}));
-        }
-    });
-    on_key_with("alt+i", global, move |_| review_permission(model));
-    on_key_with("alt+n", global, move |_| decide_permission(model, false));
-    on_key_with("alt+y", global, move |_| decide_permission(model, true));
+    let bind = |id: &'static str, handler: Box<dyn Fn()>| {
+        crate::shortcuts::bind(model, id, global, handler)
+    };
+    bind(
+        "sessions.prompt",
+        Box::new(move || {
+            open(model);
+            prompt_ref.focus();
+        }),
+    );
+    bind(
+        "sessions.send",
+        Box::new(move || {
+            if model.get().sessions {
+                send_prompt(model);
+            }
+        }),
+    );
+    bind(
+        "sessions.start",
+        Box::new(move || {
+            if model.get().sessions {
+                start_review(model);
+            }
+        }),
+    );
+    bind(
+        "sessions.confirm",
+        Box::new(move || {
+            if model.get().sessions {
+                confirm_start(model);
+            }
+        }),
+    );
+    bind("sessions.auth", Box::new(move || review_auth_retry(model)));
+    bind("sessions.share", Box::new(move || toggle_share(model)));
+    bind(
+        "sessions.executable",
+        Box::new(move || cycle_executable(model)),
+    );
+    bind(
+        "sessions.cancel",
+        Box::new(move || {
+            if model.get().sessions && enabled(model) {
+                command(model, "session.cancel", json!({}));
+            }
+        }),
+    );
+    bind(
+        "sessions.stop",
+        Box::new(move || {
+            if model.get().sessions && enabled(model) {
+                command(model, "session.stop", json!({}));
+            }
+        }),
+    );
+    bind(
+        "sessions.permission",
+        Box::new(move || review_permission(model)),
+    );
+    bind(
+        "sessions.deny",
+        Box::new(move || decide_permission(model, false)),
+    );
+    bind(
+        "sessions.allow",
+        Box::new(move || decide_permission(model, true)),
+    );
     effect(move || {
         if !model.get().sessions || model.get().settings || model.get().connection_editor {
             prompt_ref.blur();
@@ -409,7 +425,6 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
         .gap_2()
         .flex_shrink_0()
         .child(text(move || model.get().word(Msg::SessionHelp)))
-        .child(text(move || model.get().word(Msg::SessionKeys)))
         .child(word_action(
             model,
             Msg::SessionRefresh,

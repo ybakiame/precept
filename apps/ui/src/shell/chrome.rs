@@ -131,7 +131,7 @@ pub(crate) fn titlebar(model: Signal<Model>) -> impl IntoElement {
         ))
 }
 pub(crate) fn grip(model: Signal<Model>) -> impl IntoElement {
-    view().h(px(14.0)).flex_row().justify_end().child(
+    view().flex_row().justify_end().child(
         view()
             .w(px(18.0))
             .h(px(14.0))

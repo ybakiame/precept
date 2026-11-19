@@ -70,7 +70,7 @@ Tasks, by how often they happen:
 | Region | Size | Surface | Contents |
 | --- | --- | --- | --- |
 | Title bar | 36 high | `sidebar` above the sidebar, `background` above the page | Drag region, window caption buttons; the close button washes `danger` on hover |
-| Sidebar | 232 wide (a wrapped row below 900) | `sidebar`, trailing hairline | Brand mark and name; **Set up**, **Project**, **Personal** groups; foot destinations; the status row |
+| Sidebar | 232 wide, the window's full height (a wrapped row below 900) | `sidebar`, trailing hairline | Brand mark and name; **Set up**, **Project**, **Personal** groups; foot destinations; the status row and the keyboard button |
 | Page | the rest, inset 24 (8 when compact) | `background` | Header, page toolbar, one scroll region |
 | Overlay layer | the window | — | Toasts (bottom-right, 16 from the edges), menus, popovers, dialogs, sheets |
 
@@ -85,7 +85,11 @@ current destination and slides to it; hover is a lighter wash. No leading bars. 
 `CAPTION` semibold `muted`, never uppercased. Set-up steps keep stable spoken names
 ("Step 2: Profile") while their visible labels are just the step's name.
 
-**Status row.** Pinned to the sidebar foot: an 8 pt dot and a short state word, then
+**Resize grip.** A small grip in the window's bottom-right corner, drawn over the
+page; it takes no row, so the sidebar reaches the bottom edge.
+
+**Status row.** Pinned to the sidebar foot, beside a square keyboard button that
+opens the Shortcuts panel: an 8 pt dot and a short state word, then
 the target (`Connected · WSL archlinux`). It is the persistent scope indicator for
 the daemon target, and it is a button that opens **Connection**.
 
@@ -116,9 +120,9 @@ page, group labels and the brand hide, the status row stays, and dialogs keep a
 
 Themes change color only; geometry, type and data never vary. Every theme has
 light, dark and high-contrast forms. **Graphite** is the default. The chosen theme, color
-mode and contrast are remembered on this computer (`appearance.json`, owner-only,
-beside the saved connection); `--theme` and `--appearance` at launch win over it.
-Language follows the launch setting.
+mode, contrast and language are saved on this computer in `settings.toml`
+(owner-only, beside the saved connection), with the shortcut overrides; `--theme`,
+`--appearance` and `--locale` at launch win for that launch.
 
 | Theme | Character |
 | --- | --- |
@@ -229,6 +233,8 @@ icons are hidden and labels (and `✓`) carry the meaning.
 | `ERROR` (circle-x) | Failed or refused | Error toasts |
 | `INFO` (circle-i) | More explanation | Page information button, info toasts |
 | `CLOSE` (x) | Dismiss | Toasts |
+| `KEYBOARD` | Keyboard shortcuts | Sidebar foot, Settings, empty filter result |
+| `RESET` | Back to the default | A custom shortcut, Reset all |
 | `TRASH` | Destructive removal | Delete preference, Remove project dialogs |
 | `LOCK` / `UNLOCK` / `SEARCH` | Writes off / on, filter | Reserved for Profile writes and filters |
 
@@ -260,6 +266,7 @@ Compact layouts tighten padding, never height.
 | `icon_button` | Ghost square of the control height; selected (a pressed toggle) | Accessible name required (shown as text in a terminal); press scale 0.95 |
 | `copy_button` | Any button variant | Shows its result in place: the copy glyph swaps to a check that pops in and the label to "Copied" for 1.5 s, so no notification is sent |
 | `nav_item`, `step_item`, `nav_item_counted` | Ghost full-width rows | `step_item` has the trailing done check, `nav_item_counted` the count pill |
+| `keycaps` | — | A keystroke as caps (`Ctrl` `Shift` `L`), as NSH labels it for the platform; mono `CAPTION` on `inset` with a hairline |
 | `Slide` | — | One selection indicator for rows across groups: measures the current row (again whenever a row or group moves) and slides to it; the rows draw no fill of their own (`quiet_selection`) except in the compact wrapped layout |
 | `input` | Medium, Large, multiline; invalid, disabled | `panel` fill, `border` edge, 12 inner padding; focus: `primary` (or `danger` when invalid) edge and a soft 3 pt ring |
 | `markdown_input` | — | A framed document: a toolbar (undo, redo, bold, italic, strikethrough, inline code, heading, bulleted and numbered lists, quote, code block; each pressed while it applies at the caret), the document styled node by node (classes for type and spacing, palette colors for markers, quotes, code and links), and a status bar with word and character counts and an Edit / Markdown switch showing the stored form. Its height yields between 96 and 280 so its dialog fits the window. A terminal gets a multi-line input over the same Markdown |
@@ -358,6 +365,14 @@ work is called done. "RM" is what reduced motion does.
 | Decision prepared | The Apply dialog, as Add preference | Appears |
 | Empty or loading list | The empty state arrives: rise 8 and fade, `SLOWER` | Appears |
 
+**Shortcuts panel**
+
+| Change | Motion | RM |
+| --- | --- | --- |
+| Panel opens / closes | The NSH sheet's presentation from the trailing edge, over a fading scrim | Appears |
+| Recording starts / ends | Change takes its selected fill and the keys lane becomes the recorder, `FAST` | Instant |
+| A keystroke is taken | The new keycaps replace the recorder; the `Custom` badge appears | — |
+
 **Settings**
 
 | Change | Motion | RM |
@@ -395,14 +410,36 @@ Errors say what happened and the next step: *"The WSL daemon is not reachable. S
 it inside WSL, then Reconnect."* Success toasts name the new state only when it is
 not already visible.
 
-## 11. Keyboard and accessibility
+## 11. Keyboard, shortcuts and accessibility
 
 Every action is reachable by keyboard: Tab order follows the screen, arrows move
 within groups, Enter and Space activate, Escape closes the top layer. Focus is
 always visible (the `primary` ring) and returns to the trigger after an overlay.
 Every icon-only control has a name; states (selected, disabled, busy, expanded) are
-exposed, not only drawn. Shortcuts are listed in Settings → Keyboard and in the
-[apps README](../README.md).
+exposed, not only drawn.
+
+**Shortcuts live in one panel, not on pages.** The catalog is
+`apps/core/src/keys.rs`: every action has a stable id, a group (General, Navigation,
+Review workspace, Sessions), a label and its default keystrokes. Every binding goes
+through `shortcuts::bind`, so a change takes effect at once. Pages do not print
+shortcut lists.
+
+- **Open it** with `Ctrl+/` (`⌘/`) or `F1`, the keyboard button beside the sidebar's
+  status row, or Settings → Keyboard shortcuts…. It is a wide sheet (600) from the
+  trailing edge.
+- **Rows:** the action's name (it wraps), its keys as keycaps in a fixed lane (a
+  second spelling after a muted "or"; two spellings of one key show once), and
+  **Change** in a fixed actions lane, with **Reset** (an icon) once it is custom. A
+  custom shortcut carries a `Custom` badge. A filter matches names and keys.
+- **Recording:** Change turns the keys lane into a `primary`-edged recorder ("Press
+  the new keys · Esc cancels") that captures every key. No shortcut is bound while it
+  records. A keystroke needs Ctrl, Alt or the command key (F1–F12 alone are allowed);
+  one the system reserves or another action uses is refused under the row, naming
+  that action. Escape stops recording and leaves the panel open; Escape again closes
+  it.
+- **Saved** as overrides in `settings.toml` (`[shortcuts]`, id = keystroke). Reset all
+  clears them. Escape is fixed and not listed.
+- In a terminal the panel is read-only: keys are text and there is no recorder.
 
 ## 12. Platforms
 

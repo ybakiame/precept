@@ -67,6 +67,8 @@ pub mod layout {
     pub const TITLE_BAR: f32 = 36.0;
     /// A trailing-edge sheet (record details beside a list).
     pub const SHEET: f32 = 440.0;
+    /// A wide trailing sheet (a list with several lanes: the shortcuts).
+    pub const SHEET_WIDE: f32 = 600.0;
     /// The label lane of a properties list.
     pub const LABEL_LANE: f32 = 144.0;
 }

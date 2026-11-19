@@ -18,6 +18,7 @@ pub struct Sheet {
     on_close: Option<Rc<dyn Fn()>>,
     body: Option<ContentFn>,
     footer: Option<ContentFn>,
+    width: f32,
 }
 
 pub fn sheet(model: Signal<Model>) -> Sheet {
@@ -29,6 +30,7 @@ pub fn sheet(model: Signal<Model>) -> Sheet {
         on_close: None,
         body: None,
         footer: None,
+        width: scale::layout::SHEET,
     }
 }
 
@@ -55,6 +57,11 @@ impl Sheet {
         self.body = Some(Rc::new(body));
         self
     }
+    /// A wider sheet (a list with several lanes); the default suits a record.
+    pub fn width(mut self, width: f32) -> Self {
+        self.width = width;
+        self
+    }
     /// The sheet's actions, pinned below the body.
     pub fn footer(mut self, footer: impl Fn() -> AnyElement + 'static) -> Self {
         self.footer = Some(Rc::new(footer));
@@ -72,6 +79,7 @@ impl IntoElement for Sheet {
             on_close,
             body,
             footer,
+            width,
         } = self;
         let close_cb = on_close.clone();
         let changed = on_close.clone();
@@ -89,17 +97,15 @@ impl IntoElement for Sheet {
             })
             .backdrop_style(|s| s.bg(black().opacity(0.5)))
             .popup_style(move |s| {
-                s.w(px(if compact() {
-                    360.0
-                } else {
-                    scale::layout::SHEET
-                }))
-                .h_full()
-                .border_l_1()
-                .border_color(palette(model).hairline)
-                .bg(palette(model).raised)
-                .text_color(palette(model).text)
-                .shadow_xl()
+                // Read where the window is known: on a narrow window the
+                // sheet leaves 32 points of the page showing.
+                s.w(move || px((window().width.0 - 32.0).clamp(280.0, width)))
+                    .h_full()
+                    .border_l_1()
+                    .border_color(palette(model).hairline)
+                    .bg(palette(model).raised)
+                    .text_color(palette(model).text)
+                    .shadow_xl()
             })
             .child({
                 let mut panel = view()

@@ -7,8 +7,9 @@ use std::path::PathBuf;
 #[derive(Clone, Parser, Default)]
 pub struct Inputs {
     /// UI locale only; never translates stored values or protocol evidence.
-    #[arg(long, value_parser=["en","zh-CN"], default_value="en")]
-    pub locale: String,
+    /// Explicit wins over the saved language; absent: saved, else English.
+    #[arg(long, value_parser=["en","zh-CN"])]
+    pub locale: Option<String>,
     /// Explicit wins over the saved appearance; absent: saved, else dark.
     #[arg(long, value_parser=["system","light","dark"])]
     pub appearance: Option<String>,

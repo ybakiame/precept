@@ -478,7 +478,23 @@ fn sidebar(model: Signal<Model>) -> impl IntoElement {
         )
         .child(view().flex_1().style_when(compact, |s| s.hidden()))
         .child(slide.group(foot_group))
-        .child(status_row(model))
+        // The foot: the daemon's state, and the keyboard shortcuts.
+        .child(
+            view()
+                .flex_row()
+                .items_center()
+                .gap_1()
+                .child(view().flex_1().min_w_0().child(status_row(model)))
+                .child(
+                    ui::icon_button(model, icons::KEYBOARD, move || {
+                        model.get().word(Msg::KeysTitle).into()
+                    })
+                    .variant(ui::ButtonVariant::Ghost)
+                    .size(ui::ButtonSize::Small)
+                    .selected(move || model.get().shortcuts_open)
+                    .on_press(move || crate::shortcuts::open(model)),
+                ),
+        )
 }
 /// The page header: the destination's title, one human status line and the
 /// page-wide actions.
@@ -845,14 +861,20 @@ pub(crate) fn shell(
                         ),
                 ),
         )
+        // The resize grip sits in the window's corner over the page, so the
+        // sidebar runs to the bottom edge.
         .child(
             view()
+                .absolute()
+                .bottom_0()
+                .right_0()
                 .style_when(
                     || TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed),
                     |s| s.hidden(),
                 )
                 .child(chrome::grip(model)),
         )
+        .child(crate::shortcuts::panel(model))
         // Last, so toasts float above the page; they never take its space.
         .child(ui::toaster(model))
 }

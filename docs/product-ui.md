@@ -52,7 +52,11 @@ Icons are original outline vectors on a 24×24 grid using `currentColor`; they
 supplement labels. Icon-only controls require accessible names. Terminal surfaces
 use text labels rather than depending on glyphs.
 
-All commands are keyboard reachable with logical Tab order, arrows within groups,
+Keyboard shortcuts come from one catalog and are shown and changed in the
+Shortcuts panel (`Ctrl+/`, `F1`, the sidebar's keyboard button), never printed on
+pages. Overrides are presentation settings saved in the private `settings.toml`;
+they never carry authority, and a binding the platform reserves or another action
+uses is refused. All commands are keyboard reachable with logical Tab order, arrows within groups,
 Enter/Space activation and Escape dismissal. Focus remains visible, dialogs trap
 and restore focus, and pointer-only approval is forbidden.
 
