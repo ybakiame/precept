@@ -517,10 +517,32 @@ impl Model {
                     {
                         return Err("StaleGeneration");
                     }
-                    self.operator.selected_id = None;
-                    self.operator.inspect = None;
-                    self.operator.inspect_revision = 0;
-                    self.operator.digest_expanded = false;
+                    // A refresh keeps the selection (and its exact inspection)
+                    // only while the page still holds that exact record: same
+                    // id, revision and digest. Anything else is cleared.
+                    let same = self.operator.record().is_some_and(|old| {
+                        page.records.iter().any(|r| {
+                            r.id == old.id
+                                && r.revision == old.revision
+                                && r.proposal_digest == old.proposal_digest
+                        })
+                    });
+                    if !same {
+                        self.operator.selected_id = None;
+                        self.operator.inspect = None;
+                        self.operator.inspect_revision = 0;
+                        self.operator.digest_expanded = false;
+                    }
+                    // A just-saved preference may arrive through the scope's
+                    // record list as well as the queue: open it the same way.
+                    if let Some(id) = self.operator.follow
+                        && page.records.iter().any(|r| r.id == id)
+                    {
+                        self.operator.follow = None;
+                        self.operator.selected_id = Some(id);
+                        self.operator.review_tab = ReviewTab::Detail;
+                        self.operator.follow_up = Some("profile.review.inspect");
+                    }
                     self.operator.page = Some(page);
                 }
                 "profile.review.queue" => {
@@ -702,8 +724,15 @@ impl Model {
                             .find(|a| a.kind == "preference" && !a.deleted)
                             .and_then(|a| a.record_id.parse().ok());
                         if self.operator.follow.is_some() {
-                            self.operator.queue_after_id = 0;
-                            self.operator.follow_up = Some("profile.review.queue");
+                            // The scoped pages find it in their record list;
+                            // the inbox in the queue.
+                            if self.operator.mode == ReviewMode::Inbox {
+                                self.operator.queue_after_id = 0;
+                                self.operator.follow_up = Some("profile.review.queue");
+                            } else {
+                                self.operator.after_id = 0;
+                                self.operator.follow_up = Some("profile.preferences.list");
+                            }
                         }
                     }
                     self.operator.receipt = Some(receipt);
@@ -1670,6 +1699,7 @@ mod tests {
         assert!(m.complete_operator(&request, Ok(receipt_json("s-op", 4, affected))));
         // Step one is done (saved as suggested); nothing is confirmed.
         assert_eq!(m.operator.follow, Some(9));
+        // The inbox (default) finds it in the queue; a scoped page in its list.
         assert_eq!(m.operator.follow_up, Some("profile.review.queue"));
         let next = m.operator.follow_up.take().unwrap();
         let read = m.operator_read(next).unwrap();
@@ -1688,6 +1718,39 @@ mod tests {
         assert_eq!(m.operator.review_tab, ReviewTab::Detail);
         assert_eq!(m.operator.follow_up, Some("profile.review.inspect"));
         assert!(m.operator.follow.is_none());
+        // The scope's record list opens it the same way (a scoped page reloads
+        // its list after the receipt, possibly before the queue read).
+        let mut m = model();
+        m.operator.page = None;
+        m.operator.follow = Some(7);
+        let read = m.operator_read("profile.preferences.list").unwrap();
+        let page = PreferencePage {
+            binding: binding(),
+            records: vec![synthetic_record(7, &Scope::Global, "suggested", 1)],
+            next_after_id: None,
+        };
+        assert!(m.complete_operator(&read, Ok(serde_json::to_value(page).unwrap())));
+        assert_eq!(m.operator.selected_id, Some(7));
+        assert_eq!(m.operator.follow_up, Some("profile.review.inspect"));
+        // A refresh of the same exact record keeps the selection and its
+        // inspection; a changed revision clears both.
+        m.operator.inspect = None;
+        let read = m.operator_read("profile.preferences.list").unwrap();
+        let same = PreferencePage {
+            binding: binding(),
+            records: vec![synthetic_record(7, &Scope::Global, "suggested", 1)],
+            next_after_id: None,
+        };
+        assert!(m.complete_operator(&read, Ok(serde_json::to_value(same).unwrap())));
+        assert_eq!(m.operator.selected_id, Some(7));
+        let read = m.operator_read("profile.preferences.list").unwrap();
+        let changed = PreferencePage {
+            binding: binding(),
+            records: vec![synthetic_record(7, &Scope::Global, "confirmed", 2)],
+            next_after_id: None,
+        };
+        assert!(m.complete_operator(&read, Ok(serde_json::to_value(changed).unwrap())));
+        assert_eq!(m.operator.selected_id, None);
         // A refresh that does not show it never selects something else.
         let mut m = model();
         m.operator.follow = Some(42);

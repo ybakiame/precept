@@ -254,6 +254,67 @@ pub fn Gallery() -> impl IntoElement {
         .on_confirm(move || dialog.set(false))
         .into_element();
 
+    // Overlays and feedback: a dialog commits with primary; a sheet with a
+    // footer; toasts in each tone; an info popover; the Markdown editor.
+    let form_open = signal(false);
+    let sheet_open = signal(false);
+    let markdown = signal(String::from("Prefer **small** commits."));
+    let overlays = view()
+        .flex_row()
+        .flex_wrap()
+        .items_center()
+        .gap_2()
+        .child(button(model, "Add item…").on_press(move || form_open.set(true)))
+        .child(button(model, "Details").on_press(move || sheet_open.set(true)))
+        .child(
+            button(model, "Success toast")
+                .on_press(|| super::notify(super::Tone::Success, "Applied · commit 3")),
+        )
+        .child(
+            button(model, "Info toast")
+                .on_press(|| super::notify(super::Tone::Info, "Configuration copied")),
+        )
+        .child(
+            button(model, "Error toast")
+                .on_press(|| super::notify(super::Tone::Error, "Unauthorized: writes are off")),
+        )
+        .child(super::info(
+            model,
+            || "About this page".into(),
+            || "A longer explanation that would crowd the page.".into(),
+        ))
+        .into_element();
+    let editor = super::markdown_input(
+        model,
+        "gallery-markdown",
+        || "Value".into(),
+        move || markdown.get_untracked(),
+        move |v| markdown.set(v),
+    )
+    .into_element();
+    let form_overlay = super::dialog(model, "")
+        .title_fn(|| "Add item".into())
+        .description("A short, focused form.")
+        .cancel("Cancel")
+        .confirm("Save")
+        .open(move || form_open.get())
+        .on_cancel(move || form_open.set(false))
+        .on_confirm(move || form_open.set(false))
+        .into_element();
+    let sheet_overlay = super::sheet(model)
+        .title_fn(|| "Record details".into())
+        .close_fn(|| "Close details".into())
+        .open(move || sheet_open.get())
+        .on_close(move || sheet_open.set(false))
+        .body(|| text("Supplementary work beside the list.").into_element())
+        .footer(move || {
+            button(model, "Done")
+                .variant(ButtonVariant::Primary)
+                .on_press(move || sheet_open.set(false))
+                .into_element()
+        })
+        .into_element();
+
     let cards = row(
         model,
         "Surface",
@@ -309,12 +370,17 @@ pub fn Gallery() -> impl IntoElement {
                         .child(row(model, "Properties", vec![facts]))
                         .child(row(model, "Empty", vec![empty_state]))
                         .child(row(model, "Destructive", vec![destructive]))
+                        .child(row(model, "Overlays", vec![overlays]))
+                        .child(row(model, "Markdown", vec![editor]))
                         .child(cards)
                         .child(row(model, "Scale", vec![scale_demo])),
                 ),
             ),
         )
         .child(dialog_overlay)
+        .child(form_overlay)
+        .child(sheet_overlay)
+        .child(super::toaster(model))
 }
 
 #[cfg(test)]
@@ -374,5 +440,25 @@ mod tests {
             !s.texts().iter().any(|t| t.contains("Delete “Roadmap”?"))
         })
         .unwrap();
+        // A form dialog commits with a primary Save; Cancel closes it.
+        app.press("Add item…").unwrap();
+        app.wait_for("A short, focused form.").unwrap();
+        app.press("Cancel").unwrap();
+        app.wait_for_gone("A short, focused form.", std::time::Duration::from_secs(5))
+            .unwrap();
+        // A sheet with its footer action.
+        app.press("Details").unwrap();
+        app.wait_for("Supplementary work beside the list.").unwrap();
+        app.press("Done").unwrap();
+        app.wait_for_gone(
+            "Supplementary work beside the list.",
+            std::time::Duration::from_secs(5),
+        )
+        .unwrap();
+        // A toast reports, then leaves on its own.
+        app.press("Success toast").unwrap();
+        app.wait_for("Applied · commit 3").unwrap();
+        // The Markdown editor is there, named.
+        assert!(app.screen().count("id:gallery-markdown").unwrap() >= 1);
     }
 }

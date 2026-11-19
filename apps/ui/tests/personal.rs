@@ -151,6 +151,24 @@ fn contains(app: &mut nsh_testing::Headless, needle: &str) {
     })
     .unwrap();
 }
+/// The workspace has read the Profile and its list (the list loads only after
+/// the Profile reply), and writes are on: no "Writes are off" notice.
+fn writes_on(app: &mut nsh_testing::Headless) {
+    app.wait_until(
+        "workspace read with writes on",
+        Duration::from_secs(10),
+        |s| {
+            let t = s.texts().join("\n");
+            (t.contains("Queue watermark: commit")
+                || t.contains("No pending suggestions")
+                || t.contains("No records in this exact scope")
+                || t.contains(" · r"))
+                && !t.contains("Writes are off for this daemon run")
+                && !t.contains("Waiting for Daemon acknowledgement")
+        },
+    )
+    .unwrap();
+}
 #[test]
 fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     let f = Fixture::new();
@@ -184,20 +202,23 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
     app.wait_for("Daemon status").unwrap();
     app.press("Personal preferences").unwrap();
-    app.wait_for("Write grant active").unwrap();
+    writes_on(&mut app);
     // A daemon read finishing afterwards keeps the chosen entry (it once
     // reopened the workspace as To review, with the scope switch).
     app.press("Reconnect").unwrap();
-    app.wait_for("Write grant active").unwrap();
+    writes_on(&mut app);
     app.wait_for("Personal preferences").unwrap();
     // The scope is fixed to personal (global): no switch is offered here.
     assert!(!app.screen().texts().contains(&"Global scope"));
+    // No Profile summary here: Profile and writes live in Set up.
+    assert!(!app.screen().shows("Inspect Profile"));
+    // Step one: Add preference saves a suggestion (prepared, then applied).
+    app.press("Add preference").unwrap();
+    app.wait_for("Add a personal preference").unwrap();
     app.type_text("Preference key", "personal-editor").unwrap();
-    app.type_text("Preference value", "synthetic-value")
+    app.type_text("id:preference-value", "Prefer **small** commits.")
         .unwrap();
-    app.type_text("Preference source", "operator").unwrap();
-    // Step one: save. It is prepared, applied, and lands as suggested.
-    app.press_key("alt+shift+s").unwrap();
+    app.press("Save as suggestion").unwrap();
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
@@ -211,6 +232,8 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
         "suggested",
         "saving never confirms"
     );
+    // The value is stored as Markdown, as written.
+    assert_eq!(global(&f)[0]["value"], "Prefer **small** commits.");
     // Step two is offered at once: the exact record, inspected, in Detail.
     contains(&mut app, "personal-editor");
     let start = Instant::now();

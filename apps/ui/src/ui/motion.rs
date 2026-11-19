@@ -33,9 +33,6 @@ pub const ICON_PRESS: f32 = 0.95;
 pub const ENTER: f32 = 0.97;
 /// A popup's entrance rise (points).
 pub const RISE: f32 = 8.0;
-/// A changed label's rise (points). The review panel's changing status labels
-/// rise by it as they swap.
-pub const LABEL_RISE: f32 = 4.0;
 
 /// A transition duration that collapses to zero under reduced motion.
 pub fn ms(token: f32) -> impl Fn() -> f32 {
@@ -90,35 +87,5 @@ pub fn arrive(delay_ms: f32) -> Motion {
         )
         .values(MotionChannel::TranslateY, [RISE, 0.0])
         .values(MotionChannel::Opacity, [0.0, 1.0]),
-    )
-}
-
-/// An error toast sliding in from its edge: slide [`RISE`] points and fade on
-/// `base` ease-out. Lands at rest under reduced motion.
-pub fn toast() -> Motion {
-    motion().entering(
-        MotionSpec::new(KeyframeTiming::new(BASE).easing(Easing::EaseOut))
-            .values(MotionChannel::TranslateX, [RISE, 0.0])
-            .values(MotionChannel::Opacity, [0.0, 1.0]),
-    )
-}
-
-/// A status badge fading in on `fast` ease-in-out (the apply receipt). Lands at
-/// rest under reduced motion.
-pub fn fade() -> Motion {
-    motion().entering(
-        MotionSpec::new(KeyframeTiming::new(FAST).easing(Easing::EaseInOut))
-            .values(MotionChannel::Opacity, [0.0, 1.0]),
-    )
-}
-
-/// A changed status label rising [`LABEL_RISE`] points and fading on `base`
-/// ease-in-out, so a label swaps rather than jumping. Lands at rest under
-/// reduced motion.
-pub fn label() -> Motion {
-    motion().entering(
-        MotionSpec::new(KeyframeTiming::new(BASE).easing(Easing::EaseInOut))
-            .values(MotionChannel::TranslateY, [LABEL_RISE, 0.0])
-            .values(MotionChannel::Opacity, [0.0, 1.0]),
     )
 }

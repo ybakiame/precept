@@ -152,7 +152,13 @@ fn add_now(model: Signal<Model>) {
         move |m, r| {
             m.project_add.busy = false;
             match r {
-                Ok(_) => m.project_add.reset(),
+                Ok(_) => {
+                    m.project_add.reset();
+                    ui::notify(
+                        ui::Tone::Success,
+                        m.word(Msg::ToastProjectAdded).replace("{name}", &name),
+                    );
+                }
                 Err(code) => m.project_add.error = Some(code.into()),
             }
         },
@@ -182,8 +188,12 @@ fn remove_now(model: Signal<Model>) {
         move |m, r| {
             m.project_add.busy = false;
             m.project_remove = None;
-            if let Err(code) = r {
-                m.project_add.error = Some(code.into());
+            match r {
+                Ok(_) => ui::notify(
+                    ui::Tone::Success,
+                    m.word(Msg::ToastProjectRemoved).replace("{name}", &name),
+                ),
+                Err(code) => m.project_add.error = Some(code.into()),
             }
         },
     );

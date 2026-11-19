@@ -167,6 +167,35 @@ fn title_key(destination: Destination) -> Msg {
         Destination::Settings => Msg::Settings,
     }
 }
+/// The page's longer explanation, shown behind the header's info button.
+fn page_help(m: &Model) -> Option<String> {
+    let words = |keys: &[Msg]| {
+        keys.iter()
+            .map(|k| m.word(*k).to_owned())
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    Some(match current(m) {
+        Destination::Profile => words(&[Msg::ProfileIntro]),
+        Destination::Agents => words(&[Msg::AgentsIntro]),
+        Destination::Review | Destination::PersonalPreferences => words(&[
+            Msg::OperatorHelp,
+            Msg::ReviewProvenanceNote,
+            Msg::OperatorCliGate,
+        ]),
+        Destination::Section(acp_operator_core::Section::Preferences) if m.operator.open => {
+            words(&[
+                Msg::OperatorHelp,
+                Msg::ReviewProvenanceNote,
+                Msg::OperatorCliGate,
+            ])
+        }
+        Destination::Section(acp_operator_core::Section::Preferences) => {
+            words(&[Msg::PreferencesSources])
+        }
+        _ => return None,
+    })
+}
 /// Whether a set-up step is complete, from the last daemon read.
 fn step_done(m: &Model, destination: Destination) -> Option<bool> {
     let data = m.data.as_ref();
@@ -380,10 +409,29 @@ fn header(model: Signal<Model>) -> impl IntoElement {
                 .min_w_0()
                 .gap_1()
                 .child(
-                    text(move || model.get().word(title_key(current(&model.get()))))
-                        .role(AccessibilityRole::Header)
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_size(px(ui::scale::text::TITLE)),
+                    view()
+                        .flex_row()
+                        .items_center()
+                        .gap_1()
+                        .child(
+                            text(move || model.get().word(title_key(current(&model.get()))))
+                                .role(AccessibilityRole::Header)
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_size(px(ui::scale::text::TITLE)),
+                        )
+                        // A page's longer explanation, behind an info button.
+                        .child(
+                            view()
+                                .style_when(
+                                    move || page_help(&model.get()).is_none(),
+                                    |s| s.hidden(),
+                                )
+                                .child(ui::info(
+                                    model,
+                                    move || model.get().word(Msg::AboutThisPage).into(),
+                                    move || page_help(&model.get()).unwrap_or_default().into(),
+                                )),
+                        ),
                 )
                 .child(
                     view()
@@ -588,6 +636,7 @@ pub(crate) fn shell(
                         .child(preference_input(model, filter_ref))
                         .child(review::panel(model))
                         .child(projects::remove_dialog(model))
+                        .child(ui::toaster(model))
                         .child(
                             scroll()
                                 .flex_1()
@@ -614,12 +663,6 @@ pub(crate) fn shell(
                                                 .gap_4()
                                                 .max_w(px(ui::scale::layout::FORM))
                                                 .style_when(on(|m| m.profile_page), |s| s.hidden())
-                                                .child(
-                                                    text(move || {
-                                                        model.get().word(Msg::ProfileIntro)
-                                                    })
-                                                    .text_size(px(ui::scale::text::BODY)),
-                                                )
                                                 .child(profile::section(model)),
                                         )
                                         .child(

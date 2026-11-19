@@ -87,8 +87,17 @@ fn set_shared(model: Signal<Model>, name: String, enabled: bool) {
         serde_json::json!({ "name": name, "enabled": enabled }),
         move |model, m, r| {
             m.agents.busy = false;
-            if let Err(code) = r {
-                m.agents.error = Some(code.into());
+            match r {
+                Ok(_) => ui::notify(
+                    ui::Tone::Success,
+                    m.word(if enabled {
+                        Msg::ToastShared
+                    } else {
+                        Msg::ToastUnshared
+                    })
+                    .replace("{name}", &name),
+                ),
+                Err(code) => m.agents.error = Some(code.into()),
             }
             spawn(async move {
                 load(model);
@@ -327,6 +336,7 @@ fn configure(model: Signal<Model>) -> impl IntoElement {
                                 if let Some(text) = current_snippet(&model.get()) {
                                     set_clipboard(text);
                                     model.update(|m| m.agents.copied = true);
+                                    ui::notify(ui::Tone::Info, model.get().word(Msg::ToastCopied));
                                 }
                             }),
                     ),
@@ -355,7 +365,6 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
     view()
         .gap_6()
         .max_w(px(scale::layout::FORM))
-        .child(text(move || model.get().word(Msg::AgentsIntro)).text_size(px(scale::text::BODY)))
         .child(rows(model))
         .child(
             view()

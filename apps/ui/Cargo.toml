@@ -21,7 +21,7 @@ acp-operator-client = { path = "../client", optional = true }
 # behind the platform crates' `svg` feature (default off here): the native
 # platforms enable it, or every icon silently draws nothing.
 nsh-core = { git = "https://github.com/longbridge/nsh", rev = "554163758e30d2f62f814096a6327937dcb4fe49" }
-nsh-base = { git = "https://github.com/longbridge/nsh", rev = "554163758e30d2f62f814096a6327937dcb4fe49", default-features = false }
+nsh-base = { git = "https://github.com/longbridge/nsh", rev = "554163758e30d2f62f814096a6327937dcb4fe49", default-features = false, features = ["rich-editor"] }
 nsh-platform-tui = { git = "https://github.com/longbridge/nsh", rev = "554163758e30d2f62f814096a6327937dcb4fe49", default-features = false, features = ["run-app"], optional = true }
 ratatui-core = { version = "=0.1.2", optional = true }
 ratatui-crossterm = { version = "=0.1.2", optional = true }

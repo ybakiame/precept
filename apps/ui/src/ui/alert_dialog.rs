@@ -21,6 +21,7 @@ pub struct AlertDialog {
     cancel: LabelFn,
     confirm: LabelFn,
     confirm_disabled: StateFn,
+    confirm_variant: super::button::ButtonVariant,
     open: StateFn,
     initial_focus: Option<ElementRef>,
     on_cancel: Option<PressFn>,
@@ -28,6 +29,12 @@ pub struct AlertDialog {
 }
 
 /// A confirmation titled for its decision (e.g. `Delete “Roadmap”?`).
+/// A focused decision or short form: the same modal, committing with a
+/// primary (non-destructive) button.
+pub fn dialog(model: Signal<Model>, title: impl Into<SharedString>) -> AlertDialog {
+    alert_dialog(model, title).primary()
+}
+
 pub fn alert_dialog(model: Signal<Model>, title: impl Into<SharedString>) -> AlertDialog {
     let title = title.into();
     AlertDialog {
@@ -38,6 +45,7 @@ pub fn alert_dialog(model: Signal<Model>, title: impl Into<SharedString>) -> Ale
         cancel: Rc::new(|| "Cancel".into()),
         confirm: Rc::new(|| "Confirm".into()),
         confirm_disabled: Rc::new(|| false),
+        confirm_variant: super::button::ButtonVariant::Danger,
         open: Rc::new(|| false),
         initial_focus: None,
         on_cancel: None,
@@ -68,6 +76,11 @@ impl AlertDialog {
     }
     /// The destructive commitment cannot fire while this holds (e.g. until the
     /// exact ID is retyped). A disabled commitment refuses blind activation.
+    /// A non-destructive commitment (a `Dialog`'s Apply): the primary button.
+    pub fn primary(mut self) -> Self {
+        self.confirm_variant = super::button::ButtonVariant::Primary;
+        self
+    }
     pub fn confirm_disabled(mut self, disabled: impl Fn() -> bool + 'static) -> Self {
         self.confirm_disabled = Rc::new(disabled);
         self
@@ -132,6 +145,7 @@ impl IntoElement for AlertDialog {
         let confirm_disabled = self.confirm_disabled.clone();
         let open = self.open.clone();
         let initial_focus = self.initial_focus;
+        let confirm_variant = self.confirm_variant;
         let is_open = computed(move || open());
         let on_cancel = self.on_cancel.clone();
         let on_confirm = self.on_confirm.clone();
@@ -194,7 +208,7 @@ impl IntoElement for AlertDialog {
                     });
                 let confirm_button = super::button::button(model, "")
                     .label_fn(move || confirm_text())
-                    .variant(super::button::ButtonVariant::Danger)
+                    .variant(confirm_variant)
                     .disabled(move || confirm_disabled())
                     .on_press(move || {
                         if let Some(cb) = &confirm_cb {

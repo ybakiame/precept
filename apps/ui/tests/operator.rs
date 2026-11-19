@@ -145,6 +145,24 @@ fn contains(app: &mut nsh_testing::Headless, needle: &str) {
     })
     .unwrap();
 }
+/// The workspace has read the Profile and its list (the list loads only after
+/// the Profile reply), and writes are on: no "Writes are off" notice.
+fn writes_on(app: &mut nsh_testing::Headless) {
+    app.wait_until(
+        "workspace read with writes on",
+        Duration::from_secs(10),
+        |s| {
+            let t = s.texts().join("\n");
+            (t.contains("Queue watermark: commit")
+                || t.contains("No pending suggestions")
+                || t.contains("No records in this exact scope")
+                || t.contains(" · r"))
+                && !t.contains("Writes are off for this daemon run")
+                && !t.contains("Waiting for Daemon acknowledgement")
+        },
+    )
+    .unwrap();
+}
 #[test]
 fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     let mut f = Fixture::new();
@@ -191,21 +209,27 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     app.wait_for("Writes on for this daemon run").unwrap();
     assert_eq!(f.info()["write_enabled"], true);
     app.press_key("alt+o").unwrap();
-    app.wait_for("Write grant active").unwrap();
+    writes_on(&mut app);
     f.register();
     app.press_key("mod+r").unwrap();
     // The project menu lists the newly registered project.
     app.wait_for("alpha").unwrap();
-    app.wait_for("Write grant active").unwrap();
-    app.press_key("alt+k").unwrap();
-    app.type_text("Preference key", "editor").unwrap();
-    app.type_text("Preference value", "synthetic-value")
-        .unwrap();
-    app.type_text("Preference source", "synthetic-source")
-        .unwrap();
-    app.press_key("alt+shift+s").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
-        .unwrap();
+    writes_on(&mut app);
+    // Project → Preferences → Manage project preferences: the workspace
+    // fixed to alpha's records; Add preference saves a suggestion.
+    app.press_key("alt+3").unwrap();
+    app.press("Manage project preferences").unwrap();
+    writes_on(&mut app);
+    let add = |app: &mut nsh_testing::Headless| {
+        app.press("Add preference").unwrap();
+        app.type_text("Preference key", "editor").unwrap();
+        app.type_text("id:preference-value", "synthetic-value")
+            .unwrap();
+        app.press("Save as suggestion").unwrap();
+        app.wait_for("Prepared operation; no write sent yet")
+            .unwrap();
+    };
+    add(&mut app);
     assert!(
         f.call(
             "profile.preferences.list",
@@ -217,33 +241,25 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
             .is_empty()
     );
     app.press_key("alt+shift+v").unwrap();
-    app.wait_for("commit 2").unwrap();
-    app.press_key("alt+shift+l").unwrap();
-    app.wait_for("#1 · editor · suggested · r1").unwrap();
-    app.press_key("alt+shift+i").unwrap();
-    app.press_key("alt+shift+y").unwrap();
+    contains(&mut app, "commit 2");
+    // The saved suggestion opens as the exact record; confirming it is the
+    // second explicit step.
     app.wait_for("Show full digest").unwrap();
-    assert!(!app.screen().shows("Prepared operation; no write sent yet"));
+    app.wait_for("#1 · editor").unwrap();
     app.press_key("alt+shift+y").unwrap();
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
-    app.wait_for("commit 3").unwrap();
-    app.press_key("alt+shift+s").unwrap();
+    contains(&mut app, "commit 3");
+    add(&mut app);
     app.press_key("alt+shift+v").unwrap();
-    app.wait_for("commit 4").unwrap();
-    app.press_key("alt+shift+l").unwrap();
-    app.wait_for("#2 · editor · suggested · r1").unwrap();
-    app.press_key("alt+shift+i").unwrap();
-    app.press_key("alt+shift+i").unwrap();
-    app.press_key("alt+shift+n").unwrap();
-    app.wait_for("Show full digest").unwrap();
-    assert!(!app.screen().shows("Prepared operation; no write sent yet"));
+    contains(&mut app, "commit 4");
+    app.wait_for("#2 · editor").unwrap();
     app.press_key("alt+shift+n").unwrap();
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
-    app.wait_for("commit 5").unwrap();
+    contains(&mut app, "commit 5");
     let page = f
         .call(
             "profile.preferences.list",
@@ -302,9 +318,9 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     app.wait_for("Writes off").unwrap();
     assert_eq!(f.info()["write_enabled"], false);
     app.press_key("alt+o").unwrap();
-    app.wait_for("Write grant off").unwrap();
+    app.wait_for("Writes are off for this daemon run").unwrap();
     app.press_key("mod+l").unwrap();
-    app.wait_for("写入授权关闭").unwrap();
+    app.wait_for("本次 daemon 运行未开启写入").unwrap();
     app.press_key("Escape").unwrap();
     app.press_key("alt+3").unwrap();
     app.wait_for("已生效的确认偏好 · 键 / 值 / 范围 / 来源")

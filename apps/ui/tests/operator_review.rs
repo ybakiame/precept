@@ -187,6 +187,24 @@ fn contains(app: &mut nsh_testing::Headless, needle: &str) {
 /// Exact detail, peer demotion, all decisions and delete consent through actual
 /// NSH components over a real owned daemon. Desktop/TUI channel selection is
 /// configured headlessly; these are not native input or visual acceptance.
+/// The workspace has read the Profile and its list (the list loads only after
+/// the Profile reply), and writes are on: no "Writes are off" notice.
+fn writes_on(app: &mut nsh_testing::Headless) {
+    app.wait_until(
+        "workspace read with writes on",
+        Duration::from_secs(10),
+        |s| {
+            let t = s.texts().join("\n");
+            (t.contains("Queue watermark: commit")
+                || t.contains("No pending suggestions")
+                || t.contains("No records in this exact scope")
+                || t.contains(" · r"))
+                && !t.contains("Writes are off for this daemon run")
+                && !t.contains("Waiting for Daemon acknowledgement")
+        },
+    )
+    .unwrap();
+}
 #[test]
 fn real_components_review_queue_detail_history_deprecate_and_delete() {
     let mut f = Fixture::new();
@@ -233,29 +251,18 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     app.wait_for("Writes on for this daemon run").unwrap();
     assert_eq!(f.info()["write_enabled"], true);
     app.press_key("alt+o").unwrap();
-    app.wait_for("Write grant active").unwrap();
+    writes_on(&mut app);
     f.register();
     app.press_key("mod+r").unwrap();
     // The project menu lists the newly registered project.
     app.wait_for("alpha").unwrap();
-    app.wait_for("Write grant active").unwrap();
-    // Suggest record #1 (editor) and apply it.
-    app.press_key("alt+k").unwrap();
-    app.type_text("Preference key", "editor").unwrap();
-    app.type_text("Preference value", "synthetic-value")
-        .unwrap();
-    app.type_text("Preference source", "synthetic-source")
-        .unwrap();
-    app.press_key("alt+shift+s").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
-        .unwrap();
+    writes_on(&mut app);
+    // Project → Preferences → Manage project preferences: alpha's records.
+    manage_project(&mut app);
+    // Add record #1 (editor): saved as a suggestion, then it opens to confirm.
+    add(&mut app, "editor", "synthetic-value");
     app.press_key("alt+shift+v").unwrap();
-    app.wait_for("commit 2").unwrap();
-    // Queue tab loads the suggested-only page; the row opens the exact detail.
-    app.press("Queue").unwrap();
-    app.press("Inspect review queue").unwrap();
-    contains(&mut app, "#1 · editor · r1");
-    app.press("#1 · editor · r1").unwrap();
+    contains(&mut app, "commit 2");
     app.wait_for("Show full digest").unwrap();
     app.press("Show full digest").unwrap();
     app.wait_for("Collapse digest").unwrap();
@@ -266,65 +273,45 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
         .unwrap();
     assert_eq!(f.inspect(1, 1)["record"]["status"], "suggested");
     app.press_key("alt+shift+v").unwrap();
-    app.wait_for("commit 3").unwrap();
+    contains(&mut app, "commit 3");
     let confirmed_first = f.assert_decision(&first, "confirm", "desktop", 2, 3);
-    // Suggest record #2 with the same key, then inspect it from the queue.
-    app.press_key("alt+shift+s").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
-        .unwrap();
+    // Add record #2 with the same key; it opens with its exact detail.
+    add(&mut app, "editor", "synthetic-value");
     app.press_key("alt+shift+v").unwrap();
-    app.wait_for("commit 4").unwrap();
-    app.press("Queue").unwrap();
-    app.press("Inspect review queue").unwrap();
-    contains(&mut app, "#2 · editor · r1");
-    app.press("#2 · editor · r1").unwrap();
+    contains(&mut app, "commit 4");
+    app.wait_for("#2 · editor").unwrap();
     app.wait_for("Show full digest").unwrap();
     // The peer-demotion disclosure names the authoritative total and preview ids.
     app.wait_for("Deprecates 1 same-key confirmed records (ids 1)")
         .unwrap();
     // History for a never-decided suggestion is empty, never an error.
-    app.press("History").unwrap();
     app.wait_for("No decisions recorded for this record")
         .unwrap();
     // Confirm #2 (demotes #1), then read its decision history.
     let second = f.inspect(2, 1);
-    app.press("Detail").unwrap();
-    app.wait_for("Show full digest").unwrap();
     app.press("Confirm preference…").unwrap();
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
-    app.wait_for("commit 5").unwrap();
+    contains(&mut app, "commit 5");
     let confirmed_second = f.assert_decision(&second, "confirm", "desktop", 2, 5);
     let demoted = f.assert_decision(&confirmed_first, "demote", "desktop", 3, 5);
     assert_eq!(demoted["record"]["status"], "deprecated");
-    app.press_key("alt+shift+l").unwrap();
-    contains(&mut app, "#2 · editor · confirmed · r2");
-    app.press("#2 · editor · confirmed · r2").unwrap();
-    app.press("Detail").unwrap();
-    app.press("Inspect exact record").unwrap();
-    app.wait_for("Show full digest").unwrap();
-    app.press("History").unwrap();
+    open_row(&mut app, "#2 · editor · confirmed · r2");
     app.wait_for("Channel is client-asserted").unwrap();
     // Deprecate the confirmed #2 with its impact disclosure.
-    app.press("Detail").unwrap();
     app.wait_for("Deprecation makes the record inactive in agent effective context.")
         .unwrap();
     app.press("Deprecate preference…").unwrap();
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
-    app.wait_for("commit 6").unwrap();
+    contains(&mut app, "commit 6");
     let deprecated_second = f.assert_decision(&confirmed_second, "deprecate", "desktop", 3, 6);
     assert_eq!(deprecated_second["record"]["status"], "deprecated");
     // Delete #2 through the destructive tier: a wrong retype refuses, the exact
     // retype arms, and the receipt leaves identity-only proof.
-    app.press_key("alt+shift+l").unwrap();
-    contains(&mut app, "#2 · editor · deprecated · r3");
-    app.press("#2 · editor · deprecated · r3").unwrap();
-    app.press("Detail").unwrap();
-    app.press("Inspect exact record").unwrap();
-    app.wait_for("Show full digest").unwrap();
+    open_row(&mut app, "#2 · editor · deprecated · r3");
     app.press_key("alt+shift+q").unwrap();
     app.wait_for("Delete project alpha preference #2?").unwrap();
     app.type_text("Retype the exact ID", "9").unwrap();
@@ -346,7 +333,7 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
-    app.wait_for("commit 7").unwrap();
+    contains(&mut app, "commit 7");
     assert_eq!(
         app.screen()
             .texts()
@@ -367,25 +354,49 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
         .is_err()
     );
     app.press_key("alt+shift+v").unwrap();
-    app.wait_for("Deleted. Content and decision history are gone; receipts remain identity-only.")
-        .unwrap();
+    contains(
+        &mut app,
+        "Deleted. Content and decision history are gone; receipts remain identity-only.",
+    );
     // A deleted record keeps no content or decision history snapshot.
-    app.press("History").unwrap();
-    app.wait_for("Select a queue row to inspect").unwrap();
-    // The queue is now empty: a valid pending-review state, never "unavailable".
-    app.press("Queue").unwrap();
-    app.press("Inspect review queue").unwrap();
+    app.wait_for_gone("Show full digest", Duration::from_secs(5))
+        .unwrap();
+    // To review is empty: a valid pending-review state, never "unavailable".
+    app.press("To review").unwrap();
     app.wait_for("No pending suggestions").unwrap();
     assert!(!app.screen().shows("Unavailable"));
     // Both locales ship the review copy.
     app.press_key("mod+l").unwrap();
-    app.wait_for("待审队列").unwrap();
+    app.wait_for("待审阅").unwrap();
     app.wait_for("没有待审建议").unwrap();
     drop(app);
     terminal_channel_and_revoked_delete(&f);
     changed_root_refuses_reviewed_apply(&f);
     f.child.kill().unwrap();
     f.child.wait().unwrap();
+}
+
+/// Project → Preferences → Manage project preferences, read and writable.
+fn manage_project(app: &mut nsh_testing::Headless) {
+    app.press_key("alt+3").unwrap();
+    app.press("Manage project preferences").unwrap();
+    writes_on(app);
+}
+/// Add preference: saved as a suggestion (prepared; Apply commits it).
+fn add(app: &mut nsh_testing::Headless, key: &str, value: &str) {
+    app.press("Add preference").unwrap();
+    app.type_text("Preference key", key).unwrap();
+    app.type_text("id:preference-value", value).unwrap();
+    app.press("Save as suggestion").unwrap();
+    app.wait_for("Prepared operation; no write sent yet")
+        .unwrap();
+}
+/// A record row in the scope's list opens its sheet with the exact record.
+fn open_row(app: &mut nsh_testing::Headless, row: &str) {
+    app.press_key("alt+shift+l").unwrap();
+    contains(app, row);
+    app.press(row).unwrap();
+    app.wait_for("Show full digest").unwrap();
 }
 
 fn terminal_channel_and_revoked_delete(f: &Fixture) {
@@ -395,20 +406,12 @@ fn terminal_channel_and_revoked_delete(f: &Fixture) {
     let mut cfg = EngineConfig::new(Root::of::<acp_operator_ui::App>());
     cfg.viewport = Size::new(px(1080.0), px(760.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
-    app.wait_for("Write grant active").unwrap();
-    app.press_key("alt+k").unwrap();
-    app.type_text("Preference key", "terminal-editor").unwrap();
-    app.type_text("Preference value", "terminal-value").unwrap();
-    app.type_text("Preference source", "terminal-source")
-        .unwrap();
-    app.press_key("alt+shift+s").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
-        .unwrap();
+    writes_on(&mut app);
+    manage_project(&mut app);
+    add(&mut app, "terminal-editor", "terminal-value");
     app.press_key("alt+shift+v").unwrap();
-    app.wait_for("commit 8").unwrap();
-    app.press("Queue").unwrap();
-    app.press("Inspect review queue").unwrap();
-    app.press("#3 · terminal-editor · r1").unwrap();
+    contains(&mut app, "commit 8");
+    app.wait_for("#3 · terminal-editor").unwrap();
     app.wait_for("Show full digest").unwrap();
     let third = f.inspect(3, 1);
     app.press_key("alt+shift+y").unwrap();
@@ -416,56 +419,39 @@ fn terminal_channel_and_revoked_delete(f: &Fixture) {
         .unwrap();
     assert_eq!(f.inspect(3, 1)["record"]["status"], "suggested");
     app.press_key("alt+shift+v").unwrap();
-    app.wait_for("commit 9").unwrap();
+    contains(&mut app, "commit 9");
     let confirmed = f.assert_decision(&third, "confirm", "tui", 2, 9);
-    app.press_key("alt+shift+l").unwrap();
-    app.press("#3 · terminal-editor · confirmed · r2").unwrap();
-    app.press("Detail").unwrap();
-    app.press("Inspect exact record").unwrap();
-    app.wait_for("Show full digest").unwrap();
-    app.press("History").unwrap();
+    open_row(&mut app, "#3 · terminal-editor · confirmed · r2");
     contains(&mut app, "confirm · r1→r2 · tui");
-    app.press("Detail").unwrap();
     app.press_key("alt+shift+w").unwrap();
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();
     assert_eq!(f.inspect(3, 2)["record"]["status"], "confirmed");
     app.press_key("alt+shift+v").unwrap();
-    app.wait_for("commit 10").unwrap();
+    contains(&mut app, "commit 10");
     f.assert_decision(&confirmed, "deprecate", "tui", 3, 10);
-    app.press_key("alt+shift+s").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
-        .unwrap();
+    add(&mut app, "terminal-editor", "terminal-value");
     app.press_key("alt+shift+v").unwrap();
-    app.wait_for("commit 11").unwrap();
-    app.press("Queue").unwrap();
-    app.press("Inspect review queue").unwrap();
-    app.press("#4 · terminal-editor · r1").unwrap();
+    contains(&mut app, "commit 11");
+    app.wait_for("#4 · terminal-editor").unwrap();
     app.wait_for("Show full digest").unwrap();
     let fourth = f.inspect(4, 1);
     app.press_key("alt+shift+n").unwrap();
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
-    app.wait_for("commit 12").unwrap();
+    contains(&mut app, "commit 12");
     f.assert_decision(&fourth, "reject", "tui", 2, 12);
-    app.press_key("alt+shift+l").unwrap();
-    app.press("#3 · terminal-editor · deprecated · r3").unwrap();
-    app.press("Detail").unwrap();
-    app.press("Inspect exact record").unwrap();
-    app.wait_for("Show full digest").unwrap();
+    open_row(&mut app, "#3 · terminal-editor · deprecated · r3");
     app.press_key("alt+shift+q").unwrap();
     app.wait_for("Delete project alpha preference #3?").unwrap();
     app.type_text("Retype the exact ID", "3").unwrap();
     app.press_key("Enter").unwrap();
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();
-    assert!(
-        app.screen()
-            .texts()
-            .join("")
-            .contains("\"channel\":\"tui\"")
-    );
+    // The exact request names the terminal channel.
+    app.press("Show request").unwrap();
+    contains(&mut app, "\"channel\":\"tui\"");
     // Revoke externally between inspection/consent and submit. The real IPC
     // adapter/daemon must refuse rather than accept an obsolete UI grant.
     f.call("profile.write.disable", json!({})).unwrap();
@@ -473,18 +459,13 @@ fn terminal_channel_and_revoked_delete(f: &Fixture) {
     contains(&mut app, "Unauthorized");
     assert_eq!(f.inspect(3, 3)["record"]["status"], "deprecated");
     app.press_key("alt+shift+r").unwrap();
-    app.wait_for("Write grant off").unwrap();
-    // A new grant from the Profile page, then back to the review.
+    app.wait_for("Writes are off for this daemon run").unwrap();
+    // A new grant from the Profile page, then back to the records.
     app.press("Step 2: Profile").unwrap();
     app.press("Enable writes").unwrap();
     app.wait_for("Writes on for this daemon run").unwrap();
-    app.press_key("alt+o").unwrap();
-    app.wait_for("Write grant active").unwrap();
-    app.press_key("alt+shift+l").unwrap();
-    app.press("#3 · terminal-editor · deprecated · r3").unwrap();
-    app.press("Detail").unwrap();
-    app.press("Inspect exact record").unwrap();
-    app.wait_for("Show full digest").unwrap();
+    manage_project(&mut app);
+    open_row(&mut app, "#3 · terminal-editor · deprecated · r3");
     app.press_key("alt+shift+q").unwrap();
     app.wait_for("Delete project alpha preference #3?").unwrap();
     // Revocation and the new grant must not retain the preceding exact text.
@@ -493,10 +474,12 @@ fn terminal_channel_and_revoked_delete(f: &Fixture) {
     assert_eq!(f.inspect(3, 3)["record"]["status"], "deprecated");
     app.type_text("Retype the exact ID", "3").unwrap();
     app.press_key("alt+shift+v").unwrap();
-    app.wait_for("commit 13").unwrap();
+    contains(&mut app, "commit 13");
     assert!(!app.screen().shows("Retry identical request"));
-    app.wait_for("Deleted. Content and decision history are gone; receipts remain identity-only.")
-        .unwrap();
+    contains(
+        &mut app,
+        "Deleted. Content and decision history are gone; receipts remain identity-only.",
+    );
     app.press_key("alt+shift+v").unwrap();
     let queue = f
         .call(
@@ -521,20 +504,12 @@ fn changed_root_refuses_reviewed_apply(f: &Fixture) {
     let mut cfg = EngineConfig::new(Root::of::<acp_operator_ui::App>());
     cfg.viewport = Size::new(px(1080.0), px(760.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
-    app.wait_for("Write grant active").unwrap();
-    app.press_key("alt+k").unwrap();
-    app.type_text("Preference key", "root-bound-review")
-        .unwrap();
-    app.type_text("Preference value", "synthetic").unwrap();
-    app.type_text("Preference source", "synthetic").unwrap();
-    app.press_key("alt+shift+s").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
-        .unwrap();
+    writes_on(&mut app);
+    manage_project(&mut app);
+    add(&mut app, "root-bound-review", "synthetic");
     app.press_key("alt+shift+v").unwrap();
-    app.wait_for("commit 14").unwrap();
-    app.press("Queue").unwrap();
-    app.press("Inspect review queue").unwrap();
-    app.press("#5 · root-bound-review · r1").unwrap();
+    contains(&mut app, "commit 14");
+    app.wait_for("#5 · root-bound-review").unwrap();
     app.wait_for("Show full digest").unwrap();
     app.press_key("alt+shift+y").unwrap();
     app.wait_for("Prepared operation; no write sent yet")

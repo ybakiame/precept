@@ -117,17 +117,25 @@ fn settle(m: &mut Model, r: Result<serde_json::Value, &'static str>) -> bool {
 /// After create/select: the snapshot changes (projects become served); the
 /// new read also re-reads the Profile (see `watch`).
 fn after_selection(
-    model: Signal<Model>,
-    m: &mut Model,
-    r: Result<serde_json::Value, &'static str>,
-) {
-    settle(m, r);
-    spawn(async move { load(model) });
+    done: Msg,
+) -> impl FnOnce(Signal<Model>, &mut Model, Result<serde_json::Value, &'static str>) {
+    move |model, m, r| {
+        if settle(m, r) {
+            ui::notify(ui::Tone::Success, m.word(done));
+        }
+        spawn(async move { load(model) });
+    }
 }
 /// After a write or startup change: only the Profile state changes.
-fn after_change(model: Signal<Model>, m: &mut Model, r: Result<serde_json::Value, &'static str>) {
-    settle(m, r);
-    spawn(async move { read(model) });
+fn after_change(
+    done: Msg,
+) -> impl FnOnce(Signal<Model>, &mut Model, Result<serde_json::Value, &'static str>) {
+    move |model, m, r| {
+        if settle(m, r) {
+            ui::notify(ui::Tone::Success, m.word(done));
+        }
+        spawn(async move { read(model) });
+    }
 }
 
 fn create_or_select(model: Signal<Model>, method: &'static str) {
@@ -138,7 +146,12 @@ fn create_or_select(model: Signal<Model>, method: &'static str) {
         m.profile_setup.busy = true;
         m.profile_setup.error = None;
     });
-    call(model, method, params, after_selection);
+    let done = if method == "profile.create" {
+        Msg::ToastProfileCreated
+    } else {
+        Msg::ToastProfileSelected
+    };
+    call(model, method, params, after_selection(done));
 }
 
 /// Turns on writes for the selected Profile (this daemon run), then `then`.
@@ -164,6 +177,7 @@ pub(crate) fn enable_writes(model: Signal<Model>, then: impl FnOnce(Signal<Model
                 m.profile_setup.error = Some(code.into());
                 m.project_add.error = Some(code.into());
             } else {
+                ui::notify(ui::Tone::Success, m.word(Msg::ToastWritesOn));
                 m.project_add.write_enabled = Some(true);
                 if let Some(i) = m.profile_info.as_mut() {
                     i.write_enabled = true;
@@ -185,7 +199,7 @@ fn disable_writes(model: Signal<Model>) {
         model,
         "profile.write.disable",
         serde_json::json!({}),
-        after_change,
+        after_change(Msg::ToastWritesOff),
     );
 }
 fn forget(model: Signal<Model>) {
@@ -194,7 +208,7 @@ fn forget(model: Signal<Model>) {
         model,
         "profile.startup.forget",
         serde_json::json!({}),
-        after_change,
+        after_change(Msg::ToastStartupForgotten),
     );
 }
 

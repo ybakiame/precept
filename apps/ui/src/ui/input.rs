@@ -23,6 +23,8 @@ pub struct Input {
     reference: Option<ElementRef>,
     large: bool,
     max_length: Option<u32>,
+    lines: Option<u8>,
+    test_id: Option<&'static str>,
 }
 
 /// A medium, valid field with an accessible label.
@@ -40,6 +42,8 @@ pub fn input(model: Signal<Model>, label: impl Into<SharedString>) -> Input {
         reference: None,
         large: false,
         max_length: None,
+        lines: None,
+        test_id: None,
     }
 }
 
@@ -86,6 +90,16 @@ impl Input {
         self
     }
     /// A large frame (prominent decisions); medium is the default.
+    /// A stable test id (selectors use `id:...`).
+    pub fn test_id(mut self, id: &'static str) -> Self {
+        self.test_id = Some(id);
+        self
+    }
+    /// Several lines of text (a long value); it grows to `lines` rows.
+    pub fn multiline(mut self, lines: u8) -> Self {
+        self.lines = Some(lines.max(2));
+        self
+    }
     pub fn large(mut self) -> Self {
         self.large = true;
         self
@@ -107,7 +121,9 @@ impl IntoElement for Input {
         let disabled = self.disabled.clone();
         let invalid = self.invalid.clone();
         let invalid_focus = invalid.clone();
-        let height = if self.large {
+        let height = if let Some(lines) = self.lines {
+            scale::control::MD + f32::from(lines - 1) * scale::text::BODY * 1.5
+        } else if self.large {
             scale::control::LG
         } else {
             scale::control::MD
@@ -115,6 +131,7 @@ impl IntoElement for Input {
         let mut field = base_input()
             .label(move || label())
             .value(move || value())
+            .multiline(self.lines.is_some())
             .h(px(height))
             .w_full()
             .px_2()
@@ -151,6 +168,9 @@ impl IntoElement for Input {
         }
         if let Some(reference) = self.reference {
             field = field.element_ref(&reference);
+        }
+        if let Some(id) = self.test_id {
+            field = field.test_id(id);
         }
         if let Some(max_length) = self.max_length {
             field = field.max_length(max_length);

@@ -23,7 +23,8 @@ pub(crate) fn open(model: Signal<Model>) {
 pub(crate) fn open_mode(model: Signal<Model>, mode: ReviewMode) {
     model.update(|m| {
         let global = match mode {
-            ReviewMode::Inbox => m.operator.global,
+            // The inbox keeps its scope, but a project scope needs a project.
+            ReviewMode::Inbox => m.operator.global || m.selected_project.is_none(),
             ReviewMode::Personal => true,
             ReviewMode::Project => false,
         };
@@ -36,6 +37,12 @@ pub(crate) fn open_mode(model: Signal<Model>, mode: ReviewMode) {
         }
         if mode != ReviewMode::Inbox {
             m.operator.pane = Pane::Preferences;
+        }
+        // Entering the workspace re-reads the Profile (writes may have changed
+        // in Profile while it was closed). Cleared here, before that read is
+        // built: clearing it later would make the read's reply stale.
+        if !m.operator.open {
+            m.operator.info = None;
         }
         m.operator.mode = mode;
         m.operator.open = true;
@@ -107,8 +114,18 @@ fn send(model: Signal<Model>, request: Review) {
                 next = m.operator.follow_up.take();
             });
             // Save, then confirm: continue with the read the model asked for.
+            // A read already in flight defers it to that read's completion.
             if let Some(method) = next {
-                refresh(model, method);
+                let mut request = None;
+                model.update(|m| {
+                    request = m.operator_read(method);
+                    if request.is_none() {
+                        m.operator.follow_up = Some(method);
+                    }
+                });
+                if let Some(request) = request {
+                    send(model, request);
+                }
             }
             // Explicit Refresh updates effective context after inspection. Do not
             // destroy retained uncertain request identity through an automatic read.
@@ -152,20 +169,6 @@ fn submit(model: Signal<Model>) {
     if let Some(request) = request {
         send(model, request);
     }
-}
-/// Cycle the review tabs (Queue / Detail / History) for the alt+left/right chords.
-pub(crate) fn tab_by(model: Signal<Model>, delta: i32) {
-    model.update(|m| {
-        let tabs = [ReviewTab::Queue, ReviewTab::Detail, ReviewTab::History];
-        let index = tabs
-            .iter()
-            .position(|t| *t == m.operator.review_tab)
-            .unwrap_or(0) as i32;
-        m.operator.review_tab = tabs[(index + delta).rem_euclid(3) as usize];
-    });
-}
-fn set_tab(model: Signal<Model>, tab: ReviewTab) {
-    model.update(|m| m.operator.review_tab = tab);
 }
 /// The delete tier is armed only against the exact reviewed id+revision+digest
 /// with the id retyped verbatim; mirrors the shared model's submit-time guard.
@@ -730,41 +733,6 @@ fn history_tab(model: Signal<Model>) -> AnyElement {
     body = body.child(card(model, m.word(Msg::ReviewHistoryTab), lines));
     body.into_element()
 }
-/// The review workspace: one sliding tab selection over Queue / Detail / History.
-fn review_workspace(model: Signal<Model>, delete_open: Signal<bool>) -> impl IntoElement {
-    let tabs = ui::tabs(model)
-        .add_fn(
-            move || model.get().word(Msg::ReviewQueueTab).into(),
-            move || model.get().operator.review_tab == ReviewTab::Queue,
-            move || set_tab(model, ReviewTab::Queue),
-        )
-        .add_fn(
-            move || model.get().word(Msg::ReviewDetailTab).into(),
-            move || model.get().operator.review_tab == ReviewTab::Detail,
-            move || set_tab(model, ReviewTab::Detail),
-        )
-        .add_fn(
-            move || model.get().word(Msg::ReviewHistoryTab).into(),
-            move || model.get().operator.review_tab == ReviewTab::History,
-            move || set_tab(model, ReviewTab::History),
-        );
-    view()
-        .gap_2()
-        .flex_shrink_0()
-        .child(tabs)
-        .child(dynamic(move || {
-            let tab = model.get().operator.review_tab;
-            match tab {
-                ReviewTab::Queue => queue_tab(model, delete_open),
-                ReviewTab::Detail => detail_tab(model, delete_open),
-                ReviewTab::History => history_tab(model),
-            }
-        }))
-}
-/// The destructive delete tier: names the exact scope+id, states the irreversible
-/// removal of content and decision history (no forensic-erasure claim) and the
-/// continuing identity-only receipt, and requires the exact id retyped into a
-/// focused field before the commitment can fire.
 fn delete_dialog(
     model: Signal<Model>,
     delete_open: Signal<bool>,
@@ -853,63 +821,6 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
     // in the shared model so Desktop and TUI enforce one guard.
     let delete_open = signal(false);
     let retype_ref = element_ref();
-    let scroll_ref = element_ref();
-    let review_origin = signal(px(0.0));
-    let preview_origin = signal(px(0.0));
-    let navigation = computed(move || {
-        model.with(|m| {
-            let o = &m.operator;
-            (
-                o.open,
-                o.review_tab,
-                o.inspect
-                    .as_ref()
-                    .map(|i| (i.record.id, i.record.revision, i.commit_sequence)),
-                o.queue
-                    .as_ref()
-                    .map(|q| (q.commit_sequence, q.next_after_id, q.records.len())),
-                o.review.is_some(),
-                o.outcome_unknown,
-            )
-        })
-    });
-    let previous_navigation = signal(None);
-    effect(move || {
-        let next = navigation.get();
-        let previous = untracked(|| previous_navigation.get());
-        previous_navigation.set(Some(next));
-        let (open, tab, inspect, queue, prepared, unknown) = next;
-        let changed = previous.is_none_or(
-            |(was_open, old_tab, old_inspect, old_queue, was_prepared, was_unknown)| {
-                !was_open
-                    || tab != old_tab
-                    || (inspect.is_some() && inspect != old_inspect)
-                    || (queue.is_some() && queue != old_queue)
-                    || (prepared && !was_prepared)
-                    || (unknown && !was_unknown)
-            },
-        );
-        if open
-            && changed
-            && (prepared
-                || unknown
-                || (tab == ReviewTab::Queue && queue.is_some())
-                || (tab != ReviewTab::Queue && inspect.is_some()))
-        {
-            // Reveal the tab header or preview after layout, not the document's
-            // end: long Detail content must not bury its own navigation.
-            nsh_core::element::request_animation_frame(move |_| {
-                if navigation.get() == next {
-                    let y = if prepared || unknown {
-                        preview_origin.get()
-                    } else {
-                        review_origin.get()
-                    };
-                    scroll_ref.scroll_to(nsh_core::geometry::Point::new(px(0.0), y), false);
-                }
-            });
-        }
-    });
     for (key, action) in [
         ("alt+shift+s", "suggest"),
         ("alt+shift+y", "confirm"),
@@ -997,14 +908,6 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
             delete_open.set(false);
         }
     });
-    let summary = computed(move || {
-        let m = model.get();
-        (m.locale, m.operator)
-    });
-    let rows = computed(move || {
-        let m = model.get();
-        (m.locale, m.operator.page)
-    });
     effect(move || {
         #[cfg(not(target_arch = "wasm32"))]
         if std::env::var_os("ACP_UI_PROBE").is_some() {
@@ -1069,6 +972,7 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
     });
     // Display-none removes layout; visibility also removes native Win32 focus
     // stops. A concealed pane must not leave its retained fields/actions tabbable.
+    let add_open = signal(false);
     let content = view()
         .on_layout(move |_: &Bounds<Points>| {
             #[cfg(not(target_arch = "wasm32"))]
@@ -1076,318 +980,25 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
                 eprintln!("ACP_NSH_LAYOUT_READY elapsed={:.6}", probe_elapsed());
             }
         })
-        .gap_3()
+        .gap_4()
         .flex_shrink_0()
-        .child(
-            text(move || model.get().word(Msg::OperatorHelp))
-                .text_size(px(ui::scale::text::CAPTION))
-                .text_color(move || tokens::palette(model).muted),
-        )
+        .max_w(px(ui::scale::layout::FORM + 160.0))
+        .child(writes_notice(model))
+        .child(page_toolbar(model, add_open))
         .child(
             view()
-                .flex_row()
-                .flex_wrap()
-                .gap_2()
-                // Only the inbox switches panes; the scoped entries are records.
                 .style_when(
-                    move || model.get().operator.mode != ReviewMode::Inbox,
-                    |s| s.hidden(),
-                )
-                .children(
-                    [
-                        (Pane::Preferences, Msg::OperatorPreferences),
-                        (Pane::Handoff, Msg::OperatorSavedHandoff),
-                    ]
-                    .into_iter()
-                    .map(move |(pane, key)| {
-                        word_action(
-                            model,
-                            key,
-                            move || !model.get().operator.busy,
-                            move || {
-                                model.update(|m| {
-                                    m.operator.pane = pane;
-                                    m.operator.review = None;
-                                    m.operator.delete_arm = None;
-                                    m.operator.serial += 1;
-                                })
-                            },
-                        )
-                    }),
-                ),
-        )
-        .child(word_action(
-            model,
-            Msg::OperatorRefresh,
-            move || available(model),
-            move || refresh(model, "profile.info"),
-        ))
-        .child(dynamic(move || {
-            let (_, o) = summary.get();
-            let m = model.get_untracked();
-            let mut lines = Vec::new();
-            if let Some(info) = &o.info {
-                lines.push(
-                    m.word(if info.selected {
-                        Msg::OperatorSelected
-                    } else {
-                        Msg::OperatorUnselected
-                    })
-                    .into(),
-                );
-                lines.push(
-                    m.word(if info.write_enabled {
-                        Msg::OperatorGrantOn
-                    } else {
-                        Msg::OperatorGrantOff
-                    })
-                    .into(),
-                );
-                if let Some(b) = &info.binding {
-                    lines.push(format!(
-                        "Profile {} · generation {} · epoch {}",
-                        b.profile_id, b.generation, b.owner_epoch
-                    ));
-                }
-            }
-            if o.busy {
-                lines.push(m.word(Msg::OperatorBusy).into());
-            }
-            if let Some(r) = &o.receipt {
-                // A deleted record leaves identity-only proof, never content.
-                if r.affected.iter().any(|a| a.deleted) {
-                    lines.push(m.word(Msg::ReviewDeleted).into());
-                }
-                lines.push(m.word(Msg::ReviewReceiptNote).into());
-            }
-            if let Some(p) = o.pending.and_then(|r| r.mutation) {
-                lines.push(format!(
-                    "Operation {} · epoch {}",
-                    p.operation_id, p.binding.owner_epoch
-                ));
-            }
-            let mut body = view()
-                .gap_2()
-                .child(card(model, m.word(Msg::ProfileOperator), lines));
-            // Apply feedback: the receipt label swaps into place and the success
-            // badge fades in beside the summary.
-            if let Some(r) = &o.receipt {
-                let swap = ui::motion::label();
-                let fade = ui::motion::fade();
-                let receipt_label =
-                    format!("{} {}", m.word(Msg::OperatorLastReceipt), r.operation_id);
-                let commit_label = format!("commit {}", r.commit_sequence);
-                body = body.child(
-                    view()
-                        .flex_row()
-                        .items_center()
-                        .gap_2()
-                        .child(
-                            view().bind_motion(&swap).child(
-                                text(receipt_label)
-                                    .text_size(px(ui::scale::text::CAPTION))
-                                    .text_color(move || palette(model).muted),
-                            ),
-                        )
-                        .child(view().bind_motion(&fade).child(
-                            ui::badge(model, commit_label).variant(ui::BadgeVariant::Success),
-                        )),
-                );
-            }
-            // Error toast: a precise, sanitized refusal slides in from its edge.
-            if let Some(e) = &o.error
-                && !o.outcome_unknown
-            {
-                let toast = ui::motion::toast();
-                let wsl = m.connection.target == acp_operator_core::connection::Target::Wsl;
-                let message = format!("{e}: {}", tr(m.locale, error_msg(e, wsl)));
-                body = body.child(
-                    view()
-                        .bind_motion(&toast)
-                        .child(text(message).text_color(move || palette(model).error)),
-                );
-            }
-            body
-        }))
-        .child(
-            view()
-                .gap_2()
-                .style_when(
-                    move || {
-                        model.get().operator.pane != Pane::Preferences
-                            || model.get().operator.review.is_some()
-                            || model.get().operator.outcome_unknown
-                    },
+                    move || model.get().operator.pane != Pane::Preferences,
                     |s| s.hidden().invisible(),
                 )
-                .child(
-                    view()
-                        .flex_row()
-                        .flex_wrap()
-                        .gap_2()
-                        // The scope is fixed by the scoped entries; only the
-                        // inbox switches it.
-                        .style_when(
-                            move || model.get().operator.mode != ReviewMode::Inbox,
-                            |s| s.hidden(),
-                        )
-                        .child(word_action(
-                            model,
-                            Msg::OperatorGlobal,
-                            move || available(model),
-                            move || {
-                                model.update(|m| {
-                                    m.operator.invalidate();
-                                    m.operator.global = true;
-                                    m.operator.after_id = 0;
-                                })
-                            },
-                        ))
-                        .child(word_action(
-                            model,
-                            Msg::OperatorProject,
-                            move || available(model) && model.get().selected_project.is_some(),
-                            move || {
-                                model.update(|m| {
-                                    m.operator.invalidate();
-                                    m.operator.global = false;
-                                    m.operator.after_id = 0;
-                                })
-                            },
-                        ))
-                        .child(text(move || {
-                            let m = model.get();
-                            if m.operator.global {
-                                m.word(Msg::OperatorGlobal).into()
-                            } else {
-                                format!(
-                                    "{}: {}",
-                                    m.word(Msg::OperatorProject),
-                                    m.selected_project.as_deref().unwrap_or("—")
-                                )
-                            }
-                        })),
-                )
-                .child(
-                    view()
-                        .flex_row()
-                        .flex_wrap()
-                        .gap_2()
-                        .child(word_action(
-                            model,
-                            Msg::OperatorList,
-                            move || {
-                                available(model)
-                                    && model
-                                        .get()
-                                        .operator
-                                        .info
-                                        .as_ref()
-                                        .is_some_and(|i| i.selected)
-                            },
-                            move || refresh(model, "profile.preferences.list"),
-                        ))
-                        .child(word_action(
-                            model,
-                            Msg::OperatorFirst,
-                            move || available(model) && model.get().operator.after_id > 0,
-                            move || {
-                                model.update(|m| {
-                                    m.operator.after_id = 0;
-                                    m.operator.review = None;
-                                    m.operator.serial += 1;
-                                });
-                                refresh(model, "profile.preferences.list");
-                            },
-                        ))
-                        .child(word_action(
-                            model,
-                            Msg::OperatorNext,
-                            move || {
-                                available(model)
-                                    && model
-                                        .get()
-                                        .operator
-                                        .page
-                                        .as_ref()
-                                        .is_some_and(|p| p.next_after_id.is_some())
-                            },
-                            move || {
-                                model.update(|m| {
-                                    if let Some(id) =
-                                        m.operator.page.as_ref().and_then(|p| p.next_after_id)
-                                    {
-                                        m.operator.after_id = id;
-                                    }
-                                    m.operator.review = None;
-                                });
-                                refresh(model, "profile.preferences.list");
-                            },
-                        )),
-                )
                 .child(dynamic(move || {
-                    let (locale, page) = rows.get();
-                    let mut body = view().gap_2().flex_shrink_0();
-                    let Some(page) = page else {
-                        return body;
-                    };
-                    if page.records.is_empty() {
-                        body = body.child(text(acp_operator_core::i18n::tr(
-                            locale,
-                            Msg::OperatorEmpty,
-                        )));
+                    let mode = model.get().operator.mode;
+                    if mode == ReviewMode::Inbox {
+                        queue_tab(model, delete_open)
+                    } else {
+                        records_list(model, delete_open)
                     }
-                    for r in page.records {
-                        let id = r.id;
-                        body = body.child(action(
-                            model,
-                            format!("#{} · {} · {} · r{}", id, r.key, r.status, r.revision),
-                            move || available(model),
-                            move || {
-                                model.update(|m| {
-                                    m.operator.selected_id = Some(id);
-                                    m.operator.review = None;
-                                    m.operator.delete_arm = None;
-                                    m.operator.serial += 1;
-                                    m.operator.inspect = None;
-                                    m.operator.inspect_revision = 0;
-                                    m.operator.digest_expanded = false;
-                                })
-                            },
-                        ));
-                    }
-                    body
-                }))
-                .child(field(
-                    model,
-                    Msg::OperatorKey,
-                    |o| &o.key,
-                    |o, v| o.key = v,
-                    120,
-                ))
-                .child(field(
-                    model,
-                    Msg::OperatorValue,
-                    |o| &o.value,
-                    |o, v| o.value = v,
-                    4096,
-                ))
-                .child(field(
-                    model,
-                    Msg::OperatorSource,
-                    |o| &o.source,
-                    |o, v| o.source = v,
-                    512,
-                ))
-                .child(word_action(
-                    model,
-                    Msg::OperatorSuggest,
-                    move || {
-                        available(model)
-                            && model.get().operator.info.is_some_and(|i| i.write_enabled)
-                    },
-                    move || review(model, "suggest"),
-                )),
+                })),
         )
         .child(
             view()
@@ -1448,133 +1059,126 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
                         ))
                 })),
         )
-        .child(
-            view()
-                .on_layout(move |bounds: &Bounds<Points>| review_origin.set(bounds.origin.y))
-                .gap_2()
-                .style_when(
-                    move || {
-                        model.get().operator.review.is_some()
-                            || model.get().operator.outcome_unknown
-                    },
-                    |s| s.hidden().invisible(),
-                )
-                .child(review_workspace(model, delete_open)),
+        .child(unknown_banner(model));
+    // Toasts report what happened (applied receipts, refusals); the page shows
+    // the resulting state itself.
+    let feedback = computed(move || {
+        let m = model.get();
+        (
+            m.operator.receipt.as_ref().map(|r| r.commit_sequence),
+            m.operator.error.clone(),
+            m.operator.outcome_unknown,
+            // A deleted record leaves identity-only proof, never content.
+            m.operator
+                .receipt
+                .as_ref()
+                .is_some_and(|r| r.affected.iter().any(|a| a.deleted)),
         )
-        .child(dynamic(move || {
-            let m = model.get();
-            let mut body = view()
-                .on_layout(move |bounds: &Bounds<Points>| preview_origin.set(bounds.origin.y))
-                .gap_2()
-                .flex_shrink_0();
-            if let Some(review) = &m.operator.review {
-                let mut lines = vec![m.word(Msg::OperatorPending).into(), review.method.clone()];
-                if let Some(mutation) = &review.mutation {
-                    match &mutation.command {
-                        Command::ConfirmPreference { .. } => {
-                            lines.push(m.word(Msg::OperatorPeerWarning).into());
-                        }
-                        Command::DeprecatePreference { .. } => {
-                            lines.push(m.word(Msg::ReviewDeprecateImpact).into());
-                        }
-                        Command::DeletePreference { .. } => {
-                            lines.push(m.word(Msg::ReviewDeleteBody).into());
-                        }
-                        _ => {}
+    });
+    let reported = signal((None, None::<String>));
+    effect(move || {
+        let (receipt, error, unknown, deleted) = feedback.get();
+        let (last_receipt, last_error) = untracked(|| reported.get());
+        let m = untracked(|| model.get());
+        if receipt.is_some() && receipt != last_receipt {
+            ui::notify(
+                ui::Tone::Success,
+                format!(
+                    "{} · commit {}",
+                    m.word(if deleted {
+                        Msg::ReviewDeleted
+                    } else {
+                        Msg::ReviewApplied
+                    }),
+                    receipt.unwrap_or_default()
+                ),
+            );
+        }
+        if let Some(e) = &error
+            && error != last_error
+            && !unknown
+        {
+            let wsl = m.connection.target == acp_operator_core::connection::Target::Wsl;
+            ui::notify(
+                ui::Tone::Error,
+                format!("{e}: {}", tr(m.locale, error_msg(e, wsl))),
+            );
+        }
+        reported.set((receipt, error));
+    });
+    // The list loads itself when the page is entered, its scope changes, a
+    // change was applied (a receipt never leaves a stale page), a snapshot read
+    // completed, or the Profile observation changed (writes turned on in
+    // Profile change the binding: an old observation would refuse the list as
+    // a stale generation). On first mount only when nothing was read yet.
+    let entry = computed(move || {
+        let m = model.get();
+        let o = &m.operator;
+        (
+            o.open,
+            o.mode,
+            o.global,
+            o.receipt.as_ref().map(|r| r.commit_sequence),
+            m.epoch,
+            m.phase == acp_operator_core::Phase::Loading,
+            o.info
+                .as_ref()
+                .map(|i| (i.selected, i.write_enabled, i.binding.clone())),
+        )
+    });
+    let last_entry = signal(None);
+    let pending = signal(false);
+    effect(move || {
+        let next = entry.get();
+        let previous = untracked(|| last_entry.get());
+        last_entry.set(Some(next.clone()));
+        let first_unread = previous.is_none() && untracked(|| model.get().operator.info.is_none());
+        if next.0 && (first_unread || previous.is_some_and(|p| p != next)) {
+            pending.set(true);
+        }
+    });
+    let stage = computed(move || {
+        let m = model.get();
+        let o = &m.operator;
+        // Never while a snapshot read is loading: its completion changes the
+        // read guard, so a reply sent now would be discarded (and stay busy).
+        let idle = o.open
+            && o.pane == Pane::Preferences
+            && m.phase != acp_operator_core::Phase::Loading
+            && !o.busy
+            && !o.outcome_unknown
+            && o.review.is_none();
+        (idle, o.info.as_ref().map(|i| i.selected), o.error.is_none())
+    });
+    effect(move || {
+        let (idle, selected, clean) = stage.get();
+        if !idle {
+            return;
+        }
+        untracked(|| {
+            let method = match selected {
+                // Observe the Profile first (no retry loop over an error).
+                None if clean => "profile.info",
+                Some(true) if pending.get() => {
+                    if model.get().operator.mode == ReviewMode::Inbox {
+                        "profile.review.queue"
+                    } else {
+                        "profile.preferences.list"
                     }
                 }
-                if let Some(record) = &review.record {
-                    lines.extend(review_literal(
-                        review,
-                        m.operator.digest_expanded,
-                        &serde_json::to_string(record).unwrap_or_default(),
-                    ));
+                _ => return,
+            };
+            let mut request = None;
+            model.update(|m| request = m.operator_read(method));
+            if let Some(request) = request {
+                if method != "profile.info" {
+                    pending.set(false);
                 }
-                if let Some(mutation) = &review.mutation {
-                    lines.extend(review_literal(
-                        review,
-                        m.operator.digest_expanded,
-                        &serde_json::to_string(mutation).unwrap_or_default(),
-                    ));
-                } else {
-                    lines.extend(literal(&review.params.to_string()));
-                }
-                // Prepare feedback: the reviewed operation grows into place.
-                let grow = ui::motion::grow();
-                body = body
-                    .child(view().bind_motion(&grow).child(card(
-                        model,
-                        m.word(Msg::OperatorReview),
-                        lines,
-                    )))
-                    .child(
-                        ui::button(model, "")
-                            .label_fn(move || model.get().word(Msg::OperatorCommit).into())
-                            .variant(
-                                if matches!(
-                                    review.mutation.as_ref().map(|m| &m.command),
-                                    Some(Command::DeletePreference { .. })
-                                ) {
-                                    ui::ButtonVariant::Danger
-                                } else {
-                                    ui::ButtonVariant::Primary
-                                },
-                            )
-                            .loading(move || model.get().operator.busy)
-                            .disabled(move || !available(model))
-                            .on_press(move || submit(model)),
-                    )
-                    .child(word_action(
-                        model,
-                        Msg::OperatorCancel,
-                        || true,
-                        move || {
-                            model.update(|m| {
-                                m.operator.review = None;
-                                m.operator.delete_arm = None;
-                            })
-                        },
-                    ));
+                send(model, request);
             }
-            if m.operator.outcome_unknown {
-                body = body
-                    .child(text(m.word(Msg::OperatorUnknown)))
-                    .child(word_action(
-                        model,
-                        Msg::OperatorRetry,
-                        move || {
-                            let m = model.get();
-                            !m.operator.busy
-                                && m.operator
-                                    .pending
-                                    .as_ref()
-                                    .is_some_and(|p| m.operator_current(p))
-                        },
-                        move || {
-                            let mut request = None;
-                            model.update(|m| request = m.operator_retry());
-                            if let Some(r) = request {
-                                send(model, r);
-                            }
-                        },
-                    ))
-                    .child(word_action(
-                        model,
-                        Msg::OperatorAbandon,
-                        move || !model.get().operator.busy,
-                        move || {
-                            model.update(|m| {
-                                m.operator.outcome_unknown = false;
-                                m.operator.review = None;
-                                m.operator.invalidate();
-                                m.operator.error = Some("OutcomeUnknown".into());
-                            })
-                        },
-                    ));
-            }
-            body.child(text(m.word(Msg::OperatorCliGate)))
-        }));
-    // The native modal belongs to the visible workspace root, never to the
+        });
+    });
+    // The native modals belong to the visible workspace root, never to the
     // clipped/scrolled document that may place its insertion point off-screen.
     view()
         .flex_1()
@@ -1582,8 +1186,515 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
             move || !model.get().operator.open,
             |s| s.hidden().invisible(),
         )
-        .child(scroll().element_ref(&scroll_ref).flex_1().child(content))
+        .child(scroll().flex_1().child(content))
+        .child(record_sheet(model, delete_open))
+        .child(apply_dialog(model, false))
+        .child(apply_dialog(model, true))
+        .child(add_dialog(model, add_open))
         .child(delete_dialog(model, delete_open, retype_ref))
+}
+
+/// Writes and Profile live in Set up; here only a short notice when changes
+/// cannot be applied, with the way there.
+fn writes_notice(model: Signal<Model>) -> impl IntoElement {
+    let state = computed(move || {
+        let m = model.get();
+        (
+            m.locale,
+            m.operator
+                .info
+                .as_ref()
+                .map(|i| (i.selected, i.write_enabled)),
+        )
+    });
+    dynamic(move || {
+        let (_, info) = state.get();
+        let m = model.get_untracked();
+        let key = match info {
+            Some((false, _)) => Msg::OperatorUnselected,
+            Some((true, false)) => Msg::WritesOffNotice,
+            _ => return view().into_element(),
+        };
+        view()
+            .flex_row()
+            .flex_wrap()
+            .items_center()
+            .gap_2()
+            .child(ui::badge(model, m.word(key)).variant(ui::BadgeVariant::Warning))
+            .child(
+                ui::button(model, "")
+                    .label_fn(move || model.get().word(Msg::OpenProfileStep).into())
+                    .size(ui::ButtonSize::Small)
+                    .on_press(move || shell::go(model, shell::Destination::Profile)),
+            )
+            .into_element()
+    })
+}
+
+/// The page's commands: the scope switch (To review), Add preference (the
+/// scoped pages), Refresh, and the page's explanation behind an info button.
+fn page_toolbar(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElement {
+    let scope = |key: Msg, global: bool| {
+        ui::button(model, "")
+            .label_fn(move || model.get().word(key).into())
+            .size(ui::ButtonSize::Small)
+            .selected(move || model.get().operator.global == global)
+            .disabled(move || {
+                !available(model) || (!global && model.get().selected_project.is_none())
+            })
+            .on_press(move || {
+                model.update(|m| {
+                    if m.operator.global != global {
+                        m.operator.invalidate();
+                        m.operator.global = global;
+                        m.operator.after_id = 0;
+                        m.operator.queue_after_id = 0;
+                    }
+                })
+            })
+    };
+    view()
+        .flex_row()
+        .flex_wrap()
+        .items_center()
+        .gap_2()
+        .child(
+            view()
+                .flex_row()
+                .gap_1()
+                .style_when(
+                    move || model.get().operator.mode != ReviewMode::Inbox,
+                    |s| s.hidden(),
+                )
+                .child(scope(Msg::ScopePersonal, true))
+                .child(scope(Msg::ScopeThisProject, false)),
+        )
+        .child(
+            view()
+                .style_when(
+                    move || model.get().operator.mode == ReviewMode::Inbox,
+                    |s| s.hidden(),
+                )
+                .child(
+                    ui::button(model, "")
+                        .label_fn(move || model.get().word(Msg::AddPreference).into())
+                        .disabled(move || !available(model) || !write_grant(model))
+                        .on_press(move || {
+                            model.update(|m| {
+                                m.operator.key.clear();
+                                m.operator.value.clear();
+                                m.operator.source = "operator".into();
+                            });
+                            add_open.set(true);
+                        }),
+                ),
+        )
+        .child(view().flex_1())
+        .child(
+            ui::button(model, "")
+                .label_fn(move || model.get().word(Msg::RefreshList).into())
+                .size(ui::ButtonSize::Small)
+                .variant(ui::ButtonVariant::Ghost)
+                .disabled(move || !available(model))
+                .on_press(move || {
+                    model.update(|m| {
+                        m.operator.page = None;
+                        m.operator.queue = None;
+                        m.operator.error = None;
+                    });
+                    refresh(model, "profile.info");
+                }),
+        )
+}
+
+/// The scoped pages' list: every record of the scope with its status; a row
+/// opens the record's sheet (and reads the exact record for it).
+fn records_list(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
+    let m = model.get();
+    let mut body = view().gap_1().flex_shrink_0();
+    let Some(page) = &m.operator.page else {
+        return body
+            .child(ui::empty(model, m.word(Msg::RecordsLoading)))
+            .into_element();
+    };
+    if page.records.is_empty() {
+        return body
+            .child(
+                ui::empty(model, m.word(Msg::OperatorEmpty))
+                    .description(m.word(Msg::RecordsEmptyHelp)),
+            )
+            .into_element();
+    }
+    for (index, r) in page.records.iter().enumerate() {
+        let id = r.id;
+        let arrive = ui::motion::arrive((index.min(11) as f32) * 50.0);
+        let variant = match r.status.as_str() {
+            "confirmed" => ui::BadgeVariant::Success,
+            "suggested" => ui::BadgeVariant::Warning,
+            _ => ui::BadgeVariant::Neutral,
+        };
+        let value: String = r
+            .value
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .chars()
+            .take(80)
+            .collect();
+        body = body.child(
+            view()
+                .flex_row()
+                .items_center()
+                .gap_3()
+                .min_h(px(ui::scale::control::LG))
+                .bind_motion(&arrive)
+                .child(view().flex_1().min_w_0().child(action(
+                    model,
+                    format!(
+                        "#{} · {} · {} · r{}",
+                        id,
+                        sanitize(&r.key, 120),
+                        r.status,
+                        r.revision
+                    ),
+                    move || available(model),
+                    move || open_record(model, delete_open, id),
+                )))
+                .child(
+                    text(sanitize(&value, 80))
+                        .flex_1()
+                        .min_w_0()
+                        .text_size(px(ui::scale::text::CAPTION))
+                        .text_color(move || palette(model).muted),
+                )
+                .child(ui::badge(model, status_word(&m, &r.status)).variant(variant)),
+        );
+    }
+    body = body.child(
+        view()
+            .flex_row()
+            .gap_2()
+            .child(word_action(
+                model,
+                Msg::OperatorFirst,
+                move || available(model) && model.get().operator.after_id > 0,
+                move || {
+                    model.update(|m| {
+                        m.operator.after_id = 0;
+                        m.operator.review = None;
+                        m.operator.serial += 1;
+                    });
+                    refresh(model, "profile.preferences.list");
+                },
+            ))
+            .child(word_action(
+                model,
+                Msg::OperatorNext,
+                move || {
+                    available(model)
+                        && model
+                            .get()
+                            .operator
+                            .page
+                            .as_ref()
+                            .is_some_and(|p| p.next_after_id.is_some())
+                },
+                move || {
+                    model.update(|m| {
+                        if let Some(id) = m.operator.page.as_ref().and_then(|p| p.next_after_id) {
+                            m.operator.after_id = id;
+                        }
+                        m.operator.review = None;
+                    });
+                    refresh(model, "profile.preferences.list");
+                },
+            )),
+    );
+    body.into_element()
+}
+fn status_word(m: &Model, status: &str) -> String {
+    match status {
+        "confirmed" => m.word(Msg::StatusConfirmed).into(),
+        "suggested" => m.word(Msg::StatusSuggested).into(),
+        "deprecated" => m.word(Msg::StatusDeprecated).into(),
+        other => sanitize(other, 40),
+    }
+}
+/// Selects a record, opens its sheet and reads the exact record for it.
+fn open_record(model: Signal<Model>, delete_open: Signal<bool>, id: i64) {
+    disarm(model, delete_open);
+    model.update(|m| {
+        m.operator.selected_id = Some(id);
+        m.operator.inspect = None;
+        m.operator.inspect_revision = 0;
+        m.operator.digest_expanded = false;
+        m.operator.review_tab = ReviewTab::Detail;
+        m.operator.review = None;
+        m.operator.serial += 1;
+    });
+    refresh(model, "profile.review.inspect");
+}
+
+/// The selected record beside the list: its exact detail and decision history,
+/// and its decisions (each prepares, then the Apply dialog commits it).
+fn record_sheet(model: Signal<Model>, delete_open: Signal<bool>) -> impl IntoElement {
+    ui::sheet(model)
+        .title_fn(move || {
+            let m = model.get();
+            m.operator
+                .record()
+                .map(|r| format!("#{} · {}", r.id, sanitize(&r.key, 80)))
+                .unwrap_or_default()
+                .into()
+        })
+        .close_fn(move || model.get().word(Msg::CloseDetail).into())
+        .open(move || {
+            let m = model.get();
+            m.operator.open && m.operator.selected_id.is_some() && m.operator.record().is_some()
+        })
+        .on_close(move || {
+            disarm(model, delete_open);
+            model.update(|m| {
+                m.operator.selected_id = None;
+                m.operator.inspect = None;
+                m.operator.inspect_revision = 0;
+                m.operator.review = None;
+            })
+        })
+        .body(move || {
+            view()
+                .gap_4()
+                .child(dynamic(move || detail_tab(model, delete_open)))
+                .child(dynamic(move || history_tab(model)))
+                .into_element()
+        })
+}
+
+/// The prepared operation, committed only by Apply: what it does, to which
+/// exact record, the disclosures, and the request itself behind "Show request".
+/// `destructive` builds the delete tier's (danger) variant.
+fn apply_dialog(model: Signal<Model>, destructive: bool) -> impl IntoElement {
+    let raw = signal(false);
+    let is_delete = move |m: &Model| {
+        matches!(
+            m.operator
+                .review
+                .as_ref()
+                .and_then(|r| r.mutation.as_ref())
+                .map(|m| &m.command),
+            Some(Command::DeletePreference { .. })
+        )
+    };
+    let dialog = if destructive {
+        ui::alert_dialog(model, "")
+    } else {
+        ui::dialog(model, "")
+    };
+    dialog
+        .title_fn(move || model.get().word(Msg::OperatorReview).into())
+        .description_fn(move || model.get().word(Msg::OperatorPending).into())
+        .content_fn(move || {
+            view()
+                .gap_2()
+                .child(dynamic(move || {
+                    let m = model.get();
+                    let Some(review) = &m.operator.review else {
+                        return view().into_element();
+                    };
+                    let mut lines = vec![review.method.clone()];
+                    if let Some(r) = &review.record {
+                        lines.push(format!(
+                            "#{} · {} · {} · r{} · {}…",
+                            r.id,
+                            sanitize(&r.key, 80),
+                            scope_label(m.locale, &r.scope),
+                            r.revision,
+                            r.proposal_digest.chars().take(16).collect::<String>()
+                        ));
+                    }
+                    if let Some(mutation) = &review.mutation {
+                        match &mutation.command {
+                            Command::ConfirmPreference { .. } => {
+                                lines.push(m.word(Msg::OperatorPeerWarning).into())
+                            }
+                            Command::DeprecatePreference { .. } => {
+                                lines.push(m.word(Msg::ReviewDeprecateImpact).into())
+                            }
+                            Command::DeletePreference { .. } => {
+                                lines.push(m.word(Msg::ReviewDeleteBody).into())
+                            }
+                            Command::SuggestPreference { key, value, .. } => {
+                                lines.push(sanitize(key, 120));
+                                lines.extend(literal(value).into_iter().take(6));
+                            }
+                            _ => {}
+                        }
+                    }
+                    if raw.get() {
+                        if let Some(record) = &review.record {
+                            lines.extend(review_literal(
+                                review,
+                                m.operator.digest_expanded,
+                                &serde_json::to_string(record).unwrap_or_default(),
+                            ));
+                        }
+                        if let Some(mutation) = &review.mutation {
+                            lines.extend(review_literal(
+                                review,
+                                m.operator.digest_expanded,
+                                &serde_json::to_string(mutation).unwrap_or_default(),
+                            ));
+                        } else {
+                            lines.extend(literal(&review.params.to_string()));
+                        }
+                    }
+                    card(model, m.word(Msg::OperatorReview), lines).into_element()
+                }))
+                .child(
+                    ui::button(model, "")
+                        .label_fn(move || {
+                            model
+                                .get()
+                                .word(if raw.get() {
+                                    Msg::HideRequest
+                                } else {
+                                    Msg::ShowRequest
+                                })
+                                .into()
+                        })
+                        .size(ui::ButtonSize::Small)
+                        .variant(ui::ButtonVariant::Ghost)
+                        .on_press(move || raw.update(|r| *r = !*r)),
+                )
+                .into_element()
+        })
+        .cancel_fn(move || model.get().word(Msg::OperatorCancel).into())
+        .confirm_fn(move || model.get().word(Msg::OperatorCommit).into())
+        .confirm_disabled(move || !available(model) || model.get().operator.busy)
+        .open(move || {
+            let m = model.get();
+            m.operator.open && m.operator.review.is_some() && is_delete(&m) == destructive
+        })
+        .on_cancel(move || {
+            raw.set(false);
+            model.update(|m| {
+                m.operator.review = None;
+                m.operator.delete_arm = None;
+            })
+        })
+        .on_confirm(move || {
+            raw.set(false);
+            submit(model)
+        })
+}
+
+/// Add preference: key, a Markdown value and its source. Saving prepares a
+/// suggestion (never a confirmation); Apply commits it, then the new exact
+/// record opens to confirm.
+fn add_dialog(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElement {
+    let ready = move || {
+        let o = model.get().operator;
+        !o.key.trim().is_empty() && !o.value.trim().is_empty() && !o.source.trim().is_empty()
+    };
+    ui::dialog(model, "")
+        .title_fn(move || {
+            let m = model.get();
+            m.word(if m.operator.global {
+                Msg::AddPersonalPreference
+            } else {
+                Msg::AddProjectPreference
+            })
+            .into()
+        })
+        .description_fn(move || model.get().word(Msg::AddPreferenceHelp).into())
+        .content_fn(move || {
+            view()
+                .gap_3()
+                .w(px(ui::scale::layout::FORM - 160.0))
+                .child(field(
+                    model,
+                    Msg::OperatorKey,
+                    |o| &o.key,
+                    |o, v| o.key = v,
+                    120,
+                ))
+                .child(ui::markdown_input(
+                    model,
+                    "preference-value",
+                    move || model.get().word(Msg::OperatorValue).into(),
+                    move || model.get().operator.value.clone(),
+                    move |v| model.update(|m| m.operator.value = v),
+                ))
+                .child(field(
+                    model,
+                    Msg::OperatorSource,
+                    |o| &o.source,
+                    |o, v| o.source = v,
+                    512,
+                ))
+                .into_element()
+        })
+        .cancel_fn(move || model.get().word(Msg::Cancel).into())
+        .confirm_fn(move || model.get().word(Msg::SaveAsSuggestion).into())
+        .confirm_disabled(move || !ready() || !available(model) || !write_grant(model))
+        .open(move || add_open.get() && model.get().operator.open)
+        .on_cancel(move || add_open.set(false))
+        .on_confirm(move || {
+            add_open.set(false);
+            review(model, "suggest");
+        })
+}
+
+/// A write whose reply was lost: the outcome is unknown until the identical
+/// request is retried (or abandoned). Inline, not a toast: it needs a decision.
+fn unknown_banner(model: Signal<Model>) -> impl IntoElement {
+    view()
+        .gap_2()
+        .style_when(
+            move || !model.get().operator.outcome_unknown,
+            |s| s.hidden(),
+        )
+        .child(
+            text(move || model.get().word(Msg::OperatorUnknown))
+                .text_color(move || palette(model).warning),
+        )
+        .child(
+            view()
+                .flex_row()
+                .gap_2()
+                .child(word_action(
+                    model,
+                    Msg::OperatorRetry,
+                    move || {
+                        let m = model.get();
+                        !m.operator.busy
+                            && m.operator
+                                .pending
+                                .as_ref()
+                                .is_some_and(|p| m.operator_current(p))
+                    },
+                    move || {
+                        let mut request = None;
+                        model.update(|m| request = m.operator_retry());
+                        if let Some(r) = request {
+                            send(model, r);
+                        }
+                    },
+                ))
+                .child(word_action(
+                    model,
+                    Msg::OperatorAbandon,
+                    move || !model.get().operator.busy,
+                    move || {
+                        model.update(|m| {
+                            m.operator.outcome_unknown = false;
+                            m.operator.review = None;
+                            m.operator.invalidate();
+                            m.operator.error = Some("OutcomeUnknown".into());
+                        })
+                    },
+                )),
+        )
 }
 
 #[cfg(test)]
@@ -1731,6 +1842,7 @@ mod tests {
     fn SelectedListConsole() -> impl IntoElement {
         let mut m = queue_model();
         m.operator.pane = Pane::Preferences;
+        m.operator.mode = ReviewMode::Personal;
         m.operator.review_tab = ReviewTab::Detail;
         m.operator.page = Some(PreferencePage {
             binding: binding(),
@@ -1803,23 +1915,19 @@ mod tests {
     }
 
     #[test]
-    fn review_tabs_navigate_by_chord_and_click() {
+    fn a_selected_record_opens_one_sheet_with_detail_and_history() {
         let mut app = start::<QueueConsole>();
+        // Detail and history together in the record's sheet (no tabs).
+        app.wait_for("Show full digest").unwrap();
+        app.wait_for("No decisions recorded for this record")
+            .unwrap();
+        app.press("Close detail").unwrap();
+        app.wait_for_gone("Show full digest", Duration::from_secs(5))
+            .unwrap();
+        // The list stays; the row reopens it with a fresh exact read (no
+        // daemon in this fixture, so that read is covered by the real-process
+        // tests).
         app.wait_for("#7 · synthetic-key-7 · r1").unwrap();
-        // Alt+right walks Queue -> Detail -> History while the operator is open.
-        app.press_key("alt+ArrowRight").unwrap();
-        app.wait_for("Show full digest").unwrap();
-        app.press_key("alt+ArrowRight").unwrap();
-        app.wait_for("No decisions recorded for this record")
-            .unwrap();
-        app.press_key("alt+ArrowLeft").unwrap();
-        app.wait_for("Show full digest").unwrap();
-        // The tab control itself moves the selection by click.
-        app.press("History").unwrap();
-        app.wait_for("No decisions recorded for this record")
-            .unwrap();
-        app.press("Detail").unwrap();
-        app.wait_for("Show full digest").unwrap();
     }
 
     #[test]
@@ -1918,12 +2026,11 @@ mod tests {
     #[test]
     fn review_copy_ships_in_english_and_chinese() {
         let mut app = start::<QueueConsole>();
-        app.wait_for("Queue").unwrap();
+        app.wait_for("Personal · all projects").unwrap();
+        app.wait_for("Show full digest").unwrap();
         app.press_key("mod+l").unwrap();
-        app.wait_for("待审队列").unwrap();
-        app.press_key("alt+ArrowRight").unwrap();
+        app.wait_for("个人 · 所有项目").unwrap();
         app.wait_for("显示完整摘要").unwrap();
-        app.press_key("alt+ArrowRight").unwrap();
         app.wait_for("该记录尚无决定历史").unwrap();
     }
 
@@ -1985,8 +2092,11 @@ mod tests {
     #[test]
     fn history_never_renders_the_previous_selection() {
         let mut app = start::<SwitchedHistoryConsole>();
-        app.wait_for("Select a queue row to inspect").unwrap();
+        app.wait_for("#7 · synthetic-key-7 · r1").unwrap();
+        // Selection 8 is not the inspected record: no sheet, and never #7's
+        // detail or history in its place.
         assert!(!app.screen().shows("No decisions recorded for this record"));
+        assert!(!app.screen().shows("Show full digest"));
     }
 
     #[test]
@@ -2014,7 +2124,7 @@ mod tests {
         app.wait_for("Delete global preference #7?").unwrap();
         app.type_text("Retype the exact ID", "7").unwrap();
         app.wait_for("Deletion armed; apply to commit").unwrap();
-        app.press_key("alt+k").unwrap();
+        app.press_key("Escape").unwrap();
         app.wait_for_gone("Delete global preference #7?", Duration::from_secs(5))
             .unwrap();
         app.press_key("alt+shift+v").unwrap();
@@ -2051,7 +2161,11 @@ mod tests {
             .unwrap();
         assert!(!app.screen().texts().join("").contains(&full));
         app.press("Cancel review").unwrap();
-        app.press("Detail").unwrap();
+        app.wait_for_gone(
+            "Prepared operation; no write sent yet",
+            Duration::from_secs(5),
+        )
+        .unwrap();
         app.press("Show full digest").unwrap();
         app.press_key("alt+shift+y").unwrap();
         app.wait_for("Prepared operation; no write sent yet")

@@ -153,11 +153,9 @@ fn toggle_contrast(model: Signal<Model>) {
     model.update(|m| m.high_contrast = !m.high_contrast);
 }
 fn review_or_page(model: Signal<Model>, delta: i32) {
-    if model.get().operator.open {
-        review::tab_by(model, delta);
-    } else {
-        model.update(|m| m.page_by(delta as isize));
-    }
+    // The review workspace has no tabs (a list and a record sheet); the
+    // chords page the read-only console preferences.
+    model.update(|m| m.page_by(delta as isize));
 }
 fn toggle_theme(model: Signal<Model>) {
     let actual_dark = match model.get().color_mode {

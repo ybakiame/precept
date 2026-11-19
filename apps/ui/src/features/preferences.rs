@@ -23,17 +23,9 @@ pub(crate) fn preferences(model: Signal<Model>) -> impl IntoElement {
     let current = model.get();
     let rows = current.rows();
     let page = current.page;
-    let mut body = view()
-        .gap_2()
-        .child(
-            text(move || model.get().word(Msg::PreferencesHeading))
-                .font_weight(FontWeight::SEMIBOLD),
-        )
-        .child(
-            text(move || model.get().word(Msg::PreferencesSources))
-                .text_size(px(12.0))
-                .text_color(move || palette(model).muted),
-        );
+    let mut body = view().gap_2().child(
+        text(move || model.get().word(Msg::PreferencesHeading)).font_weight(FontWeight::SEMIBOLD),
+    );
     // Managing records is the review workspace, fixed to one scope.
     if current.live {
         body = body.child(
