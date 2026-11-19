@@ -52,3 +52,18 @@ merged S0 `992f33ce68fbf0fdafb13dd4bc86b85d0e09bc35`. Schema, writer, IPC, CLI a
 NSH call sites are updated in one coordinated breaking commit with `Request.version=2`.
 All fixtures are owned synthetic; old disposable test databases are discarded by
 explicit opt-in reset.
+## Owner amendment (2026-11-19): presentation of the review workspace
+
+Owner-requested, recorded here because it changes presentation obligations of the
+[review contract](operator-review-contract.md) (its "Queue, Detail, History tabs"):
+
+| # | Decision | Approved value |
+| --- | --- | --- |
+| D12 | Workspace layout | No tabs. Personal → Personal preferences and Project → Preferences → Manage are the record list of one fixed scope; Personal → To review is the queue with a scope switch. A row opens the record in a trailing **Sheet** holding its exact detail and its decision history. |
+| D13 | Prepare / apply | Unchanged gate, new surface: every decision prepares, then a **Dialog** shows the operation summary (action, id, key, scope, revision, 16-hex digest prefix, peer-demotion and impact disclosures) and commits only on Apply; the raw request is behind "Show request". Delete keeps its retype tier (AlertDialog) and a danger Apply. Keyboard chords are unchanged. |
+| D14 | Preference values | Edited with a RichEditor and stored as Markdown (what agents read); a terminal edits the same Markdown as text. Adding is two explicit steps: save as suggested, then confirm the exact record, which opens by itself. |
+| D15 | Feedback | Receipts and refusals are toasts (a delete's names that content and history are gone); an outcome-unknown write stays inline with Retry / Abandon. Profile and writes live in Set up; the workspace shows only a "Writes are off" notice with the way there. |
+
+Every guard of the contract is unchanged: exact id/revision/digest binding, peer
+disclosure from inspect, explicit expand for the full digest and value, watermark
+disclosure, retype-armed delete, same-request retry only, no automatic approval.

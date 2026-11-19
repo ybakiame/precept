@@ -333,6 +333,35 @@ The Profile page (step 2) is the Profile section (setup card while none is
 selected; startup choice and this run's writes after). The Agents page (step 4)
 is in [agent access](../docs/p1/agent-access.md).
 
+## Overlays and feedback (2026-11-19)
+
+Owner request: fewer stacked panels, one surface per job (Design Guides,
+"Feedback and overlays"); decisions D12–D15 in
+[operator review decisions](../docs/p1/operator-review-decisions.md).
+
+- `ui::sheet`: a record beside its list (trailing edge, scrim, Close, scrolling
+  body, optional footer). Record detail and history live here, not in tabs.
+- `ui::dialog`: a short focused form or decision committing with primary (Add
+  preference; the Apply step of every prepared decision). `ui::alert_dialog`
+  stays for destructive confirmation (delete, remove project).
+- `ui::notify` / `ui::toaster`: what happened (applied receipts, deletions,
+  project and Profile changes, copies, refusals). Never the only copy of
+  something that needs a decision (an unknown outcome stays inline).
+- `ui::info`: a page's longer explanation behind an info button in the header,
+  instead of paragraphs on the page.
+- `ui::markdown_input`: RichEditor over Markdown on the desktop, multi-line text in
+  a terminal.
+
+Motion inventory:
+
+| Change | Motion tool | Tokens | Reduced motion |
+| --- | --- | --- | --- |
+| Sheet in / out | `nsh/base` sheet slide from the trailing edge + scrim fade | component default; scrim `FAST` | Lands at rest |
+| Dialog open (Add, Apply) | Existing `AlertDialog` grow + scrim | `SLOW` in, `ENTER`, `RISE`; scrim `FAST` | At rest |
+| Toast in / out | Stack transition: from 4pt below, fading; leaves scaling to 95% | `BASE` | Instant |
+| Info popover | Anchored popup, component default | — | Instant |
+| Record list rows | Capped index stagger (existing `arrive`) | `SLOWER`, `RISE` | No wave |
+
 ## Workspace: projects (2026-11)
 
 **Task.** Make a repository available to agents, or stop it. Object: the daemon's
