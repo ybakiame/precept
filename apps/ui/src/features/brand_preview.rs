@@ -1,6 +1,6 @@
 //! B0 revision: one information architecture, theme collection, bilingual UI.
 //! This root only consumes a built-in synthetic snapshot. Native IPC is never initialized.
-use acp_operator_core::{
+use acp_ui_core::{
     Model,
     appearance::{ColorMode, Colors, ThemeId},
     i18n::{Locale, Msg, tr},

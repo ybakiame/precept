@@ -7,7 +7,7 @@
 //! else is refused before a request. Adding and removing need the Profile's
 //! write grant; the daemon checks it again.
 use crate::*;
-use acp_operator_core::{
+use acp_ui_core::{
     ProjectEntry,
     connection::Target,
     i18n::Msg,
@@ -43,7 +43,7 @@ fn call(
 ) {
     #[cfg(feature = "ipc")]
     {
-        let inputs = acp_operator_client::native::Inputs::from_connection(&model.get().connection);
+        let inputs = acp_ui_client::native::Inputs::from_connection(&model.get().connection);
         // Detached: a call started from a dialog must settle after the dialog
         // closes (closing disposes the dialog's owner and its tasks).
         Owner::detached().run(|| {
@@ -228,7 +228,7 @@ fn state_badge(model: Signal<Model>, state: &str) -> impl IntoElement {
 /// A served project's name opens it (in-app navigation is a button); the
 /// others are plain text.
 fn name_cell(model: Signal<Model>, entry: &ProjectEntry) -> AnyElement {
-    let label = acp_operator_core::presentation::sanitize(&entry.name, 64);
+    let label = acp_ui_core::presentation::sanitize(&entry.name, 64);
     if entry.state != "ready" {
         return text(label)
             .font_weight(FontWeight::MEDIUM)
@@ -297,7 +297,7 @@ fn list(model: Signal<Model>) -> impl IntoElement {
                             .gap_0p5()
                             .child(name_cell(model, &entry))
                             .child(
-                                text(acp_operator_core::presentation::sanitize(&entry.root, 512))
+                                text(acp_ui_core::presentation::sanitize(&entry.root, 512))
                                     .text_size(px(scale::text::CAPTION))
                                     .text_color(move || palette(model).muted),
                             ),
@@ -387,7 +387,7 @@ fn add_form(model: Signal<Model>) -> impl IntoElement {
                         .value(move || model.get().project_add.name.clone())
                         .invalid(move || {
                             let n = &model.get().project_add.name;
-                            !n.is_empty() && !acp_operator_core::projects::valid_name(n)
+                            !n.is_empty() && !acp_ui_core::projects::valid_name(n)
                         })
                         .on_change(move |v: &str| {
                             model.update(|m| m.project_add.set_name(v.into()))

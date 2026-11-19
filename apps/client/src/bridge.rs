@@ -173,7 +173,7 @@ pub fn admit(op: &Op) -> Result<(), &'static str> {
             if project
                 .as_deref()
                 .is_some_and(|p| !acp_ipc::valid_project(p))
-                || (!task.is_empty() && !acp_operator_core::valid_task(task))
+                || (!task.is_empty() && !acp_ui_core::valid_task(task))
             {
                 return Err("InvalidRequest");
             }

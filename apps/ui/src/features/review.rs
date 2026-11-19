@@ -2,7 +2,7 @@
 //! The Queue / Detail / History review workspace, the destructive delete tier and
 //! their motion are rendered here for Desktop and TUI from the one shared Model.
 use crate::*;
-use acp_operator_core::{
+use acp_ui_core::{
     connection::Target,
     i18n::{Locale, Msg, tr},
     operator::{
@@ -97,7 +97,7 @@ fn send(model: Signal<Model>, request: Review) {
             let result = {
                 let request = request.clone();
                 blocking(move || {
-                    acp_operator_client::native::Inputs::from_connection(&connection)?
+                    acp_ui_client::native::Inputs::from_connection(&connection)?
                         .operator_call(&request)
                 })
                 .await
@@ -150,7 +150,7 @@ fn review(model: Signal<Model>, action: &str) {
         return;
     }
     #[cfg(feature = "ipc")]
-    let id = acp_operator_client::operator::operation_id();
+    let id = acp_ui_client::operator::operation_id();
     #[cfg(not(feature = "ipc"))]
     let id: Result<String, &str> = Err("Unauthorized");
     if let Ok(id) = id {
@@ -288,8 +288,8 @@ fn channel_word(locale: Locale, channel: Channel) -> &'static str {
 fn field(
     model: Signal<Model>,
     key: Msg,
-    get: fn(&acp_operator_core::operator::Operator) -> &str,
-    set: fn(&mut acp_operator_core::operator::Operator, String),
+    get: fn(&acp_ui_core::operator::Operator) -> &str,
+    set: fn(&mut acp_ui_core::operator::Operator, String),
     max: usize,
 ) -> impl IntoElement {
     let reference = element_ref();
@@ -1098,7 +1098,7 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
             && error != last_error
             && !unknown
         {
-            let wsl = m.connection.target == acp_operator_core::connection::Target::Wsl;
+            let wsl = m.connection.target == acp_ui_core::connection::Target::Wsl;
             ui::notify(
                 ui::Tone::Error,
                 format!("{e}: {}", tr(m.locale, error_msg(e, wsl))),
@@ -1120,7 +1120,7 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
             o.global,
             o.receipt.as_ref().map(|r| r.commit_sequence),
             m.epoch,
-            m.phase == acp_operator_core::Phase::Loading,
+            m.phase == acp_ui_core::Phase::Loading,
             o.info
                 .as_ref()
                 .map(|i| (i.selected, i.write_enabled, i.binding.clone())),
@@ -1144,7 +1144,7 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
         // read guard, so a reply sent now would be discarded (and stay busy).
         let idle = o.open
             && o.pane == Pane::Preferences
-            && m.phase != acp_operator_core::Phase::Loading
+            && m.phase != acp_ui_core::Phase::Loading
             && !o.busy
             && !o.outcome_unknown
             && o.review.is_none();
@@ -1700,7 +1700,7 @@ fn unknown_banner(model: Signal<Model>) -> impl IntoElement {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use acp_operator_core::operator::{
+    use acp_ui_core::operator::{
         Binding, PeerDemotion, PreferencePage, PreferenceRecord, ProfileInfo, ReviewInspect,
         ReviewQueue, digest_hex, proposal_digest,
     };

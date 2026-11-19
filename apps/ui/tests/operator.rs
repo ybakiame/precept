@@ -166,8 +166,8 @@ fn writes_on(app: &mut nsh_testing::Headless) {
 #[test]
 fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     let mut f = Fixture::new();
-    acp_operator_ui::INPUTS
-        .set(acp_operator_client::native::Inputs {
+    acp_ui::INPUTS
+        .set(acp_ui_client::native::Inputs {
             runtime_dir: Some(f.location.runtime_dir.clone()),
             endpoint: Some(f.location.endpoint.clone()),
             operator: true,
@@ -175,7 +175,7 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
         })
         .ok()
         .unwrap();
-    let mut cfg = EngineConfig::new(Root::of::<acp_operator_ui::App>());
+    let mut cfg = EngineConfig::new(Root::of::<acp_ui::App>());
     cfg.viewport = Size::new(px(1080.0), px(760.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
     app.wait_for("No Profile selected").unwrap();

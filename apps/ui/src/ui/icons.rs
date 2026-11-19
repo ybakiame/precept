@@ -1,6 +1,6 @@
 //! Small original outline vectors; labels always carry the same meaning in TUI.
 use crate::*;
-use acp_operator_core::Section;
+use acp_ui_core::Section;
 /// The outline path of a section's destination.
 pub(crate) fn section_path(section: Section) -> &'static str {
     match section {

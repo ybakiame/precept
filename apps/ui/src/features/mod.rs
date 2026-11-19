@@ -12,8 +12,8 @@ pub(crate) mod sessions;
 pub(crate) mod settings;
 
 use crate::*;
-use acp_operator_core::Section;
-use acp_operator_core::i18n::Msg;
+use acp_ui_core::Section;
+use acp_ui_core::i18n::Msg;
 use handoff::handoff;
 use overview::{daemon, dashboard};
 use preferences::preferences;

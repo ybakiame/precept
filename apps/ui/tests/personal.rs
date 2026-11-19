@@ -189,15 +189,15 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
         .unwrap()["records"]
             .clone()
     };
-    acp_operator_ui::INPUTS
-        .set(acp_operator_client::native::Inputs {
+    acp_ui::INPUTS
+        .set(acp_ui_client::native::Inputs {
             runtime_dir: Some(f.location.runtime_dir.clone()),
             endpoint: Some(f.location.endpoint.clone()),
             ..Default::default()
         })
         .ok()
         .unwrap();
-    let mut cfg = EngineConfig::new(Root::of::<acp_operator_ui::App>());
+    let mut cfg = EngineConfig::new(Root::of::<acp_ui::App>());
     cfg.viewport = Size::new(px(1080.0), px(1000.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
     app.wait_for("Daemon status").unwrap();

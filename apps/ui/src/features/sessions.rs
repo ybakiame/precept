@@ -1,6 +1,6 @@
 //! Native-host session controls; never a Windows->WSL execution bridge.
 use crate::*;
-use acp_operator_core::{connection::Target, i18n::Msg};
+use acp_ui_core::{connection::Target, i18n::Msg};
 use nsh_core::element::input;
 use serde_json::{Value, json};
 use shell::{card, word_action};
@@ -54,8 +54,7 @@ fn request(model: Signal<Model>, method: &'static str, fields: Value) {
             let c = connection.clone();
             let p = project.clone();
             blocking(move || {
-                acp_operator_client::native::Inputs::from_connection(&c)?
-                    .session_call(&p, method, fields)
+                acp_ui_client::native::Inputs::from_connection(&c)?.session_call(&p, method, fields)
             })
             .await
             .unwrap_or(Err("Session unavailable"))
@@ -202,7 +201,7 @@ fn decide_permission(model: Signal<Model>, allow: bool) {
 }
 fn apply_permission(
     model: Signal<Model>,
-    scope: &acp_operator_core::session::SessionScope,
+    scope: &acp_ui_core::session::SessionScope,
     id: &str,
     allow: bool,
 ) {
@@ -220,7 +219,7 @@ fn auth_notice(model: Signal<Model>) -> impl IntoElement {
         (m.locale, m.session.view.map(|v| v.authentication.status))
     });
     dynamic(move || {
-        use acp_operator_core::session::AuthStatus;
+        use acp_ui_core::session::AuthStatus;
         let (locale, status) = notice.get();
         let _ = locale;
         let mut body = view().gap_2().flex_shrink_0();
@@ -304,18 +303,18 @@ fn permissions(model: Signal<Model>) -> impl IntoElement {
         body
     })
 }
-fn state_word(state: &acp_operator_core::session::State) -> Msg {
+fn state_word(state: &acp_ui_core::session::State) -> Msg {
     match state {
-        acp_operator_core::session::State::AuthRequired => Msg::SessionAuthRequired,
-        acp_operator_core::session::State::Idle => Msg::SessionIdle,
-        acp_operator_core::session::State::Starting => Msg::SessionStarting,
-        acp_operator_core::session::State::Ready => Msg::SessionReady,
-        acp_operator_core::session::State::Running => Msg::SessionRunning,
-        acp_operator_core::session::State::WaitingPermission => Msg::SessionWaiting,
-        acp_operator_core::session::State::Completed => Msg::SessionCompleted,
-        acp_operator_core::session::State::Failed => Msg::SessionFailed,
-        acp_operator_core::session::State::Stopping => Msg::SessionStopping,
-        acp_operator_core::session::State::Stopped => Msg::SessionStopped,
+        acp_ui_core::session::State::AuthRequired => Msg::SessionAuthRequired,
+        acp_ui_core::session::State::Idle => Msg::SessionIdle,
+        acp_ui_core::session::State::Starting => Msg::SessionStarting,
+        acp_ui_core::session::State::Ready => Msg::SessionReady,
+        acp_ui_core::session::State::Running => Msg::SessionRunning,
+        acp_ui_core::session::State::WaitingPermission => Msg::SessionWaiting,
+        acp_ui_core::session::State::Completed => Msg::SessionCompleted,
+        acp_ui_core::session::State::Failed => Msg::SessionFailed,
+        acp_ui_core::session::State::Stopping => Msg::SessionStopping,
+        acp_ui_core::session::State::Stopped => Msg::SessionStopped,
     }
 }
 pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
@@ -568,11 +567,10 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
                             "{}: {}",
                             m.word(Msg::AuthState),
                             m.word(match v.authentication.status {
-                                acp_operator_core::session::AuthStatus::Unobserved =>
-                                    Msg::AuthUnobserved,
-                                acp_operator_core::session::AuthStatus::Required =>
+                                acp_ui_core::session::AuthStatus::Unobserved => Msg::AuthUnobserved,
+                                acp_ui_core::session::AuthStatus::Required =>
                                     Msg::SessionAuthRequired,
-                                acp_operator_core::session::AuthStatus::SessionAccepted =>
+                                acp_ui_core::session::AuthStatus::SessionAccepted =>
                                     Msg::AuthSessionAccepted,
                             })
                         ),
@@ -583,20 +581,20 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
                                 .methods
                                 .iter()
                                 .filter(
-                                    |k| **k == acp_operator_core::session::AuthMethodKind::Agent
+                                    |k| **k == acp_ui_core::session::AuthMethodKind::Agent
                                 )
                                 .count(),
                             v.authentication
                                 .methods
                                 .iter()
                                 .filter(|k| **k
-                                    == acp_operator_core::session::AuthMethodKind::Terminal)
+                                    == acp_ui_core::session::AuthMethodKind::Terminal)
                                 .count(),
                             v.authentication
                                 .methods
                                 .iter()
                                 .filter(|k| **k
-                                    == acp_operator_core::session::AuthMethodKind::Unsupported)
+                                    == acp_ui_core::session::AuthMethodKind::Unsupported)
                                 .count()
                         ),
                         format!(
@@ -687,8 +685,8 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
                             && model.get().session.view.as_ref().is_some_and(|v| {
                                 matches!(
                                     v.state,
-                                    acp_operator_core::session::State::Running
-                                        | acp_operator_core::session::State::WaitingPermission
+                                    acp_ui_core::session::State::Running
+                                        | acp_ui_core::session::State::WaitingPermission
                                 )
                             })
                     },

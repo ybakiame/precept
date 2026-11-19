@@ -7,22 +7,22 @@
 //! the unit exist and whether the daemon answers a health read. On Windows it
 //! runs those modes through `wsl.exe --exec` with a fixed argument vector: no
 //! shell, no TCP, no credential in argv, environment or output.
-use acp_operator_core::connection::Discovery;
+use acp_ui_core::connection::Discovery;
 #[cfg(target_os = "windows")]
-use acp_operator_core::connection::wsl_status as status;
+use acp_ui_core::connection::wsl_status as status;
 
 /// The packaged systemd user unit.
 pub const UNIT: &str = "acp-daemon.service";
 /// Where the Arch package installs the helper; the default for discovery.
 pub const DEFAULT_HELPER: &str = "/usr/bin/acp-wsl-bridge";
-pub use acp_operator_core::connection::discovery_status::{
+pub use acp_ui_core::connection::discovery_status::{
     INVALID_REPORT, NO_SYSTEMD, NO_UNIT, START_FAILED, START_TIMEOUT,
 };
 
 #[cfg(unix)]
 mod host {
     use super::*;
-    use acp_operator_core::connection::{DISCOVERY_VERSION, DaemonStatus};
+    use acp_ui_core::connection::{DISCOVERY_VERSION, DaemonStatus};
     use std::path::{Path, PathBuf};
 
     fn state_dir() -> Option<PathBuf> {
@@ -175,7 +175,7 @@ pub fn parse_report(raw: &[u8], wsl: bool) -> Result<Discovery, &'static str> {
         Outcome::Ok(_) => Err(INVALID_REPORT),
         // Only the fixed reasons above cross the boundary; anything else is a
         // generic failure, never a forwarded message.
-        Outcome::Error(e) => Err(acp_operator_core::connection::discovery_status::KNOWN
+        Outcome::Error(e) => Err(acp_ui_core::connection::discovery_status::KNOWN
             .into_iter()
             .find(|known| *known == e)
             .unwrap_or(START_FAILED)),
@@ -229,7 +229,7 @@ pub fn wsl_start_daemon(_: &str, _: &str, _: &str) -> Result<Discovery, &'static
 /// connection before any of them reaches `wsl.exe`.
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 fn valid_inputs(distribution: &str, user: Option<&str>, helper: &str) -> bool {
-    use acp_operator_core::connection::{Connection, Target};
+    use acp_ui_core::connection::{Connection, Target};
     Connection {
         target: Target::Wsl,
         distribution: distribution.into(),
@@ -319,7 +319,7 @@ fn run_wsl(args: &[&str], timeout: std::time::Duration) -> Result<Output, &'stat
 #[cfg(test)]
 mod tests {
     use super::*;
-    use acp_operator_core::connection::{DISCOVERY_VERSION, DaemonStatus};
+    use acp_ui_core::connection::{DISCOVERY_VERSION, DaemonStatus};
     fn sample() -> Discovery {
         Discovery {
             version: DISCOVERY_VERSION,

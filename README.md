@@ -40,7 +40,7 @@ with:
 
 ```text
 cargo build --manifest-path apps/Cargo.toml --workspace \
-  --features acp-operator-ui/native,acp-operator-ui/tui --bins --locked
+  --features acp-ui/native,acp-ui/tui --bins --locked
 ```
 
 The optional Web target is an offline synthetic preview. It has no daemon API,

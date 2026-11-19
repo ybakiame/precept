@@ -1,5 +1,5 @@
 //! Operator app state, presentation and i18n. Pure: no I/O, framework, SQLite or
-//! transport; native IPC and the WSL bridge live in `acp-operator-client`.
+//! transport; native IPC and the WSL bridge live in `acp-ui-client`.
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;

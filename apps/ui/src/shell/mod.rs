@@ -3,8 +3,8 @@
 //! action helpers the feature pages use.
 use crate::*;
 pub(crate) mod chrome;
-use acp_operator_core::i18n::Msg;
-use acp_operator_core::{PAGE_SIZE, Section};
+use acp_ui_core::i18n::Msg;
+use acp_ui_core::{PAGE_SIZE, Section};
 use features::{agents, connection, page, profile, projects, review, sessions, settings};
 use tokens::{compact, palette};
 
@@ -90,10 +90,10 @@ pub(crate) fn current(m: &Model) -> Destination {
     if m.operator.open {
         // The workspace's entry decides where the window is.
         match m.operator.mode {
-            acp_operator_core::operator::ReviewMode::Inbox => Destination::Review,
-            acp_operator_core::operator::ReviewMode::Personal => Destination::PersonalPreferences,
-            acp_operator_core::operator::ReviewMode::Project => {
-                Destination::Section(acp_operator_core::Section::Preferences)
+            acp_ui_core::operator::ReviewMode::Inbox => Destination::Review,
+            acp_ui_core::operator::ReviewMode::Personal => Destination::PersonalPreferences,
+            acp_ui_core::operator::ReviewMode::Project => {
+                Destination::Section(acp_ui_core::Section::Preferences)
             }
         }
     } else if m.sessions {
@@ -125,7 +125,7 @@ pub(crate) fn go(model: Signal<Model>, destination: Destination) {
     match destination {
         Destination::Review => review::open(model),
         Destination::PersonalPreferences => {
-            review::open_mode(model, acp_operator_core::operator::ReviewMode::Personal)
+            review::open_mode(model, acp_ui_core::operator::ReviewMode::Personal)
         }
         Destination::Sessions => sessions::open(model),
         Destination::Connection => {
@@ -183,14 +183,12 @@ fn page_help(m: &Model) -> Option<String> {
             Msg::ReviewProvenanceNote,
             Msg::OperatorCliGate,
         ]),
-        Destination::Section(acp_operator_core::Section::Preferences) if m.operator.open => {
-            words(&[
-                Msg::OperatorHelp,
-                Msg::ReviewProvenanceNote,
-                Msg::OperatorCliGate,
-            ])
-        }
-        Destination::Section(acp_operator_core::Section::Preferences) => {
+        Destination::Section(acp_ui_core::Section::Preferences) if m.operator.open => words(&[
+            Msg::OperatorHelp,
+            Msg::ReviewProvenanceNote,
+            Msg::OperatorCliGate,
+        ]),
+        Destination::Section(acp_ui_core::Section::Preferences) => {
             words(&[Msg::PreferencesSources])
         }
         _ => return None,
@@ -202,7 +200,7 @@ fn step_done(m: &Model, destination: Destination) -> Option<bool> {
     Some(match destination {
         Destination::Connection => m.live && data.is_some(),
         Destination::Profile => data.is_some_and(|d| d.health.schema != "Unselected"),
-        Destination::Section(acp_operator_core::Section::Projects) => {
+        Destination::Section(acp_ui_core::Section::Projects) => {
             data.is_some_and(|d| !d.projects.is_empty())
         }
         Destination::Agents => {
@@ -298,7 +296,7 @@ fn current_project(model: Signal<Model>) -> String {
 /// Where the data comes from, in words: the target and, for WSL, the distribution.
 pub(crate) fn target_words(m: &Model) -> String {
     match m.connection.target {
-        acp_operator_core::connection::Target::Wsl if !m.connection.distribution.is_empty() => {
+        acp_ui_core::connection::Target::Wsl if !m.connection.distribution.is_empty() => {
             format!("{} · {}", m.target_label(), m.connection.distribution)
         }
         _ => m.target_label().into(),
@@ -306,7 +304,7 @@ pub(crate) fn target_words(m: &Model) -> String {
 }
 fn sidebar(model: Signal<Model>) -> impl IntoElement {
     use Destination::*;
-    use acp_operator_core::Section as S;
+    use acp_ui_core::Section as S;
     // Set up: the guided path, in order. Project: the current project's work.
     let setup = [
         (Connection, icons::CONNECTION),

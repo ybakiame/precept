@@ -158,15 +158,15 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     std::fs::write(gamma.join("AGENTS.md"), "Synthetic contract.\n").unwrap();
     // A fresh daemon: no Profile, no writes. Everything below is the GUI.
     assert_eq!(f.info()["selected"], false);
-    acp_operator_ui::INPUTS
-        .set(acp_operator_client::native::Inputs {
+    acp_ui::INPUTS
+        .set(acp_ui_client::native::Inputs {
             runtime_dir: Some(f.location.runtime_dir.clone()),
             endpoint: Some(f.location.endpoint.clone()),
             ..Default::default()
         })
         .ok()
         .unwrap();
-    let mut cfg = EngineConfig::new(Root::of::<acp_operator_ui::App>());
+    let mut cfg = EngineConfig::new(Root::of::<acp_ui::App>());
     cfg.viewport = Size::new(px(1080.0), px(900.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
     // A fresh daemon has no usable project yet: the first read says so, and

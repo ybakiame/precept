@@ -77,7 +77,7 @@ cargo test --workspace --all-targets --locked
 ```
 
 For UI changes, run the equivalent `apps/Cargo.toml` format, Clippy and test gates
-with `acp-operator-ui/native,acp-operator-ui/tui`, plus affected shared presentation
+with `acp-ui/native,acp-ui/tui`, plus affected shared presentation
 and real-daemon integration checks. Run native Windows and Linux/WSL acceptance
 when the changed boundary is platform-sensitive. Headless tests do not prove native
 window, keyboard, terminal, accessibility or device behavior.

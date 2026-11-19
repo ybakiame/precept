@@ -1,7 +1,7 @@
 //! WSL-side end of the Windows GUI bridge. Started by `wsl.exe --exec`.
 //!
 //! - `--runtime-dir R --endpoint E`: the long-lived stdio bridge; speaks only the
-//!   typed protocol in `acp_operator_client::bridge`.
+//!   typed protocol in `acp_ui_client::bridge`.
 //! - `--discover`: one read-only discovery report (JSON line) for the current
 //!   user: conventional unit paths, systemd/unit presence, daemon health.
 //! - `--start-daemon`: `systemctl --user start acp-daemon.service`, then the
@@ -36,7 +36,7 @@ fn main() {
         let Ok(runtime) = runtime() else {
             std::process::exit(2);
         };
-        use acp_operator_client::discover;
+        use acp_ui_client::discover;
         let outcome = if flag == "--discover" {
             Ok(runtime.block_on(discover::report(helper)))
         } else {
@@ -58,7 +58,7 @@ fn main() {
         std::process::exit(2);
     }
     let code = runtime()
-        .map(|runtime| runtime.block_on(acp_operator_client::bridge::serve(args.location)))
+        .map(|runtime| runtime.block_on(acp_ui_client::bridge::serve(args.location)))
         .unwrap_or(2);
     std::process::exit(code);
 }

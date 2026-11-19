@@ -1,5 +1,5 @@
 [package]
-name = "acp-operator-client"
+name = "acp-ui-client"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
@@ -7,7 +7,7 @@ publish = false
 description = "Operator app transport: native IPC to the daemon and the Windows -> WSL2 bridge"
 
 [dependencies]
-acp-operator-core = { path = "../core" }
+acp-ui-core = { path = "../core" }
 acp-core = { path = "../../crates/acp-core" }
 acp-session = { path = "../../crates/acp-session" }
 acp-ipc = { path = "../../crates/acp-ipc" }

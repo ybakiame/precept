@@ -24,7 +24,7 @@ pub fn install() {
                 window.is_decorated()
             );
             if let Some(renderer) = window.renderer() {
-                let _ = acp_operator_ui::DESKTOP_RUNTIME.set((
+                let _ = acp_ui::DESKTOP_RUNTIME.set((
                     gtk::prelude::WidgetExt::display(window)
                         .type_()
                         .name()
@@ -33,7 +33,7 @@ pub fn install() {
                 ));
             }
             if probe && state != last {
-                eprintln!("{state} elapsed={:.6}", acp_operator_ui::probe_elapsed());
+                eprintln!("{state} elapsed={:.6}", acp_ui::probe_elapsed());
                 last = state;
             }
             if probe
@@ -47,7 +47,7 @@ pub fn install() {
                     if n <= 20 {
                         eprintln!(
                             "ACP_GTK_FRAME after_paint={n} elapsed={:.6}",
-                            acp_operator_ui::probe_elapsed()
+                            acp_ui::probe_elapsed()
                         );
                     }
                 });

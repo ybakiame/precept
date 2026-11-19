@@ -1,5 +1,5 @@
 //! One read-only presentation and interaction surface for NSH desktop and TUI.
-use acp_operator_core::{Model, Phase};
+use acp_ui_core::{Model, Phase};
 use nsh_base::button;
 use nsh_core::prelude::*;
 mod features;
@@ -10,8 +10,8 @@ pub use features::brand_preview;
 use features::{review, sessions};
 use ui::{icons, tokens};
 pub static DESKTOP_RUNTIME: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();
-fn runtime_lines(locale: acp_operator_core::i18n::Locale) -> Vec<String> {
-    use acp_operator_core::i18n::{Msg, tr};
+fn runtime_lines(locale: acp_ui_core::i18n::Locale) -> Vec<String> {
+    use acp_ui_core::i18n::{Msg, tr};
     if TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed) {
         return vec!["Backend: NSH / ratatui / crossterm terminal".into()];
     }
@@ -51,7 +51,7 @@ pub fn ephemeral_storage() -> std::sync::Arc<dyn nsh_core::storage::StorageBacke
     std::sync::Arc::new(Empty)
 }
 
-#[native_module("acp-operator/native")]
+#[native_module("acp-ui/native")]
 fn native(registry: &mut Registry) {
     registry.register::<App>();
 }
@@ -63,12 +63,11 @@ nsh_platform_web::rust_app!(
 );
 
 #[cfg(feature = "ipc")]
-pub static INPUTS: std::sync::OnceLock<acp_operator_client::native::Inputs> =
-    std::sync::OnceLock::new();
+pub static INPUTS: std::sync::OnceLock<acp_ui_client::native::Inputs> = std::sync::OnceLock::new();
 
 fn load(model: Signal<Model>) {
     #[cfg(feature = "ipc")]
-    let inputs = acp_operator_client::native::Inputs::from_connection(&model.get().connection);
+    let inputs = acp_ui_client::native::Inputs::from_connection(&model.get().connection);
     // NSH's clock uses the host monotonic timer on WASM as well as native;
     // std::time::Instant panics on wasm32-unknown-unknown.
     let started = nsh_core::time::now();
@@ -92,7 +91,7 @@ fn load(model: Signal<Model>) {
             if model.get().live {
                 Err("Client unavailable")
             } else {
-                let mut s = acp_operator_core::Snapshot::fixture();
+                let mut s = acp_ui_core::Snapshot::fixture();
                 for p in &mut s.projects {
                     if p.handoff
                         .as_ref()
@@ -159,16 +158,16 @@ fn review_or_page(model: Signal<Model>, delta: i32) {
 }
 fn toggle_theme(model: Signal<Model>) {
     let actual_dark = match model.get().color_mode {
-        acp_operator_core::appearance::ColorMode::System => dark(),
-        acp_operator_core::appearance::ColorMode::Dark => true,
-        acp_operator_core::appearance::ColorMode::Light => false,
+        acp_ui_core::appearance::ColorMode::System => dark(),
+        acp_ui_core::appearance::ColorMode::Dark => true,
+        acp_ui_core::appearance::ColorMode::Light => false,
     };
     model.update(|m| {
         m.dark = !actual_dark;
         m.color_mode = if m.dark {
-            acp_operator_core::appearance::ColorMode::Dark
+            acp_ui_core::appearance::ColorMode::Dark
         } else {
-            acp_operator_core::appearance::ColorMode::Light
+            acp_ui_core::appearance::ColorMode::Light
         };
     });
     set_color_scheme(if model.get().dark {
@@ -200,33 +199,33 @@ pub fn App() -> impl IntoElement {
     let inputs = INPUTS.get().cloned().unwrap_or_default();
     let mut initial = Model::loading();
     initial.operator.channel = if TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed) {
-        acp_operator_core::operator::Channel::Tui
+        acp_ui_core::operator::Channel::Tui
     } else {
-        acp_operator_core::operator::Channel::Desktop
+        acp_ui_core::operator::Channel::Desktop
     };
     #[cfg(feature = "ipc")]
     {
-        initial.locale = acp_operator_core::i18n::Locale::parse(&inputs.locale).unwrap_or_default();
+        initial.locale = acp_ui_core::i18n::Locale::parse(&inputs.locale).unwrap_or_default();
         initial.theme = match inputs.theme.as_str() {
-            "instrument" => acp_operator_core::appearance::ThemeId::Instrument,
-            "ledger" => acp_operator_core::appearance::ThemeId::Ledger,
+            "instrument" => acp_ui_core::appearance::ThemeId::Instrument,
+            "ledger" => acp_ui_core::appearance::ThemeId::Ledger,
             _ => Default::default(),
         };
         initial.color_mode = match inputs.appearance.as_str() {
-            "light" => acp_operator_core::appearance::ColorMode::Light,
-            "system" => acp_operator_core::appearance::ColorMode::System,
-            _ => acp_operator_core::appearance::ColorMode::Dark,
+            "light" => acp_ui_core::appearance::ColorMode::Light,
+            "system" => acp_ui_core::appearance::ColorMode::System,
+            _ => acp_ui_core::appearance::ColorMode::Dark,
         };
         initial.sessions = inputs.sessions;
         initial.operator.open = inputs.operator;
         initial.settings = inputs.settings;
         initial.connection_editor = inputs.connection_settings;
         initial.section = match inputs.section.as_str() {
-            "projects" => acp_operator_core::Section::Projects,
-            "preferences" => acp_operator_core::Section::Preferences,
-            "handoff" => acp_operator_core::Section::Handoff,
-            "diagnostics" => acp_operator_core::Section::Diagnostics,
-            _ => acp_operator_core::Section::Dashboard,
+            "projects" => acp_ui_core::Section::Projects,
+            "preferences" => acp_ui_core::Section::Preferences,
+            "handoff" => acp_ui_core::Section::Handoff,
+            "diagnostics" => acp_ui_core::Section::Diagnostics,
+            _ => acp_ui_core::Section::Dashboard,
         };
         initial.connection = inputs.connection();
         initial.connection_draft = initial.connection.clone();
@@ -236,9 +235,9 @@ pub fn App() -> impl IntoElement {
         // must not read or write the developer's settings.
         #[cfg(not(test))]
         if !inputs.is_live() && inputs.synthetic_rows.is_none() {
-            match acp_operator_client::settings::load() {
+            match acp_ui_client::settings::load() {
                 Some(saved) => {
-                    initial.live = saved.target != acp_operator_core::connection::Target::Synthetic;
+                    initial.live = saved.target != acp_ui_core::connection::Target::Synthetic;
                     initial.connection = saved.clone();
                     initial.connection_draft = saved;
                 }
@@ -246,8 +245,7 @@ pub fn App() -> impl IntoElement {
                     initial.connection_editor = true;
                     // The primary workflow: a daemon inside WSL2.
                     if cfg!(target_os = "windows") {
-                        initial.connection_draft.target =
-                            acp_operator_core::connection::Target::Wsl;
+                        initial.connection_draft.target = acp_ui_core::connection::Target::Wsl;
                     }
                 }
                 None => {}
@@ -256,10 +254,10 @@ pub fn App() -> impl IntoElement {
         initial.task_id = inputs.task_id.unwrap_or_default();
         initial.selected_project = inputs.project;
     }
-    initial.dark = initial.color_mode != acp_operator_core::appearance::ColorMode::Light;
+    initial.dark = initial.color_mode != acp_ui_core::appearance::ColorMode::Light;
     set_color_scheme(match initial.color_mode {
-        acp_operator_core::appearance::ColorMode::System => Appearance::System,
-        acp_operator_core::appearance::ColorMode::Light => Appearance::Light,
+        acp_ui_core::appearance::ColorMode::System => Appearance::System,
+        acp_ui_core::appearance::ColorMode::Light => Appearance::Light,
         _ => Appearance::Dark,
     });
     let model = signal(initial);
@@ -279,7 +277,7 @@ pub fn App() -> impl IntoElement {
 /// the display-only `wsl_link` field (page phase, data and guards are untouched).
 #[cfg(feature = "ipc")]
 fn wsl_watch(model: Signal<Model>) {
-    use acp_operator_core::connection::Target;
+    use acp_ui_core::connection::Target;
     spawn(async move {
         loop {
             timer(std::time::Duration::from_secs(2)).await;
@@ -292,7 +290,7 @@ fn wsl_watch(model: Signal<Model>) {
             }
             let probe = connection.clone();
             let status = blocking(move || {
-                acp_operator_client::native::Inputs::from_connection(&probe)
+                acp_ui_client::native::Inputs::from_connection(&probe)
                     .ok()
                     .and_then(|inputs| inputs.wsl_link_status())
             })
@@ -322,7 +320,7 @@ fn console(model: Signal<Model>) -> impl IntoElement {
             m.connection_editor = false;
             m.profile_page = false;
             m.agents_page = false;
-            m.set_section(acp_operator_core::Section::Preferences)
+            m.set_section(acp_ui_core::Section::Preferences)
         });
         filter_ref.focus();
     });
@@ -336,22 +334,22 @@ fn console(model: Signal<Model>) -> impl IntoElement {
             m.connection_editor = false;
             m.profile_page = false;
             m.agents_page = false;
-            m.set_section(acp_operator_core::Section::Handoff)
+            m.set_section(acp_ui_core::Section::Handoff)
         });
         task_ref.focus();
     });
     on_key("mod+l", move |_| {
         model.update(|m| {
             m.locale = match m.locale {
-                acp_operator_core::i18n::Locale::En => acp_operator_core::i18n::Locale::ZhCn,
-                _ => acp_operator_core::i18n::Locale::En,
+                acp_ui_core::i18n::Locale::En => acp_ui_core::i18n::Locale::ZhCn,
+                _ => acp_ui_core::i18n::Locale::En,
             }
         })
     });
     for (key, theme) in [
-        ("alt+a", acp_operator_core::appearance::ThemeId::Instrument),
-        ("alt+b", acp_operator_core::appearance::ThemeId::Ledger),
-        ("alt+c", acp_operator_core::appearance::ThemeId::Harbor),
+        ("alt+a", acp_ui_core::appearance::ThemeId::Instrument),
+        ("alt+b", acp_ui_core::appearance::ThemeId::Ledger),
+        ("alt+c", acp_ui_core::appearance::ThemeId::Harbor),
     ] {
         on_key(key, move |_| model.update(|m| m.theme = theme));
     }
@@ -398,7 +396,7 @@ fn console(model: Signal<Model>) -> impl IntoElement {
     });
     for (key, section) in ["alt+1", "alt+2", "alt+3", "alt+4", "alt+5"]
         .into_iter()
-        .zip(acp_operator_core::Section::ALL)
+        .zip(acp_ui_core::Section::ALL)
     {
         on_key_with(key, global, move |_| {
             filter_ref.blur();
@@ -640,16 +638,16 @@ mod tests {
     }
     #[component]
     fn Workload() -> impl IntoElement {
-        let mut data = acp_operator_core::Snapshot::fixture();
+        let mut data = acp_ui_core::Snapshot::fixture();
         let row = data.projects[0].context.preferences[0].clone();
         data.projects[0].context.preferences = (0..10_000)
-            .map(|i| acp_operator_core::Preference {
+            .map(|i| acp_ui_core::Preference {
                 key: format!("event-{i:05}"),
                 ..row.clone()
             })
             .collect();
         let mut model = Model::loading();
-        model.section = acp_operator_core::Section::Preferences;
+        model.section = acp_ui_core::Section::Preferences;
         model.receive(Ok(data));
         console(signal(model))
     }
@@ -660,8 +658,8 @@ mod tests {
         app.wait_for("10000 confirmed rows · page 1/834").unwrap();
         let started = std::time::Instant::now();
         for page in 0..834 {
-            for row in (page * acp_operator_core::PAGE_SIZE)
-                ..((page + 1) * acp_operator_core::PAGE_SIZE).min(10_000)
+            for row in
+                (page * acp_ui_core::PAGE_SIZE)..((page + 1) * acp_ui_core::PAGE_SIZE).min(10_000)
             {
                 let key = format!("event-{row:05}");
                 assert!(app.screen().texts().iter().any(|t| t.contains(&key)));

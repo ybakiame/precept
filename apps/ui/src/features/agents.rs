@@ -6,7 +6,7 @@
 //! formats it. Sharing is switched per project by the daemon (`project.agents`),
 //! which withdraws or republishes that project's agent credential.
 use crate::*;
-use acp_operator_core::{
+use acp_ui_core::{
     ProjectEntry,
     connection::Target,
     i18n::Msg,
@@ -151,7 +151,7 @@ fn rows(model: Signal<Model>) -> impl IntoElement {
                         .on_press(move || {
                             shell::go(
                                 model,
-                                shell::Destination::Section(acp_operator_core::Section::Projects),
+                                shell::Destination::Section(acp_ui_core::Section::Projects),
                             )
                         }),
                 )
@@ -171,17 +171,14 @@ fn rows(model: Signal<Model>) -> impl IntoElement {
                     .min_h(px(scale::control::LG))
                     .child(
                         view().flex_1().min_w_0().child(
-                            button(
-                                model,
-                                acp_operator_core::presentation::sanitize(&entry.name, 64),
-                            )
-                            .variant(ButtonVariant::Ghost)
-                            .selected({
-                                let chosen = chosen.clone();
-                                let name = entry.name.clone();
-                                move || chosen.as_deref() == Some(name.as_str())
-                            })
-                            .on_press(move || fetch(model, name.clone())),
+                            button(model, acp_ui_core::presentation::sanitize(&entry.name, 64))
+                                .variant(ButtonVariant::Ghost)
+                                .selected({
+                                    let chosen = chosen.clone();
+                                    let name = entry.name.clone();
+                                    move || chosen.as_deref() == Some(name.as_str())
+                                })
+                                .on_press(move || fetch(model, name.clone())),
                         ),
                     )
                     .child(

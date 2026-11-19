@@ -2,7 +2,7 @@
 //! lanes, so values line up down the region and a missing value never moves
 //! the next row. Values are sanitized display text; long values wrap.
 use super::prelude::*;
-use acp_operator_core::presentation::sanitize;
+use acp_ui_core::presentation::sanitize;
 
 /// A properties builder; create it with [`properties`].
 pub struct Properties {

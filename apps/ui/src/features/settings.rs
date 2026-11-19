@@ -2,7 +2,7 @@
 //! Composed only from the `ui` layer; theme swatches show each theme's own
 //! colors as data.
 use crate::*;
-use acp_operator_core::{
+use acp_ui_core::{
     appearance::{ColorMode, ThemeId},
     i18n::{Locale, Msg},
 };

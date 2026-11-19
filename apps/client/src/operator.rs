@@ -1,6 +1,6 @@
 //! Operator read/control and OperatorWrite requests: local IPC or the WSL bridge.
 use acp_core::operator::Mutation;
-use acp_operator_core::operator::Review;
+use acp_ui_core::operator::Review;
 use serde_json::Value;
 
 /// Stable UI error vocabulary for daemon results; shared by the local client
@@ -175,7 +175,7 @@ pub fn operation_id() -> acp_ipc::Result<String> {
 
 #[cfg(test)]
 mod native_boundary_tests {
-    use acp_operator_core::{Model, connection::Target};
+    use acp_ui_core::{Model, connection::Target};
     #[test]
     fn offline_never_and_wsl_only_over_a_live_bridge_attempt_operator_ipc() {
         let mut m = Model::fixture();

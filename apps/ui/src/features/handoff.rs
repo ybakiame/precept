@@ -1,6 +1,6 @@
 //! Handoff: the explicitly selected task's saved handoff.
 use crate::*;
-use acp_operator_core::i18n::Msg;
+use acp_ui_core::i18n::Msg;
 use shell::*;
 use tokens::palette;
 

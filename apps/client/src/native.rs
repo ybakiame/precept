@@ -1,6 +1,6 @@
 //! Trusted operator UI client using unchanged authenticated native IPC.
 use acp_ipc::{Access, Client, Location, load_credential};
-use acp_operator_core::*;
+use acp_ui_core::*;
 use clap::Parser;
 use std::path::PathBuf;
 
@@ -51,8 +51,8 @@ pub struct Inputs {
     pub wsl_endpoint: Option<String>,
 }
 impl Inputs {
-    pub fn connection(&self) -> acp_operator_core::connection::Connection {
-        use acp_operator_core::connection::{Connection, Target};
+    pub fn connection(&self) -> acp_ui_core::connection::Connection {
+        use acp_ui_core::connection::{Connection, Target};
         Connection {
             target: if self.wsl_distribution.is_some() {
                 Target::Wsl
@@ -75,10 +75,8 @@ impl Inputs {
             synthetic_rows: self.synthetic_rows,
         }
     }
-    pub fn from_connection(
-        c: &acp_operator_core::connection::Connection,
-    ) -> Result<Self, &'static str> {
-        use acp_operator_core::connection::Target;
+    pub fn from_connection(c: &acp_ui_core::connection::Connection) -> Result<Self, &'static str> {
+        use acp_ui_core::connection::Target;
         if !c.validate() {
             return Err("Invalid connection inputs");
         }
@@ -165,8 +163,8 @@ impl Inputs {
             runtime: field(&self.wsl_runtime_dir, "Explicit WSL runtime required")?,
             endpoint: field(&self.wsl_endpoint, "Explicit WSL endpoint required")?,
         };
-        let valid = acp_operator_core::connection::Connection {
-            target: acp_operator_core::connection::Target::Wsl,
+        let valid = acp_ui_core::connection::Connection {
+            target: acp_ui_core::connection::Target::Wsl,
             distribution: key.distribution.clone(),
             user: key.user.clone(),
             helper: key.helper.clone(),
@@ -200,7 +198,7 @@ impl Inputs {
     /// A failure is reported as a specific `wsl_status` reason.
     pub(crate) fn wsl_bridge(&self, start: bool) -> Result<crate::bridge::Client, &'static str> {
         use crate::bridge::{BridgeError, ConnectFailure};
-        use acp_operator_core::connection::wsl_status as status;
+        use acp_ui_core::connection::wsl_status as status;
         let key = self.wsl_key()?;
         crate::bridge::bridge(&key, start, || self.wsl_command()).map_err(|e| match e {
             BridgeError::NotStarted => status::BRIDGE_DISCONNECTED,
@@ -221,7 +219,7 @@ impl Inputs {
     /// never touches the page phase or data: `None` means no bridge yet or healthy.
     pub fn wsl_link_status(&self) -> Option<&'static str> {
         use crate::bridge::{CallError, Op};
-        use acp_operator_core::connection::wsl_status as status;
+        use acp_ui_core::connection::wsl_status as status;
         let client = crate::bridge::peek(&self.wsl_key().ok()?)?;
         if !client.alive() {
             return Some(status::BRIDGE_DISCONNECTED);
@@ -264,7 +262,7 @@ impl Inputs {
                 std::time::Duration::from_secs(20),
             )
             .map_err(|e| {
-                use acp_operator_core::connection::wsl_status as status;
+                use acp_ui_core::connection::wsl_status as status;
                 match e {
                     CallError::Remote("Permission denied") => status::RUNTIME_REFUSED,
                     CallError::Remote(_) => status::DAEMON_UNREACHABLE,
@@ -611,7 +609,7 @@ mod tests {
         // Without an explicit user read no bridge is ever started.
         assert_eq!(
             base.wsl_bridge(false).err(),
-            Some(acp_operator_core::connection::wsl_status::BRIDGE_DISCONNECTED)
+            Some(acp_ui_core::connection::wsl_status::BRIDGE_DISCONNECTED)
         );
     }
 }

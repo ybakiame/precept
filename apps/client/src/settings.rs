@@ -7,7 +7,7 @@
 //! private (acp-ipc's owner-only checks); anything else refuses rather than
 //! loosening permissions or following a link.
 use acp_ipc::transport::{new_private, open_private, private_dir};
-use acp_operator_core::connection::{Connection, Saved};
+use acp_ui_core::connection::{Connection, Saved};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
@@ -92,7 +92,7 @@ pub fn save_to(dir: &std::path::Path, connection: &Connection) -> Result<(), &'s
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
-    use acp_operator_core::connection::Target;
+    use acp_ui_core::connection::Target;
     use std::os::unix::fs::PermissionsExt;
     fn scratch(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("acp-settings-{name}-{}", std::process::id()));

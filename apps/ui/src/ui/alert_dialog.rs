@@ -301,7 +301,7 @@ mod tests {
                                 super::super::input::input(model, "Retained field")
                                     .element_ref(&field)
                                     .placeholder(
-                                        model.get().word(acp_operator_core::i18n::Msg::OperatorKey),
+                                        model.get().word(acp_ui_core::i18n::Msg::OperatorKey),
                                     )
                                     .value(move || model.get().operator.key)
                                     .on_change(move |value| {

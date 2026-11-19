@@ -4,7 +4,7 @@
 //! Build the root workspace binaries first (`cargo build` at the repository root).
 #![cfg(unix)]
 use acp_core::operator::{Binding, Command as Op2, Expected, Mutation, Origin, Scope};
-use acp_operator_client::bridge::{self, CallError, Client, ConnectFailure, Op, Reply};
+use acp_ui_client::bridge::{self, CallError, Client, ConnectFailure, Op, Reply};
 use serde_json::{Value, json};
 use std::{
     io::{Read, Write},
@@ -330,7 +330,7 @@ fn operator_profile_review_and_session_parity_through_the_bridge() {
     // Before a Profile exists the read still succeeds (a connected daemon is
     // not "unreachable"): no navigable project, the daemon's set unregistered,
     // and the bridge answers exactly as the local client (no fixture fallback).
-    let local = acp_operator_client::native::Inputs {
+    let local = acp_ui_client::native::Inputs {
         runtime_dir: Some(d.runtime.clone()),
         endpoint: Some(d.endpoint.clone()),
         ..Default::default()
@@ -340,8 +340,7 @@ fn operator_profile_review_and_session_parity_through_the_bridge() {
     assert!(
         !before.directory.is_empty() && before.directory.iter().all(|p| p.state == "unregistered")
     );
-    let bridged: acp_operator_core::Snapshot =
-        serde_json::from_value(snapshot(&c).unwrap()).unwrap();
+    let bridged: acp_ui_core::Snapshot = serde_json::from_value(snapshot(&c).unwrap()).unwrap();
     assert!(bridged.projects.is_empty());
     assert_eq!(
         serde_json::to_value(&bridged.directory).unwrap(),
@@ -380,7 +379,7 @@ fn operator_profile_review_and_session_parity_through_the_bridge() {
     let snap = snapshot(&c).unwrap();
     assert_eq!(snap["projects"][0]["name"], "alpha");
     assert_eq!(
-        serde_json::from_value::<acp_operator_core::Snapshot>(snap)
+        serde_json::from_value::<acp_ui_core::Snapshot>(snap)
             .unwrap()
             .projects,
         local.fetch().unwrap().projects
@@ -454,11 +453,8 @@ fn operator_profile_review_and_session_parity_through_the_bridge() {
         )
     };
     let refreshed = session("session.refresh", json!({})).unwrap();
-    acp_operator_core::session::observation(
-        refreshed["capabilities"].clone(),
-        refreshed["view"].clone(),
-    )
-    .unwrap();
+    acp_ui_core::session::observation(refreshed["capabilities"].clone(), refreshed["view"].clone())
+        .unwrap();
     assert_eq!(
         session(
             "session.start",

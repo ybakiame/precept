@@ -1,6 +1,6 @@
 //! Custom native window chrome shared by the actual console.
 use crate::*;
-use acp_operator_core::i18n::Msg;
+use acp_ui_core::i18n::Msg;
 use nsh_core::{
     desktop::{ResizeEdge, WindowMode},
     element::desktop::current_window,

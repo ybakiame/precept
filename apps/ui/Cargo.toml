@@ -1,5 +1,5 @@
 [package]
-name = "acp-operator-ui"
+name = "acp-ui"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
@@ -9,14 +9,14 @@ publish = false
 crate-type = ["rlib", "cdylib"]
 
 [features]
-ipc = ["dep:acp-operator-client"]
+ipc = ["dep:acp-ui-client"]
 native = ["ipc", "dep:nsh-platform-linux", "dep:nsh-platform-macos", "dep:nsh-platform-windows"]
 tui = ["ipc", "dep:nsh-platform-tui", "dep:ratatui-core", "dep:ratatui-crossterm", "dep:crossterm"]
 
 [dependencies]
 serde_json = "1"
-acp-operator-core = { path = "../core" }
-acp-operator-client = { path = "../client", optional = true }
+acp-ui-core = { path = "../core" }
+acp-ui-client = { path = "../client", optional = true }
 # NSH v0.6.0, owner-approved immutable revision. 0.6.0 gates SVG rendering
 # behind the platform crates' `svg` feature (default off here): the native
 # platforms enable it, or every icon silently draws nothing.

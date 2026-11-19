@@ -9,10 +9,8 @@ use nsh_platform_windows as platform;
 #[cfg(target_os = "linux")]
 mod linux_probe;
 fn main() -> impl std::process::Termination {
-    acp_operator_ui::PROBE_STARTED
-        .set(std::time::Instant::now())
-        .ok();
-    let preview = match acp_operator_ui::brand_preview::configure() {
+    acp_ui::PROBE_STARTED.set(std::time::Instant::now()).ok();
+    let preview = match acp_ui::brand_preview::configure() {
         Ok(value) => value,
         Err(message) => {
             eprintln!("{message}");
@@ -20,8 +18,8 @@ fn main() -> impl std::process::Termination {
         }
     };
     if !preview {
-        acp_operator_ui::INPUTS
-            .set(acp_operator_client::native::Inputs::parse())
+        acp_ui::INPUTS
+            .set(acp_ui_client::native::Inputs::parse())
             .ok();
     }
     #[cfg(target_os = "linux")]
@@ -36,18 +34,17 @@ fn main() -> impl std::process::Termination {
     }
     platform::run_app(
         platform::AppSource::Rust(if preview {
-            platform::Root::of::<acp_operator_ui::brand_preview::BrandPreview>()
-                .main_window(acp_operator_ui::brand_preview::window_options())
+            platform::Root::of::<acp_ui::brand_preview::BrandPreview>()
+                .main_window(acp_ui::brand_preview::window_options())
         } else {
-            platform::Root::of::<acp_operator_ui::App>()
-                .main_window(acp_operator_ui::brand_preview::window_options())
+            platform::Root::of::<acp_ui::App>().main_window(acp_ui::brand_preview::window_options())
         }),
         platform::AppOptions {
             title,
             #[cfg(any(target_os = "linux", target_os = "windows"))]
             app_id: "org.acp.operator".into(),
             size: (1080, 760),
-            storage: Some(acp_operator_ui::ephemeral_storage()),
+            storage: Some(acp_ui::ephemeral_storage()),
             cache: platform::CacheOptions::off(),
             ..Default::default()
         },

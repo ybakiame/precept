@@ -8,7 +8,7 @@ use super::{
     BadgeVariant, ButtonSize, ButtonVariant, alert_dialog, badge, button, empty, field, input,
     menu, nav_item, properties, radio_group, surface, tabs,
 };
-use acp_operator_core::appearance::{ColorMode, ThemeId};
+use acp_ui_core::appearance::{ColorMode, ThemeId};
 
 const INBOX: &str = "M3 13H8L10 16H14L16 13H21M5 6H19L21 13V19H3V6Z";
 const REFRESH: &str = "M20 12A8 8 0 1 1 12 4M20 4V8H16";

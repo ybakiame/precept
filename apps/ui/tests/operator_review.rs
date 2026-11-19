@@ -208,8 +208,8 @@ fn writes_on(app: &mut nsh_testing::Headless) {
 #[test]
 fn real_components_review_queue_detail_history_deprecate_and_delete() {
     let mut f = Fixture::new();
-    acp_operator_ui::INPUTS
-        .set(acp_operator_client::native::Inputs {
+    acp_ui::INPUTS
+        .set(acp_ui_client::native::Inputs {
             runtime_dir: Some(f.location.runtime_dir.clone()),
             endpoint: Some(f.location.endpoint.clone()),
             operator: true,
@@ -217,7 +217,7 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
         })
         .ok()
         .unwrap();
-    let mut cfg = EngineConfig::new(Root::of::<acp_operator_ui::App>());
+    let mut cfg = EngineConfig::new(Root::of::<acp_ui::App>());
     cfg.viewport = Size::new(px(1080.0), px(760.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
     app.wait_for("No Profile selected").unwrap();
@@ -402,8 +402,8 @@ fn open_row(app: &mut nsh_testing::Headless, row: &str) {
 fn terminal_channel_and_revoked_delete(f: &Fixture) {
     // Exercise the shared App's shell-supplied channel, not a fabricated CLI
     // mutation. This flag is the TUI entry point's own configuration seam.
-    acp_operator_ui::TERMINAL_SURFACE.store(true, std::sync::atomic::Ordering::Relaxed);
-    let mut cfg = EngineConfig::new(Root::of::<acp_operator_ui::App>());
+    acp_ui::TERMINAL_SURFACE.store(true, std::sync::atomic::Ordering::Relaxed);
+    let mut cfg = EngineConfig::new(Root::of::<acp_ui::App>());
     cfg.viewport = Size::new(px(1080.0), px(760.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
     writes_on(&mut app);
@@ -497,11 +497,11 @@ fn terminal_channel_and_revoked_delete(f: &Fixture) {
         .is_err()
     );
     drop(app);
-    acp_operator_ui::TERMINAL_SURFACE.store(false, std::sync::atomic::Ordering::Relaxed);
+    acp_ui::TERMINAL_SURFACE.store(false, std::sync::atomic::Ordering::Relaxed);
 }
 
 fn changed_root_refuses_reviewed_apply(f: &Fixture) {
-    let mut cfg = EngineConfig::new(Root::of::<acp_operator_ui::App>());
+    let mut cfg = EngineConfig::new(Root::of::<acp_ui::App>());
     cfg.viewport = Size::new(px(1080.0), px(760.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
     writes_on(&mut app);

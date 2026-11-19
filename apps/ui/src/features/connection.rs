@@ -8,7 +8,7 @@
 //! non-standard install. The applied choice is saved privately for the next
 //! launch. No shell, TCP or credential crosses any boundary.
 use crate::*;
-use acp_operator_core::{
+use acp_ui_core::{
     Probe,
     connection::{Connection, DaemonStatus, Discovery, Target, discovery_status, wsl_status},
     i18n::Msg,
@@ -31,14 +31,14 @@ pub(crate) fn apply(model: Signal<Model>) {
         spawn(async move {
             // Leaving WSL closes its bridge (never the WSL daemon); off the UI thread.
             if connection.target != Target::Wsl {
-                let _ = blocking(acp_operator_client::bridge::close_active).await;
+                let _ = blocking(acp_ui_client::bridge::close_active).await;
             }
             // Unit tests never write the developer's settings.
             #[cfg(not(test))]
             {
-                let saved = blocking(move || acp_operator_client::settings::save(&connection))
+                let saved = blocking(move || acp_ui_client::settings::save(&connection))
                     .await
-                    .unwrap_or(Err(acp_operator_client::settings::UNAVAILABLE));
+                    .unwrap_or(Err(acp_ui_client::settings::UNAVAILABLE));
                 model.update(|m| m.save_failure = saved.err());
             }
         });
@@ -50,7 +50,7 @@ pub(crate) fn apply(model: Signal<Model>) {
 fn list_distributions(model: Signal<Model>) {
     #[cfg(feature = "ipc")]
     spawn(async move {
-        let listed = blocking(acp_operator_client::discover::wsl_distributions)
+        let listed = blocking(acp_ui_client::discover::wsl_distributions)
             .await
             .unwrap_or(Err(wsl_status::HOST_UNAVAILABLE));
         model.update(|m| m.distributions = Some(listed));
@@ -80,7 +80,7 @@ fn check(model: Signal<Model>, start: bool) {
 
 #[cfg(feature = "ipc")]
 fn probe(draft: &Connection, start: bool) -> Result<Discovery, &'static str> {
-    use acp_operator_client::discover;
+    use acp_ui_client::discover;
     let helper = if draft.helper.is_empty() {
         discover::DEFAULT_HELPER
     } else {

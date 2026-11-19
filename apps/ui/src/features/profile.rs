@@ -8,7 +8,7 @@
 //! turned on in place by the action that needs them (Workspaces). The daemon
 //! checks every request again.
 use crate::*;
-use acp_operator_core::i18n::Msg;
+use acp_ui_core::i18n::Msg;
 use tokens::palette;
 use ui::{BadgeVariant, ButtonSize, ButtonVariant, badge, button, field, input, scale, surface};
 
@@ -33,7 +33,7 @@ pub(crate) fn call(
 ) {
     #[cfg(feature = "ipc")]
     {
-        let inputs = acp_operator_client::native::Inputs::from_connection(&model.get().connection);
+        let inputs = acp_ui_client::native::Inputs::from_connection(&model.get().connection);
         Owner::detached().run(|| {
             spawn(async move {
                 let result = blocking(move || inputs.and_then(|i| i.project_call(method, params)))
@@ -57,8 +57,7 @@ pub(crate) fn read(model: Signal<Model>) {
     }
     call(model, "profile.info", serde_json::json!({}), |_, m, r| {
         let Ok(value) = r else { return };
-        let Ok(info) = serde_json::from_value::<acp_operator_core::operator::ProfileInfo>(value)
-        else {
+        let Ok(info) = serde_json::from_value::<acp_ui_core::operator::ProfileInfo>(value) else {
             return;
         };
         m.project_add.write_enabled = Some(info.write_enabled);
@@ -88,8 +87,7 @@ pub(crate) fn watch(model: Signal<Model>) {
                 shell::Destination::Connection
                     | shell::Destination::Profile
                     | shell::Destination::Section(
-                        acp_operator_core::Section::Dashboard
-                            | acp_operator_core::Section::Projects
+                        acp_ui_core::Section::Dashboard | acp_ui_core::Section::Projects
                     )
             );
         (shown, m.epoch)
@@ -286,7 +284,7 @@ pub(crate) fn setup(model: Signal<Model>) -> impl IntoElement {
                 m.profile_info
                     .as_ref()
                     .and_then(|i| i.startup_failure.as_deref())
-                    .map(acp_operator_core::projects::refusal)
+                    .map(acp_ui_core::projects::refusal)
             }))
             .child(error_note(model))
             .child(

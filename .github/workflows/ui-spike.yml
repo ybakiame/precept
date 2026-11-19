@@ -33,10 +33,10 @@ jobs:
       - run: rustup show
       - run: cargo build --workspace --bins --locked
       - run: cargo fmt --manifest-path apps/Cargo.toml --all -- --check
-      - run: cargo build --manifest-path apps/Cargo.toml --workspace --features acp-operator-ui/native,acp-operator-ui/tui --bins --locked
-      - run: cargo clippy --manifest-path apps/Cargo.toml --workspace --all-targets --features acp-operator-ui/native,acp-operator-ui/tui --locked -- -D warnings
+      - run: cargo build --manifest-path apps/Cargo.toml --workspace --features acp-ui/native,acp-ui/tui --bins --locked
+      - run: cargo clippy --manifest-path apps/Cargo.toml --workspace --all-targets --features acp-ui/native,acp-ui/tui --locked -- -D warnings
       - name: Shared NSH headless components and real native daemon integration (not GUI or TTY evidence)
-        run: cargo test --manifest-path apps/Cargo.toml --workspace --all-targets --features acp-operator-ui/native,acp-operator-ui/tui --locked
+        run: cargo test --manifest-path apps/Cargo.toml --workspace --all-targets --features acp-ui/native,acp-ui/tui --locked
   web:
     timeout-minutes: 30
     runs-on: ubuntu-latest
@@ -55,7 +55,7 @@ jobs:
         run: |
           git clone https://github.com/longbridge/nsh apps/vendor/nsh
           git -C apps/vendor/nsh checkout 554163758e30d2f62f814096a6327937dcb4fe49
-      - run: node tools/package_ui_web.mjs apps/vendor/nsh apps/target/wasm32-unknown-unknown/debug/acp_operator_ui.wasm apps/ui/dist
+      - run: node tools/package_ui_web.mjs apps/vendor/nsh apps/target/wasm32-unknown-unknown/debug/acp_ui.wasm apps/ui/dist
       - run: node --test apps/web-smoke/static-server.test.mjs
       - run: npx --prefix apps/web-smoke playwright install chromium --with-deps
       - run: node apps/web-smoke/web-smoke.mjs apps/ui/dist apps/artifacts

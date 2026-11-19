@@ -3,7 +3,7 @@
 //! not lift on hover; a region needs only a background, a boundary and spacing.
 //! Line content is sanitized for display, never rendered raw.
 use super::prelude::*;
-use acp_operator_core::presentation::sanitize;
+use acp_ui_core::presentation::sanitize;
 
 /// A panel builder; create it with [`surface`], give it a title and children.
 pub struct Surface {

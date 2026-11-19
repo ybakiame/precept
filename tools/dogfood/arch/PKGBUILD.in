@@ -32,9 +32,9 @@ build() {
   export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$srcdir=/acp/build --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$sysroot=/rust-sysroot"
   cargo build --frozen --release -p acp-daemon -p acp-query -p acp-mcp --bins
   cargo build --frozen --release --manifest-path apps/Cargo.toml \
-    -p acp-operator-client --bin acp-wsl-bridge
+    -p acp-ui-client --bin acp-wsl-bridge
   cargo build --frozen --release --manifest-path apps/Cargo.toml \
-    -p acp-operator-ui --bin acp-nsh-tui --features acp-operator-ui/tui
+    -p acp-ui --bin acp-nsh-tui --features acp-ui/tui
 }
 
 package() {

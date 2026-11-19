@@ -1,5 +1,5 @@
 //! Session requests against the daemon: local IPC or the WSL bridge.
-use acp_operator_core::session::{Observation, SESSION_API, observation};
+use acp_ui_core::session::{Observation, SESSION_API, observation};
 use serde_json::Value;
 
 /// One session request against the daemon at `location`, returning the raw

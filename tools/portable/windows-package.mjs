@@ -254,7 +254,7 @@ export function build(repo, parent, name, cargoProgram) {
 
   const workspaces = [
     ['core', 'Cargo.toml', ['acp-daemon', 'acp-query', 'acp-mcp'], []],
-    ['operator', 'apps/Cargo.toml', ['acp-operator-ui'], ['--features', 'native,tui']]];
+    ['operator', 'apps/Cargo.toml', ['acp-ui'], ['--features', 'native,tui']]];
   // A new target directory for each attempt prevents packaging stale build products.
   for (const [label, manifestFile, packages, features] of workspaces) {
     const args = ['build', '--manifest-path', manifestFile, '--release', '--locked', '--target', target,

@@ -1,7 +1,7 @@
 //! Preferences: confirmed effective preferences with filter and paging.
 use crate::*;
-use acp_operator_core::i18n::Msg;
-use acp_operator_core::{PAGE_SIZE, presentation::sanitize};
+use acp_ui_core::i18n::Msg;
+use acp_ui_core::{PAGE_SIZE, presentation::sanitize};
 use shell::*;
 use tokens::palette;
 
@@ -37,17 +37,13 @@ pub(crate) fn preferences(model: Signal<Model>) -> impl IntoElement {
                     model,
                     Msg::ManageProjectPreferences,
                     move || model.get().selected_project.is_some(),
-                    move || {
-                        review::open_mode(model, acp_operator_core::operator::ReviewMode::Project)
-                    },
+                    move || review::open_mode(model, acp_ui_core::operator::ReviewMode::Project),
                 ))
                 .child(word_action(
                     model,
                     Msg::ManagePersonalPreferences,
                     || true,
-                    move || {
-                        review::open_mode(model, acp_operator_core::operator::ReviewMode::Personal)
-                    },
+                    move || review::open_mode(model, acp_ui_core::operator::ReviewMode::Personal),
                 )),
         );
     }

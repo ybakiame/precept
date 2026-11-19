@@ -28,12 +28,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "acp-operator-client"
+name = "acp-ui-client"
 version = "0.1.0"
 dependencies = [
  "acp-core",
  "acp-ipc",
- "acp-operator-core",
+ "acp-ui-core",
  "acp-session",
  "clap",
  "serde",
@@ -43,7 +43,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "acp-operator-core"
+name = "acp-ui-core"
 version = "0.1.0"
 dependencies = [
  "acp-core",
@@ -53,12 +53,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "acp-operator-ui"
+name = "acp-ui"
 version = "0.1.0"
 dependencies = [
  "acp-ipc",
- "acp-operator-client",
- "acp-operator-core",
+ "acp-ui-client",
+ "acp-ui-core",
  "crossterm",
  "nsh-base",
  "nsh-core",

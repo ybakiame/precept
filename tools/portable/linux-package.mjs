@@ -109,8 +109,8 @@ export function build(repo, parent, name, cargoProgram) {
   for (const file of ['Cargo.lock', 'apps/Cargo.lock']) manifest.locks[file] = digest(fs.readFileSync(path.join(repo, file)));
   const workspaces = [
     ['core', 'Cargo.toml', ['acp-daemon', 'acp-query', 'acp-mcp'], []],
-    ['operator', 'apps/Cargo.toml', ['acp-operator-ui', 'acp-operator-client'],
-      ['--features', 'acp-operator-ui/native,acp-operator-ui/tui']]];
+    ['operator', 'apps/Cargo.toml', ['acp-ui', 'acp-ui-client'],
+      ['--features', 'acp-ui/native,acp-ui/tui']]];
   for (const [label, manifestFile, packages, features] of workspaces) {
     const args = ['build', '--manifest-path', manifestFile, '--release', '--locked', '--target', target,
       '--target-dir', targetDir, '--message-format=json', ...packages.flatMap(p => ['-p', p]), '--bins', ...features];
