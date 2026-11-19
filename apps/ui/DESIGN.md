@@ -26,13 +26,14 @@ interface earns that return visit by being *fast to read* and *pleasant to touch
 | --- | --- | --- |
 | **Calm** | Graphite surfaces, one accent, hairlines instead of boxes, generous but regular spacing | Heavy outlines on every control, colored panels, alert banners for ordinary facts |
 | **Certain** | Every state in words, the next action named, exact records before decisions | Spinners without labels, success claims ACP did not observe, color-only status |
-| **Alive** | A live dot that breathes while the daemon answers, selections that slide, dialogs that rise, a check that grows in when a step completes | Ambient decoration, motion on data that ticks, entrance animations on every refresh |
+| **Alive** | A live dot that pings while the daemon answers, segment selections that slide, dialogs that rise, a check that grows in when a step completes | Ambient decoration, motion on data that ticks, entrance animations on every refresh |
 
 Six working principles:
 
 1. **The waiting decision is the focal point.** Each page has one primary object
-   and at most one primary button. Counts of work waiting (suggestions to review)
-   sit where the eye lands: the sidebar's trailing lane and the page header.
+   and at most one primary button. Work waiting (suggestions to review) has its own
+   destination in the sidebar, and a count beside it once the daemon reports an
+   exact total.
 2. **Surfaces step, lines whisper.** Hierarchy comes from five surface steps and
    hairlines. Strong boundaries are kept for things you type into.
 3. **Say the state, then show it.** Status is a word first; color, icon and motion
@@ -56,7 +57,7 @@ Tasks, by how often they happen:
 | Rank | Task | Where | Must be one step from |
 | --- | --- | --- | --- |
 | 1 | See whether the daemon answers and what it last read | Sidebar status row, page header | Every page |
-| 2 | Review a suggestion and confirm or reject the exact record | To review, Preferences | Sidebar count, toast after saving |
+| 2 | Review a suggestion and confirm or reject the exact record | To review, Preferences | The sidebar, the toast after saving |
 | 3 | Add a preference (saved as a suggestion) | Preferences, Personal preferences | Page toolbar |
 | 4 | Resume a task through Handoff | Handoff | Sidebar |
 | 5 | Share a project with an agent (copy its MCP line) | Agents | Set-up step 4 |
@@ -69,8 +70,8 @@ Tasks, by how often they happen:
 | Region | Size | Surface | Contents |
 | --- | --- | --- | --- |
 | Title bar | 36 high | `sidebar` above the sidebar, `background` above the page | Drag region, window caption buttons; the close button washes `danger` on hover |
-| Sidebar | 232 wide (min 200, max 280) | `sidebar`, trailing hairline | Brand mark and name; **Set up**, **Project**, **Personal** groups; foot destinations; the status row |
-| Page | the rest, inset 24 (12 when compact) | `background` | Header, page toolbar, one scroll region |
+| Sidebar | 232 wide (a wrapped row below 900) | `sidebar`, trailing hairline | Brand mark and name; **Set up**, **Project**, **Personal** groups; foot destinations; the status row |
+| Page | the rest, inset 24 (8 when compact) | `background` | Header, page toolbar, one scroll region |
 | Overlay layer | the window | — | Toasts (bottom-right, 16 from the edges), menus, popovers, dialogs, sheets |
 
 **Sidebar rows.** 32 high, icon 16 in a fixed lane, label, and a trailing lane
@@ -194,8 +195,8 @@ padding, 24 between sections and as page and dialog padding, 32 around empty sta
 
 One family: original outline vectors on a 24 grid, stroke 1.6, round caps and
 joins, `currentColor`, defined in `src/ui/icons.rs`. Sizes: 14 in small controls,
-16 by default, 20 in toasts and dialog headers, 24 in empty states (inside a 48
-tinted disc). Icons supplement labels; an icon-only control always has an
+16 by default and inside the 28 tinted discs of toasts and dialog headers, 20 for
+the brand mark, 24 in empty states (inside a 48 tinted disc). Icons supplement labels; an icon-only control always has an
 accessible name and, when its meaning is not universal, a tooltip. In a terminal
 icons are hidden and labels (and `✓`) carry the meaning.
 
