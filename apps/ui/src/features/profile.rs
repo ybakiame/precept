@@ -67,6 +67,75 @@ pub(crate) fn read(model: Signal<Model>) {
     });
 }
 
+/// Counts the suggestions waiting (personal, then the selected project's) for
+/// the sidebar. Any refusal leaves the count unknown, never zero.
+pub(crate) fn count(model: Signal<Model>) {
+    if !model.get_untracked().live {
+        model.update(|m| m.review_count = None);
+        return;
+    }
+    let suggested = |r: Result<serde_json::Value, &'static str>| {
+        r.ok()
+            .and_then(|v| serde_json::from_value::<acp_ui_core::operator::ReviewCount>(v).ok())
+            .map(|c| c.suggested)
+    };
+    let epoch = model.get_untracked().epoch;
+    call(
+        model,
+        "profile.review.count",
+        serde_json::json!({ "scope": { "kind": "global" } }),
+        move |model, m, r| {
+            if m.epoch != epoch {
+                return;
+            }
+            let Some(personal) = suggested(r) else {
+                m.review_count = None;
+                return;
+            };
+            let Some(project) = m.selected_project.clone() else {
+                m.review_count = Some(personal);
+                return;
+            };
+            m.review_count = Some(personal);
+            // The project's count is read after this update returns: `call`
+            // reads the model, which is not readable while it is updated.
+            Owner::detached().run(|| {
+                spawn(async move {
+                    call(
+                        model,
+                        "profile.review.count",
+                        serde_json::json!({ "scope": { "kind": "project", "name": project } }),
+                        move |_, m, r| {
+                            if m.epoch == epoch {
+                                m.review_count = suggested(r).map(|p| p + personal);
+                            }
+                        },
+                    );
+                });
+            });
+        },
+    );
+}
+/// Counts again when the target, project or the review workspace changes.
+pub(crate) fn watch_count(model: Signal<Model>) {
+    let key = computed(move || {
+        let m = model.get();
+        (
+            m.live,
+            m.epoch,
+            m.selected_project.clone(),
+            m.operator.open,
+            // A committed decision or a re-read queue, never a keystroke.
+            m.operator.receipt.as_ref().map(|r| r.commit_sequence),
+            m.operator.queue_watermark,
+        )
+    });
+    effect(move || {
+        let _ = key.get();
+        untracked(|| count(model));
+    });
+}
+
 /// Selected, written state as last read (`None`: not read yet).
 fn selected(m: &Model) -> Option<bool> {
     m.profile_info.as_ref().map(|i| i.selected)

@@ -202,6 +202,10 @@ pub struct Model {
     /// `operator.info`, which fences the review workspace's own requests: a
     /// write there would make an in-flight workspace reply stale (stuck wait).
     pub profile_info: profile::Observed,
+    /// Suggestions waiting in the personal scope plus the selected project's,
+    /// as last counted by the daemon. `None`: not counted (or the daemon could
+    /// not say), which is never shown as zero.
+    pub review_count: Option<i64>,
     /// Why the last applied connection could not be saved for the next launch.
     pub save_failure: Option<&'static str>,
     pub theme: appearance::ThemeId,
@@ -259,6 +263,7 @@ impl Model {
             project_remove: None,
             profile_setup: Default::default(),
             profile_info: Default::default(),
+            review_count: None,
             save_failure: None,
             theme: Default::default(),
             color_mode: appearance::ColorMode::Dark,

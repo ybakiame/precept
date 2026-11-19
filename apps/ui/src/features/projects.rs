@@ -338,8 +338,10 @@ fn add_form(model: Signal<Model>) -> impl IntoElement {
             Check::Refused(code) => (refusal(&code), BadgeVariant::Warning),
             Check::Failed(code) => (refusal(code), BadgeVariant::Danger),
         };
+        let reveal = ui::motion::reveal();
         view()
             .items_start()
+            .bind_motion(&reveal)
             .child(badge(model, model.get_untracked().word(key)).variant(variant))
             .into_element()
     });

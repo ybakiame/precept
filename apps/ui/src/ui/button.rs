@@ -44,6 +44,7 @@ pub struct Button {
     on_press: Option<PressFn>,
     icon: Option<&'static str>,
     selected: StateFn,
+    quiet_selection: StateFn,
     full_width: bool,
     icon_only: bool,
     leading: Option<AnyElement>,
@@ -67,6 +68,7 @@ pub fn button(model: Signal<Model>, label: impl Into<SharedString>) -> Button {
         on_press: None,
         icon: None,
         selected: Rc::new(|| false),
+        quiet_selection: Rc::new(|| false),
         full_width: false,
         icon_only: false,
         leading: None,
@@ -113,6 +115,13 @@ impl Button {
     /// trigger): a fill distinct from hover, announced to screen readers.
     pub fn selected(mut self, selected: impl Fn() -> bool + 'static) -> Self {
         self.selected = Rc::new(selected);
+        self
+    }
+    /// While this holds, the selected state keeps its stronger label and its
+    /// announcement but draws no fill of its own: a shared indicator behind a
+    /// group of rows (the sidebar's sliding selection) draws it instead.
+    pub fn quiet_selection(mut self, quiet: impl Fn() -> bool + 'static) -> Self {
+        self.quiet_selection = Rc::new(quiet);
         self
     }
     /// What screen readers say when the visible label alone is ambiguous,
@@ -280,6 +289,7 @@ impl IntoElement for Button {
         let selected = self.selected.clone();
         let (selected_bg, selected_text, selected_a11y) =
             (selected.clone(), selected.clone(), selected.clone());
+        let quiet = self.quiet_selection.clone();
         let full_width = self.full_width;
         let icon_only = self.icon_only;
         let trailing = self.trailing;
@@ -348,7 +358,13 @@ impl IntoElement for Button {
             .rounded(px(radius))
             .text_size(px(text_size))
             .selected(move || selected_a11y())
-            .bg(move || rest_bg(model, variant, selected_bg()))
+            .bg(move || {
+                if quiet() {
+                    rest_bg(model, variant, false)
+                } else {
+                    rest_bg(model, variant, selected_bg())
+                }
+            })
             .text_color(move || rest_text(model, variant, selected_text()))
             .border_color(move || rest_border(model, variant))
             .hover(move |s| s.bg(move || hover_bg(model, variant)))
@@ -445,4 +461,40 @@ impl IntoElement for Button {
         }
         b.child(content).into_element()
     }
+}
+
+/// How long a copy button shows its result before it can copy again.
+const COPIED_FOR: std::time::Duration = std::time::Duration::from_millis(1500);
+
+/// A copy command whose result shows on the button itself: `copy` returns
+/// whether it copied; then the copy glyph swaps to a check (it pops in) and
+/// the label to `copied` for a moment, so no notification is needed.
+pub fn copy_button(
+    model: Signal<Model>,
+    label: impl Fn() -> SharedString + 'static,
+    copied: impl Fn() -> SharedString + 'static,
+    copy: impl Fn() -> bool + 'static,
+) -> Button {
+    let done = signal(false);
+    let glyph = dynamic(move || {
+        if done.get() {
+            let pop = motion::pop();
+            view()
+                .text_color(move || palette(model).success)
+                .bind_motion(&pop)
+                .child(icon::glyph(super::icons::CHECK, scale::icon::SM))
+                .into_element()
+        } else {
+            icon::glyph(super::icons::COPY, scale::icon::SM).into_element()
+        }
+    });
+    button(model, "")
+        .label_fn(move || if done.get() { copied() } else { label() })
+        .leading(glyph)
+        .on_press(move || {
+            if copy() {
+                done.set(true);
+                set_timeout(COPIED_FOR, move || done.set(false));
+            }
+        })
 }

@@ -9,10 +9,12 @@ pub struct Inputs {
     /// UI locale only; never translates stored values or protocol evidence.
     #[arg(long, value_parser=["en","zh-CN"], default_value="en")]
     pub locale: String,
-    #[arg(long, value_parser=["system","light","dark"], default_value="dark")]
-    pub appearance: String,
-    #[arg(long, value_parser=["graphite","instrument","ledger","harbor"], default_value="graphite")]
-    pub theme: String,
+    /// Explicit wins over the saved appearance; absent: saved, else dark.
+    #[arg(long, value_parser=["system","light","dark"])]
+    pub appearance: Option<String>,
+    /// Explicit wins over the saved appearance; absent: saved, else graphite.
+    #[arg(long, value_parser=["graphite","instrument","ledger","harbor"])]
+    pub theme: Option<String>,
     #[arg(long, value_parser=["dashboard","projects","preferences","handoff","diagnostics"], default_value="dashboard")]
     pub section: String,
     #[arg(long)]

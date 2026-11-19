@@ -318,7 +318,9 @@ fn checks(model: Signal<Model>) -> impl IntoElement {
     });
     let rows = dynamic(move || {
         let (probe, unchosen) = state.get();
-        match &probe {
+        // Each new outcome arrives (fades in rising), once.
+        let reveal = ui::motion::reveal();
+        let outcome = match &probe {
             Probe::Idle if unchosen => {
                 caption(model, |_| Some(Msg::ChooseDistribution)).into_element()
             }
@@ -332,7 +334,8 @@ fn checks(model: Signal<Model>) -> impl IntoElement {
                 .into_element()
             }
             Probe::Found(d) => found(model, d),
-        }
+        };
+        view().bind_motion(&reveal).child(outcome).into_element()
     });
     view().gap_2().child(heading(model, Msg::Checks)).child(
         view()

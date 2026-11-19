@@ -124,6 +124,11 @@ struct ReviewQueueParams {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct ReviewCountParams {
+    scope: Scope,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ReviewInspectParams {
     scope: Scope,
     id: i64,
@@ -744,6 +749,7 @@ impl Profiles {
             "profile.preferences.list"
                 | "profile.preferences.get"
                 | "profile.review.queue"
+                | "profile.review.count"
                 | "profile.review.inspect"
                 | "profile.handoff.get"
         ) {
@@ -800,6 +806,15 @@ impl Profiles {
                     serde_json::to_value(
                         store
                             .operator_review_queue(&p.scope, p.after_id)
+                            .map_err(|_| Error::Unavailable)?,
+                    )
+                }
+                "profile.review.count" => {
+                    let p: ReviewCountParams = super::decode(params)?;
+                    check_scope(&p.scope)?;
+                    serde_json::to_value(
+                        store
+                            .operator_review_count(&p.scope)
                             .map_err(|_| Error::Unavailable)?,
                     )
                 }

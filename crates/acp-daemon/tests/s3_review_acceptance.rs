@@ -214,6 +214,7 @@ fn s3_session_review_denial_and_client_channels_never_supply_authority() {
             "profile.review.queue",
             json!({"scope":{"kind":"global"},"after_id":0}),
         ),
+        ("profile.review.count", json!({"scope":{"kind":"global"}})),
         (
             "profile.review.inspect",
             json!({"scope":{"kind":"global"},"id":1,"revision":1}),
@@ -872,7 +873,28 @@ fn s3_intervening_commit_changes_page_watermark_without_snapshot_claim() {
         .unwrap();
     assert_eq!(first["records"].as_array().unwrap().len(), 12);
     assert_eq!(first["next_after_id"], 12);
+    // The count is the whole scope (the queue pages it 12 at a time), at the
+    // same watermark; an empty project scope counts zero, not absent.
+    let count = f
+        .daemon
+        .control("profile.review.count", json!({"scope":{"kind":"global"}}))
+        .unwrap();
+    assert_eq!(count["suggested"], 13);
+    assert_eq!(count["commit_sequence"], first["commit_sequence"]);
+    assert_eq!(
+        f.daemon.control(
+            "profile.review.count",
+            json!({"scope":{"kind":"global"},"x":1})
+        ),
+        Err(Error::InvalidRequest)
+    );
     f.daemon.mutate(&binding, "intervening", suggest()).unwrap();
+    assert_eq!(
+        f.daemon
+            .control("profile.review.count", json!({"scope":{"kind":"global"}}))
+            .unwrap()["suggested"],
+        14
+    );
     let second = f
         .daemon
         .control(

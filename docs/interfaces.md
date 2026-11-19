@@ -96,7 +96,7 @@ explicit inputs; project, task and request data never appear in argv.
 - **Requests:** `{"version":1,"id":N,"op":{...}}`, strict fields, `id` ≥ 1, at most
   8 in flight. `op.type` is exactly one of `snapshot`, `control` (the Operator
   read/control allowlist: `profile.info|create|select|write.enable|write.disable`,
-  `profile.preferences.list|get`, `profile.review.queue|inspect`, `profile.handoff.get`),
+  `profile.preferences.list|get`, `profile.review.queue|count|inspect`, `profile.handoff.get`),
   `mutate` (one OperatorWrite `Mutation`), `session` (`session.refresh|start|prompt|permission|cancel|stop`)
   `health` (daemon health with the Operator credential, for the GUI's live WSL
   status) or `cancel` (abandon an in-flight id; no reply of its own). Anything else is

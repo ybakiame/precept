@@ -283,7 +283,32 @@ fn group_label(model: Signal<Model>, key: Msg) -> impl IntoElement {
         .px_2()
         .style_when(compact, |s| s.hidden())
 }
-fn destination(model: Signal<Model>, item: Destination, path: &'static str) -> impl IntoElement {
+fn destination(model: Signal<Model>, item: Destination, path: &'static str) -> AnyElement {
+    if item == Destination::Review {
+        // Work waiting: an exact count from the daemon, or nothing.
+        let count = computed(move || model.get().review_count.filter(|n| *n > 0));
+        return ui::nav_item_counted(
+            model,
+            path,
+            move || model.get().word(title_key(item)).into(),
+            move || count.get(),
+            move || {
+                let m = model.get();
+                match count.get() {
+                    Some(n) => format!(
+                        "{}, {}",
+                        m.word(title_key(item)),
+                        m.word(Msg::ReviewWaiting).replace("{n}", &n.to_string())
+                    )
+                    .into(),
+                    None => m.word(title_key(item)).into(),
+                }
+            },
+            move || current(&model.get()) == item,
+            move || go(model, item),
+        )
+        .into_element();
+    }
     ui::nav_item(
         model,
         path,
@@ -291,6 +316,7 @@ fn destination(model: Signal<Model>, item: Destination, path: &'static str) -> i
         move || current(&model.get()) == item,
         move || go(model, item),
     )
+    .into_element()
 }
 /// The project menu: the daemon's ready projects, the current one checked.
 fn projects(model: Signal<Model>) -> impl IntoElement {
@@ -366,26 +392,33 @@ fn sidebar(model: Signal<Model>) -> impl IntoElement {
             .gap_0p5()
             .style_when(compact, |s| s.flex_row().flex_wrap().gap_1())
     };
+    // One selection slides between every destination row, across groups.
+    let slide = ui::Slide::<Destination>::default();
+    let rows = &slide;
     let setup_group = row().children(
         setup
             .into_iter()
             .zip(1u8..)
-            .map(move |((d, path), n)| step(model, n, d, path)),
+            .map(move |((d, path), n)| rows.row(d, step(model, n, d, path))),
     );
     let work_group = row().children(
         work.into_iter()
-            .map(move |(d, path)| destination(model, d, path)),
+            .map(move |(d, path)| rows.row(d, destination(model, d, path))),
     );
     let personal_group = row().children(
         personal
             .into_iter()
-            .map(move |(d, path)| destination(model, d, path)),
+            .map(move |(d, path)| rows.row(d, destination(model, d, path))),
     );
     let foot_group = row().children(
         foot.into_iter()
-            .map(move |(d, path)| destination(model, d, path)),
+            .map(move |(d, path)| rows.row(d, destination(model, d, path))),
     );
+    let container = element_ref();
+    let indicator = slide.indicator(model, container, move || current(&model.get()));
     view()
+        .element_ref(&container)
+        .child(indicator)
         .w(move || {
             px(if compact() {
                 (window().width.0 - 16.0).max(1.0)
@@ -419,26 +452,32 @@ fn sidebar(model: Signal<Model>) -> impl IntoElement {
                 ),
         )
         .child(
-            view()
-                .gap_1()
-                .child(group_label(model, Msg::SetupGroup))
-                .child(setup_group),
+            slide.group(
+                view()
+                    .gap_1()
+                    .child(group_label(model, Msg::SetupGroup))
+                    .child(setup_group),
+            ),
         )
         .child(
-            view()
-                .gap_1()
-                .child(group_label(model, Msg::ProjectGroup))
-                .child(view().pb_1().child(projects(model)))
-                .child(work_group),
+            slide.group(
+                view()
+                    .gap_1()
+                    .child(group_label(model, Msg::ProjectGroup))
+                    .child(view().pb_1().child(projects(model)))
+                    .child(work_group),
+            ),
         )
         .child(
-            view()
-                .gap_1()
-                .child(group_label(model, Msg::PersonalGroup))
-                .child(personal_group),
+            slide.group(
+                view()
+                    .gap_1()
+                    .child(group_label(model, Msg::PersonalGroup))
+                    .child(personal_group),
+            ),
         )
         .child(view().flex_1().style_when(compact, |s| s.hidden()))
-        .child(foot_group)
+        .child(slide.group(foot_group))
         .child(status_row(model))
 }
 /// The page header: the destination's title, one human status line and the
@@ -555,17 +594,18 @@ fn header(model: Signal<Model>) -> impl IntoElement {
                         .on_press(move || reconnect(model)),
                 )
                 .child(
-                    ui::button(model, "")
-                        .label_fn(move || model.get().word(Msg::CopyPage).into())
-                        .icon(icons::COPY)
-                        .variant(ui::ButtonVariant::Ghost)
-                        .size(ui::ButtonSize::Small)
-                        .disabled(move || {
-                            let m = model.get();
-                            m.phase != Phase::Ready
-                                || !matches!(current(&m), Destination::Section(_))
-                        })
-                        .on_press(move || copy_page(model)),
+                    ui::copy_button(
+                        model,
+                        move || model.get().word(Msg::CopyPage).into(),
+                        move || model.get().word(Msg::CopiedShort).into(),
+                        move || copy_page(model),
+                    )
+                    .variant(ui::ButtonVariant::Ghost)
+                    .size(ui::ButtonSize::Small)
+                    .disabled(move || {
+                        let m = model.get();
+                        m.phase != Phase::Ready || !matches!(current(&m), Destination::Section(_))
+                    }),
                 ),
         )
 }
@@ -664,8 +704,20 @@ pub(crate) fn shell(
     filter_ref: ElementRef,
 ) -> impl IntoElement {
     profile::watch(model);
+    profile::watch_count(model);
     agents::watch(model);
     let on = move |d: fn(&Model) -> bool| move || !d(&model.get());
+    // Sibling pages cross-fade: the page's content fades in (`fast`) each
+    // time the destination changes; nothing remounts, so inputs keep state.
+    let page_fade = animated_value(1.0);
+    let destination = computed(move || current(&model.get()));
+    effect(move || {
+        let _ = destination.get();
+        if !reduce_motion() {
+            page_fade.set(0.0);
+            page_fade.timing(1.0, ui::motion::FAST, Easing::EaseOut);
+        }
+    });
     view()
         .flex_1()
         .bg(move || palette(model).background)
@@ -710,6 +762,7 @@ pub(crate) fn shell(
                         .child(
                             scroll()
                                 .flex_1()
+                                .bind_opacity(&page_fade)
                                 .style_when(move || model.get().operator.open, |s| s.hidden())
                                 .child(
                                     view()

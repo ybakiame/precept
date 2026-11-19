@@ -103,6 +103,25 @@ impl SqliteStore {
             Ok(ReviewQueue { binding: metadata.binding, commit_sequence: metadata.commit_sequence, records, next_after_id })
         })
     }
+    /// How many records of the scope are suggested, at one watermark.
+    pub fn operator_review_count(&self, scope: &Scope) -> Result<ReviewCount> {
+        self.snapshot(|metadata| {
+            let (kind, project) = scoped(self, scope)?;
+            let suggested: i64 = self
+                .db
+                .query_row(
+                    "SELECT COUNT(*) FROM preferences WHERE scope=?1 AND project IS ?2 AND status='suggested'",
+                    (kind, project),
+                    |row| row.get(0),
+                )
+                .map_err(|_| Error::ReadFailed)?;
+            Ok(ReviewCount {
+                binding: metadata.binding,
+                commit_sequence: metadata.commit_sequence,
+                suggested,
+            })
+        })
+    }
     /// Exact record, bounded recent history and the projected peer-demotion set.
     /// The authoritative demotion set is still computed inside the write transaction.
     pub fn operator_review_inspect(&self, scope: &Scope, id: i64) -> Result<ReviewInspect> {

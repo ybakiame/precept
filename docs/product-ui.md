@@ -96,7 +96,10 @@ are never displayed.
 ### Preferences and review
 
 Adding a preference is two explicit steps: save it as suggested, then inspect and
-confirm the exact new record. Queue absence means not inspected, not an empty queue.
+confirm the exact new record. Queue absence means not inspected, not an empty queue. The
+sidebar's count of suggestions waiting is the daemon's exact count for the personal
+scope and the selected project; an unknown or refused count is hidden, never shown
+as zero.
 Pages expose their observed watermark and do not pretend to share one snapshot.
 
 The records list selects; Detail is the immutable-content inspector and owns the

@@ -114,3 +114,15 @@ pub fn page() -> Motion {
             .values(MotionChannel::TranslateY, [4.0, 0.0]),
     )
 }
+
+/// A result arriving in place (a check's outcome): fade in rising 4 points,
+/// `base`, ease-out. Lands at rest under reduced motion. Create it when the
+/// result is built (in the `dynamic` that rebuilds it), so it plays once per
+/// new result.
+pub fn reveal() -> Motion {
+    motion().entering(
+        MotionSpec::new(KeyframeTiming::new(BASE).easing(Easing::EaseOut))
+            .values(MotionChannel::Opacity, [0.0, 1.0])
+            .values(MotionChannel::TranslateY, [4.0, 0.0]),
+    )
+}

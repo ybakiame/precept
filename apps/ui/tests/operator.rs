@@ -242,6 +242,14 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     );
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 2");
+    // The sidebar counts the suggestion the daemon now holds, exactly.
+    let waiting = |app: &mut nsh_testing::Headless, label: &'static str| {
+        app.wait_until(label, std::time::Duration::from_secs(10), |s| {
+            s.count(&format!("role:button[{label}]")).unwrap_or(0) == 1
+        })
+        .unwrap();
+    };
+    waiting(&mut app, "To review, 1 waiting");
     // The saved suggestion opens as the exact record; confirming it is the
     // second explicit step.
     app.wait_for("Show full digest").unwrap();
@@ -251,6 +259,8 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 3");
+    // Confirmed: nothing waits, and the count leaves rather than showing 0.
+    waiting(&mut app, "To review");
     add(&mut app);
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 4");

@@ -38,7 +38,7 @@ pub mod gallery;
 
 pub use alert_dialog::{DialogSize, DialogTone, alert_dialog, dialog};
 pub use badge::{BadgeVariant, badge};
-pub use button::{ButtonSize, ButtonVariant, button, icon_button};
+pub use button::{ButtonSize, ButtonVariant, button, copy_button, icon_button};
 pub use choice::choice_card;
 pub use empty::empty;
 pub use field::field;
@@ -46,7 +46,7 @@ pub use info::info;
 pub use input::input;
 pub use markdown::markdown_input;
 pub use menu::menu;
-pub use nav::{nav_item, step_item};
+pub use nav::{Slide, nav_item, nav_item_counted, step_item};
 pub use properties::properties;
 pub use radio::radio_group;
 pub use sheet::sheet;

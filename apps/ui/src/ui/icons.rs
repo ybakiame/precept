@@ -74,3 +74,17 @@ pub(crate) fn section(section: Section) -> impl IntoElement {
                 .h(px(16.0)),
         )
 }
+
+/// Editor toolbar glyphs.
+pub(crate) const UNDO: &str = "M9 14L4 9L9 4M4 9H15A5 5 0 0 1 15 19H11";
+pub(crate) const REDO: &str = "M15 14L20 9L15 4M20 9H9A5 5 0 0 0 9 19H13";
+pub(crate) const BOLD: &str = "M7 5H13A3.5 3.5 0 0 1 13 12H7ZM7 12H14A3.5 3.5 0 0 1 14 19H7Z";
+pub(crate) const ITALIC: &str = "M10 5H18M6 19H14M14 5L10 19";
+pub(crate) const STRIKE: &str = "M5 12H19M16 7.5C15.5 6 14 5 12 5C9.5 5 8 6.3 8 8M8 16.5C8.5 18 10 19 12 19C14.5 19 16 17.7 16 16";
+pub(crate) const CODE: &str = "M9 8L5 12L9 16M15 8L19 12L15 16";
+pub(crate) const HEADING: &str = "M6 5V19M18 5V19M6 12H18";
+pub(crate) const LIST: &str = "M9 6H20M9 12H20M9 18H20M4.5 6V6.01M4.5 12V12.01M4.5 18V18.01";
+pub(crate) const LIST_ORDERED: &str =
+    "M10 6H20M10 12H20M10 18H20M4 5L5 4V9M4 14.5A1.2 1.2 0 0 1 6 15C6 16 4 17 4 18H6";
+pub(crate) const QUOTE: &str = "M5 6V18M9 8H19M9 12H19M9 16H15";
+pub(crate) const CODE_BLOCK: &str = "M4 4H20V20H4ZM10 9L7 12L10 15M14 9L17 12L14 15";

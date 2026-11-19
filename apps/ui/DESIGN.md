@@ -75,10 +75,13 @@ Tasks, by how often they happen:
 | Overlay layer | the window | — | Toasts (bottom-right, 16 from the edges), menus, popovers, dialogs, sheets |
 
 **Sidebar rows.** 32 high, icon 16 in a fixed lane, label, and a trailing lane
-for state: a success check once a set-up step is done (`✓` in a terminal). A count
-belongs in that lane only when the daemon reports an exact total; one page of a
-queue is not a count, and an uninspected queue is not zero. The current destination
-has the `inset` fill; hover is a lighter wash. No leading bars. Group labels are
+for state: a success check once a set-up step is done (`✓` in a terminal), and on
+**To review** a `primary` count pill: the daemon's exact count of suggested records
+(`profile.review.count`, personal scope plus the selected project), read again when
+the target, project or a decision changes. Unknown or refused hides the pill; zero
+hides it too, and nothing ever shows "0" for "not counted". Its spoken name carries
+the count ("To review, 3 waiting"). One `inset` indicator behind the rows marks the
+current destination and slides to it; hover is a lighter wash. No leading bars. Group labels are
 `CAPTION` semibold `muted`, never uppercased. Set-up steps keep stable spoken names
 ("Step 2: Profile") while their visible labels are just the step's name.
 
@@ -112,7 +115,10 @@ page, group labels and the brand hide, the status row stays, and dialogs keep a
 ![Graphite roles](design/palette.svg)
 
 Themes change color only; geometry, type and data never vary. Every theme has
-light, dark and high-contrast forms. **Graphite** is the default.
+light, dark and high-contrast forms. **Graphite** is the default. The chosen theme, color
+mode and contrast are remembered on this computer (`appearance.json`, owner-only,
+beside the saved connection); `--theme` and `--appearance` at launch win over it.
+Language follows the launch setting.
 
 | Theme | Character |
 | --- | --- |
@@ -216,7 +222,7 @@ icons are hidden and labels (and `✓`) carry the meaning.
 | `DIAGNOSTICS` (pulse) | Diagnostics | Foot |
 | `SETTINGS` (sliders) | Settings | Foot |
 | `REFRESH` | Re-read | Reconnect |
-| `COPY` | Copy text | Copy visible page |
+| `COPY` | Copy text | Every copy button (it swaps to `CHECK` once copied) |
 | `PLUS` | Add something | Add preference dialog header |
 | `CHECK` | Done, confirmed | Step done, theme chosen, success toasts, Apply dialog |
 | `ALERT` (triangle) | Consequential decision | Destructive Apply dialog |
@@ -226,7 +232,8 @@ icons are hidden and labels (and `✓`) carry the meaning.
 | `TRASH` | Destructive removal | Delete preference, Remove project dialogs |
 | `LOCK` / `UNLOCK` / `SEARCH` | Writes off / on, filter | Reserved for Profile writes and filters |
 
-Section icons (dashboard, preferences, handoff, diagnostics, workspaces) come from
+The Markdown editor's toolbar has its own glyphs (`UNDO`, `REDO`, `BOLD`, `ITALIC`,
+`STRIKE`, `CODE`, `HEADING`, `LIST`, `LIST_ORDERED`, `QUOTE`, `CODE_BLOCK`). Section icons (dashboard, preferences, handoff, diagnostics, workspaces) come from
 `icons::section_path`; the rest are named constants in `icons.rs`.
 
 ## 8. Components
@@ -250,10 +257,12 @@ Compact layouts tighten padding, never height.
 | Component | Variants and states | Notes |
 | --- | --- | --- |
 | `button` | Default (inset fill, hairline edge), Primary, Danger, Ghost; selected, disabled, loading; `leading` and `trailing` slots | 1 pt edge, label centered in the frame. Focus: the edge takes `primary` and a 2 pt `primary` ring sits outside it. Loading keeps width and shows a spinner beside the label |
-| `icon_button` | Ghost square of the control height | Accessible name required (shown as text in a terminal); press scale 0.95 |
-| `nav_item`, `step_item` | Ghost full-width rows, selected fill | `step_item` has the trailing done check |
+| `icon_button` | Ghost square of the control height; selected (a pressed toggle) | Accessible name required (shown as text in a terminal); press scale 0.95 |
+| `copy_button` | Any button variant | Shows its result in place: the copy glyph swaps to a check that pops in and the label to "Copied" for 1.5 s, so no notification is sent |
+| `nav_item`, `step_item`, `nav_item_counted` | Ghost full-width rows | `step_item` has the trailing done check, `nav_item_counted` the count pill |
+| `Slide` | — | One selection indicator for rows across groups: measures the current row (again whenever a row or group moves) and slides to it; the rows draw no fill of their own (`quiet_selection`) except in the compact wrapped layout |
 | `input` | Medium, Large, multiline; invalid, disabled | `panel` fill, `border` edge, 12 inner padding; focus: `primary` (or `danger` when invalid) edge and a soft 3 pt ring |
-| `markdown_input` | — | Same frame as `input`, full width; its height yields between 96 and 320 so its dialog fits the window |
+| `markdown_input` | — | A framed document: a toolbar (undo, redo, bold, italic, strikethrough, inline code, heading, bulleted and numbered lists, quote, code block; each pressed while it applies at the caret), the document styled node by node (classes for type and spacing, palette colors for markers, quotes, code and links), and a status bar with word and character counts and an Edit / Markdown switch showing the stored form. Its height yields between 96 and 280 so its dialog fits the window. A terminal gets a multi-line input over the same Markdown |
 | `field` | Label, control, help or error | Label 12 / 500; help directly under the control |
 | `tabs`, `radio_group` | Segmented; selected | One silhouette; one selected fill |
 | `menu`, `info` (popover) | — | `raised`, hairline, `CONTAINER`, `shadow_lg`; grow from the trigger |
@@ -325,14 +334,16 @@ work is called done. "RM" is what reduced motion does.
 | Change | Motion | RM |
 | --- | --- | --- |
 | Hover and press on a button or row | Wash and press share the control's transition: `FAST` on `SETTLE`; press scales to 0.97 (icon buttons 0.95) | Instant, no scale |
-| Current destination changes | The old row's fill fades out as the new row's fades in (`FAST`) | Instant |
-| Page changes | The page title arrives: fade and rise 4, `FAST`; page content swaps at once | Appears |
+| Current destination changes | One indicator slides to the new row, `BASE`, ease-in-out (it jumps on its first placement) | Jumps |
+| Page changes | The page's content fades in, `FAST`; the title arrives, fading and rising 4 | Appears |
 | Set-up step completes | Its trailing check pops in (scale 0.25 → 1, fade), `BASE` | Appears |
+| Suggestions waiting change | The count pill pops in with the new number, `BASE` | Appears |
 | Daemon answering | The status dot's ring pings out | Still dot |
 | Reading | The status dot breathes | Still dot |
+| Something copied | The copy glyph swaps to a check that pops in, the label to "Copied", for 1.5 s | Swap without scale |
 | Toast arrives / leaves | Rises 16 and fades in, `BASE` on `SETTLE`; leaves fading to 0.95 | Appears / disappears |
 | Toast stack expands on hover | The NSH stack's critically damped springs | Instant |
-| Window narrows past 900 | None; the layout follows the resize | — |
+| Window narrows past 900 | None; the layout follows the resize (the indicator hides) | — |
 
 **Preferences, Personal preferences, To review**
 
@@ -341,6 +352,8 @@ work is called done. "RM" is what reduced motion does.
 | Records list built | Rows arrive as a wave: rise 8 and fade, `SLOWER`, 50 ms apart, capped at the first 12 | Appear |
 | Add preference… opens | Scrim fades in `FAST`; the panel grows from 0.97 and rises 8, `SLOW`, ease-out | Appears |
 | Field focus | Edge to `primary` and the ring in, `INSTANT`, ease-out | Instant |
+| Editor toolbar toggle | The toggle's fill follows the caret, `FAST` | Instant |
+| Edit ↔ Markdown | One selection fill slides in the switch; the document and the source swap | Instant |
 | Record sheet opens / closes | The NSH sheet's own presentation from the trailing edge, over a fading scrim | Appears |
 | Decision prepared | The Apply dialog, as Add preference | Appears |
 | Empty or loading list | The empty state arrives: rise 8 and fade, `SLOWER` | Appears |
@@ -357,7 +370,8 @@ work is called done. "RM" is what reduced motion does.
 | Change | Motion | RM |
 | --- | --- | --- |
 | Check / Start / Connect / Add running | The button dims, holds its width and shows a turning spinner; the label stays | Spinner rests |
-| Result arrives | The result's text replaces the waiting text in place | — |
+| A check's result arrives | The result fades in rising 4, `BASE`, once per new result | Appears |
+| Configuration copied | As every copy button: glyph swap and "Copied" in place, no toast | Swap without scale |
 
 Sound: none. ACP is a quiet developer tool.
 

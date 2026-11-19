@@ -31,7 +31,7 @@ pub const SESSION_METHODS: [&str; 6] = [
     "session.stop",
 ];
 /// The exact Operator control/read methods (the daemon client re-checks this list).
-pub const CONTROL_METHODS: [&str; 14] = [
+pub const CONTROL_METHODS: [&str; 15] = [
     "profile.info",
     "profile.create",
     "profile.select",
@@ -40,6 +40,7 @@ pub const CONTROL_METHODS: [&str; 14] = [
     "profile.preferences.list",
     "profile.preferences.get",
     "profile.review.queue",
+    "profile.review.count",
     "profile.review.inspect",
     "profile.handoff.get",
     "profile.startup.forget",

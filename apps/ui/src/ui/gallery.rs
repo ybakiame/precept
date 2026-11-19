@@ -368,7 +368,10 @@ pub fn Gallery() -> impl IntoElement {
                         model,
                         "gallery-dialog-value",
                         || "Value".into(),
-                        || "Use **conventional commits**; imperative subject.".into(),
+                        || {
+                            "## Commits\n\nUse **conventional commits**; an *imperative* subject.\n\n- Keep each commit `small`\n- Run the tests first\n\n> Agents read this Markdown as written."
+                                .into()
+                        },
                         |_| {},
                     ),
                 ))

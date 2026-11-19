@@ -269,6 +269,16 @@ pub struct ReviewQueue {
     pub next_after_id: Option<i64>,
 }
 
+/// How many suggestions in one scope wait for a decision, at a watermark.
+/// A count of the scope as read, not a promise the queue is unchanged since.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReviewCount {
+    pub binding: Binding,
+    pub commit_sequence: i64,
+    pub suggested: i64,
+}
+
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReviewInspect {

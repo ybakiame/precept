@@ -15,6 +15,7 @@ pub async fn control(location: &Location, method: &str, params: Value) -> Result
             | "profile.preferences.list"
             | "profile.preferences.get"
             | "profile.review.queue"
+            | "profile.review.count"
             | "profile.review.inspect"
             | "profile.handoff.get"
             | "profile.startup.forget"

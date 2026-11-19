@@ -65,6 +65,7 @@ impl crate::native::Inputs {
                 "project.check"
                     | "profile.startup.forget"
                     | "profile.info"
+                    | "profile.review.count"
                     | "profile.create"
                     | "profile.select"
                     | "profile.write.enable"

@@ -316,26 +316,22 @@ fn configure(model: Signal<Model>) -> impl IntoElement {
                 )
                 .child(
                     view().flex_row().items_center().gap_2().child(
-                        button(model, "")
-                            .label_fn(move || {
-                                let m = model.get();
-                                m.word(if m.agents.copied {
-                                    Msg::CopiedConfig
-                                } else {
-                                    Msg::CopyConfig
-                                })
-                                .into()
-                            })
-                            .variant(ButtonVariant::Primary)
-                            .disabled(move || current_snippet(&model.get()).is_none())
-                            .loading(move || model.get().agents.busy)
-                            .on_press(move || {
-                                if let Some(text) = current_snippet(&model.get()) {
-                                    set_clipboard(text);
-                                    model.update(|m| m.agents.copied = true);
-                                    ui::notify(ui::Tone::Info, model.get().word(Msg::ToastCopied));
-                                }
-                            }),
+                        ui::copy_button(
+                            model,
+                            move || model.get().word(Msg::CopyConfig).into(),
+                            move || model.get().word(Msg::CopiedConfig).into(),
+                            move || {
+                                let Some(text) = current_snippet(&model.get()) else {
+                                    return false;
+                                };
+                                set_clipboard(text);
+                                model.update(|m| m.agents.copied = true);
+                                true
+                            },
+                        )
+                        .variant(ButtonVariant::Primary)
+                        .disabled(move || current_snippet(&model.get()).is_none())
+                        .loading(move || model.get().agents.busy),
                     ),
                 )
                 .child(caption(model, |m| {

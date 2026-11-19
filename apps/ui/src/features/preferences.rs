@@ -91,10 +91,16 @@ pub(crate) fn preferences(model: Signal<Model>) -> impl IntoElement {
                         move || model.get().detail_page + 1 < model.get().detail_pages(),
                         move || model.update(|m| m.detail_by(1)),
                     ))
-                    .child(control(model, Msg::CopyDetail, move || {
-                        set_clipboard(model.get().detail_chunk());
-                        model.update(|m| m.copied = true);
-                    }))
+                    .child(ui::copy_button(
+                        model,
+                        move || model.get().word(Msg::CopyDetail).into(),
+                        move || model.get().word(Msg::CopiedShort).into(),
+                        move || {
+                            set_clipboard(model.get().detail_chunk());
+                            model.update(|m| m.copied = true);
+                            true
+                        },
+                    ))
                     .child(control(model, Msg::CloseDetail, move || {
                         model.update(|m| m.selected_preference = None)
                     })),

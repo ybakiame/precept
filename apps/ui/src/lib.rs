@@ -33,6 +33,15 @@ fn runtime_lines(locale: acp_ui_core::i18n::Locale) -> Vec<String> {
 pub static TERMINAL_SURFACE: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 pub static PROBE_STARTED: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+/// Set by the native desktop binary only: the theme, color mode and contrast
+/// are read from and written to the private `appearance.json`. Tests, the TUI
+/// and previews never touch the developer's settings.
+pub static PERSIST_APPEARANCE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+#[cfg(all(feature = "ipc", not(test)))]
+fn persist_appearance() -> bool {
+    PERSIST_APPEARANCE.load(std::sync::atomic::Ordering::Relaxed)
+}
 pub fn probe_elapsed() -> f64 {
     PROBE_STARTED
         .get_or_init(std::time::Instant::now)
@@ -176,7 +185,8 @@ fn toggle_theme(model: Signal<Model>) {
         Appearance::Light
     });
 }
-fn copy_page(model: Signal<Model>) {
+/// Copies the visible page; whether it copied.
+fn copy_page(model: Signal<Model>) -> bool {
     if model.get().phase == Phase::Ready
         && !model.get().settings
         && !model.get().connection_editor
@@ -185,7 +195,9 @@ fn copy_page(model: Signal<Model>) {
     {
         set_clipboard(model.get().visible_lines().join("\n"));
         model.update(|m| m.copied = true);
+        return true;
     }
+    false
 }
 
 #[component]
@@ -206,17 +218,31 @@ pub fn App() -> impl IntoElement {
     #[cfg(feature = "ipc")]
     {
         initial.locale = acp_ui_core::i18n::Locale::parse(&inputs.locale).unwrap_or_default();
-        initial.theme = match inputs.theme.as_str() {
-            "instrument" => acp_ui_core::appearance::ThemeId::Instrument,
-            "ledger" => acp_ui_core::appearance::ThemeId::Ledger,
-            "harbor" => acp_ui_core::appearance::ThemeId::Harbor,
-            _ => Default::default(),
-        };
-        initial.color_mode = match inputs.appearance.as_str() {
-            "light" => acp_ui_core::appearance::ColorMode::Light,
-            "system" => acp_ui_core::appearance::ColorMode::System,
-            _ => acp_ui_core::appearance::ColorMode::Dark,
-        };
+        // Explicit launch arguments win; otherwise the saved appearance.
+        #[cfg(not(test))]
+        if persist_appearance()
+            && let Some((theme, mode, contrast)) = acp_ui_client::settings::load_appearance()
+                .as_ref()
+                .and_then(acp_ui_core::appearance::SavedAppearance::values)
+        {
+            initial.theme = theme;
+            initial.color_mode = mode;
+            initial.high_contrast = contrast;
+        }
+        if let Some(theme) = inputs
+            .theme
+            .as_deref()
+            .and_then(acp_ui_core::appearance::ThemeId::from_id)
+        {
+            initial.theme = theme;
+        }
+        if let Some(mode) = inputs
+            .appearance
+            .as_deref()
+            .and_then(acp_ui_core::appearance::ColorMode::from_id)
+        {
+            initial.color_mode = mode;
+        }
         initial.sessions = inputs.sessions;
         initial.operator.open = inputs.operator;
         initial.settings = inputs.settings;
@@ -262,6 +288,24 @@ pub fn App() -> impl IntoElement {
         _ => Appearance::Dark,
     });
     let model = signal(initial);
+    // Remember a changed theme, color mode or contrast (never the first value).
+    #[cfg(all(feature = "ipc", not(test)))]
+    if persist_appearance() {
+        let chosen = computed(move || {
+            let m = model.get();
+            (m.theme, m.color_mode, m.high_contrast)
+        });
+        let first = std::cell::Cell::new(true);
+        effect(move || {
+            let (theme, mode, contrast) = chosen.get();
+            if first.replace(false) {
+                return;
+            }
+            let saved = acp_ui_core::appearance::SavedAppearance::new(theme, mode, contrast);
+            // A refused or failed save leaves this session's choice as it is.
+            let _ = acp_ui_client::settings::save_appearance(&saved);
+        });
+    }
     if model.get_untracked().connection_editor {
         features::connection::opened(model);
     }
@@ -419,7 +463,9 @@ fn console(model: Signal<Model>) -> impl IntoElement {
     on_key_with("alt+6", global, move |_| sessions::open(model));
     on_key_with("alt+o", global, move |_| review::open(model));
     on_key("mod+d", move |_| toggle_theme(model));
-    on_key("mod+shift+c", move |_| copy_page(model));
+    on_key("mod+shift+c", move |_| {
+        copy_page(model);
+    });
     // Alt+left/right navigate the review tabs while the operator review workspace
     // is active; otherwise they keep paging the read-only console preferences.
     // The TUI platform names arrows "ArrowLeft/ArrowRight"; the GTK desktop names

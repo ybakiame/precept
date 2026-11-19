@@ -390,6 +390,7 @@ fn unregistered_unknown_and_mutating_tools_have_no_authority() {
         "profile.preferences.list",
         "profile.preferences.get",
         "profile.review.queue",
+        "profile.review.count",
         "profile.review.inspect",
         "profile.handoff.get",
         "profile.mutate",
