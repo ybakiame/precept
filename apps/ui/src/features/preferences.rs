@@ -109,12 +109,12 @@ pub(crate) fn preferences(model: Signal<Model>) -> impl IntoElement {
         let index = page * PAGE_SIZE + offset;
         body = body.child(
             view()
-                .p_2()
+                .p_3()
                 .gap_1()
-                .rounded(px(6.0))
+                .rounded(px(ui::scale::radius::CONTAINER))
                 .bg(move || palette(model).panel)
                 .border_1()
-                .border_color(move || palette(model).border)
+                .border_color(move || palette(model).hairline)
                 .child(
                     view()
                         .flex_row()
@@ -134,7 +134,7 @@ pub(crate) fn preferences(model: Signal<Model>) -> impl IntoElement {
                 .child(text(sanitize(&row.value, 160)))
                 .child(
                     text(origin(&current, &row.scope, &row.source))
-                        .text_size(px(12.0))
+                        .text_size(px(ui::scale::text::CAPTION))
                         .text_color(move || palette(model).muted),
                 ),
         );

@@ -12,6 +12,33 @@ type StateFn = Rc<dyn Fn() -> bool>;
 type PressFn = Rc<dyn Fn()>;
 type ContentFn = Rc<dyn Fn() -> AnyElement>;
 
+/// A dialog's width, chosen by its decision (DESIGN.md §8).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DialogSize {
+    /// 400: a confirmation.
+    Small,
+    /// 520: a short form.
+    Medium,
+    /// 640: a form with a rich value.
+    Large,
+}
+impl DialogSize {
+    fn width(self) -> f32 {
+        match self {
+            Self::Small => scale::layout::DIALOG_SM,
+            Self::Medium => scale::layout::DIALOG_MD,
+            Self::Large => scale::layout::DIALOG_LG,
+        }
+    }
+}
+
+/// The tone of a dialog's header icon.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DialogTone {
+    Accent,
+    Danger,
+}
+
 /// A destructive-confirmation builder; create it with [`alert_dialog`].
 pub struct AlertDialog {
     model: Signal<Model>,
@@ -22,6 +49,8 @@ pub struct AlertDialog {
     confirm: LabelFn,
     confirm_disabled: StateFn,
     confirm_variant: super::button::ButtonVariant,
+    size: DialogSize,
+    icon: Option<(&'static str, DialogTone)>,
     open: StateFn,
     initial_focus: Option<ElementRef>,
     on_cancel: Option<PressFn>,
@@ -32,7 +61,9 @@ pub struct AlertDialog {
 /// A focused decision or short form: the same modal, committing with a
 /// primary (non-destructive) button.
 pub fn dialog(model: Signal<Model>, title: impl Into<SharedString>) -> AlertDialog {
-    alert_dialog(model, title).primary()
+    alert_dialog(model, title)
+        .primary()
+        .size(DialogSize::Medium)
 }
 
 pub fn alert_dialog(model: Signal<Model>, title: impl Into<SharedString>) -> AlertDialog {
@@ -46,6 +77,8 @@ pub fn alert_dialog(model: Signal<Model>, title: impl Into<SharedString>) -> Ale
         confirm: Rc::new(|| "Confirm".into()),
         confirm_disabled: Rc::new(|| false),
         confirm_variant: super::button::ButtonVariant::Danger,
+        size: DialogSize::Small,
+        icon: None,
         open: Rc::new(|| false),
         initial_focus: None,
         on_cancel: None,
@@ -54,6 +87,17 @@ pub fn alert_dialog(model: Signal<Model>, title: impl Into<SharedString>) -> Ale
 }
 
 impl AlertDialog {
+    /// Its width (Small for confirmations, the default of `alert_dialog`;
+    /// Medium for `dialog`).
+    pub fn size(mut self, size: DialogSize) -> Self {
+        self.size = size;
+        self
+    }
+    /// A header icon in a tinted disc beside the title.
+    pub fn icon(mut self, path: &'static str, tone: DialogTone) -> Self {
+        self.icon = Some((path, tone));
+        self
+    }
     /// Only new scope, consequence or recovery information; never a restatement
     /// of the title.
     pub fn description(mut self, description: impl Into<SharedString>) -> Self {
@@ -146,6 +190,8 @@ impl IntoElement for AlertDialog {
         let open = self.open.clone();
         let initial_focus = self.initial_focus;
         let confirm_variant = self.confirm_variant;
+        let width = self.size.width();
+        let header_icon = self.icon;
         let is_open = computed(move || open());
         let on_cancel = self.on_cancel.clone();
         let on_confirm = self.on_confirm.clone();
@@ -165,16 +211,17 @@ impl IntoElement for AlertDialog {
                 let confirm_text = confirm.clone();
                 let confirm_disabled = confirm_disabled.clone();
                 let mut panel = view()
+                    .test_id("dialog-panel")
                     .w_full()
-                    .max_w_80()
-                    .p_4()
-                    .gap_3()
-                    .rounded(px(scale::radius::CONTAINER))
+                    .max_w(px(width))
+                    .p_6()
+                    .gap_4()
+                    .rounded(px(scale::radius::OVERLAY))
                     .border_1()
-                    .border_color(move || palette(model).border)
-                    .bg(move || palette(model).panel)
+                    .border_color(move || palette(model).hairline)
+                    .bg(move || palette(model).raised)
                     .text_color(move || palette(model).text)
-                    .shadow_lg()
+                    .shadow_xl()
                     .on_layout(move |_bounds: &Bounds<Points>| {
                         #[cfg(not(target_arch = "wasm32"))]
                         if std::env::var_os("ACP_UI_PROBE").is_some() {
@@ -183,21 +230,48 @@ impl IntoElement for AlertDialog {
                                 _bounds.size.width.0, _bounds.size.height.0
                             );
                         }
-                    })
-                    .child(
-                        text(move || title_text())
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_size(px(scale::text::SUBTITLE)),
-                    );
+                    });
+                // Header: an optional tone disc, then the title over its
+                // description. The disc keeps a fixed lane so text aligns.
+                let mut heading = view().flex_1().min_w_0().gap_1().child(
+                    text(move || title_text())
+                        .role(AccessibilityRole::Header)
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_size(px(scale::text::SUBTITLE)),
+                );
                 if let Some(description) = description.clone() {
-                    panel = panel.child(
+                    heading = heading.child(
                         text(move || description())
                             .text_size(px(scale::text::BODY))
                             .text_color(move || palette(model).muted),
                     );
                 }
+                let mut header = view().flex_row().items_start().gap_3();
+                if let Some((path, tone)) = header_icon {
+                    let tint = move || {
+                        let p = palette(model);
+                        match tone {
+                            DialogTone::Accent => p.primary,
+                            DialogTone::Danger => p.danger,
+                        }
+                    };
+                    header = header.child(
+                        view()
+                            .style_when(terminal, |s| s.hidden())
+                            .size(px(scale::disc::MD))
+                            .flex_shrink_0()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(scale::radius::PILL))
+                            .bg(move || tint().opacity(crate::ui::tokens::tint::REST))
+                            .text_color(tint)
+                            .child(icon::glyph(path, scale::icon::MD)),
+                    );
+                }
+                panel = panel.child(header.child(heading));
                 if let Some(content) = content.clone() {
-                    panel = panel.child(content());
+                    // Content always fills the panel's content width.
+                    panel = panel.child(view().w_full().child(content()));
                 }
                 let cancel_button = super::button::button(model, "")
                     .label_fn(move || cancel_text())
@@ -218,8 +292,12 @@ impl IntoElement for AlertDialog {
                 panel = panel.child(
                     view()
                         .flex_row()
+                        .flex_wrap()
                         .justify_end()
                         .gap_2()
+                        .pt_4()
+                        .border_t_1()
+                        .border_color(move || palette(model).hairline)
                         .child(cancel_button)
                         .child(confirm_button),
                 );
@@ -311,6 +389,77 @@ mod tests {
                             .into_element()
                     }),
             )
+    }
+
+    #[component]
+    fn LargeFormDialog() -> impl IntoElement {
+        let model = signal(Model::loading());
+        view().flex_1().child(
+            dialog(model, "Add a personal preference")
+                .size(DialogSize::Large)
+                .icon(crate::ui::icons::PLUS, DialogTone::Accent)
+                .description("Saved as a suggestion.")
+                .open(|| true)
+                .content_fn(move || {
+                    view()
+                        .w_full()
+                        .gap_4()
+                        .child(
+                            super::super::input::input(model, "Key")
+                                .test_id("probe-key")
+                                .value(|| "commit-style".into()),
+                        )
+                        .child(super::super::markdown::markdown_input(
+                            model,
+                            "probe-value",
+                            || "Value".into(),
+                            || "Prefer **small** commits.".into(),
+                            |_| {},
+                        ))
+                        .into_element()
+                }),
+        )
+    }
+
+    fn bounds_of(app: &nsh_testing::Headless, id: &str) -> Bounds<Points> {
+        app.screen()
+            .layout_nodes()
+            .into_iter()
+            .find(|n| n.test_id.as_deref() == Some(id))
+            .unwrap_or_else(|| panic!("no {id}"))
+            .bounds
+    }
+
+    /// The dialog grows to its size and no field reaches past the panel's
+    /// content edge, on a roomy window and on a narrow one (the regression:
+    /// fixed-width content once spilled out of a 320-point panel).
+    #[test]
+    fn dialog_content_stays_inside_the_panel_at_every_window_size() {
+        let mut cfg = EngineConfig::new(Root::of::<LargeFormDialog>());
+        cfg.viewport = Size::new(px(1080.0), px(760.0));
+        let mut app = nsh_testing::Headless::start(cfg).unwrap();
+        app.wait_for("Add a personal preference").unwrap();
+        for (width, expected) in [(1080.0, scale::layout::DIALOG_LG), (520.0, 520.0 - 32.0)] {
+            app.set_viewport(Size::new(px(width), px(760.0))).unwrap();
+            app.wait_for("Add a personal preference").unwrap();
+            let panel = bounds_of(&app, "dialog-panel");
+            assert!(
+                (panel.size.width.0 - expected).abs() < 0.5,
+                "panel {} wide at window {width}, expected {expected}",
+                panel.size.width.0
+            );
+            let right = panel.origin.x.0 + panel.size.width.0;
+            for id in ["probe-key", "probe-value"] {
+                let field = bounds_of(&app, id);
+                assert!(
+                    field.origin.x.0 >= panel.origin.x.0 + 23.5
+                        && field.origin.x.0 + field.size.width.0 <= right - 23.5,
+                    "{id} {:?} leaves the panel {:?} at window {width}",
+                    field,
+                    panel
+                );
+            }
+        }
     }
 
     #[test]

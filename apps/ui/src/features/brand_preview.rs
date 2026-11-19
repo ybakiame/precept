@@ -57,7 +57,8 @@ pub fn parse(args: &[String]) -> Result<Option<Config>, &'static str> {
                     "a" => ThemeId::Instrument,
                     "b" => ThemeId::Ledger,
                     "c" => ThemeId::Harbor,
-                    _ => return Err("Choose theme a, b or c"),
+                    "d" => ThemeId::Graphite,
+                    _ => return Err("Choose theme a, b, c or d"),
                 }
             }
             "--preview-page" => {

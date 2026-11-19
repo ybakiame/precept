@@ -9,7 +9,8 @@ Navigation is grouped into **Set up** (Connection, Profile, Workspaces and Agent
 **Project** (Dashboard, Preferences, Handoff and Sessions) and **Personal**
 (personal preferences and suggestions to review), with Diagnostics and Settings at
 the navigation foot. See the [UI standards](../docs/product-ui.md) for interaction,
-scope and presentation contracts.
+scope and presentation contracts, and the [design system](ui/DESIGN.md) for the
+visual language, components and motion.
 
 ## Review keyboard flow
 

@@ -63,9 +63,11 @@ impl Tabs {
             .accessibility_label(move || Some(a11y_label()))
             .on_press(move || on_press())
             .px_3()
-            .py_1p5()
-            .rounded(px(scale::radius::CONTROL))
+            .py_1()
+            .rounded(px(scale::radius::SMALL))
             .text_size(px(scale::text::BODY))
+            .transition_colors()
+            .duration(motion::ms(motion::INSTANT))
             .text_color(move || {
                 let p = palette(model);
                 if color_sel() { p.text } else { p.muted }
@@ -81,16 +83,25 @@ impl Tabs {
 impl IntoElement for Tabs {
     fn into_element(self) -> AnyElement {
         let model = self.model;
+        // One silhouette: a segmented container, its inner radius concentric
+        // (CONTROL − 2 ≈ SMALL), and one selection background sliding to
+        // the chosen tab natively.
         base_tabs()
             .flex_row()
             .flex_wrap()
-            .gap_1()
-            // One selection background, sliding to the chosen tab natively.
+            .self_start()
+            .gap_0p5()
+            .p_0p5()
+            .rounded(px(scale::radius::CONTROL))
+            .border_1()
+            .border_color(move || palette(model).hairline)
+            .bg(move || palette(model).panel)
             .indicator_style(move |s| {
                 s.top_0p5()
                     .bottom_0p5()
-                    .rounded(px(scale::radius::CONTROL))
+                    .rounded(px(scale::radius::SMALL))
                     .bg(move || palette(model).inset)
+                    .shadow_xs()
             })
             .children(self.items)
             .into_element()

@@ -13,11 +13,13 @@ pub mod icon;
 pub(crate) mod icons;
 pub mod motion;
 pub mod scale;
+mod status;
 pub(crate) mod tokens;
 
 mod alert_dialog;
 mod badge;
 mod button;
+mod choice;
 mod empty;
 mod field;
 mod info;
@@ -34,9 +36,10 @@ pub mod toast;
 
 pub mod gallery;
 
-pub use alert_dialog::{alert_dialog, dialog};
+pub use alert_dialog::{DialogSize, DialogTone, alert_dialog, dialog};
 pub use badge::{BadgeVariant, badge};
-pub use button::{ButtonSize, ButtonVariant, button};
+pub use button::{ButtonSize, ButtonVariant, button, icon_button};
+pub use choice::choice_card;
 pub use empty::empty;
 pub use field::field;
 pub use info::info;
@@ -47,6 +50,7 @@ pub use nav::{nav_item, step_item};
 pub use properties::properties;
 pub use radio::radio_group;
 pub use sheet::sheet;
+pub use status::{Status, status_dot};
 pub use surface::{card, surface};
 pub use tabs::tabs;
 pub use toast::{Tone, notify, toaster};

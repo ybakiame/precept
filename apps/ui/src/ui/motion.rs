@@ -25,9 +25,7 @@ pub const SETTLE: (f32, f32, f32, f32) = (0.22, 1.0, 0.36, 1.0);
 
 /// Whole-control press scale.
 pub const PRESS: f32 = 0.97;
-/// Icon-button press scale. Reserved for the review panel's icon buttons
-/// (Commit B/C).
-#[allow(dead_code)]
+/// Icon-button press scale.
 pub const ICON_PRESS: f32 = 0.95;
 /// A popup's entrance scale.
 pub const ENTER: f32 = 0.97;
@@ -42,6 +40,11 @@ pub fn ms(token: f32) -> impl Fn() -> f32 {
 /// A press scale that rests at 1 under reduced motion.
 pub fn press() -> impl Fn() -> f32 {
     move || if reduce_motion() { 1.0 } else { PRESS }
+}
+
+/// An icon button's press scale; rests at 1 under reduced motion.
+pub fn icon_press() -> impl Fn() -> f32 {
+    move || if reduce_motion() { 1.0 } else { ICON_PRESS }
 }
 
 /// Layered pointer feedback for a control: its hover wash, press scale and
@@ -87,5 +90,27 @@ pub fn arrive(delay_ms: f32) -> Motion {
         )
         .values(MotionChannel::TranslateY, [RISE, 0.0])
         .values(MotionChannel::Opacity, [0.0, 1.0]),
+    )
+}
+
+/// A small acknowledgement growing in (a step's done check): scale from a
+/// quarter and fade in on `base`, the soft settle. Lands at rest under reduced
+/// motion. Create it when the element appears and bind it with `bind_motion`.
+pub fn pop() -> Motion {
+    motion().entering(
+        MotionSpec::new(KeyframeTiming::new(BASE).easing(Easing::EaseOut))
+            .values(MotionChannel::Scale, [0.25, 1.0])
+            .values(MotionChannel::Opacity, [0.0, 1.0]),
+    )
+}
+
+/// Page content arriving when the destination changes: a short fade, so
+/// sibling sections cross-fade rather than slide. Lands at rest under reduced
+/// motion.
+pub fn page() -> Motion {
+    motion().entering(
+        MotionSpec::new(KeyframeTiming::new(FAST).easing(Easing::EaseOut))
+            .values(MotionChannel::Opacity, [0.0, 1.0])
+            .values(MotionChannel::TranslateY, [4.0, 0.0]),
     )
 }

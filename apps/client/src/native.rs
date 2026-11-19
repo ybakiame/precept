@@ -11,7 +11,7 @@ pub struct Inputs {
     pub locale: String,
     #[arg(long, value_parser=["system","light","dark"], default_value="dark")]
     pub appearance: String,
-    #[arg(long, value_parser=["instrument","ledger","harbor"], default_value="harbor")]
+    #[arg(long, value_parser=["graphite","instrument","ledger","harbor"], default_value="graphite")]
     pub theme: String,
     #[arg(long, value_parser=["dashboard","projects","preferences","handoff","diagnostics"], default_value="dashboard")]
     pub section: String,

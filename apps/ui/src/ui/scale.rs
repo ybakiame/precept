@@ -10,12 +10,14 @@
 /// and circles use [`PILL`]. Nested surfaces stay concentric: a control inside
 /// a container reads as `CONTAINER - gap`.
 pub mod radius {
-    /// Buttons, inputs, tabs, popups.
+    /// Buttons, inputs, tabs, rows.
     pub const CONTROL: f32 = 6.0;
-    /// Cards, panels, dialogs.
-    pub const CONTAINER: f32 = 8.0;
-    /// Badges, small tags, the tab indicator inset.
-    pub const SMALL: f32 = 3.0;
+    /// Cards, lists, popovers, menus, theme cards.
+    pub const CONTAINER: f32 = 10.0;
+    /// Dialogs, toasts, sheets: the floating layers.
+    pub const OVERLAY: f32 = 12.0;
+    /// Badges, count pills, small buttons, the tab indicator inset.
+    pub const SMALL: f32 = 4.0;
     /// Intentional circles and pills only.
     pub const PILL: f32 = 999.0;
 }
@@ -42,9 +44,9 @@ pub mod control {
     /// Small: toolbars, dense repeated actions.
     pub const SM: f32 = 24.0;
     /// Medium: the default for most chrome and workflows.
-    pub const MD: f32 = 30.0;
+    pub const MD: f32 = 32.0;
     /// Large: prominent decisions, touch-friendly frames.
-    pub const LG: f32 = 38.0;
+    pub const LG: f32 = 40.0;
 }
 
 /// Region widths (points): how wide a column may grow before it stops helping.
@@ -54,7 +56,15 @@ pub mod layout {
     /// The narrowest anchored popup (menus, selects).
     pub const POPUP: f32 = 192.0;
     /// The sidebar: wide enough for stable labels, subordinate to the page.
-    pub const SIDEBAR: f32 = 224.0;
+    pub const SIDEBAR: f32 = 232.0;
+    /// Dialog widths by decision: confirm, short form, form with a rich value.
+    pub const DIALOG_SM: f32 = 400.0;
+    pub const DIALOG_MD: f32 = 520.0;
+    pub const DIALOG_LG: f32 = 640.0;
+    /// A toast's width; the stack floats 16 from the window's edges.
+    pub const TOAST: f32 = 360.0;
+    /// The title bar's height.
+    pub const TITLE_BAR: f32 = 36.0;
     /// A trailing-edge sheet (record details beside a list).
     pub const SHEET: f32 = 440.0;
     /// The label lane of a properties list.
@@ -65,4 +75,18 @@ pub mod layout {
 pub mod icon {
     pub const SM: f32 = 14.0;
     pub const MD: f32 = 16.0;
+    /// Toast and dialog header icons.
+    pub const LG: f32 = 20.0;
+    /// Empty-state icons.
+    pub const XL: f32 = 24.0;
+}
+
+/// Disc diameters behind icons (a tinted circle that names a tone).
+pub mod disc {
+    /// Toasts and dialog headers.
+    pub const MD: f32 = 28.0;
+    /// Empty states.
+    pub const LG: f32 = 48.0;
+    /// Status dots.
+    pub const DOT: f32 = 8.0;
 }

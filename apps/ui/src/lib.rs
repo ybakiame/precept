@@ -209,6 +209,7 @@ pub fn App() -> impl IntoElement {
         initial.theme = match inputs.theme.as_str() {
             "instrument" => acp_ui_core::appearance::ThemeId::Instrument,
             "ledger" => acp_ui_core::appearance::ThemeId::Ledger,
+            "harbor" => acp_ui_core::appearance::ThemeId::Harbor,
             _ => Default::default(),
         };
         initial.color_mode = match inputs.appearance.as_str() {
@@ -350,6 +351,7 @@ fn console(model: Signal<Model>) -> impl IntoElement {
         ("alt+a", acp_ui_core::appearance::ThemeId::Instrument),
         ("alt+b", acp_ui_core::appearance::ThemeId::Ledger),
         ("alt+c", acp_ui_core::appearance::ThemeId::Harbor),
+        ("alt+d", acp_ui_core::appearance::ThemeId::Graphite),
     ] {
         on_key(key, move |_| model.update(|m| m.theme = theme));
     }

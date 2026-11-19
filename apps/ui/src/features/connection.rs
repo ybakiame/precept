@@ -340,7 +340,7 @@ fn checks(model: Signal<Model>) -> impl IntoElement {
             .p_4()
             .rounded(px(scale::radius::CONTAINER))
             .border_1()
-            .border_color(move || palette(model).border)
+            .border_color(move || palette(model).hairline)
             .bg(move || palette(model).panel)
             .child(rows),
     )

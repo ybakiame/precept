@@ -45,11 +45,11 @@ impl IntoElement for Surface {
         let model = self.model;
         let mut body = view()
             .flex_shrink_0()
-            .p_3()
-            .gap_2()
+            .p_4()
+            .gap_3()
             .rounded(px(scale::radius::CONTAINER))
             .border_1()
-            .border_color(move || palette(model).border)
+            .border_color(move || palette(model).hairline)
             .bg(move || palette(model).panel)
             .text_color(move || palette(model).text)
             .text_size(px(scale::text::BODY));

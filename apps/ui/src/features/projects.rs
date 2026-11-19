@@ -479,6 +479,7 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
 /// The removal confirmation; a sibling of the page's scroll region.
 pub(crate) fn remove_dialog(model: Signal<Model>) -> impl IntoElement {
     alert_dialog(model, "")
+        .icon(icons::TRASH, ui::DialogTone::Danger)
         .title_fn(word(model, Msg::RemoveTitle))
         .description_fn(move || {
             let m = model.get();

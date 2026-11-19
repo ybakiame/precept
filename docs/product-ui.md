@@ -5,70 +5,40 @@ Follow them together with the NSH Design Guides when changing a screen. Product
 authority comes from the [charter](product.md), [architecture](architecture.md) and
 [security](security.md); UI state never creates authority of its own.
 
+The visual system (themes, tokens, type, spacing, radii, elevation, icons,
+component sizes, overlay anatomy, motion tokens and every screen's motion
+inventory) is defined once in the [design system](../apps/ui/DESIGN.md). This file
+keeps the product and interaction contracts that design must satisfy.
+
 Screens are composed from the app's shared `apps/ui/src/ui/` layer above NSH base
 components. Features reuse shared controls and tokens rather than importing base
 controls or inventing local styling. Colors come from semantic tokens, geometry
 from scales and motion from motion tokens. Raw hex belongs only in theme
 definitions in `apps/core/src/appearance.rs`.
 
-## Visual language
+## Visual contract
 
 The interface is quiet, precise and information-first: a native developer inspector
 with a small, explicit set of writes, not a web dashboard.
 
-- Establish hierarchy through size, weight, spacing and hairlines before color or
-  containers. Avoid nested cards and decorative shadows.
-- Give each surface one clear focal point. Accent and strong color are scarce;
-  primary action, selection and next step remain understandable without color.
-- Use `background` for the window floor, `panel` for cards/popups and `inset` for
-  recessed control fills. Shadows explain floating layers only.
-- Draw a container hairline once. Interactive controls use a visible boundary and
-  focus treatment.
-- Preserve geometry, typography and data across themes; only color changes.
-
-The Instrument, Ledger and Harbor themes each support light, dark and high-contrast
-modes. Status and meaning always include text, never color alone.
-
-## Tokens and geometry
-
-Semantic color roles include `background`, `panel`, `inset`, `text`, `muted`,
-`border`, `accent`/`primary`, `on_accent`/`on_primary`, `warning`, `error`,
-`success`, `danger` and `danger_foreground`/`on_danger`. Destructive action colors
-are distinct from error-state colors. Derived washes come from token mixing, not
-new literal colors.
-
-Use the platform sans-serif font for interface text and monospace for identifiers,
-shortcuts and aligned numbers. The shared scale is:
-
-| Token | Size | Use |
-| --- | --- | --- |
-| `CAPTION` | 12 pt | Secondary metadata, help and badges |
-| `BODY` | 14 pt | Body text and control labels |
-| `SUBTITLE` | 16 pt | Subtitles, large labels and dialog titles |
-| `TITLE` | 20 pt | Section and page titles |
-| `DISPLAY` | 22 pt | Principal window title |
-
-Use at most three or four sizes and two weights on a screen. Do not use a smaller
-size as the only hierarchy cue or text below 12 pt for reading.
-
-Spacing follows the shared 4 pt scale: 4 within controls, 8 between related
-controls, 12 within a content group, 16 between groups or for panel padding, and
-24–32 between sections or around empty states. Padding belongs to components; gaps
-belong to parents. Peers share alignment and repeated rows keep stable lanes.
-
-Radii come from `ui::scale::radius`: `SMALL` 3 pt, `CONTROL` 6 pt, `CONTAINER` 8 pt
-and `PILL` only for intentional pills. Nested radii remain concentric and children
-stay inside their surface.
-
-Desktop controls use shared small/medium/large heights and one size setting for
-height, padding, text, icon and radius. Compact layouts tighten padding without
-changing control height. TUI layout snaps to whole cells, with no fractional
-spacing, radii or shadows.
+- Each surface has one focal point and at most one primary action. Accent and
+  status colors are scarce; primary action, selection and next step remain
+  understandable without color.
+- Surfaces step by role (floor, sidebar, panel, raised, inset); hairlines separate
+  regions, and strong boundaries are reserved for controls the operator types into
+  and for focus. Shadows explain floating layers only.
+- Themes change color only; geometry, typography and data never vary by theme.
+  Graphite (default), Harbor, Ledger and Instrument each have light, dark and
+  high-contrast modes, and every text role meets 4.5:1 on every surface.
+- Status and meaning always include text, never color, shape or motion alone.
+- Spacing, radii, type and control sizes come from the shared scales. TUI layout
+  snaps to whole cells, with no fractional spacing, radii or shadows.
 
 ## Shared controls and states
 
-Use the shared button, navigation item, menu, radio group, field, properties, input,
-tabs, badge, empty state, surface, dialog, sheet, notification, information popup,
+Use the shared button, icon button, navigation item, menu, radio group, field,
+properties, input, tabs, badge, status dot, choice card, empty state, surface,
+dialog, sheet, notification, information popup,
 Markdown input, icon and motion components. Add a variant or size to the shared
 layer when a feature needs a new reusable treatment.
 
@@ -163,7 +133,10 @@ success badge. Historical PASS remains labeled historical.
 ## Overlays and feedback
 
 Use a sheet for record detail/history beside a list, a dialog for a short focused
-form or Apply decision, and an alert dialog for destructive confirmation. Avoid
+form or Apply decision, and an alert dialog for destructive confirmation. Dialog
+width follows the decision and its content always fits inside the panel at every
+window size. Notifications float in the window's overlay layer and never take,
+move or resize page layout. Avoid
 stacked panels for one job. Notifications report outcomes but never replace an
 inline uncertain outcome or a required decision. Longer page explanations belong
 behind an information control rather than obscuring the primary workflow.
@@ -174,7 +147,8 @@ focus scope exist. Hidden controls cannot receive focus.
 
 ## Motion
 
-Use shared motion tokens and helpers. Animate opacity and transform rather than
+Use shared motion tokens and helpers, and keep each screen's motion inventory in
+the [design system](../apps/ui/DESIGN.md#9-motion) current. Animate opacity and transform rather than
 layout where possible; state feedback is lighter than entrances, and exits are
 faster than entrances. Do not animate frequently updating data or routine list
 refreshes as decorative entrances.

@@ -47,10 +47,10 @@ fn colors(model: Signal<Model>, v: BadgeVariant) -> (AdaptiveColor, AdaptiveColo
     let p = palette(model);
     match v {
         BadgeVariant::Neutral => (p.inset, p.muted),
-        BadgeVariant::Info => (p.primary.opacity(0.14), p.primary),
-        BadgeVariant::Success => (p.success.opacity(0.14), p.success),
-        BadgeVariant::Warning => (p.warning.opacity(0.16), p.warning),
-        BadgeVariant::Danger => (p.danger.opacity(0.14), p.danger),
+        BadgeVariant::Info => (p.primary.opacity(super::tokens::tint::REST), p.primary),
+        BadgeVariant::Success => (p.success.opacity(super::tokens::tint::REST), p.success),
+        BadgeVariant::Warning => (p.warning.opacity(super::tokens::tint::REST), p.warning),
+        BadgeVariant::Danger => (p.danger.opacity(super::tokens::tint::REST), p.danger),
     }
 }
 

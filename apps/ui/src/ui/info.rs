@@ -29,7 +29,9 @@ pub fn info(
                 .justify_center()
                 .rounded(px(scale::radius::CONTROL))
                 .text_color(move || palette(model).muted)
-                .hover(move |s| s.bg(palette(model).inset))
+                .transition_colors()
+                .duration(motion::ms(motion::INSTANT))
+                .hover(move |s| s.bg(palette(model).inset).text_color(palette(model).text))
                 .focus_visible(move |s| s.border_1().border_color(palette(model).primary))
                 .child(icon::glyph(INFO, scale::icon::MD))
                 .child(
@@ -45,8 +47,8 @@ pub fn info(
                 .gap_1()
                 .rounded(px(scale::radius::CONTAINER))
                 .border_1()
-                .border_color(move || palette(model).border)
-                .bg(move || palette(model).panel)
+                .border_color(move || palette(model).hairline)
+                .bg(move || palette(model).raised)
                 .shadow_lg()
                 .child(
                     text(move || label())

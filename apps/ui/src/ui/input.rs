@@ -17,6 +17,7 @@ pub struct Input {
     value: ValueFn,
     on_change: Option<ChangeFn>,
     on_submit: Option<ChangeFn>,
+    on_focus: Option<Rc<dyn Fn()>>,
     placeholder: Option<SharedString>,
     disabled: StateFn,
     invalid: StateFn,
@@ -36,6 +37,7 @@ pub fn input(model: Signal<Model>, label: impl Into<SharedString>) -> Input {
         value: Rc::new(String::new),
         on_change: None,
         on_submit: None,
+        on_focus: None,
         placeholder: None,
         disabled: Rc::new(|| false),
         invalid: Rc::new(|| false),
@@ -66,6 +68,11 @@ impl Input {
     /// Called with the text on Return / submit.
     pub fn on_submit(mut self, on_submit: impl Fn(&str) + 'static) -> Self {
         self.on_submit = Some(Rc::new(on_submit));
+        self
+    }
+    /// Called when the field takes focus.
+    pub fn on_focus(mut self, on_focus: impl Fn() + 'static) -> Self {
+        self.on_focus = Some(Rc::new(on_focus));
         self
     }
     /// Hint text shown while empty.
@@ -134,8 +141,8 @@ impl IntoElement for Input {
             .multiline(self.lines.is_some())
             .h(px(height))
             .w_full()
-            .px_2()
-            .border_2()
+            .px_3()
+            .border_1()
             .rounded(px(scale::radius::CONTROL))
             .bg(move || palette(model).panel)
             .text_color(move || palette(model).text)
@@ -145,9 +152,15 @@ impl IntoElement for Input {
                 if invalid() { p.danger } else { p.border }
             })
             .focus(move |s| {
+                let invalid_ring = invalid_focus.clone();
                 s.border_color(move || {
                     let p = palette(model);
                     if invalid_focus() { p.danger } else { p.primary }
+                })
+                .ring(px(3.0))
+                .ring_color(move || {
+                    let p = palette(model);
+                    if invalid_ring() { p.danger } else { p.primary }.opacity(0.25)
                 })
             })
             .disabled(move || disabled())
@@ -162,6 +175,9 @@ impl IntoElement for Input {
             });
         if let Some(submit) = submit {
             field = field.on_submit(move |v: &str| submit(v));
+        }
+        if let Some(focused) = self.on_focus {
+            field = field.on_focus(move || focused());
         }
         if let Some(placeholder) = self.placeholder {
             field = field.placeholder(placeholder.to_string());

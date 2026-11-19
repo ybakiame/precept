@@ -3,6 +3,7 @@
 //! disabled and selected states), styled entirely from tokens. It takes a
 //! variant, a size, states and slots — never colors or radii.
 use super::prelude::*;
+use crate::ui::tokens::wash;
 use std::rc::Rc;
 
 /// What a button means in its decision area.
@@ -44,6 +45,9 @@ pub struct Button {
     icon: Option<&'static str>,
     selected: StateFn,
     full_width: bool,
+    icon_only: bool,
+    leading: Option<AnyElement>,
+    trailing: Option<AnyElement>,
     spoken: Option<LabelFn>,
     // Explicit native-acceptance observer only; never a control or authority.
     #[cfg(not(target_arch = "wasm32"))]
@@ -64,6 +68,9 @@ pub fn button(model: Signal<Model>, label: impl Into<SharedString>) -> Button {
         icon: None,
         selected: Rc::new(|| false),
         full_width: false,
+        icon_only: false,
+        leading: None,
+        trailing: None,
         spoken: None,
         #[cfg(not(target_arch = "wasm32"))]
         probe: None,
@@ -118,6 +125,17 @@ impl Button {
     /// destinations or choices).
     pub fn full_width(mut self) -> Self {
         self.full_width = true;
+        self
+    }
+    /// A leading element in the icon lane instead of an icon (a status dot).
+    pub fn leading(mut self, leading: impl IntoElement) -> Self {
+        self.leading = Some(leading.into_element());
+        self
+    }
+    /// A trailing lane after the label (a done check, a count). The lane
+    /// keeps its place so rows stay aligned.
+    pub fn trailing(mut self, trailing: impl IntoElement) -> Self {
+        self.trailing = Some(trailing.into_element());
         self
     }
     /// What activation does.
@@ -176,10 +194,25 @@ fn emit_focus_probe(probe: &(std::path::PathBuf, String)) {
     }
 }
 
+/// A square icon-only button of the control height: a ghost by default, with
+/// its accessible name (and the name a tooltip would show) in `label`.
+pub fn icon_button(
+    model: Signal<Model>,
+    path: &'static str,
+    label: impl Fn() -> SharedString + 'static,
+) -> Button {
+    let mut b = button(model, "")
+        .label_fn(label)
+        .variant(ButtonVariant::Ghost);
+    b.icon = Some(path);
+    b.icon_only = true;
+    b
+}
+
 fn rest_bg(model: Signal<Model>, v: ButtonVariant, selected: bool) -> AdaptiveColor {
     let p = palette(model);
     match v {
-        ButtonVariant::Default if selected => mix(p.inset, p.text, 0.10),
+        ButtonVariant::Default if selected => mix(p.inset, p.text, wash::PRESS),
         ButtonVariant::Default => p.inset,
         ButtonVariant::Primary => p.primary,
         ButtonVariant::Danger => p.danger,
@@ -200,7 +233,7 @@ fn rest_text(model: Signal<Model>, v: ButtonVariant, selected: bool) -> Adaptive
 fn rest_border(model: Signal<Model>, v: ButtonVariant) -> AdaptiveColor {
     let p = palette(model);
     match v {
-        ButtonVariant::Default => p.border,
+        ButtonVariant::Default => p.hairline,
         ButtonVariant::Primary => p.primary,
         ButtonVariant::Danger => p.danger,
         ButtonVariant::Ghost => p.inset.opacity(0.0),
@@ -209,19 +242,19 @@ fn rest_border(model: Signal<Model>, v: ButtonVariant) -> AdaptiveColor {
 fn hover_bg(model: Signal<Model>, v: ButtonVariant) -> AdaptiveColor {
     let p = palette(model);
     match v {
-        ButtonVariant::Default => mix(p.inset, p.text, 0.07),
+        ButtonVariant::Default => mix(p.inset, p.text, wash::HOVER),
         ButtonVariant::Primary => p.primary.opacity(0.88),
         ButtonVariant::Danger => p.danger.opacity(0.88),
-        ButtonVariant::Ghost => mix(p.inset, p.text, 0.04),
+        ButtonVariant::Ghost => mix(p.inset, p.text, wash::HOVER).opacity(0.7),
     }
 }
 fn press_bg(model: Signal<Model>, v: ButtonVariant) -> AdaptiveColor {
     let p = palette(model);
     match v {
-        ButtonVariant::Default => mix(p.inset, p.text, 0.13),
+        ButtonVariant::Default => mix(p.inset, p.text, wash::PRESS),
         ButtonVariant::Primary => p.primary.opacity(0.78),
         ButtonVariant::Danger => p.danger.opacity(0.78),
-        ButtonVariant::Ghost => mix(p.inset, p.text, 0.10),
+        ButtonVariant::Ghost => mix(p.inset, p.text, wash::PRESS),
     }
 }
 fn focus_border(model: Signal<Model>, v: ButtonVariant) -> AdaptiveColor {
@@ -248,6 +281,9 @@ impl IntoElement for Button {
         let (selected_bg, selected_text, selected_a11y) =
             (selected.clone(), selected.clone(), selected.clone());
         let full_width = self.full_width;
+        let icon_only = self.icon_only;
+        let trailing = self.trailing;
+        let leading = self.leading;
         let (text_size, icon_size, radius) = match size {
             ButtonSize::Small => (scale::text::CAPTION, scale::icon::SM, scale::radius::SMALL),
             ButtonSize::Medium => (scale::text::BODY, scale::icon::MD, scale::radius::CONTROL),
@@ -308,7 +344,7 @@ impl IntoElement for Button {
             .accessibility_label(move || Some(label()))
             .disabled(move || disabled() || loading_disabled())
             .disabled_style(|s| s.opacity(0.45))
-            .border_2()
+            .border_1()
             .rounded(px(radius))
             .text_size(px(text_size))
             .selected(move || selected_a11y())
@@ -317,10 +353,17 @@ impl IntoElement for Button {
             .border_color(move || rest_border(model, variant))
             .hover(move |s| s.bg(move || hover_bg(model, variant)))
             .active(move |s| {
-                s.scale(motion::press())
+                let (press, icon_press) = (motion::press(), motion::icon_press());
+                s.scale(move || if icon_only { icon_press() } else { press() })
                     .bg(move || press_bg(model, variant))
             })
-            .focus(move |s| s.border_color(move || focus_border(model, variant)))
+            // The ring sits outside the edge, so fills stay intact; the edge
+            // also takes the focus color where a ring would be clipped.
+            .focus(move |s| {
+                s.border_color(move || focus_border(model, variant))
+                    .ring(px(2.0))
+                    .ring_color(move || palette(model).primary.opacity(0.55))
+            })
             .on_press(move || {
                 if let Some(cb) = &press {
                     cb();
@@ -335,11 +378,22 @@ impl IntoElement for Button {
             b
         };
         let b = motion::feedback(b);
-        let b = match size {
-            ButtonSize::Small => b.px_2().py_0p5().min_h(px(scale::control::SM)),
-            ButtonSize::Medium if compact() => b.px_2().py_0p5().min_h(px(scale::control::MD)),
-            ButtonSize::Medium => b.px_2().py_1().min_h(px(scale::control::MD)),
-            ButtonSize::Large => b.px_3().py_1p5().min_h(px(scale::control::LG)),
+        let height = match size {
+            ButtonSize::Small => scale::control::SM,
+            ButtonSize::Medium => scale::control::MD,
+            ButtonSize::Large => scale::control::LG,
+        };
+        // The label is centered in the frame whatever the height.
+        let b = b.justify_center();
+        let b = if icon_only {
+            b.size(px(height)).items_center()
+        } else {
+            match size {
+                ButtonSize::Small => b.px_2().py_0p5().min_h(px(height)),
+                ButtonSize::Medium if compact() => b.px_2().py_0p5().min_h(px(height)),
+                ButtonSize::Medium => b.px_3().py_1().min_h(px(height)),
+                ButtonSize::Large => b.px_4().py_1p5().min_h(px(height)),
+            }
         };
         let b = if full_width {
             b.style_when(move || !compact(), |s| s.w_full())
@@ -353,6 +407,14 @@ impl IntoElement for Button {
         };
         if let Some(path) = icon_path {
             content = content.child(icon::glyph(path, icon_size));
+        } else if let Some(leading) = leading {
+            content = content.child(
+                view()
+                    .size(px(icon_size))
+                    .items_center()
+                    .justify_center()
+                    .child(leading),
+            );
         }
         let loading_spinner = loading.clone();
         content = content.child(
@@ -360,12 +422,27 @@ impl IntoElement for Button {
                 .style_when(move || !loading_spinner(), |s| s.hidden())
                 .child(icon::spinner(icon_size)),
         );
+        if icon_only {
+            // The name is spoken; in a terminal, where icons are hidden, it is shown.
+            content = content
+                .child(text(move || label_child()).style_when(move || !terminal(), |s| s.hidden()));
+            return b.child(content).into_element();
+        }
         let label_view = text(move || label_child());
         content = content.child(if full_width {
-            label_view.flex_1()
+            label_view.flex_1().min_w_0()
         } else {
             label_view
         });
+        if let Some(trailing) = trailing {
+            content = content.child(
+                view()
+                    .min_w(px(scale::icon::MD))
+                    .items_center()
+                    .justify_center()
+                    .child(trailing),
+            );
+        }
         b.child(content).into_element()
     }
 }

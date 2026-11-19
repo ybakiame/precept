@@ -39,8 +39,8 @@ pub(crate) fn handoff(model: Signal<Model>) -> impl IntoElement {
     uncertainty.extend(h.resume_warnings.iter().take(8).cloned());
     body = body.child(
         view()
-            .border_2()
-            .rounded(px(8.0))
+            .border_1()
+            .rounded(px(ui::scale::radius::CONTAINER))
             .border_color(move || palette(model).warning)
             .child(card(model, m.word(Msg::CurrentUncertainty), uncertainty)),
     );

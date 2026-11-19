@@ -87,7 +87,7 @@ impl IntoElement for Sheet {
                     cb();
                 }
             })
-            .backdrop_style(|s| s.bg(black().opacity(0.4)))
+            .backdrop_style(|s| s.bg(black().opacity(0.5)))
             .popup_style(move |s| {
                 s.w(px(if compact() {
                     360.0
@@ -96,10 +96,10 @@ impl IntoElement for Sheet {
                 }))
                 .h_full()
                 .border_l_1()
-                .border_color(palette(model).border)
-                .bg(palette(model).panel)
+                .border_color(palette(model).hairline)
+                .bg(palette(model).raised)
                 .text_color(palette(model).text)
-                .shadow_lg()
+                .shadow_xl()
             })
             .child({
                 let mut panel = view()
@@ -112,7 +112,7 @@ impl IntoElement for Sheet {
                             .px_4()
                             .py_3()
                             .border_b_1()
-                            .border_color(move || palette(model).border)
+                            .border_color(move || palette(model).hairline)
                             .child(
                                 text({
                                     let title = title.clone();
@@ -154,7 +154,7 @@ impl IntoElement for Sheet {
                             .px_4()
                             .py_3()
                             .border_t_1()
-                            .border_color(move || palette(model).border)
+                            .border_color(move || palette(model).hairline)
                             .child(footer()),
                     );
                 }

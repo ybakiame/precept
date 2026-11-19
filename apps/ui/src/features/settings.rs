@@ -29,27 +29,57 @@ fn set_mode(model: Signal<Model>, mode: ColorMode) {
     });
 }
 
-/// One theme: a swatch of its own background and text, and its choice.
+/// One theme: a card previewing the theme's own floor, text, accent and
+/// status colors (data, in the current light or dark mode), and its name.
 fn theme_choice(model: Signal<Model>, theme: ThemeId) -> impl IntoElement {
-    let p = theme.colors(false, false);
-    view()
-        .w(px(scale::layout::POPUP))
-        .gap_2()
-        .child(
+    let preview = dynamic(move || {
+        let m = model.get();
+        let dark = match m.color_mode {
+            ColorMode::System => dark(),
+            ColorMode::Dark => true,
+            ColorMode::Light => false,
+        };
+        let p = theme.colors(dark, false);
+        let c = |v: u32| AdaptiveColor::rgb(v, v);
+        let dot = move |v: u32| {
             view()
-                .p_3()
-                .rounded(px(scale::radius::CONTROL))
-                .border_1()
-                .border_color(move || palette(model).border)
-                .bg(AdaptiveColor::rgb(p.background, p.background))
-                .child(text("Aa  Context / 上下文").text_color(AdaptiveColor::rgb(p.text, p.text))),
-        )
-        .child(
-            button(model, theme.name())
-                .full_width()
-                .selected(move || model.get().theme == theme)
-                .on_press(move || model.update(|m| m.theme = theme)),
-        )
+                .size(px(scale::disc::DOT))
+                .rounded(px(scale::radius::PILL))
+                .bg(c(v))
+        };
+        view()
+            .w_full()
+            .h(px(64.0))
+            .p_2()
+            .gap_2()
+            .justify_between()
+            .bg(c(p.background))
+            .child(
+                text("Aa")
+                    .font_family("monospace")
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_size(px(scale::text::BODY))
+                    .text_color(c(p.text)),
+            )
+            .child(
+                view()
+                    .flex_row()
+                    .gap_1p5()
+                    .child(dot(p.accent))
+                    .child(dot(p.success))
+                    .child(dot(p.warning))
+                    .child(dot(p.error))
+                    .child(dot(p.muted)),
+            )
+            .into_element()
+    });
+    ui::choice_card(
+        model,
+        theme.name(),
+        preview,
+        move || model.get().theme == theme,
+        move || model.update(|m| m.theme = theme),
+    )
 }
 
 pub(crate) fn appearance(model: Signal<Model>) -> impl IntoElement {
@@ -89,7 +119,7 @@ pub(crate) fn appearance(model: Signal<Model>) -> impl IntoElement {
                 .title_fn(word(model, Msg::ThemeCollection))
                 .child(note(model, Msg::ThemeHelp))
                 .child(
-                    view().flex_row().flex_wrap().gap_3().children(
+                    view().flex_row().flex_wrap().gap_2().children(
                         ThemeId::ALL
                             .into_iter()
                             .map(move |t| theme_choice(model, t)),

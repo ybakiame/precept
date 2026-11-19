@@ -264,7 +264,7 @@ pub fn Gallery() -> impl IntoElement {
         .flex_wrap()
         .items_center()
         .gap_2()
-        .child(button(model, "Add item…").on_press(move || form_open.set(true)))
+        .child(button(model, "Add preference…").on_press(move || form_open.set(true)))
         .child(button(model, "Details").on_press(move || sheet_open.set(true)))
         .child(
             button(model, "Success toast")
@@ -284,6 +284,39 @@ pub fn Gallery() -> impl IntoElement {
             || "A longer explanation that would crowd the page.".into(),
         ))
         .into_element();
+    // Status dots beside their words, and icon buttons (square, named).
+    let statuses = view()
+        .flex_row()
+        .flex_wrap()
+        .items_center()
+        .gap_4()
+        .children(
+            [
+                (super::Status::Live, "Connected"),
+                (super::Status::Busy, "Reading…"),
+                (super::Status::Idle, "Preview"),
+                (super::Status::Down, "Unreachable"),
+                (super::Status::Attention, "Needs attention"),
+            ]
+            .into_iter()
+            .map(move |(status, word)| {
+                view()
+                    .flex_row()
+                    .items_center()
+                    .gap_2()
+                    .child(super::status_dot(model, move || status))
+                    .child(text(word))
+                    .into_element()
+            }),
+        )
+        .child(
+            super::icon_button(model, super::icons::COPY, || "Copy".into())
+                .size(super::ButtonSize::Small),
+        )
+        .child(super::icon_button(model, super::icons::CLOSE, || {
+            "Dismiss".into()
+        }))
+        .into_element();
     let editor = super::markdown_input(
         model,
         "gallery-markdown",
@@ -292,11 +325,62 @@ pub fn Gallery() -> impl IntoElement {
         move |v| markdown.set(v),
     )
     .into_element();
+    // `ACP_UI_GALLERY=dialog` opens the form dialog, `=toast` shows a toast,
+    // `=sheet` opens the sheet: overlays reviewable in a still capture.
+    #[cfg(not(target_arch = "wasm32"))]
+    match std::env::var("ACP_UI_GALLERY").as_deref() {
+        Ok("dialog") => form_open.set(true),
+        Ok("sheet") => sheet_open.set(true),
+        Ok("toast") => {
+            request_animation_frame(|_| {
+                super::notify(
+                    super::Tone::Success,
+                    "Saved as a suggestion · review it next",
+                );
+                super::notify(super::Tone::Error, "Unauthorized: writes are off");
+            });
+        }
+        _ => {}
+    }
+    let form_key = signal(String::from("commit-style"));
     let form_overlay = super::dialog(model, "")
-        .title_fn(|| "Add item".into())
-        .description("A short, focused form.")
+        .size(super::DialogSize::Large)
+        .icon(super::icons::PLUS, super::DialogTone::Accent)
+        .title_fn(|| "Add a personal preference".into())
+        .description(
+            "Saved as a suggestion. You confirm the exact record before agents receive it.",
+        )
+        .content_fn(move || {
+            view()
+                .w_full()
+                .gap_4()
+                .child(super::field(
+                    model,
+                    || "Key".into(),
+                    super::input(model, "Key")
+                        .value(move || form_key.get())
+                        .on_change(move |v| form_key.set(v.to_owned())),
+                ))
+                .child(super::field(
+                    model,
+                    || "Value".into(),
+                    super::markdown_input(
+                        model,
+                        "gallery-dialog-value",
+                        || "Value".into(),
+                        || "Use **conventional commits**; imperative subject.".into(),
+                        |_| {},
+                    ),
+                ))
+                .child(super::field(
+                    model,
+                    || "Source".into(),
+                    super::input(model, "Source").value(|| "operator".into()),
+                ))
+                .into_element()
+        })
         .cancel("Cancel")
-        .confirm("Save")
+        .confirm("Save as suggestion")
         .open(move || form_open.get())
         .on_cancel(move || form_open.set(false))
         .on_confirm(move || form_open.set(false))
@@ -370,6 +454,7 @@ pub fn Gallery() -> impl IntoElement {
                         .child(row(model, "Properties", vec![facts]))
                         .child(row(model, "Empty", vec![empty_state]))
                         .child(row(model, "Destructive", vec![destructive]))
+                        .child(row(model, "Status and icon buttons", vec![statuses]))
                         .child(row(model, "Overlays", vec![overlays]))
                         .child(row(model, "Markdown", vec![editor]))
                         .child(cards)
@@ -441,11 +526,14 @@ mod tests {
         })
         .unwrap();
         // A form dialog commits with a primary Save; Cancel closes it.
-        app.press("Add item…").unwrap();
-        app.wait_for("A short, focused form.").unwrap();
+        app.press("Add preference…").unwrap();
+        app.wait_for("Add a personal preference").unwrap();
         app.press("Cancel").unwrap();
-        app.wait_for_gone("A short, focused form.", std::time::Duration::from_secs(5))
-            .unwrap();
+        app.wait_for_gone(
+            "Add a personal preference",
+            std::time::Duration::from_secs(5),
+        )
+        .unwrap();
         // A sheet with its footer action.
         app.press("Details").unwrap();
         app.wait_for("Supplementary work beside the list.").unwrap();

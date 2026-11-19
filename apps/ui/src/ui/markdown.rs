@@ -11,6 +11,12 @@ use nsh_base::rich_editor::{
 };
 use std::rc::Rc;
 
+/// The editor's height range, and the window height its dialog's other parts
+/// (header, the other fields, actions, margins) need around it.
+const EDITOR_MIN: f32 = 96.0;
+const EDITOR_MAX: f32 = 320.0;
+const EDITOR_CHROME: f32 = 440.0;
+
 /// Markdown → the editor's session (an empty document if it does not parse).
 fn session(markdown: &str) -> Option<EditorSession> {
     let schema = starter::schema();
@@ -69,13 +75,20 @@ pub fn markdown_input(
             .into_element();
     };
     view()
-        .min_h(px(160.0))
-        .max_h(px(360.0))
+        .w_full()
+        .min_h(px(EDITOR_MIN))
+        // Yields height on a short window so the dialog around it still fits.
+        .max_h(move || px((window().height.0 - EDITOR_CHROME).clamp(EDITOR_MIN, EDITOR_MAX)))
         .p_2()
-        .border_2()
+        .border_1()
         .rounded(px(scale::radius::CONTROL))
         .border_color(move || palette(model).border)
         .bg(move || palette(model).panel)
+        .focus_within(move |s| {
+            s.border_color(palette(model).primary)
+                .ring(px(3.0))
+                .ring_color(palette(model).primary.opacity(0.25))
+        })
         .child(
             rich_editor()
                 .editor(editor.clone())

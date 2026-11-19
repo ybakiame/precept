@@ -11,7 +11,6 @@ use acp_ui_core::{
     },
     presentation::sanitize,
 };
-use nsh_core::element::input;
 use shell::{action, card, word_action};
 use tokens::{mix, palette};
 
@@ -335,35 +334,29 @@ fn field(
             reference.blur();
         }
     });
-    view()
-        .gap_1()
-        .child(text(move || model.get().word(key)))
-        .child(
-            input()
-                .element_ref(&reference)
-                .label(move || model.get().word(key))
-                .value(move || get(&model.get().operator).to_owned())
-                .on_focus(move || {
-                    #[cfg(not(target_arch = "wasm32"))]
-                    if std::env::var_os("ACP_UI_PROBE").is_some() {
-                        eprintln!("ACP_UI_FOCUS shortcut={shortcut}");
-                    }
+    ui::field(
+        model,
+        move || model.get().word(key).into(),
+        ui::input(model, "")
+            .label_fn(move || model.get().word(key).into())
+            .element_ref(&reference)
+            .value(move || get(&model.get().operator).to_owned())
+            .on_focus(move || {
+                #[cfg(not(target_arch = "wasm32"))]
+                if std::env::var_os("ACP_UI_PROBE").is_some() {
+                    eprintln!("ACP_UI_FOCUS shortcut={shortcut}");
+                }
+            })
+            .disabled(move || model.get().operator.busy || model.get().operator.outcome_unknown)
+            .on_change(move |v: &str| {
+                model.update(|m| {
+                    m.operator.review = None;
+                    m.operator.delete_arm = None;
+                    m.operator.serial += 1;
+                    set(&mut m.operator, v.chars().take(max + 1).collect());
                 })
-                .border_2()
-                .border_color(move || palette(model).border)
-                .bg(move || palette(model).panel)
-                .text_color(move || palette(model).text)
-                .focus(|s| s.border_color(palette(model).primary))
-                .disabled(move || model.get().operator.busy || model.get().operator.outcome_unknown)
-                .on_change(move |v: &str| {
-                    model.update(|m| {
-                        m.operator.review = None;
-                        m.operator.delete_arm = None;
-                        m.operator.serial += 1;
-                        set(&mut m.operator, v.chars().take(max + 1).collect());
-                    })
-                }),
-        )
+            }),
+    )
 }
 /// The displayed preview never reveals the full digest without deliberate
 /// expansion. The immutable mutation/request bytes remain untouched.
@@ -739,6 +732,7 @@ fn delete_dialog(
     retype_ref: ElementRef,
 ) -> impl IntoElement {
     ui::alert_dialog(model, "")
+        .icon(icons::TRASH, ui::DialogTone::Danger)
         .title_fn(move || {
             let m = model.get();
             match m.operator.delete_arm.as_ref().zip(m.operator.record()) {
@@ -1486,11 +1480,12 @@ fn apply_dialog(model: Signal<Model>, destructive: bool) -> impl IntoElement {
         )
     };
     let dialog = if destructive {
-        ui::alert_dialog(model, "")
+        ui::alert_dialog(model, "").icon(icons::ALERT, ui::DialogTone::Danger)
     } else {
-        ui::dialog(model, "")
+        ui::dialog(model, "").icon(icons::CHECK, ui::DialogTone::Accent)
     };
     dialog
+        .size(ui::DialogSize::Medium)
         .title_fn(move || model.get().word(Msg::OperatorReview).into())
         .description_fn(move || model.get().word(Msg::OperatorPending).into())
         .content_fn(move || {
@@ -1597,6 +1592,8 @@ fn add_dialog(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElement 
         !o.key.trim().is_empty() && !o.value.trim().is_empty() && !o.source.trim().is_empty()
     };
     ui::dialog(model, "")
+        .size(ui::DialogSize::Large)
+        .icon(icons::PLUS, ui::DialogTone::Accent)
         .title_fn(move || {
             let m = model.get();
             m.word(if m.operator.global {
@@ -1609,8 +1606,8 @@ fn add_dialog(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElement 
         .description_fn(move || model.get().word(Msg::AddPreferenceHelp).into())
         .content_fn(move || {
             view()
-                .gap_3()
-                .w(px(ui::scale::layout::FORM - 160.0))
+                .w_full()
+                .gap_4()
                 .child(field(
                     model,
                     Msg::OperatorKey,
@@ -1618,12 +1615,16 @@ fn add_dialog(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElement 
                     |o, v| o.key = v,
                     120,
                 ))
-                .child(ui::markdown_input(
+                .child(ui::field(
                     model,
-                    "preference-value",
                     move || model.get().word(Msg::OperatorValue).into(),
-                    move || model.get().operator.value.clone(),
-                    move |v| model.update(|m| m.operator.value = v),
+                    ui::markdown_input(
+                        model,
+                        "preference-value",
+                        move || model.get().word(Msg::OperatorValue).into(),
+                        move || model.get().operator.value.clone(),
+                        move |v| model.update(|m| m.operator.value = v),
+                    ),
                 ))
                 .child(field(
                     model,

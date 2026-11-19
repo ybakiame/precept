@@ -219,16 +219,7 @@ fn step(
     ui::step_item(
         model,
         path,
-        move || {
-            let m = model.get();
-            let done = step_done(&m, item) == Some(true);
-            format!(
-                "{number}. {}{}",
-                m.word(title_key(item)),
-                if done { "  ✓" } else { "" }
-            )
-            .into()
-        },
+        move || model.get().word(title_key(item)).into(),
         move || {
             let m = model.get();
             format!(
@@ -239,8 +230,50 @@ fn step(
             .into()
         },
         move || current(&model.get()) == item,
+        move || step_done(&model.get(), item) == Some(true),
         move || go(model, item),
     )
+}
+/// The daemon's state in one short word, and the dot that reinforces it.
+fn status_of(m: &Model) -> (ui::Status, Msg) {
+    use ui::Status;
+    if m.wsl_reason().is_some() {
+        return (Status::Down, Msg::StatusUnreachable);
+    }
+    match m.phase {
+        Phase::Loading => (Status::Busy, Msg::StatusReading),
+        Phase::Ready | Phase::Empty if m.live => (Status::Live, Msg::StatusConnected),
+        Phase::Ready | Phase::Empty => (Status::Idle, Msg::StatusPreview),
+        Phase::Error => (Status::Attention, Msg::StatusAttention),
+        Phase::Unavailable if m.permission_denied => (Status::Down, Msg::StatusRefused),
+        Phase::Unavailable => (Status::Down, Msg::StatusUnreachable),
+    }
+}
+/// The sidebar's foot: the daemon's state and target, always visible; it
+/// opens Connection.
+fn status_row(model: Signal<Model>) -> impl IntoElement {
+    let state = computed(move || status_of(&model.get()).0);
+    ui::button(model, "")
+        .label_fn(move || {
+            let m = model.get();
+            format!("{} · {}", m.word(status_of(&m).1), target_words(&m)).into()
+        })
+        .spoken(move || {
+            let m = model.get();
+            format!(
+                "{} {} · {}",
+                m.word(Msg::StatusOpensConnection),
+                m.word(status_of(&m).1),
+                target_words(&m)
+            )
+            .into()
+        })
+        .variant(ui::ButtonVariant::Default)
+        .size(ui::ButtonSize::Small)
+        .full_width()
+        .leading(ui::status_dot(model, move || state.get()))
+        .selected(move || current(&model.get()) == Destination::Connection)
+        .on_press(move || go(model, Destination::Connection))
 }
 fn group_label(model: Signal<Model>, key: Msg) -> impl IntoElement {
     text(move || model.get().word(key))
@@ -321,7 +354,7 @@ fn sidebar(model: Signal<Model>) -> impl IntoElement {
     // Personal: yours across projects — global preferences and the decisions
     // agents' suggestions wait for.
     let personal = [
-        (PersonalPreferences, icons::section_path(S::Preferences)),
+        (PersonalPreferences, icons::PERSON),
         (Review, icons::REVIEW),
     ];
     let foot = [
@@ -367,10 +400,23 @@ fn sidebar(model: Signal<Model>) -> impl IntoElement {
         .style_when(move || !compact(), |s| s.h_full())
         .style_when(compact, |s| s.p_2().gap_2())
         .child(
-            text("Agent Control Plane")
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_size(px(ui::scale::text::SUBTITLE))
-                .style_when(compact, |s| s.hidden()),
+            view()
+                .flex_row()
+                .items_center()
+                .gap_2()
+                .px_2()
+                .pb_1()
+                .style_when(compact, |s| s.hidden())
+                .child(
+                    view()
+                        .text_color(move || palette(model).primary)
+                        .child(ui::icon::glyph(icons::BRAND, ui::scale::icon::LG)),
+                )
+                .child(
+                    text("Agent Control Plane")
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_size(px(ui::scale::text::BODY)),
+                ),
         )
         .child(
             view()
@@ -382,7 +428,7 @@ fn sidebar(model: Signal<Model>) -> impl IntoElement {
             view()
                 .gap_1()
                 .child(group_label(model, Msg::ProjectGroup))
-                .child(view().px_2().child(projects(model)))
+                .child(view().pb_1().child(projects(model)))
                 .child(work_group),
         )
         .child(
@@ -393,6 +439,7 @@ fn sidebar(model: Signal<Model>) -> impl IntoElement {
         )
         .child(view().flex_1().style_when(compact, |s| s.hidden()))
         .child(foot_group)
+        .child(status_row(model))
 }
 /// The page header: the destination's title, one human status line and the
 /// page-wide actions.
@@ -411,12 +458,21 @@ fn header(model: Signal<Model>) -> impl IntoElement {
                         .flex_row()
                         .items_center()
                         .gap_1()
-                        .child(
-                            text(move || model.get().word(title_key(current(&model.get()))))
-                                .role(AccessibilityRole::Header)
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_size(px(ui::scale::text::TITLE)),
-                        )
+                        .child({
+                            // The title arrives with each destination (a short
+                            // fade and rise), so a page change reads as one.
+                            let destination = computed(move || current(&model.get()));
+                            dynamic(move || {
+                                let _ = destination.get();
+                                let arrive = ui::motion::page();
+                                text(move || model.get().word(title_key(current(&model.get()))))
+                                    .role(AccessibilityRole::Header)
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_size(px(ui::scale::text::TITLE))
+                                    .bind_motion(&arrive)
+                                    .into_element()
+                            })
+                        })
                         // A page's longer explanation, behind an info button.
                         .child(
                             view()
@@ -494,12 +550,15 @@ fn header(model: Signal<Model>) -> impl IntoElement {
                     ui::button(model, "")
                         .label_fn(move || model.get().word(Msg::Reconnect).into())
                         .icon(icons::REFRESH)
+                        .variant(ui::ButtonVariant::Ghost)
                         .size(ui::ButtonSize::Small)
                         .on_press(move || reconnect(model)),
                 )
                 .child(
                     ui::button(model, "")
                         .label_fn(move || model.get().word(Msg::CopyPage).into())
+                        .icon(icons::COPY)
+                        .variant(ui::ButtonVariant::Ghost)
                         .size(ui::ButtonSize::Small)
                         .disabled(move || {
                             let m = model.get();
@@ -523,7 +582,11 @@ fn task_input(model: Signal<Model>, task_ref: ElementRef) -> impl IntoElement {
             },
             |s| s.hidden(),
         )
-        .child(text(move || model.get().word(Msg::TaskHint)).text_size(px(12.0)))
+        .child(
+            text(move || model.get().word(Msg::TaskHint))
+                .text_size(px(ui::scale::text::CAPTION))
+                .text_color(move || palette(model).muted),
+        )
         .child(
             view()
                 .flex_row()
@@ -557,7 +620,12 @@ fn preference_input(model: Signal<Model>, filter_ref: ElementRef) -> impl IntoEl
             },
             |s| s.hidden(),
         )
-        .child(text(move || model.get().word(Msg::FilterHelp)).text_size(px(12.0)))
+        .gap_2()
+        .child(
+            text(move || model.get().word(Msg::FilterHelp))
+                .text_size(px(ui::scale::text::CAPTION))
+                .text_color(move || palette(model).muted),
+        )
         .child(
             ui::input(model, "")
                 .label_fn(move || model.get().word(Msg::Filter).into())
@@ -569,7 +637,8 @@ fn preference_input(model: Signal<Model>, filter_ref: ElementRef) -> impl IntoEl
             view()
                 .flex_row()
                 .flex_wrap()
-                .gap_1()
+                .items_center()
+                .gap_2()
                 .child(word_action(
                     model,
                     Msg::PreviousPage,
@@ -582,7 +651,11 @@ fn preference_input(model: Signal<Model>, filter_ref: ElementRef) -> impl IntoEl
                     move || (model.get().page + 1) * PAGE_SIZE < model.get().rows().len(),
                     move || model.update(|m| m.page_by(1)),
                 ))
-                .child(text(move || model.get().page_label())),
+                .child(
+                    text(move || model.get().page_label())
+                        .text_size(px(ui::scale::text::CAPTION))
+                        .text_color(move || palette(model).muted),
+                ),
         )
 }
 pub(crate) fn shell(
@@ -615,8 +688,8 @@ pub(crate) fn shell(
                 .text_size(px(ui::scale::text::BODY))
                 .child(
                     view()
-                        .bg(move || palette(model).panel)
-                        .border_color(move || palette(model).border)
+                        .bg(move || palette(model).sidebar)
+                        .border_color(move || palette(model).hairline)
                         .style_when(move || !compact(), |s| s.border_r_1())
                         .style_when(compact, |s| s.border_b_1())
                         .child(sidebar(model)),
@@ -634,7 +707,6 @@ pub(crate) fn shell(
                         .child(preference_input(model, filter_ref))
                         .child(review::panel(model))
                         .child(projects::remove_dialog(model))
-                        .child(ui::toaster(model))
                         .child(
                             scroll()
                                 .flex_1()
@@ -728,4 +800,6 @@ pub(crate) fn shell(
                 )
                 .child(chrome::grip(model)),
         )
+        // Last, so toasts float above the page; they never take its space.
+        .child(ui::toaster(model))
 }

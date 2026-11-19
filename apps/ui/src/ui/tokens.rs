@@ -2,12 +2,22 @@
 use crate::*;
 #[derive(Clone, Copy)]
 pub struct Palette {
+    /// The page floor.
     pub background: AdaptiveColor,
+    /// The sidebar and the title bar above it.
+    pub sidebar: AdaptiveColor,
+    /// Cards, lists and input fills.
     pub panel: AdaptiveColor,
+    /// Floating layers: dialogs, sheets, toasts, menus, popovers.
+    pub raised: AdaptiveColor,
+    /// Control fills and the selected row.
     pub inset: AdaptiveColor,
     pub text: AdaptiveColor,
     pub muted: AdaptiveColor,
+    /// Interactive boundaries (inputs, focus); at least 3:1.
     pub border: AdaptiveColor,
+    /// Decorative edges and dividers.
+    pub hairline: AdaptiveColor,
     pub primary: AdaptiveColor,
     pub on_primary: AdaptiveColor,
     pub warning: AdaptiveColor,
@@ -27,11 +37,14 @@ pub fn palette(model: Signal<Model>) -> Palette {
     let c = |v| AdaptiveColor::rgb(v, v);
     Palette {
         background: c(p.background),
+        sidebar: c(p.sidebar),
         panel: c(p.panel),
+        raised: c(p.raised),
         inset: c(p.inset),
         text: c(p.text),
         muted: c(p.muted),
         border: c(p.border),
+        hairline: c(p.hairline),
         primary: c(p.accent),
         on_primary: c(p.on_accent),
         warning: c(p.warning),
@@ -40,6 +53,17 @@ pub fn palette(model: Signal<Model>) -> Palette {
         danger: c(p.danger),
         on_danger: c(p.danger_foreground),
     }
+}
+/// Neutral washes over a surface, as shares of the text color (DESIGN.md §4).
+pub mod wash {
+    /// A hovered row or default control.
+    pub const HOVER: f32 = 0.06;
+    /// A pressed row or default control.
+    pub const PRESS: f32 = 0.12;
+}
+/// Tinted washes of a role color (a badge, an icon disc).
+pub mod tint {
+    pub const REST: f32 = 0.14;
 }
 pub fn compact() -> bool {
     TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed) || window().width.0 < 900.0

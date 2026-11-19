@@ -51,12 +51,21 @@ impl IntoElement for Empty {
             .justify_center()
             .text_center()
             .gap_2()
-            .p_6();
+            .p_8()
+            .bind_motion(&motion::arrive(0.0));
         if let Some(path) = self.icon {
+            // The icon in a tinted disc: the empty state's one focal shape.
             body = body.child(
                 view()
-                    .text_color(move || palette(model).muted)
-                    .child(icon::glyph(path, scale::icon::MD)),
+                    .style_when(terminal, |s| s.hidden())
+                    .size(px(scale::disc::LG))
+                    .mb_2()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(scale::radius::PILL))
+                    .bg(move || palette(model).primary.opacity(super::tokens::tint::REST))
+                    .text_color(move || palette(model).primary)
+                    .child(icon::glyph(path, scale::icon::XL)),
             );
         }
         body = body.child(
@@ -73,7 +82,7 @@ impl IntoElement for Empty {
             );
         }
         if let Some(action) = self.action {
-            body = body.child(view().mt_1().child(action));
+            body = body.child(view().mt_2().child(action));
         }
         body.into_element()
     }

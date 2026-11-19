@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 300" width="880" height="300" role="img" aria-labelledby="t d">
+  <title id="t">Graphite theme roles, dark and light</title>
+  <desc id="d">Swatches of the Graphite theme's semantic roles: five surfaces stepping up from the window floor, text, muted text, two boundary strengths, the accent and four status colors, in dark and light.</desc>
+  <g font-family="Segoe UI, system-ui, sans-serif" font-size="11">
+    <rect width="880" height="150" fill="#111113"/>
+    <rect y="150" width="880" height="150" fill="#f6f6f7"/>
+    <g id="labels" fill="#a3a3ad">
+      <text x="20" y="26" font-size="12" font-weight="600" fill="#ededf0">Graphite · dark</text>
+    </g>
+    <text x="20" y="176" font-size="12" font-weight="600" fill="#18181c">Graphite · light</text>
+    <g transform="translate(20 40)">
+      <rect width="56" height="56" rx="8" fill="#111113" stroke="#2c2c33"/><rect x="64" width="56" height="56" rx="8" fill="#161618" stroke="#2c2c33"/><rect x="128" width="56" height="56" rx="8" fill="#1b1b1f" stroke="#2c2c33"/><rect x="192" width="56" height="56" rx="8" fill="#222227" stroke="#2c2c33"/><rect x="256" width="56" height="56" rx="8" fill="#29292f" stroke="#2c2c33"/>
+      <rect x="336" width="56" height="56" rx="8" fill="#ededf0"/><rect x="400" width="56" height="56" rx="8" fill="#a3a3ad"/><rect x="464" width="56" height="56" rx="8" fill="#75757f"/><rect x="528" width="56" height="56" rx="8" fill="#2c2c33"/>
+      <rect x="608" width="56" height="56" rx="8" fill="#b4bcff"/><rect x="672" width="40" height="56" rx="8" fill="#8fdcae"/><rect x="720" width="40" height="56" rx="8" fill="#f2c46d"/><rect x="768" width="40" height="56" rx="8" fill="#ff9d9d"/>
+      <g fill="#a3a3ad"><text y="74">background</text><text x="64" y="74">sidebar</text><text x="128" y="74">panel</text><text x="192" y="74">raised</text><text x="256" y="74">inset</text><text x="336" y="74">text</text><text x="400" y="74">muted</text><text x="464" y="74">border</text><text x="528" y="74">hairline</text><text x="608" y="74">primary</text><text x="672" y="74">ok</text><text x="720" y="74">warn</text><text x="768" y="74">error</text></g>
+    </g>
+    <g transform="translate(20 190)">
+      <rect width="56" height="56" rx="8" fill="#f6f6f7" stroke="#dedee3"/><rect x="64" width="56" height="56" rx="8" fill="#eeeef1" stroke="#dedee3"/><rect x="128" width="56" height="56" rx="8" fill="#ffffff" stroke="#dedee3"/><rect x="192" width="56" height="56" rx="8" fill="#ffffff" stroke="#dedee3"/><rect x="256" width="56" height="56" rx="8" fill="#e9e9ed" stroke="#dedee3"/>
+      <rect x="336" width="56" height="56" rx="8" fill="#18181c"/><rect x="400" width="56" height="56" rx="8" fill="#50505a"/><rect x="464" width="56" height="56" rx="8" fill="#7f7f8a"/><rect x="528" width="56" height="56" rx="8" fill="#dedee3"/>
+      <rect x="608" width="56" height="56" rx="8" fill="#4446c9"/><rect x="672" width="40" height="56" rx="8" fill="#17663a"/><rect x="720" width="40" height="56" rx="8" fill="#8a4a06"/><rect x="768" width="40" height="56" rx="8" fill="#b3261e"/>
+      <g fill="#50505a"><text y="74">background</text><text x="64" y="74">sidebar</text><text x="128" y="74">panel</text><text x="192" y="74">raised</text><text x="256" y="74">inset</text><text x="336" y="74">text</text><text x="400" y="74">muted</text><text x="464" y="74">border</text><text x="528" y="74">hairline</text><text x="608" y="74">primary</text><text x="672" y="74">ok</text><text x="720" y="74">warn</text><text x="768" y="74">error</text></g>
+    </g>
+  </g>
+</svg>

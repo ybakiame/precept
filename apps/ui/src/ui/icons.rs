@@ -27,6 +27,36 @@ pub(crate) const AGENTS: &str = "M9 3V8M15 3V8M6 8H18V12A6 6 0 0 1 6 12ZM12 18V2
 pub(crate) const SETTINGS: &str = "M4 7H14M18 7H20M4 17H8M12 17H20M16 5V9M10 15V19";
 /// Re-read.
 pub(crate) const REFRESH: &str = "M20 12A8 8 0 1 1 12 4M20 4V8H16";
+/// The ACP mark: three stacked planes; context travels down to the agent.
+pub(crate) const BRAND: &str = "M12 3L21 7.5L12 12L3 7.5ZM3 12L12 16.5L21 12M3 16.5L12 21L21 16.5";
+/// Personal scope: one person.
+pub(crate) const PERSON: &str = "M12 12A4 4 0 1 0 12 4A4 4 0 1 0 12 12M4 21C5 16 19 16 20 21";
+/// Copy text.
+pub(crate) const COPY: &str = "M8 8H19V19H8ZM5 15V5H15";
+/// Add something.
+pub(crate) const PLUS: &str = "M12 5V19M5 12H19";
+/// Done, confirmed.
+pub(crate) const CHECK: &str = "M5 12.5L10 17.5L19 7";
+/// Needs attention.
+pub(crate) const ALERT: &str = "M12 4L21.5 20H2.5ZM12 10V14M12 17V17.01";
+/// Failed or refused.
+pub(crate) const ERROR: &str = "M12 21A9 9 0 1 0 12 3A9 9 0 1 0 12 21M9 9L15 15M15 9L9 15";
+/// More explanation.
+pub(crate) const INFO: &str = "M12 21A9 9 0 1 0 12 3A9 9 0 1 0 12 21M12 11V16M12 8V8.01";
+/// Dismiss.
+pub(crate) const CLOSE: &str = "M6 6L18 18M18 6L6 18";
+/// Destructive removal.
+#[allow(dead_code)]
+pub(crate) const TRASH: &str = "M4 7H20M9 7V4H15V7M6 7L7 20H17L18 7M10 11V16M14 11V16";
+/// Writes off.
+#[allow(dead_code)]
+pub(crate) const LOCK: &str = "M6 11H18V20H6ZM8 11V8A4 4 0 0 1 16 8V11";
+/// Writes on.
+#[allow(dead_code)]
+pub(crate) const UNLOCK: &str = "M6 11H18V20H6ZM8 11V8A4 4 0 0 1 15.5 6";
+/// Filter.
+#[allow(dead_code)]
+pub(crate) const SEARCH: &str = "M11 18A7 7 0 1 0 11 4A7 7 0 1 0 11 18M16 16L20 20";
 #[allow(dead_code)]
 pub(crate) fn section(section: Section) -> impl IntoElement {
     let path = section_path(section);

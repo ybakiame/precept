@@ -306,7 +306,7 @@ fn configure(model: Signal<Model>) -> impl IntoElement {
                         .p_3()
                         .rounded(px(scale::radius::CONTROL))
                         .border_1()
-                        .border_color(move || palette(model).border)
+                        .border_color(move || palette(model).hairline)
                         .bg(move || palette(model).background)
                         .child(
                             text(move || current_snippet(&model.get()).unwrap_or_default())
