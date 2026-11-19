@@ -1,4 +1,5 @@
 //! Feature screens. Each composes the `ui` layer; none styles controls itself.
+pub(crate) mod agents;
 pub mod brand_preview;
 pub(crate) mod connection;
 pub(crate) mod handoff;

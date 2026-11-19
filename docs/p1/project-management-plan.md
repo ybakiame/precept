@@ -181,6 +181,9 @@ loads as `unavailable`: listed, never served, removable.
 - The same flows on Windows HWND, WSLg/Linux and the TUI (a keyboard list there).
   Motion inventory and finishing checklist per the Design Guides before code.
 
+Follow-up: per-project agent sharing and MCP client configuration are in
+[agent access](agent-access.md).
+
 ## Verification
 
 - Daemon real-process tests: every scope refusal (outside home, `/mnt`, symlink

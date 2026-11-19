@@ -29,6 +29,11 @@ is **not an OS sandbox** or a credential isolation boundary.
   action on one chosen path, checked daemon-side (Git root inside the daemon user's
   home; system, other-filesystem, foreign-owned and control paths refused). GUIs and
   the Windows bridge never list or scan directories; agents cannot check or add.
+- External agent access is switched per project by the operator
+  (`project.agents`): an unshared project has no agent credential, and a held
+  token is refused. `acp-mcp` is stdio-only (no port); the GUI shows client
+  configuration to copy and never writes other tools' files
+  ([agent access](p1/agent-access.md)).
 - Exactly two project-bound read-only MCP tools; no administrative previews, profile
   mutations, context-driven approval or tool-supplied project selector.
 - Preference confirmation binds the exact record/revision/scope. Only confirmed

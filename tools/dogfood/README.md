@@ -64,7 +64,12 @@ installed manifest, and keeps unknown files.
    `\\wsl.localhost\<distro>\home\<user>`) or type its path; the daemon checks
    it, then adds and registers it. Or `acp-query ... project check|add|remove`.
    Removing a project keeps its Profile records; adding it again rejoins them.
-5. Optional agent sessions: copy `agents.toml.example` to
+5. Let Claude Code, Codex or another MCP client read a project: **Agents**
+   (set-up step 4) shows each project's sharing switch and the exact text to paste
+   (a `claude mcp add` command, a Codex `config.toml` table, or MCP JSON; on
+   Windows it runs `acp-mcp` through `wsl.exe`). There is no port: the client
+   starts `acp-mcp` over stdio. Or `acp-query ... project mcp|share|unshare NAME`.
+6. Optional agent sessions started by ACP: copy `agents.toml.example` to
    `~/.config/acp/agents.toml` (0600), list your agent programs, and restart the
    unit. Without that file, sessions are off.
 

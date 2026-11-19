@@ -5,7 +5,7 @@ use crate::*;
 pub(crate) mod chrome;
 use acp_operator_core::i18n::Msg;
 use acp_operator_core::{PAGE_SIZE, Section};
-use features::{connection, page, profile, projects, review, sessions, settings};
+use features::{agents, connection, page, profile, projects, review, sessions, settings};
 use tokens::{compact, palette};
 
 pub(crate) fn action(
@@ -81,6 +81,8 @@ pub(crate) enum Destination {
     Review,
     Sessions,
     Connection,
+    Profile,
+    Agents,
     Settings,
 }
 pub(crate) fn current(m: &Model) -> Destination {
@@ -92,6 +94,10 @@ pub(crate) fn current(m: &Model) -> Destination {
         Destination::Settings
     } else if m.connection_editor {
         Destination::Connection
+    } else if m.profile_page {
+        Destination::Profile
+    } else if m.agents_page {
+        Destination::Agents
     } else {
         Destination::Section(m.section)
     }
@@ -103,6 +109,8 @@ fn leave_workspaces(m: &mut Model) {
     m.session.confirm_start = false;
     m.settings = false;
     m.connection_editor = false;
+    m.profile_page = false;
+    m.agents_page = false;
 }
 /// Goes to `destination` (each opener keeps its own reads and guards).
 pub(crate) fn go(model: Signal<Model>, destination: Destination) {
@@ -120,6 +128,14 @@ pub(crate) fn go(model: Signal<Model>, destination: Destination) {
             leave_workspaces(m);
             m.settings = true;
         }),
+        Destination::Profile => model.update(|m| {
+            leave_workspaces(m);
+            m.profile_page = true;
+        }),
+        Destination::Agents => model.update(|m| {
+            leave_workspaces(m);
+            m.agents_page = true;
+        }),
         Destination::Section(section) => {
             model.update(|m| {
                 leave_workspaces(m);
@@ -134,8 +150,66 @@ fn title_key(destination: Destination) -> Msg {
         Destination::Review => Msg::ProfileReview,
         Destination::Sessions => Msg::Sessions,
         Destination::Connection => Msg::Connection,
+        Destination::Profile => Msg::ProfileSection,
+        Destination::Agents => Msg::AgentsDestination,
         Destination::Settings => Msg::Settings,
     }
+}
+/// Whether a set-up step is complete, from the last daemon read.
+fn step_done(m: &Model, destination: Destination) -> Option<bool> {
+    let data = m.data.as_ref();
+    Some(match destination {
+        Destination::Connection => m.live && data.is_some(),
+        Destination::Profile => data.is_some_and(|d| d.health.schema != "Unselected"),
+        Destination::Section(acp_operator_core::Section::Projects) => {
+            data.is_some_and(|d| !d.projects.is_empty())
+        }
+        Destination::Agents => {
+            data.is_some_and(|d| d.directory.iter().any(|p| p.agents && p.state == "ready"))
+        }
+        _ => return None,
+    })
+}
+/// A set-up step: its number, its name and, once complete, a check mark.
+fn step(
+    model: Signal<Model>,
+    number: u8,
+    item: Destination,
+    path: &'static str,
+) -> impl IntoElement {
+    ui::step_item(
+        model,
+        path,
+        move || {
+            let m = model.get();
+            let done = step_done(&m, item) == Some(true);
+            format!(
+                "{number}. {}{}",
+                m.word(title_key(item)),
+                if done { "  ✓" } else { "" }
+            )
+            .into()
+        },
+        move || {
+            let m = model.get();
+            format!(
+                "{} {number}: {}",
+                m.word(Msg::StepWord),
+                m.word(title_key(item))
+            )
+            .into()
+        },
+        move || current(&model.get()) == item,
+        move || go(model, item),
+    )
+}
+fn group_label(model: Signal<Model>, key: Msg) -> impl IntoElement {
+    text(move || model.get().word(key))
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_size(px(ui::scale::text::CAPTION))
+        .text_color(move || palette(model).muted)
+        .px_2()
+        .style_when(compact, |s| s.hidden())
 }
 fn destination(model: Signal<Model>, item: Destination, path: &'static str) -> impl IntoElement {
     ui::nav_item(
@@ -191,51 +265,44 @@ pub(crate) fn target_words(m: &Model) -> String {
 }
 fn sidebar(model: Signal<Model>) -> impl IntoElement {
     use Destination::*;
+    use acp_operator_core::Section as S;
+    // Set up: the guided path, in order. Project: the current project's work.
+    let setup = [
+        (Connection, icons::CONNECTION),
+        (Profile, icons::PROFILE),
+        (Section(S::Projects), icons::section_path(S::Projects)),
+        (Agents, icons::AGENTS),
+    ];
     let work = [
-        (
-            Section(acp_operator_core::Section::Dashboard),
-            icons::section_path(acp_operator_core::Section::Dashboard),
-        ),
-        (
-            Section(acp_operator_core::Section::Projects),
-            icons::section_path(acp_operator_core::Section::Projects),
-        ),
-        (
-            Section(acp_operator_core::Section::Preferences),
-            icons::section_path(acp_operator_core::Section::Preferences),
-        ),
+        (Section(S::Dashboard), icons::section_path(S::Dashboard)),
+        (Section(S::Preferences), icons::section_path(S::Preferences)),
         (Review, icons::REVIEW),
-        (
-            Section(acp_operator_core::Section::Handoff),
-            icons::section_path(acp_operator_core::Section::Handoff),
-        ),
+        (Section(S::Handoff), icons::section_path(S::Handoff)),
         (Sessions, icons::SESSIONS),
     ];
     let foot = [
-        (
-            Section(acp_operator_core::Section::Diagnostics),
-            icons::section_path(acp_operator_core::Section::Diagnostics),
-        ),
-        (Connection, icons::CONNECTION),
+        (Section(S::Diagnostics), icons::section_path(S::Diagnostics)),
         (Settings, icons::SETTINGS),
     ];
-    let group = |items: [(Destination, &'static str); 3]| {
+    let row = || {
         view()
             .gap_0p5()
             .style_when(compact, |s| s.flex_row().flex_wrap().gap_1())
-            .children(
-                items
-                    .into_iter()
-                    .map(move |(d, path)| destination(model, d, path)),
-            )
     };
-    let work_group = view()
-        .gap_0p5()
-        .style_when(compact, |s| s.flex_row().flex_wrap().gap_1())
-        .children(
-            work.into_iter()
-                .map(move |(d, path)| destination(model, d, path)),
-        );
+    let setup_group = row().children(
+        setup
+            .into_iter()
+            .zip(1u8..)
+            .map(move |((d, path), n)| step(model, n, d, path)),
+    );
+    let work_group = row().children(
+        work.into_iter()
+            .map(move |(d, path)| destination(model, d, path)),
+    );
+    let foot_group = row().children(
+        foot.into_iter()
+            .map(move |(d, path)| destination(model, d, path)),
+    );
     view()
         .w(move || {
             px(if compact() {
@@ -251,19 +318,26 @@ fn sidebar(model: Signal<Model>) -> impl IntoElement {
         .style_when(move || !compact(), |s| s.h_full())
         .style_when(compact, |s| s.p_2().gap_2())
         .child(
-            view()
-                .gap_2()
-                .child(
-                    text("Agent Control Plane")
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_size(px(ui::scale::text::SUBTITLE))
-                        .style_when(compact, |s| s.hidden()),
-                )
-                .child(projects(model)),
+            text("Agent Control Plane")
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_size(px(ui::scale::text::SUBTITLE))
+                .style_when(compact, |s| s.hidden()),
         )
-        .child(work_group)
+        .child(
+            view()
+                .gap_1()
+                .child(group_label(model, Msg::SetupGroup))
+                .child(setup_group),
+        )
+        .child(
+            view()
+                .gap_1()
+                .child(group_label(model, Msg::ProjectGroup))
+                .child(view().px_2().child(projects(model)))
+                .child(work_group),
+        )
         .child(view().flex_1().style_when(compact, |s| s.hidden()))
-        .child(group(foot))
+        .child(foot_group)
 }
 /// The page header: the destination's title, one human status line and the
 /// page-wide actions.
@@ -443,6 +517,7 @@ pub(crate) fn shell(
     filter_ref: ElementRef,
 ) -> impl IntoElement {
     profile::watch(model);
+    agents::watch(model);
     let on = move |d: fn(&Model) -> bool| move || !d(&model.get());
     view()
         .flex_1()
@@ -504,9 +579,25 @@ pub(crate) fn shell(
                                                 .style_when(on(|m| m.connection_editor), |s| {
                                                     s.hidden()
                                                 })
+                                                .child(connection::connection(model)),
+                                        )
+                                        .child(
+                                            view()
                                                 .gap_4()
-                                                .child(connection::connection(model))
+                                                .max_w(px(ui::scale::layout::FORM))
+                                                .style_when(on(|m| m.profile_page), |s| s.hidden())
+                                                .child(
+                                                    text(move || {
+                                                        model.get().word(Msg::ProfileIntro)
+                                                    })
+                                                    .text_size(px(ui::scale::text::BODY)),
+                                                )
                                                 .child(profile::section(model)),
+                                        )
+                                        .child(
+                                            view()
+                                                .style_when(on(|m| m.agents_page), |s| s.hidden())
+                                                .child(agents::page(model)),
                                         )
                                         .child(
                                             view()

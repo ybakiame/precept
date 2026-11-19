@@ -310,6 +310,22 @@ reader, larger text sizes.
 | Connection: check running / done | Button loading spinner; rows replace the "Checking…" line | continuous / none | Spinner rests |
 | Connection: Start pressed | Button press, then "Starting…" until the report | `FAST` | Instant |
 
+## Navigation: Set up and Project (2026-11-19)
+
+Two menus, by what the operator is doing (owner request):
+
+- **Set up**: the guided path, numbered, each with a done mark from the last
+  daemon read: 1. Connection (daemon reachable) → 2. Profile (selected) →
+  3. Workspaces (a served project) → 4. Agents (a shared project). Screen readers
+  and tests use the stable name "Step N: Name".
+- **Project**: the project switcher, then Dashboard, Preferences, Review, Handoff,
+  Sessions — the current project's work.
+- Foot: Diagnostics, Settings.
+
+The Profile page (step 2) is the Profile section (setup card while none is
+selected; startup choice and this run's writes after). The Agents page (step 4)
+is in [agent access](../docs/p1/agent-access.md).
+
 ## Workspace: projects (2026-11)
 
 **Task.** Make a repository available to agents, or stop it. Object: the daemon's

@@ -316,6 +316,8 @@ fn console(model: Signal<Model>) -> impl IntoElement {
             m.sessions = false;
             m.session.confirm_start = false;
             m.connection_editor = false;
+            m.profile_page = false;
+            m.agents_page = false;
             m.set_section(acp_operator_core::Section::Preferences)
         });
         filter_ref.focus();
@@ -328,6 +330,8 @@ fn console(model: Signal<Model>) -> impl IntoElement {
             m.sessions = false;
             m.session.confirm_start = false;
             m.connection_editor = false;
+            m.profile_page = false;
+            m.agents_page = false;
             m.set_section(acp_operator_core::Section::Handoff)
         });
         task_ref.focus();
@@ -356,6 +360,8 @@ fn console(model: Signal<Model>) -> impl IntoElement {
             m.session.confirm_start = false;
             m.settings = !m.settings;
             m.connection_editor = false;
+            m.profile_page = false;
+            m.agents_page = false;
         })
     });
     on_key("mod+shift+h", move |_| toggle_contrast(model));
@@ -382,6 +388,8 @@ fn console(model: Signal<Model>) -> impl IntoElement {
             m.sessions = false;
             m.session.confirm_start = false;
             m.connection_editor = false;
+            m.profile_page = false;
+            m.agents_page = false;
         });
     });
     for (key, section) in ["alt+1", "alt+2", "alt+3", "alt+4", "alt+5"]
@@ -398,6 +406,8 @@ fn console(model: Signal<Model>) -> impl IntoElement {
                 m.sessions = false;
                 m.session.confirm_start = false;
                 m.connection_editor = false;
+                m.profile_page = false;
+                m.agents_page = false;
                 m.set_section(section)
             });
         });
@@ -574,7 +584,7 @@ mod tests {
     fn real_console_edits_connection_without_implicit_reads_and_localizes() {
         let mut app = nsh_testing::Headless::start(EngineConfig::new(Root::of::<App>())).unwrap();
         app.wait_for("Project: alpha").unwrap();
-        app.press("Connection").unwrap();
+        app.press("Step 1: Connection").unwrap();
         // Choosing this computer runs the read-only check; nothing connects yet.
         app.press("This computer").unwrap();
         if cfg!(unix) {
@@ -668,7 +678,7 @@ mod tests {
                 .iter()
                 .any(|t| t.contains("event-09999"))
         );
-        app.press("Workspaces").unwrap();
+        app.press("Step 3: Workspaces").unwrap();
         app.press("beta").unwrap();
         app.wait_for("Project: beta").unwrap();
         println!(

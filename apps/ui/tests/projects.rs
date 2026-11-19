@@ -238,4 +238,39 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         listed["ok"], false,
         "gamma is now a project: it overlaps itself"
     );
+    // Step 4, Agents: the launch line for gamma, per client; sharing per project.
+    app.press("Step 4: Agents").unwrap();
+    app.wait_for("Configure · acp-gamma").unwrap();
+    contains(&mut app, "claude mcp add --scope user acp-gamma -- ");
+    contains(&mut app, "--project gamma --capability-file ");
+    let token = std::fs::read_to_string(f.location.runtime_dir.join("agent-gamma.cap")).unwrap();
+    assert!(
+        !app.screen()
+            .texts()
+            .iter()
+            .any(|t| t.contains(token.trim())),
+        "never a token on screen"
+    );
+    app.press("Codex").unwrap();
+    contains(&mut app, "[mcp_servers.\"acp-gamma\"]");
+    app.press("Copy").unwrap();
+    app.wait_for("Copied").unwrap();
+    assert!(
+        app.screen()
+            .clipboard()
+            .is_some_and(|c| c.contains("[mcp_servers.\"acp-gamma\"]"))
+    );
+    app.press("Stop sharing gamma").unwrap();
+    let start = Instant::now();
+    while f.location.runtime_dir.join("agent-gamma.cap").exists() {
+        assert!(start.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    contains(&mut app, "This project is not shared");
+    app.press("Share gamma").unwrap();
+    let start = Instant::now();
+    while !f.location.runtime_dir.join("agent-gamma.cap").exists() {
+        assert!(start.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }

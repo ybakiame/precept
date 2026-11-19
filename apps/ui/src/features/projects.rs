@@ -44,11 +44,15 @@ fn call(
     #[cfg(feature = "ipc")]
     {
         let inputs = acp_operator_client::native::Inputs::from_connection(&model.get().connection);
-        spawn(async move {
-            let result = blocking(move || inputs.and_then(|i| i.project_call(method, params)))
-                .await
-                .unwrap_or(Err("Unavailable"));
-            model.update(|m| done(m, result));
+        // Detached: a call started from a dialog must settle after the dialog
+        // closes (closing disposes the dialog's owner and its tasks).
+        Owner::detached().run(|| {
+            spawn(async move {
+                let result = blocking(move || inputs.and_then(|i| i.project_call(method, params)))
+                    .await
+                    .unwrap_or(Err("Unavailable"));
+                model.update(|m| done(m, result));
+            });
         });
     }
     #[cfg(not(feature = "ipc"))]
@@ -188,14 +192,17 @@ fn remove_now(model: Signal<Model>) {
 
 /// Re-reads once the change settled (the list comes from the daemon).
 fn reload_after(model: Signal<Model>) {
-    spawn(async move {
-        for _ in 0..100 {
-            if !model.get_untracked().project_add.busy {
-                break;
+    // Detached for the same reason as `call`: Remove starts it from a dialog.
+    Owner::detached().run(|| {
+        spawn(async move {
+            for _ in 0..100 {
+                if !model.get_untracked().project_add.busy {
+                    break;
+                }
+                timer(std::time::Duration::from_millis(50)).await;
             }
-            timer(std::time::Duration::from_millis(50)).await;
-        }
-        load(model);
+            load(model);
+        });
     });
 }
 
@@ -252,6 +259,7 @@ fn list(model: Signal<Model>) -> impl IntoElement {
                     name: p.name.clone(),
                     root: String::new(),
                     state: "ready".into(),
+                    agents: true,
                 })
                 .collect(),
             None => Vec::new(),

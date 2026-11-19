@@ -86,6 +86,7 @@ pub(crate) fn watch(model: Signal<Model>) {
             && matches!(
                 shell::current(&m),
                 shell::Destination::Connection
+                    | shell::Destination::Profile
                     | shell::Destination::Section(
                         acp_operator_core::Section::Dashboard
                             | acp_operator_core::Section::Projects

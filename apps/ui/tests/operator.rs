@@ -161,9 +161,9 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     cfg.viewport = Size::new(px(1080.0), px(760.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
     app.wait_for("No Profile selected").unwrap();
-    // Profile setup lives on the Connection page: the daemon suggests a path
+    // Profile setup is set-up step 2: the daemon suggests a path
     // in its private state folder; nothing exists until the operator's click.
-    app.press("Connection").unwrap();
+    app.press("Step 2: Profile").unwrap();
     app.wait_for("Set up your Profile").unwrap();
     let suggested = app
         .screen()
@@ -295,8 +295,8 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
             .iter()
             .any(|t| t.contains("Saved synthetic history"))
     );
-    // Writes are turned off where the Profile lives (Connection).
-    app.press("Connection").unwrap();
+    // Writes are turned off where the Profile lives (step 2).
+    app.press("Step 2: Profile").unwrap();
     assert_eq!(f.info()["write_enabled"], true);
     app.press("Disable writes").unwrap();
     app.wait_for("Writes off").unwrap();

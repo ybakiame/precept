@@ -7,6 +7,7 @@ use std::sync::Arc;
 pub mod appearance;
 pub mod connection;
 pub mod i18n;
+pub mod mcp;
 pub mod operator;
 pub mod presentation;
 pub mod profile;
@@ -82,6 +83,9 @@ pub struct ProjectEntry {
     pub name: String,
     pub root: String,
     pub state: String,
+    /// Shared with external agents (MCP); the daemon always reports it.
+    #[serde(default)]
+    pub agents: bool,
 }
 impl Snapshot {
     pub fn validate(&self) -> Result<(), &'static str> {
@@ -179,6 +183,11 @@ pub struct Model {
     pub connection_invalid: bool,
     pub settings: bool,
     pub connection_editor: bool,
+    /// The Profile page (set-up step 2).
+    pub profile_page: bool,
+    /// The Agents page (set-up step 4).
+    pub agents_page: bool,
+    pub agents: mcp::AgentsPage,
     /// Registered WSL distributions (`None` until listed on this page).
     pub distributions: Option<Result<Vec<String>, &'static str>>,
     pub probe: Probe,
@@ -235,6 +244,9 @@ impl Model {
             connection_invalid: false,
             settings: false,
             connection_editor: false,
+            profile_page: false,
+            agents_page: false,
+            agents: Default::default(),
             distributions: None,
             probe: Probe::Idle,
             probe_epoch: 0,

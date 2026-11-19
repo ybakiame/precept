@@ -19,6 +19,11 @@ pub(crate) const SESSIONS: &str = "M4 5H20V19H4ZM8 10L11 12.5L8 15M13 15H16";
 pub(crate) const CONNECTION: &str =
     "M9 15L15 9M10 6L12 4A4 4 0 0 1 20 12L18 14M14 18L12 20A4 4 0 0 1 4 12L6 10";
 /// Settings: sliders.
+/// A person's card: the Profile.
+pub(crate) const PROFILE: &str =
+    "M4 5H20V19H4ZM9 10A2 2 0 1 0 9.01 10M6.5 16C7 14 11 14 11.5 16M14 10H18M14 14H17";
+/// A plug: agents connecting.
+pub(crate) const AGENTS: &str = "M9 3V8M15 3V8M6 8H18V12A6 6 0 0 1 6 12ZM12 18V21";
 pub(crate) const SETTINGS: &str = "M4 7H14M18 7H20M4 17H8M12 17H20M16 5V9M10 15V19";
 /// Re-read.
 pub(crate) const REFRESH: &str = "M20 12A8 8 0 1 1 12 4M20 4V8H16";

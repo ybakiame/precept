@@ -12,6 +12,8 @@ pub(crate) fn open(model: Signal<Model>) {
         m.sessions = true;
         m.settings = false;
         m.connection_editor = false;
+        m.profile_page = false;
+        m.agents_page = false;
         m.session.confirm_start = false;
     });
     request(model, "session.refresh", json!({}));

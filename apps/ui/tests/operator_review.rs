@@ -203,9 +203,9 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     cfg.viewport = Size::new(px(1080.0), px(760.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
     app.wait_for("No Profile selected").unwrap();
-    // Profile setup lives on the Connection page: the daemon suggests a path
+    // Profile setup is set-up step 2: the daemon suggests a path
     // in its private state folder; nothing exists until the operator's click.
-    app.press("Connection").unwrap();
+    app.press("Step 2: Profile").unwrap();
     app.wait_for("Set up your Profile").unwrap();
     let suggested = app
         .screen()
@@ -474,8 +474,8 @@ fn terminal_channel_and_revoked_delete(f: &Fixture) {
     assert_eq!(f.inspect(3, 3)["record"]["status"], "deprecated");
     app.press_key("alt+shift+r").unwrap();
     app.wait_for("Write grant off").unwrap();
-    // A new grant from the Connection page, then back to the review.
-    app.press("Connection").unwrap();
+    // A new grant from the Profile page, then back to the review.
+    app.press("Step 2: Profile").unwrap();
     app.press("Enable writes").unwrap();
     app.wait_for("Writes on for this daemon run").unwrap();
     app.press_key("alt+o").unwrap();

@@ -37,7 +37,7 @@ pub use empty::empty;
 pub use field::field;
 pub use input::input;
 pub use menu::menu;
-pub use nav::nav_item;
+pub use nav::{nav_item, step_item};
 pub use properties::properties;
 pub use radio::radio_group;
 pub use surface::{card, surface};
