@@ -701,7 +701,15 @@ fn bridge_loss_after_submit_is_unknown_and_only_an_identical_retry_settles_it() 
         matches!(outcome, Ok(_) | Err(CallError::Lost)),
         "{outcome:?}"
     );
-    assert!(!c.alive());
+    // The client observes the killed helper's exit shortly after (bounded).
+    let start = Instant::now();
+    while c.alive() {
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "helper still alive"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
     assert_eq!(
         control(&c, "profile.info", json!({})),
         Err(CallError::NotSent)

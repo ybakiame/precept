@@ -64,13 +64,13 @@ pub(crate) fn read(model: Signal<Model>) {
         m.project_add.write_enabled = Some(info.write_enabled);
         m.project_add.profile_selected = Some(info.selected);
         m.profile_setup.suggest(info.suggested_path.as_deref());
-        m.operator.info = Some(info);
+        *m.profile_info = Some(info);
     });
 }
 
 /// Selected, written state as last read (`None`: not read yet).
 fn selected(m: &Model) -> Option<bool> {
-    m.operator.info.as_ref().map(|i| i.selected)
+    m.profile_info.as_ref().map(|i| i.selected)
 }
 fn needs_setup(m: &Model) -> bool {
     m.live && selected(m) == Some(false)
@@ -145,8 +145,7 @@ fn create_or_select(model: Signal<Model>, method: &'static str) {
 pub(crate) fn enable_writes(model: Signal<Model>, then: impl FnOnce(Signal<Model>) + 'static) {
     let binding = model
         .get()
-        .operator
-        .info
+        .profile_info
         .as_ref()
         .and_then(|i| i.binding.clone());
     let Some(b) = binding else {
@@ -166,7 +165,7 @@ pub(crate) fn enable_writes(model: Signal<Model>, then: impl FnOnce(Signal<Model
                 m.project_add.error = Some(code.into());
             } else {
                 m.project_add.write_enabled = Some(true);
-                if let Some(i) = m.operator.info.as_mut() {
+                if let Some(i) = m.profile_info.as_mut() {
                     i.write_enabled = true;
                 }
             }
@@ -237,7 +236,7 @@ pub(crate) fn setup(model: Signal<Model>) -> impl IntoElement {
     // A file already at the suggested path: offer to use it first.
     let existing = move || {
         let m = model.get();
-        m.operator.info.as_ref().is_some_and(|i| {
+        m.profile_info.as_ref().is_some_and(|i| {
             i.suggested_exists && i.suggested_path.as_deref() == Some(m.profile_setup.path.trim())
         })
     };
@@ -270,8 +269,7 @@ pub(crate) fn setup(model: Signal<Model>) -> impl IntoElement {
                 ),
             )
             .child(caption(model, |m| {
-                m.operator
-                    .info
+                m.profile_info
                     .as_ref()
                     .and_then(|i| i.startup_failure.as_deref())
                     .map(acp_operator_core::projects::refusal)
@@ -334,8 +332,7 @@ pub(crate) fn section(model: Signal<Model>) -> impl IntoElement {
     let writes_on = move || {
         model
             .get()
-            .operator
-            .info
+            .profile_info
             .as_ref()
             .is_some_and(|i| i.write_enabled)
     };
@@ -352,7 +349,7 @@ pub(crate) fn section(model: Signal<Model>) -> impl IntoElement {
                         .gap_2()
                         .child(state_badge(model, |_| (Msg::OperatorSelected, true)))
                         .child(caption(model, |m| {
-                            Some(if m.operator.info.as_ref().is_some_and(|i| i.remembered) {
+                            Some(if m.profile_info.as_ref().is_some_and(|i| i.remembered) {
                                 Msg::SelectedAtStart
                             } else {
                                 Msg::NotSelectedAtStart
@@ -364,8 +361,7 @@ pub(crate) fn section(model: Signal<Model>) -> impl IntoElement {
                                     move || {
                                         !model
                                             .get()
-                                            .operator
-                                            .info
+                                            .profile_info
                                             .as_ref()
                                             .is_some_and(|i| i.startup_profile)
                                     },
@@ -386,7 +382,7 @@ pub(crate) fn section(model: Signal<Model>) -> impl IntoElement {
                         .items_center()
                         .gap_2()
                         .child(state_badge(model, |m| {
-                            let on = m.operator.info.as_ref().is_some_and(|i| i.write_enabled);
+                            let on = m.profile_info.as_ref().is_some_and(|i| i.write_enabled);
                             (if on { Msg::WritesOn } else { Msg::WritesOff }, on)
                         }))
                         .child(

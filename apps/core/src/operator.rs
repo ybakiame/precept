@@ -1642,6 +1642,23 @@ mod tests {
         assert!(!m.complete_operator(&request, Ok(receipt)));
     }
     #[test]
+    fn set_up_profile_reads_never_fence_an_in_flight_workspace_request() {
+        let mut m = model();
+        m.operator.busy = false;
+        let read = m.operator_read("profile.info").unwrap();
+        // The Set-up pages record their own Profile state while it is in flight.
+        *m.profile_info = m.operator.info.clone();
+        m.profile_info.as_mut().unwrap().write_enabled =
+            !m.operator.info.as_ref().unwrap().write_enabled;
+        assert!(
+            m.operator_current(&read),
+            "the workspace reply still settles"
+        );
+        // Whereas changing the workspace's own observation does fence it.
+        m.operator.info.as_mut().unwrap().write_enabled ^= true;
+        assert!(!m.operator_current(&read));
+    }
+    #[test]
     fn a_saved_preference_opens_as_the_exact_record_to_confirm() {
         let mut m = model();
         m.operator.key = "editor".into();

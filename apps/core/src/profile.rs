@@ -5,6 +5,27 @@
 //! directory) until the operator edits it; nothing is created or selected
 //! without the operator's click.
 
+/// The last Profile state read for the Set-up pages (`None`: not read yet).
+/// Debug never prints the Profile's identifiers.
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct Observed(pub Option<crate::operator::ProfileInfo>);
+impl std::fmt::Debug for Observed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Observed(redacted)")
+    }
+}
+impl std::ops::Deref for Observed {
+    type Target = Option<crate::operator::ProfileInfo>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl std::ops::DerefMut for Observed {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 /// The setup card's state.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProfileDraft {

@@ -198,6 +198,10 @@ pub struct Model {
     pub project_add: projects::AddDraft,
     pub project_remove: Option<String>,
     pub profile_setup: profile::ProfileDraft,
+    /// The Profile state the Set-up pages and Workspaces read. Kept apart from
+    /// `operator.info`, which fences the review workspace's own requests: a
+    /// write there would make an in-flight workspace reply stale (stuck wait).
+    pub profile_info: profile::Observed,
     /// Why the last applied connection could not be saved for the next launch.
     pub save_failure: Option<&'static str>,
     pub theme: appearance::ThemeId,
@@ -254,6 +258,7 @@ impl Model {
             project_add: Default::default(),
             project_remove: None,
             profile_setup: Default::default(),
+            profile_info: Default::default(),
             save_failure: None,
             theme: Default::default(),
             color_mode: appearance::ColorMode::Dark,
