@@ -16,7 +16,7 @@ import { noticeLedger, NoticeError } from './notices.mjs';
 
 export const binaries = ['acp-daemon.exe', 'acp-query.exe', 'acp-mcp.exe', 'acp-nsh-native.exe', 'acp-nsh-tui.exe'];
 export const product = 'ACP';
-export const pin = 'b7f31a08478be262fd7b76ec856036fd5b8ffdb0';
+export const pin = '554163758e30d2f62f814096a6327937dcb4fe49';
 export const target = 'x86_64-pc-windows-msvc';
 // SHA-256 of the canonical https://www.apache.org/licenses/LICENSE-2.0.txt (11,358 bytes).
 export const apacheLicenseSha256 = 'cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30';

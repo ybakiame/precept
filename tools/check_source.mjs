@@ -68,6 +68,9 @@ for (const dependency of nshDependencies) {
 const packagerPin = readFileSync('tools/package_ui_web.mjs', 'utf8')
   .match(/^const pin = '([0-9a-f]{40})';$/m)?.[1];
 requireCheck(!!nshPin && packagerPin === nshPin, 'NSH packager pin differs from Cargo');
+const portablePin = readFileSync('tools/portable/windows-package.mjs', 'utf8')
+  .match(/^export const pin = '([0-9a-f]{40})';$/m)?.[1];
+requireCheck(!!nshPin && portablePin === nshPin, 'NSH portable packager pin differs from Cargo');
 const webWorkflow = parseDocument(readFileSync('.github/workflows/ui-spike.yml', 'utf8'), { uniqueKeys:true }).toJS();
 const rendererPins = (webWorkflow.jobs?.web?.steps || []).flatMap(step =>
   [...(step.run || '').matchAll(/\bgit\s+-C\s+apps\/vendor\/nsh\s+checkout\s+(\S+)/g)]
