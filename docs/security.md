@@ -12,6 +12,19 @@ clients. Repository content and agent protocol frames may be untrusted. Same-use
 processes with filesystem access can bypass cooperative application controls; this
 is **not an OS sandbox** or a credential isolation boundary.
 
+## Hooks and enforcement
+
+Session-start injection and pre-tool gates run inside the agent's harness, as
+commands the harness chooses to run. They are **cooperative compliance, not a
+security boundary**: an agent or harness that skips the hook, a tool call the
+harness does not route through it, a same-user process editing files directly, or
+an operator who disables the integration is not contained. Gates fail open by
+default (an unreachable daemon allows the call); fail-closed is an explicit
+per-project choice. "Enforced" therefore means only that a hard rule was checked
+on the calls a hook actually mediated, and is reported per session, never assumed.
+A proxy chokepoint that mediates tool calls outside the harness would be a
+separate design with its own threat model.
+
 ## Current controls
 
 - Explicit fresh Profile creation/no overwrite or discovery; strict complete v1

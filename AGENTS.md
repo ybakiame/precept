@@ -42,17 +42,21 @@ contracts. Code/contract disagreements require explicit human resolution.
 
 - Rust is the only supported product runtime. Do not restore the retired Python
   runtime, validation dependency, compatibility shim or release path.
-- The only product schema is fresh Rust-native Profile v1
-  (`PRAGMA user_version=1`). Legacy Python v1 and synthetic v2 are incompatible
-  historical formats. Do not add legacy readers, migration, downgrade or fallback.
+- Each release line has exactly one fresh Rust-native Profile schema. Do not add
+  legacy readers, in-place migration, downgrade or fallback; moving data between
+  schemas goes only through the operator's versioned Profile export and import.
+  Legacy Python v1 and synthetic v2 remain unsupported historical formats.
 - The native daemon is the only production write owner and the only caller of the
   private `precept-write` implementation. `precept-store` remains read-only.
 - UI, `precept`, MCP and agents never receive writable SQLite connections or raw
   SQL access. There is no daemon-unavailable direct-write fallback.
 - Operator writes require a separately versioned, typed, profile-scoped local IPC
   capability. Operator read grants do not imply write authority.
-- MCP exposes exactly the two project-bound read-only tools. Agents, prompts,
-  Handoffs and session context cannot confirm or mutate Profile state.
+- MCP tools are project-bound; tool arguments never widen scope. Agents may read
+  and, with the operator-granted `propose` capability, create suggestions and
+  their own session records. No agent, prompt or Handoff can confirm, reject,
+  edit, delete or enable a reviewed record, register a project or change an
+  integration.
 - Profile creation and selection are explicit operator actions. Never discover,
   adopt, migrate, reset, delete or overwrite a Profile automatically. Startup
   selection occurs only for the explicitly requested path; write access is never
@@ -60,8 +64,15 @@ contracts. Code/contract disagreements require explicit human resolution.
 - Projects live in daemon-private state and change only through operator-write
   `project.add` / `project.remove` after a daemon-side check of the chosen path.
   No GUI, bridge or agent scans directories.
-- Preference proposals start as suggested. Confirmation requires an explicit
-  operator action on the exact record and revision.
+- Rule proposals, including automatically mined ones, start as suggested.
+  Confirmation requires an explicit operator action on the exact record and
+  revision.
+- Precept writes repository or harness files only on an explicit operator action
+  with a preview, only inside its own markers or hook groups (or as reviewed
+  contract files the user commits), and always revocably. It never commits,
+  pushes or installs integrations on its own.
+- Hooks are cooperative compliance, not a security boundary. Report achieved
+  levels (delivered, verified, enforced) exactly; never infer one from another.
 
 ## Engineering and validation
 
@@ -105,6 +116,6 @@ values, Handoff bodies, credentials, raw agent conversations or device identifie
 Do not store secrets or personal data in fixtures.
 
 Do not delete ignored local data, authentication directories or runtime directories
-as part of source cleanup. No agent-facing MCP writes, automatic preference
-approval, network listener, automatic repository rewriting, shell execution, OS
-sandbox claim or broad execution permission is implied by the current architecture.
+as part of source cleanup. No automatic rule approval, network listener,
+unpreviewed repository or harness writes, daemon shell execution, OS sandbox claim
+or broad execution permission is implied by the current architecture.
