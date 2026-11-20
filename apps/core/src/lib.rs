@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::BTreeMap, sync::Arc};
 
+pub mod activity;
 pub mod appearance;
 pub mod connection;
 pub mod i18n;

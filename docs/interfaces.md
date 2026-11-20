@@ -51,6 +51,25 @@ from the context. Agent projections omit origin, review history, losing values a
 raw typed explanations. No repository files are
 created or modified by this read path.
 
+### Agent activity
+
+The daemon keeps an in-memory log of agent requests for the operator (the newest
+500 events, emptied on restart, never written to disk): `acp-mcp` starting
+(`daemon.health`), `context.get` and `handoff.get` with their project, arrival
+(`mcp` or `session`), duration and outcome code, plus refused handshakes without a
+project. A context read records only counts (preferences, contracts, documents)
+and the contract-resolution status. Never values, selectors, task ids, paths,
+tokens or response bodies. `acp-mcp` forwards the MCP client's self-reported
+`clientInfo` name and version as an optional `client` label on agent `context.get`
+and `handoff.get` (bounded, printable, never authentication). Operator-only
+`activity.list` takes optional `project` and `before` (an event id) and returns
+`daemon_started_ms`, `capacity`, up to 200 events newest first and `more`; a
+project filter includes refused handshakes. `acp-query activity` prints it.
+
+`acp-mcp` writes one sanitized line per failure to stderr (refused arguments,
+calls before initialization, daemon errors by code), which MCP clients show in
+their own server logs. Stdout stays protocol-only.
+
 Implemented protocol subsets include initialize/initialized, ping, tools/list and
 tools/call for 2025-11-25, plus the 2026-07-28 stateless per-request metadata mode.
 This is not universal MCP certification. There are no write tools, resources,

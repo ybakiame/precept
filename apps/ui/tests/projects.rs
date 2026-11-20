@@ -273,4 +273,49 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         assert!(start.elapsed() < Duration::from_secs(10));
         std::thread::sleep(Duration::from_millis(20));
     }
+    // Recent agent activity: empty until a client starts acp-mcp and reads.
+    contains(
+        &mut app,
+        "No agent has used this project since the daemon started",
+    );
+    {
+        use std::io::{BufRead, BufReader, Write};
+        let mut mcp = Command::new(bin("acp-mcp"))
+            .arg("--runtime-dir")
+            .arg(&f.location.runtime_dir)
+            .arg("--endpoint")
+            .arg(&f.location.endpoint)
+            .args(["--project", "gamma", "--capability-file"])
+            .arg(f.location.runtime_dir.join("agent-gamma.cap"))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let mut input = mcp.stdin.take().unwrap();
+        let mut output = BufReader::new(mcp.stdout.take().unwrap());
+        let mut line = String::new();
+        for message in [
+            json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"headless-agent","version":"2.0"}}}),
+            json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
+            json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_effective_context","arguments":{}}}),
+        ] {
+            writeln!(input, "{message}").unwrap();
+            if message.get("id").is_some() {
+                line.clear();
+                output.read_line(&mut line).unwrap();
+            }
+        }
+        assert!(line.contains("\"isError\":false"), "context read");
+        let _ = mcp.kill();
+        let _ = mcp.wait();
+    }
+    app.press("Refresh activity").unwrap();
+    contains(&mut app, "Last read ");
+    contains(&mut app, "by headless-agent 2.0");
+    contains(
+        &mut app,
+        "Read context: 0 preferences, 0 contracts, 1 documents",
+    );
+    contains(&mut app, "Started acp-mcp");
 }

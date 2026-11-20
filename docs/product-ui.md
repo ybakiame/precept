@@ -97,6 +97,14 @@ Agent sharing is a separate per-project operator switch. Configuration text can 
 copied, but ACP never writes another tool's configuration automatically. Credentials
 are never displayed.
 
+The Agents page lists the selected project's recent agent activity from the daemon's
+in-memory log: when an MCP client started `acp-mcp`, what it read (by count), who
+asked (the client's self-reported name, or how it arrived) and each outcome,
+including refused stale credentials. A headline says when the project was last
+read, or that a client started but never called a tool. Refresh is explicit; the
+log is emptied when the daemon restarts. The Sessions page lists only agents ACP
+starts, and points to this log for agents connected through MCP.
+
 ### Preferences and review
 
 Adding a preference is two explicit steps: save it as suggested, then inspect and

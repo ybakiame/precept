@@ -22,6 +22,7 @@ pub async fn control(location: &Location, method: &str, params: Value) -> Result
             | "project.check"
             | "project.agents"
             | "project.mcp"
+            | "activity.list"
     ) {
         return Err(Error::Unsupported);
     }

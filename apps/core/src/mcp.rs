@@ -123,6 +123,8 @@ pub struct AgentsPage {
     pub error: Option<String>,
     /// Which snippet was copied last (feedback only).
     pub copied: bool,
+    /// Recent agent activity for `project` (`activity.list`).
+    pub activity: crate::activity::Activity,
 }
 
 #[cfg(test)]

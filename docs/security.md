@@ -33,6 +33,9 @@ is **not an OS sandbox** or a credential isolation boundary.
   (`project.agents`): an unshared project has no agent credential, and a held
   token is refused. `acp-mcp` is stdio-only (no port); the GUI shows client
   configuration to copy and never writes other tools' files.
+- The agent activity log is daemon memory only (bounded, emptied on restart),
+  readable by the Operator alone, and records methods, outcomes, counts and the
+  client's self-reported label, never values, selectors, task ids, paths or tokens.
 - Exactly two project-bound read-only MCP tools; no administrative previews, profile
   mutations, context-driven approval or tool-supplied project selector.
 - Preference confirmation binds the exact record/revision/scope. Only confirmed

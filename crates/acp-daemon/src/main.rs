@@ -13,6 +13,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+mod activity;
 #[cfg(test)]
 mod ownership_tests;
 #[cfg(test)]
@@ -48,6 +49,7 @@ struct Service {
     context_lease_seconds: u64,
     sessions: acp_session::runtime::Supervisor,
     grants: acp_ipc::session_lease::Registry,
+    activity: activity::Activity,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -68,6 +70,10 @@ struct AgentContext {
     include_documents: bool,
     #[serde(default)]
     selector: acp_core::contracts::SelectorQuery,
+    /// The MCP client's self-reported name, for the activity log only.
+    #[serde(default)]
+    #[allow(dead_code)]
+    client: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -79,6 +85,18 @@ struct OperatorHandoff {
 #[serde(deny_unknown_fields)]
 struct AgentHandoff {
     task_id: String,
+    /// The MCP client's self-reported name, for the activity log only.
+    #[serde(default)]
+    #[allow(dead_code)]
+    client: Option<String>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ActivityList {
+    #[serde(default)]
+    project: Option<String>,
+    #[serde(default)]
+    before: Option<u64>,
 }
 fn decode<T: serde::de::DeserializeOwned>(v: Value) -> acp_ipc::Result<T> {
     serde_json::from_value(v).map_err(|_| Error::InvalidRequest)
@@ -234,6 +252,20 @@ impl Service {
             return Ok(
                 json!({"api_version":acp_ipc::API_VERSION,"service":"acp-daemon","version":env!("CARGO_PKG_VERSION"),"schema":schema,"ready":true,"profile_selected":selected,"worktree_fingerprint":"on-demand-acp-worktree-v1"}),
             );
+        }
+        // The agent activity log is the daemon's own memory: no Profile needed.
+        if request.method == "activity.list" {
+            if access != Access::Operator {
+                return Err(Error::Unauthorized);
+            }
+            let p: ActivityList = decode(params)?;
+            if p.project
+                .as_deref()
+                .is_some_and(|n| !acp_ipc::valid_project(n))
+            {
+                return Err(Error::InvalidRequest);
+            }
+            return Ok(self.activity.list(p.project.as_deref(), p.before));
         }
         // The daemon's own project set needs no Profile: an operator connecting
         // before creating or selecting one must still get a successful read.
@@ -398,6 +430,15 @@ async fn peer(mut stream: Stream, service: Service, permit: Arc<OwnedSemaphorePe
     let authority = match service.grants.accept(&mut stream, &credentials).await {
         Ok(a) => a,
         Err(e) => {
+            service.activity.record(activity::Record {
+                kind: activity::Kind::Refused,
+                via: activity::Via::Unknown,
+                project: None,
+                client: None,
+                outcome: e.to_string(),
+                duration_ms: 0,
+                counts: None,
+            });
             let _ = write_frame(&mut stream, &Response::error(None, e)).await;
             return;
         }
@@ -437,6 +478,12 @@ async fn peer(mut stream: Stream, service: Service, permit: Arc<OwnedSemaphorePe
             return;
         }
         let method = request.method.clone();
+        let began = std::time::Instant::now();
+        let client = request
+            .params
+            .get("client")
+            .and_then(Value::as_str)
+            .and_then(activity::client_label);
         let result = if request.method.starts_with("session.") {
             service
                 .session(access.clone(), request, permit.clone())
@@ -470,6 +517,32 @@ async fn peer(mut stream: Stream, service: Service, permit: Arc<OwnedSemaphorePe
         };
         if result.is_ok() {
             authority.record(&method);
+        }
+        if let Access::Agent { project } = &access {
+            let kind = match method.as_str() {
+                "daemon.health" => Some(activity::Kind::Started),
+                "context.get" => Some(activity::Kind::Context),
+                "handoff.get" => Some(activity::Kind::Handoff),
+                _ => None,
+            };
+            if let Some(kind) = kind {
+                service.activity.record(activity::Record {
+                    kind,
+                    via: if authority.is_session() {
+                        activity::Via::Session
+                    } else {
+                        activity::Via::Mcp
+                    },
+                    project: Some(project.clone()),
+                    client: client.clone(),
+                    outcome: activity::outcome(&result),
+                    duration_ms: began.elapsed().as_millis() as u64,
+                    counts: match (&result, kind) {
+                        (Ok(v), activity::Kind::Context) => Some(activity::context_counts(v)),
+                        _ => None,
+                    },
+                });
+            }
         }
         let close = matches!(result, Err(Error::Timeout | Error::OutcomeUnknown));
         let response = match result {
@@ -540,6 +613,7 @@ async fn run(args: Args) -> acp_ipc::Result<()> {
         context_lease_seconds: args.context_lease_seconds,
         sessions,
         grants,
+        activity: activity::Activity::default(),
     };
     // The Profile the operator asked to select at start, if any.
     {

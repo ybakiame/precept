@@ -63,6 +63,17 @@ impl Mcp {
             .recv_timeout(Duration::from_secs(12))
             .expect("owned MCP deadline")
     }
+    /// Sends `message` as is; waits for a reply only when it has an id.
+    #[allow(dead_code)]
+    pub fn send(&mut self, message: Value) -> Option<Value> {
+        writeln!(self.child.stdin.as_mut().unwrap(), "{message}").unwrap();
+        self.child.stdin.as_mut().unwrap().flush().unwrap();
+        message.get("id").map(|_| {
+            self.replies
+                .recv_timeout(Duration::from_secs(12))
+                .expect("owned MCP deadline")
+        })
+    }
     pub fn context(&mut self, args: Value) -> Value {
         let reply = self.request(
             "tools/call",

@@ -56,6 +56,16 @@ enum Query {
         session_id: String,
     },
     Projects,
+    /// Recent agent activity (in memory since the daemon started; newest
+    /// first): MCP starts, reads and refusals, by count only.
+    Activity {
+        /// Only this project (refused handshakes, which carry none, included).
+        #[arg(long)]
+        project: Option<String>,
+        /// Only events older than this id.
+        #[arg(long)]
+        before: Option<u64>,
+    },
     Context {
         project: String,
         #[arg(long)]
@@ -122,6 +132,16 @@ async fn run(args: Args) -> acp_ipc::Result<serde_json::Value> {
         ),
         Query::Health => ("daemon.health", json!({})),
         Query::Projects => ("project.list", json!({})),
+        Query::Activity { project, before } => {
+            let mut p = json!({});
+            if let Some(project) = project {
+                p["project"] = project.into();
+            }
+            if let Some(before) = before {
+                p["before"] = before.into();
+            }
+            ("activity.list", p)
+        }
         Query::Context {
             project,
             include_documents,

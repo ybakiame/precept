@@ -65,6 +65,7 @@ async fn revoke_closes_admissions_drains_and_preserves_admitted_committed_respon
         context_lease_seconds: 300,
         sessions: Default::default(),
         grants,
+        activity: crate::activity::Activity::default(),
     };
     profiles.select_remembered(&service);
     let (mut operator, ack) = open(&service, &credentials[0]).await;
@@ -172,6 +173,7 @@ async fn s3_root_drift_between_initial_check_and_final_admission_refuses_review(
             context_lease_seconds: 300,
             sessions: Default::default(),
             grants,
+            activity: crate::activity::Activity::default(),
         };
         profiles.select_remembered(&service);
         let operator = credentials

@@ -72,6 +72,7 @@ impl crate::native::Inputs {
                     | "profile.write.disable"
                     | "project.agents"
                     | "project.mcp"
+                    | "activity.list"
             )
         {
             return Err("Unsupported");

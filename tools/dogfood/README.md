@@ -77,6 +77,11 @@ installed manifest, and keeps unknown files.
    unit. Without that file, sessions are off.
 
 Status and logs: `systemctl --user status acp-daemon`, `journalctl --user -u acp-daemon`.
+Agent activity (did a configured MCP client start `acp-mcp` and read?): Agents →
+**Recent agent activity** in the Desktop, or `acp-query --runtime-dir $R --endpoint
+$R/control.sock activity --project NAME`. It is kept in daemon memory since the
+last start, by count only. `acp-mcp` also writes one line per failure to stderr,
+which the MCP client shows in its own server log.
 Stop is SIGTERM (graceful: sessions stopped, capabilities removed, lease released).
 Exit status 2 (a configuration or safety refusal, e.g. a damaged state file) is not
 restarted; fix the cause. The daemon never repairs its state to make itself start.

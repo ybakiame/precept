@@ -38,6 +38,27 @@ struct Bridge {
     credential: Credential,
     initialized: bool,
     ready: bool,
+    /// The client's self-reported `clientInfo` name and version, passed to
+    /// the daemon's activity log only (bounded, printable).
+    client: Option<String>,
+}
+/// `name version` from `clientInfo`, bounded and printable, or none.
+fn client_label(params: &Value) -> Option<String> {
+    let info = params.get("clientInfo")?;
+    let name = info.get("name")?.as_str()?;
+    let version = info.get("version").and_then(Value::as_str).unwrap_or("");
+    let label: String = format!("{name} {version}")
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(64)
+        .collect();
+    let label = label.trim();
+    (!label.is_empty()).then(|| label.to_owned())
+}
+/// One sanitized diagnostic line on stderr (never stdout, never arguments,
+/// values or paths): MCP clients show a server's stderr in their own logs.
+fn diagnose(what: &str) {
+    eprintln!("acp-mcp: {what}");
 }
 impl Bridge {
     async fn tool(&self, name: &Value, args: &Value) -> Result<Value, Value> {
@@ -54,6 +75,7 @@ impl Bridge {
                         .unwrap_or(&Value::Bool(false))
                         .is_boolean()
                 {
+                    diagnose("get_effective_context refused: invalid arguments");
                     return Ok(tool_error("include_documents must be boolean"));
                 }
                 let mut params = json!({"include_documents":args.get("include_documents").unwrap_or(&Value::Bool(false))});
@@ -63,6 +85,7 @@ impl Bridge {
                     )
                     .is_ok_and(|q| q.validate().is_ok());
                     if !valid {
+                        diagnose("get_effective_context refused: invalid selector");
                         return Ok(tool_error("Invalid selector"));
                     }
                     params["selector"] = selector.clone();
@@ -71,11 +94,13 @@ impl Bridge {
             }
             Some("get_handoff") => {
                 if args.len() != 1 || !args.get("task_id").is_some_and(Value::is_string) {
+                    diagnose("get_handoff refused: invalid arguments");
                     return Ok(tool_error("task_id string required"));
                 }
                 ("handoff.get", json!({"task_id":args["task_id"]}))
             }
             _ => {
+                diagnose("unknown tool requested");
                 return Err(error(
                     Value::Null,
                     -32602,
@@ -83,10 +108,17 @@ impl Bridge {
                 ));
             }
         };
+        let mut params = params;
+        if let Some(client) = &self.client {
+            params["client"] = json!(client);
+        }
         let result = match Client::connect(&self.location, &self.credential).await {
             Ok(mut client) => client.request(method, params).await,
             Err(e) => Err(e),
         };
+        if let Err(e) = &result {
+            diagnose(&format!("{method} failed: {e}"));
+        }
         Ok(match result {
             Ok(data) => {
                 json!({"content":[{"type":"text","text":data.to_string()}],"isError":false})
@@ -125,10 +157,12 @@ impl Bridge {
                 }
                 self.initialized = true;
                 self.ready = false;
+                self.client = client_label(&params);
                 json!({"protocolVersion":LEGACY,"serverInfo":info(),"capabilities":{"tools":{}}})
             }
             Some("ping") => json!({}),
             _ if !(stateless || self.ready) => {
+                diagnose("request before MCP initialization");
                 return Some(error(id, -32000, "MCP initialization required"));
             }
             Some("tools/list") => json!({"tools":tools()}),
@@ -203,11 +237,13 @@ async fn run(args: Args) -> acp_ipc::Result<()> {
     let mut client = Client::connect(&args.location, &credential).await?;
     client.request("daemon.health", json!({})).await?;
     drop(client);
+    diagnose("connected to the daemon; waiting for the MCP client");
     let mut bridge = Bridge {
         location: args.location,
         credential,
         initialized: false,
         ready: false,
+        client: None,
     };
     let mut input = BufReader::new(tokio::io::stdin());
     let mut output = tokio::io::stdout();

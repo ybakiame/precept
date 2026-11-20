@@ -653,7 +653,22 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
                     )));
                 }
             } else {
-                body = body.child(text(m.word(Msg::SessionEmpty)));
+                body = body.child(text(m.word(Msg::SessionEmpty))).child(
+                    view()
+                        .gap_2()
+                        .items_start()
+                        .child(
+                            text(m.word(Msg::SessionsMcpNote))
+                                .text_size(px(ui::scale::text::CAPTION))
+                                .text_color(move || tokens::palette(model).muted),
+                        )
+                        .child(
+                            ui::button(model, "")
+                                .label_fn(move || model.get().word(Msg::OpenAgentActivity).into())
+                                .size(ui::ButtonSize::Small)
+                                .on_press(move || shell::go(model, shell::Destination::Agents)),
+                        ),
+                );
             }
             if m.session.error.is_some() {
                 body = body.child(text(m.word(Msg::SessionError)));

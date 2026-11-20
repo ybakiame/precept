@@ -62,6 +62,7 @@ fn fetch(model: Signal<Model>, name: String) {
         m.agents.error = None;
         m.agents.copied = false;
     });
+    load_activity(model, name.clone());
     super::profile::call(
         model,
         "project.mcp",
@@ -74,6 +75,36 @@ fn fetch(model: Signal<Model>, name: String) {
                     m.agents.launch = None;
                     m.agents.error = Some(code.into());
                 }
+            }
+        },
+    );
+}
+
+/// Reads the recent agent activity of `name` (the daemon's memory since it
+/// started; counts and outcomes only).
+pub(crate) fn load_activity(model: Signal<Model>, name: String) {
+    model.update(|m| {
+        let a = &mut m.agents.activity;
+        if a.project.as_deref() != Some(name.as_str()) {
+            a.page = None;
+        }
+        a.project = Some(name.clone());
+        a.busy = true;
+        a.error = None;
+    });
+    super::profile::call(
+        model,
+        "activity.list",
+        serde_json::json!({ "project": name }),
+        move |_, m, r| {
+            let a = &mut m.agents.activity;
+            if a.project.as_deref() != Some(name.as_str()) {
+                return;
+            }
+            a.busy = false;
+            match r.and_then(acp_ui_core::activity::Page::parse) {
+                Ok(page) => a.page = Some(page),
+                Err(code) => a.error = Some(code.into()),
             }
         },
     );
@@ -353,6 +384,136 @@ fn configure(model: Signal<Model>) -> impl IntoElement {
         )
 }
 
+/// One event: time, what happened, who asked and the outcome.
+fn activity_row(model: Signal<Model>, m: &Model, e: &acp_ui_core::activity::Event) -> AnyElement {
+    let ok = e.outcome == "ok";
+    let refused = e.kind == "refused";
+    view()
+        .flex_row()
+        .flex_wrap()
+        .items_center()
+        .gap_x_3()
+        .gap_y_1()
+        .py_1p5()
+        .border_t_1()
+        .border_color(move || palette(model).hairline)
+        .child(
+            text(acp_ui_core::activity::clock(e.at_ms))
+                .font_family("monospace")
+                .text_size(px(scale::text::CAPTION))
+                .text_color(move || palette(model).muted)
+                .flex_shrink_0(),
+        )
+        .child(
+            view()
+                .flex_1()
+                .min_w(px(200.0))
+                .gap_0p5()
+                .child(text(m.activity_summary(e)))
+                .child(
+                    text(m.activity_who(e))
+                        .text_size(px(scale::text::CAPTION))
+                        .text_color(move || palette(model).muted),
+                ),
+        )
+        .child(
+            badge(
+                model,
+                if ok {
+                    "OK".to_owned()
+                } else {
+                    e.outcome.clone()
+                },
+            )
+            .variant(if ok {
+                BadgeVariant::Success
+            } else if refused || e.outcome == "Unauthorized" {
+                BadgeVariant::Danger
+            } else {
+                BadgeVariant::Warning
+            }),
+        )
+        .into_element()
+}
+
+/// The most events listed (the daemon keeps more; Refresh reads the newest).
+const SHOWN: usize = 50;
+
+fn activity(model: Signal<Model>) -> impl IntoElement {
+    let state = computed(move || {
+        let m = model.get();
+        (m.agents.activity.clone(), m.locale)
+    });
+    surface(model)
+        .title_fn(word(model, Msg::ActivityTitle))
+        .child(
+            view()
+                .flex_row()
+                .items_start()
+                .gap_3()
+                .child(
+                    text(move || {
+                        let m = model.get();
+                        let started = m
+                            .agents
+                            .activity
+                            .page
+                            .as_ref()
+                            .map(|p| acp_ui_core::activity::date_time(p.daemon_started_ms))
+                            .unwrap_or_else(|| "…".into());
+                        m.word(Msg::ActivityHelp).replace("{time}", &started)
+                    })
+                    .flex_1()
+                    .text_size(px(scale::text::CAPTION))
+                    .text_color(move || palette(model).muted),
+                )
+                .child(
+                    button(model, "")
+                        .label_fn(word(model, Msg::RefreshList))
+                        .spoken(word(model, Msg::ActivityRefresh))
+                        .size(ButtonSize::Small)
+                        .variant(ButtonVariant::Ghost)
+                        .icon(ui::icons::RESET)
+                        .loading(move || model.get().agents.activity.busy)
+                        .on_press(move || {
+                            if let Some(name) = model.get().agents.project.clone() {
+                                load_activity(model, name);
+                            }
+                        }),
+                ),
+        )
+        .child(dynamic(move || {
+            let (a, _) = state.get();
+            let m = model.get_untracked();
+            if let Some(code) = a.error {
+                return text(code)
+                    .text_size(px(scale::text::CAPTION))
+                    .text_color(move || palette(model).error)
+                    .into_element();
+            }
+            let Some(page) = a.page else {
+                return view().into_element();
+            };
+            if page.events.is_empty() {
+                return ui::empty(model, m.word(Msg::ActivityEmpty))
+                    .icon(ui::icons::AGENTS)
+                    .into_element();
+            }
+            let headline = match page.last_read() {
+                Some(e) => m
+                    .word(Msg::ActivityLastRead)
+                    .replace("{time}", &acp_ui_core::activity::clock(e.at_ms))
+                    .replace("{client}", &m.activity_who(e)),
+                None => m.word(Msg::ActivityNeverRead).to_owned(),
+            };
+            let mut list = view().child(text(headline).font_weight(FontWeight::MEDIUM).pb_2());
+            for e in page.events.iter().take(SHOWN) {
+                list = list.child(activity_row(model, &m, e));
+            }
+            list.into_element()
+        }))
+}
+
 /// The Agents page (mounted by the shell outside the per-change page rebuild).
 pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
     view()
@@ -368,6 +529,8 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
                     },
                     |s| s.hidden(),
                 )
-                .child(configure(model)),
+                .child(configure(model))
+                .child(view().h(px(24.0)))
+                .child(activity(model)),
         )
 }

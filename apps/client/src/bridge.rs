@@ -31,7 +31,7 @@ pub const SESSION_METHODS: [&str; 6] = [
     "session.stop",
 ];
 /// The exact Operator control/read methods (the daemon client re-checks this list).
-pub const CONTROL_METHODS: [&str; 15] = [
+pub const CONTROL_METHODS: [&str; 16] = [
     "profile.info",
     "profile.create",
     "profile.select",
@@ -47,6 +47,7 @@ pub const CONTROL_METHODS: [&str; 15] = [
     "project.check",
     "project.agents",
     "project.mcp",
+    "activity.list",
 ];
 /// The project-set writes, sent with the write credential inside WSL.
 pub const PROJECT_WRITES: [&str; 2] = ["project.add", "project.remove"];

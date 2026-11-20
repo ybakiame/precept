@@ -418,6 +418,8 @@ work is called done. "RM" is what reduced motion does.
 | Check / Start / Connect / Add running | The button dims, holds its width and shows a turning spinner; the label stays | Spinner rests |
 | A check's result arrives | The result fades in rising 4, `BASE`, once per new result | Appears |
 | Configuration copied | As every copy button: glyph swap and "Copied" in place, no toast | Swap without scale |
+| Agent activity refreshing | The Refresh button shows its turning spinner; rows stay until the reply replaces them | Spinner rests |
+| Agent activity empty | The empty state arrives (fade, rising 4, `BASE`) | Appears |
 
 Sound: none. ACP is a quiet developer tool.
 
