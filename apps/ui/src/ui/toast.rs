@@ -37,7 +37,19 @@ fn sync(manager: Stored<ToastManager<u64, Item>>, shown: Signal<Shown>) {
 }
 
 /// Shows `text` as a toast (no-op before the shell mounted the stack).
+///
+/// Callers often notify from inside `model.update`, while the model's value
+/// is taken out for the update. The toast renders at once and its controls
+/// read the model, so the push waits for the next turn of the executor, on
+/// a detached owner (a closing dialog or menu must not cancel it).
 pub fn notify(tone: Tone, text: impl Into<SharedString>) {
+    let text = text.into();
+    Owner::detached().run(|| {
+        spawn(async move { show(tone, text) });
+    });
+}
+
+fn show(tone: Tone, text: SharedString) {
     let Some((manager, shown)) = SINK.with(Cell::get) else {
         return;
     };
@@ -50,7 +62,7 @@ pub fn notify(tone: Tone, text: impl Into<SharedString>) {
     manager.with(|m| {
         m.push(
             id,
-            (tone, text.into()),
+            (tone, text),
             ToastOptions::timeout(Some(Duration::from_secs(seconds))),
             nsh_core::time::now(),
         )

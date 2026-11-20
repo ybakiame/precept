@@ -86,54 +86,61 @@ fn load(model: Signal<Model>) {
         request = m.begin_read().ok();
     });
     let Some(request) = request else { return };
-    spawn(async move {
-        #[cfg(feature = "ipc")]
-        let selected = request.clone();
-        #[cfg(feature = "ipc")]
-        let result = blocking(move || {
-            inputs.and_then(|inputs| inputs.fetch_for(selected.project.as_deref(), &selected.task))
-        })
-        .await
-        .unwrap_or(Err("Client unavailable"));
-        #[cfg(not(feature = "ipc"))]
-        let result = {
-            timer(std::time::Duration::from_millis(20)).await;
-            if model.get().live {
-                Err("Client unavailable")
-            } else {
-                let mut s = acp_ui_core::Snapshot::fixture();
-                for p in &mut s.projects {
-                    if p.handoff
-                        .as_ref()
-                        .is_some_and(|h| h.task_id != request.task)
-                    {
-                        p.handoff = None;
+    // Detached: a switch from the sidebar's project menu starts this read,
+    // and the menu's owner is disposed when it closes. The epoch fences a
+    // late completion instead.
+    Owner::detached().run(|| {
+        spawn(async move {
+            #[cfg(feature = "ipc")]
+            let selected = request.clone();
+            #[cfg(feature = "ipc")]
+            let result = blocking(move || {
+                inputs.and_then(|inputs| {
+                    inputs.fetch_for(selected.project.as_deref(), &selected.task)
+                })
+            })
+            .await
+            .unwrap_or(Err("Client unavailable"));
+            #[cfg(not(feature = "ipc"))]
+            let result = {
+                timer(std::time::Duration::from_millis(20)).await;
+                if model.get().live {
+                    Err("Client unavailable")
+                } else {
+                    let mut s = acp_ui_core::Snapshot::fixture();
+                    for p in &mut s.projects {
+                        if p.handoff
+                            .as_ref()
+                            .is_some_and(|h| h.task_id != request.task)
+                        {
+                            p.handoff = None;
+                        }
                     }
+                    Ok(s)
                 }
-                Ok(s)
+            };
+            #[cfg(target_arch = "wasm32")]
+            let now = 0;
+            #[cfg(not(target_arch = "wasm32"))]
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|t| t.as_millis() as u64)
+                .unwrap_or_default();
+            model.update(|m| {
+                if m.complete_read(&request, result, now) {
+                    m.last_duration_ms = Some(started.elapsed().as_millis() as u64);
+                }
+            });
+            // Re-open in the entry the operator chose (a read finishing after a
+            // click must not turn Personal preferences into To review).
+            let (open, mode) = {
+                let m = model.get();
+                (m.operator.open, m.operator.mode)
+            };
+            if open {
+                review::open_mode(model, mode);
             }
-        };
-        #[cfg(target_arch = "wasm32")]
-        let now = 0;
-        #[cfg(not(target_arch = "wasm32"))]
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|t| t.as_millis() as u64)
-            .unwrap_or_default();
-        model.update(|m| {
-            if m.complete_read(&request, result, now) {
-                m.last_duration_ms = Some(started.elapsed().as_millis() as u64);
-            }
-        });
-        // Re-open in the entry the operator chose (a read finishing after a
-        // click must not turn Personal preferences into To review).
-        let (open, mode) = {
-            let m = model.get();
-            (m.operator.open, m.operator.mode)
-        };
-        if open {
-            review::open_mode(model, mode);
-        }
+        })
     });
 }
 fn reconnect(model: Signal<Model>) {
@@ -143,7 +150,7 @@ fn next_project(model: Signal<Model>) {
     let next = (model.get().selected + 1) % model.get().project_names.len().max(1);
     switch_project(model, next);
 }
-fn switch_project(model: Signal<Model>, index: usize) {
+pub(crate) fn switch_project(model: Signal<Model>, index: usize) {
     model.update(|m| {
         m.select(index);
         m.task_id.clear();

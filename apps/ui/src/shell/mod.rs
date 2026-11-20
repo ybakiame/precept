@@ -275,6 +275,57 @@ fn status_row(model: Signal<Model>) -> impl IntoElement {
         .selected(move || current(&model.get()) == Destination::Connection)
         .on_press(move || go(model, Destination::Connection))
 }
+/// Whether a destination shows one project's data (its header carries the
+/// project switcher).
+pub(crate) fn project_scoped(d: Destination) -> bool {
+    matches!(
+        d,
+        Destination::Section(Section::Dashboard | Section::Preferences | Section::Handoff)
+            | Destination::Sessions
+            | Destination::Agents
+    )
+}
+/// The sidebar's project group heading: which project its pages show. The
+/// switcher itself is in those pages' headers, beside what it changes.
+fn project_label(model: Signal<Model>) -> impl IntoElement {
+    text(move || {
+        let m = model.get();
+        match m.selected_project.as_deref() {
+            Some(name) => format!(
+                "{} · {}",
+                m.word(Msg::ProjectGroup),
+                acp_ui_core::presentation::sanitize(name, 64)
+            ),
+            None => m.word(Msg::ProjectGroup).into(),
+        }
+    })
+    .font_weight(FontWeight::SEMIBOLD)
+    .text_size(px(ui::scale::text::CAPTION))
+    .text_color(move || palette(model).muted)
+    .px_2()
+    .style_when(compact, |s| s.hidden())
+}
+/// The header's project switcher on project pages: a caption and the menu.
+fn header_project(model: Signal<Model>) -> impl IntoElement {
+    view()
+        .flex_row()
+        .items_center()
+        .gap_2()
+        .ml_3()
+        .style_when(
+            move || {
+                let m = model.get();
+                !project_scoped(current(&m)) || m.project_names.is_empty()
+            },
+            |s| s.hidden(),
+        )
+        .child(
+            text(move || model.get().word(Msg::ProjectGroup))
+                .text_size(px(ui::scale::text::CAPTION))
+                .text_color(move || palette(model).muted),
+        )
+        .child(view().w(px(220.0)).child(projects(model)))
+}
 fn group_label(model: Signal<Model>, key: Msg) -> impl IntoElement {
     text(move || model.get().word(key))
         .font_weight(FontWeight::SEMIBOLD)
@@ -459,15 +510,7 @@ fn sidebar(model: Signal<Model>) -> impl IntoElement {
                     .child(setup_group),
             ),
         )
-        .child(
-            slide.group(
-                view()
-                    .gap_1()
-                    .child(group_label(model, Msg::ProjectGroup))
-                    .child(view().pb_1().child(projects(model)))
-                    .child(work_group),
-            ),
-        )
+        .child(slide.group(view().gap_1().child(project_label(model)).child(work_group)))
         .child(
             slide.group(
                 view()
@@ -540,7 +583,8 @@ fn header(model: Signal<Model>) -> impl IntoElement {
                                     move || model.get().word(Msg::AboutThisPage).into(),
                                     move || page_help(&model.get()).unwrap_or_default().into(),
                                 )),
-                        ),
+                        )
+                        .child(header_project(model)),
                 )
                 .child(
                     view()

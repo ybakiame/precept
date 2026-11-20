@@ -110,6 +110,17 @@ pub(crate) fn load_activity(model: Signal<Model>, name: String) {
     );
 }
 
+/// A row chosen on this page: a served project becomes the app's current
+/// project (the read that follows refreshes this page); one the daemon does
+/// not serve yet is shown here only.
+fn choose(model: Signal<Model>, name: String) {
+    let index = model.get().project_names.iter().position(|n| *n == name);
+    match index {
+        Some(index) => crate::switch_project(model, index),
+        None => fetch(model, name),
+    }
+}
+
 fn set_shared(model: Signal<Model>, name: String, enabled: bool) {
     model.update(|m| m.agents.busy = true);
     super::profile::call(
@@ -139,7 +150,8 @@ fn set_shared(model: Signal<Model>, name: String, enabled: bool) {
 }
 
 /// Picks a project and reads its launch line when the page becomes visible
-/// with daemon data (tracked: visibility and the read epoch only).
+/// with daemon data (tracked: visibility and the read epoch only). The app's
+/// current project comes first, so this page and the header switcher agree.
 pub(crate) fn watch(model: Signal<Model>) {
     let ready = computed(move || {
         let m = model.get();
@@ -152,12 +164,13 @@ pub(crate) fn watch(model: Signal<Model>) {
         untracked(|| {
             let m = model.get();
             let entries = directory(&m);
-            let keep = m
-                .agents
-                .project
-                .clone()
-                .filter(|p| entries.iter().any(|e| &e.name == p));
-            if let Some(name) = keep.or_else(|| entries.first().map(|e| e.name.clone())) {
+            let listed = |p: &String| entries.iter().any(|e| &e.name == p);
+            let current = m.selected_project.clone().filter(listed);
+            let keep = m.agents.project.clone().filter(listed);
+            if let Some(name) = current
+                .or(keep)
+                .or_else(|| entries.first().map(|e| e.name.clone()))
+            {
                 fetch(model, name);
             }
         });
@@ -209,7 +222,7 @@ fn rows(model: Signal<Model>) -> impl IntoElement {
                                     let name = entry.name.clone();
                                     move || chosen.as_deref() == Some(name.as_str())
                                 })
-                                .on_press(move || fetch(model, name.clone())),
+                                .on_press(move || choose(model, name.clone())),
                         ),
                     )
                     .child(

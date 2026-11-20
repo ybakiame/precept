@@ -254,8 +254,8 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     writes_on(&mut app);
     f.register();
     app.press_key("mod+r").unwrap();
-    // The project menu lists the newly registered project.
-    app.wait_for("alpha").unwrap();
+    // The newly registered project becomes the current one.
+    app.wait_for("Project · alpha").unwrap();
     writes_on(&mut app);
     // Project → Preferences → Manage project preferences: alpha's records.
     manage_project(&mut app);

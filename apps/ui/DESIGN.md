@@ -70,7 +70,7 @@ Tasks, by how often they happen:
 | Region | Size | Surface | Contents |
 | --- | --- | --- | --- |
 | Title bar | 36 high | `sidebar` above the sidebar, `background` above the page | Drag region, window caption buttons; the close button washes `danger` on hover |
-| Sidebar | 232 wide, the window's full height (a wrapped row below 900) | `sidebar`, trailing hairline | Brand mark and name; **Set up**, **Project**, **Personal** groups; foot destinations; the status row and the keyboard button |
+| Sidebar | 232 wide, the window's full height (a wrapped row below 900) | `sidebar`, trailing hairline | Brand mark and name; **Set up**, **Project · name** (the current project; its switcher is in the page header of project pages), **Personal** groups; foot destinations; the status row and the keyboard button |
 | Page | the rest, inset 24 (8 when compact) | `background` | Header, page toolbar, one scroll region |
 | Overlay layer | the window | — | Toasts (bottom-right, 16 from the edges), menus, popovers, dialogs, sheets |
 
@@ -105,8 +105,9 @@ the daemon target, and it is a button that opens **Connection**.
 | Task error | hollow `warning` | Needs attention / 需要处理 | none |
 
 **Page header.** Title (20 pt semibold, a header role), an information button when
-the page has a longer explanation, then one muted status line with the target and
-last read. Page-wide actions sit at the trailing edge as small ghost buttons with
+the page has a longer explanation and, on pages that show one project (Dashboard,
+Preferences, Handoff, Sessions, Agents), a **Project** caption with the project
+menu (220 wide), then one muted status line with the target and last read. Page-wide actions sit at the trailing edge as small ghost buttons with
 icons (Reconnect, Copy visible page). A page's own primary command (Add
 preference…) lives in its toolbar, not in the header.
 

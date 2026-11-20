@@ -66,8 +66,11 @@ Organize navigation around the operator's task:
 
 - **Set up:** Connection, Profile, Workspaces and Agents. Numbered setup steps use
   stable accessible names and reflect fresh daemon observations.
-- **Project:** project switcher, Dashboard, Preferences, Handoff and Sessions for
-  the selected project.
+- **Project:** Dashboard, Preferences, Handoff and Sessions for the current
+  project, which the group heading names. The project switcher sits in the header
+  of every page that shows one project's data (these and Agents), beside what it
+  changes. There is one current project: the Agents page follows it, and choosing
+  a served project there makes it current.
 - **Personal:** personal preferences across projects and the review workspace for
   suggestions in either scope.
 - **Foot:** Diagnostics and Settings.

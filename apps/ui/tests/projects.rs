@@ -318,4 +318,49 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         "Read context: 0 preferences, 0 contracts, 1 documents",
     );
     contains(&mut app, "Started acp-mcp");
+    // A second project, then a switch from the sidebar's project menu: the
+    // read it starts must finish after the menu closes (never stuck Reading).
+    let delta = f.root.path().join("delta");
+    std::fs::create_dir_all(delta.join(".git")).unwrap();
+    app.press_key("alt+2").unwrap();
+    app.wait_for("Add project…").unwrap();
+    app.press("Add project…").unwrap();
+    app.clear("Folder").unwrap();
+    app.type_text("Folder", delta.canonicalize().unwrap().to_str().unwrap())
+        .unwrap();
+    app.press("Check").unwrap();
+    contains(&mut app, "This folder can be added.");
+    app.press("Add").unwrap();
+    contains(&mut app, "delta");
+    let settled = |app: &mut nsh_testing::Headless| {
+        app.wait_until("read settled", Duration::from_secs(10), |s| {
+            s.texts().iter().any(|t| t.starts_with("Connected · "))
+        })
+        .unwrap();
+    };
+    settled(&mut app);
+    // The switcher lives in project pages' headers, not on Workspaces.
+    app.press("Dashboard").unwrap();
+    contains(&mut app, "Project · gamma");
+    for (from, to) in [("gamma", "delta"), ("delta", "gamma")] {
+        app.press(from).unwrap();
+        app.press(to).unwrap();
+        settled(&mut app);
+        assert_eq!(
+            app.screen()
+                .texts()
+                .iter()
+                .filter(|t| t.starts_with("Reading"))
+                .count(),
+            0
+        );
+        contains(&mut app, &format!("Project · {to}"));
+    }
+    // The Agents page shows the current project, and its header switches it.
+    app.press("Agents").unwrap();
+    app.wait_for("Configure · acp-gamma").unwrap();
+    app.press("gamma").unwrap();
+    app.press("delta").unwrap();
+    settled(&mut app);
+    app.wait_for("Configure · acp-delta").unwrap();
 }

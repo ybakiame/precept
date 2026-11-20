@@ -212,8 +212,8 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     writes_on(&mut app);
     f.register();
     app.press_key("mod+r").unwrap();
-    // The project menu lists the newly registered project.
-    app.wait_for("alpha").unwrap();
+    // The newly registered project becomes the current one.
+    app.wait_for("Project · alpha").unwrap();
     writes_on(&mut app);
     // Project → Preferences → Manage project preferences: the workspace
     // fixed to alpha's records; Add preference saves a suggestion.
