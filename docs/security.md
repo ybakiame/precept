@@ -49,8 +49,11 @@ separate design with its own threat model.
 - The agent activity log is daemon memory only (bounded, emptied on restart),
   readable by the Operator alone, and records methods, outcomes, counts and the
   client's self-reported label, never values, selectors, task ids, paths or tokens.
-- The session-start hook is read-only, uses the project's agent capability and
-  fails open. The AGENTS.md pointer is written by the daemon only on an Operator
+- The session-start hook is read-only, uses the project's agent capability,
+  stays silent outside the project root and fails open. Its entry in Claude Code's
+  or Codex's user configuration is added or removed by the daemon only on an
+  Operator request carrying the reported file digest, touching only Precept's
+  entry and keeping a backup. The AGENTS.md pointer is written by the daemon only on an Operator
   request carrying the previewed file digest, only between Precept's markers, in a
   served project's root, never through links; Precept never commits.
 - Exactly two project-bound read-only MCP tools; no administrative previews, profile

@@ -25,6 +25,8 @@ pub const CONTROL_METHODS: &[&str] = &[
     "activity.list",
     "integration.pointer",
     "integration.pointer.apply",
+    "integration.hooks",
+    "integration.hooks.apply",
 ];
 /// The project-set writes, sent with the OperatorWrite credential.
 pub const PROJECT_WRITES: &[&str] = &["project.add", "project.remove"];

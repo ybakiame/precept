@@ -95,4 +95,6 @@ pub(crate) const CODE_BLOCK: &str = "M4 4H20V20H4ZM10 9L7 12L10 15M14 9L17 12L14
 pub(crate) const KEYBOARD: &str =
     "M3 7H21V17H3ZM7 10V10.01M10 10V10.01M13 10V10.01M16 10V10.01M8 14H16";
 /// Undo a change back to its default.
+/// A file: a page with a folded corner (AGENTS.md and other repository files).
+pub(crate) const FILE: &str = "M6 3H14L19 8V21H6ZM14 3V8H19";
 pub(crate) const RESET: &str = "M4 12A8 8 0 1 0 6.3 6.3M4 4V8H8";

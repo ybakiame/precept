@@ -82,10 +82,10 @@ installed manifest, and keeps unknown files.
    (a `claude mcp add` command, a Codex `config.toml` table, or MCP JSON; on
    Windows it runs `precept-mcp` through `wsl.exe`). There is no port: the client
    starts `precept-mcp` over stdio. Or `precept ... project mcp|share|unshare NAME`.
-   For Claude Code and Codex, the same page shows an optional session-start hook
-   (`precept-hook`) that hands each new or compacted session the confirmed rules
-   without waiting for the agent to ask; and **AGENTS.md pointer** adds a short
-   Precept section to the repository's `AGENTS.md` (previewed, written only between
+   **Agent integrations** has one switch each for the Claude Code and Codex
+   session-start hooks (`precept-hook` hands each new or compacted session in that
+   project the confirmed rules; Codex asks you to approve it once) and for a short
+   Precept section in the repository's `AGENTS.md` (previewed, written only between
    Precept's markers, removable; you commit it). Or `precept ... project pointer NAME
    [--add|--remove --expected-sha256 DIGEST]`.
 

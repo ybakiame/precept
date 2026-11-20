@@ -15,6 +15,7 @@ use std::{
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 mod activity;
 mod integration;
+mod ojson;
 #[cfg(test)]
 mod ownership_tests;
 #[cfg(test)]
@@ -198,6 +199,15 @@ impl Service {
                 _ => Err(Error::InvalidRequest),
             };
         }
+        if matches!(
+            request.method.as_str(),
+            "integration.hooks" | "integration.hooks.apply"
+        ) {
+            if access != Access::Operator {
+                return Err(Error::Unauthorized);
+            }
+            return self.hooks(&request.method, params);
+        }
         // The daemon's own project set needs no Profile: an operator connecting
         // before creating or selecting one must still get a successful read.
         if request.method == "project.list" {
@@ -281,6 +291,88 @@ impl Service {
     /// How an MCP client starts `precept-mcp` for one project of this daemon: the
     /// executable (the configured context bridge, else the `precept-mcp` beside
     /// this daemon) and its exact arguments. Paths only, never a token.
+    /// The `precept-mcp` MCP clients run: the configured one, else beside this daemon.
+    fn mcp_path(&self) -> Option<PathBuf> {
+        self.mcp_executable.clone().or_else(|| {
+            let beside = std::env::current_exe()
+                .ok()?
+                .with_file_name(format!("precept-mcp{}", std::env::consts::EXE_SUFFIX));
+            beside.is_file().then_some(beside)
+        })
+    }
+    /// The session-start hook, which ships beside `precept-mcp`.
+    fn hook_path(&self) -> Option<PathBuf> {
+        let hook = self
+            .mcp_path()?
+            .with_file_name(format!("precept-hook{}", std::env::consts::EXE_SUFFIX));
+        hook.is_file().then_some(hook)
+    }
+    /// The hook entries of a served project in the agents' user configuration:
+    /// status per harness, or one explicit add/remove guarded by the digest.
+    fn hooks(&self, method: &str, params: Value) -> precept_ipc::Result<Value> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct P {
+            project: String,
+            #[serde(default)]
+            vendor: Option<integration::Vendor>,
+            #[serde(default)]
+            enabled: Option<bool>,
+            #[serde(default)]
+            expected_sha256: Option<String>,
+        }
+        let p: P = decode(params)?;
+        if !self.profiles.allowed(&p.project) {
+            return Err(Error::NotFound);
+        }
+        let (_, roots) = self.profiles.read()?;
+        let root = roots.get(&p.project).ok_or(Error::NotFound)?.clone();
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .filter(|h| h.is_absolute())
+            .ok_or(Error::Unavailable)?;
+        let location = self.profiles.location();
+        let Some(hook) = self.hook_path() else {
+            return Ok(json!({"available": false, "hooks": []}));
+        };
+        let launch = integration::HookLaunch {
+            hook,
+            runtime_dir: location.runtime_dir.clone(),
+            endpoint: location.endpoint.clone(),
+            capability: location.credential_path(Some(&p.project))?,
+            root,
+        };
+        match (method, p.vendor, p.enabled) {
+            ("integration.hooks", None, None) if p.expected_sha256.is_none() => {
+                let hooks = integration::Vendor::ALL
+                    .iter()
+                    .map(|v| {
+                        let cmd = integration::command(&launch, *v, &p.project);
+                        integration::hook_status(&home, *v, &p.project, &cmd)
+                    })
+                    .collect::<precept_ipc::Result<Vec<_>>>()?;
+                Ok(json!({"available": true, "hooks": hooks}))
+            }
+            ("integration.hooks.apply", Some(vendor), Some(enabled)) => {
+                if p.expected_sha256
+                    .as_ref()
+                    .is_some_and(|d| d.len() != 64 || !d.bytes().all(|b| b.is_ascii_hexdigit()))
+                {
+                    return Err(Error::InvalidRequest);
+                }
+                let cmd = integration::command(&launch, vendor, &p.project);
+                integration::hook_apply(
+                    &home,
+                    vendor,
+                    &p.project,
+                    &cmd,
+                    enabled,
+                    p.expected_sha256.as_deref(),
+                )
+            }
+            _ => Err(Error::InvalidRequest),
+        }
+    }
     fn mcp_launch(&self, params: serde_json::Value) -> precept_ipc::Result<serde_json::Value> {
         #[derive(serde::Deserialize)]
         #[serde(deny_unknown_fields)]
@@ -293,17 +385,8 @@ impl Service {
         }
         let location = self.profiles.location();
         let capability = location.credential_path(Some(&p.name))?;
-        let executable = self.mcp_executable.clone().or_else(|| {
-            let beside = std::env::current_exe()
-                .ok()?
-                .with_file_name(format!("precept-mcp{}", std::env::consts::EXE_SUFFIX));
-            beside.is_file().then_some(beside)
-        });
-        // The session-start hook ships beside precept-mcp.
-        let hook = executable.as_ref().and_then(|mcp| {
-            let hook = mcp.with_file_name(format!("precept-hook{}", std::env::consts::EXE_SUFFIX));
-            hook.is_file().then_some(hook)
-        });
+        let executable = self.mcp_path();
+        let hook = self.hook_path();
         let shared = self.profiles.shared_names().contains(&p.name);
         Ok(serde_json::json!({
             "name": p.name,

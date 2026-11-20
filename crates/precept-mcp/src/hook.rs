@@ -38,6 +38,27 @@ struct Args {
     capability_file: std::path::PathBuf,
     #[arg(long, value_enum)]
     vendor: Vendor,
+    /// The project's root. A user-level hook runs in every session; outside
+    /// this root it prints nothing at all.
+    #[arg(long)]
+    root: Option<std::path::PathBuf>,
+}
+
+/// Whether the session's working directory (the hook input's `cwd`, else this
+/// process's) is inside `root`. Unresolvable paths are outside.
+fn inside(root: &std::path::Path, stdin: &[u8]) -> bool {
+    let cwd = serde_json::from_slice::<Value>(stdin)
+        .ok()
+        .and_then(|v| {
+            v.get("cwd")
+                .and_then(Value::as_str)
+                .map(std::path::PathBuf::from)
+        })
+        .or_else(|| std::env::current_dir().ok());
+    match (cwd.and_then(|c| c.canonicalize().ok()), root.canonicalize()) {
+        (Some(cwd), Ok(root)) => cwd.starts_with(root),
+        _ => false,
+    }
 }
 
 /// The harness's hook input: only `source` is read (`compact` after the
@@ -90,6 +111,11 @@ async fn main() {
     let args = Args::parse();
     let mut stdin = Vec::new();
     let _ = std::io::stdin().take(1024 * 1024).read_to_end(&mut stdin);
+    if let Some(root) = &args.root
+        && !inside(root, &stdin)
+    {
+        return;
+    }
     let run = tokio::time::timeout(
         std::time::Duration::from_secs(4),
         briefing(&args, moment(&stdin)),
@@ -115,5 +141,14 @@ mod tests {
             "b"
         );
         assert_eq!(output(Vendor::Cursor, "b")["additional_context"], "b");
+        let dir = std::env::temp_dir();
+        let sub = dir.join(format!("precept-hook-{}", std::process::id()));
+        std::fs::create_dir_all(&sub).unwrap();
+        let input =
+            |p: &std::path::Path| format!("{{\"cwd\":{}}}", Value::from(p.to_str().unwrap()));
+        assert!(inside(&dir, input(&sub).as_bytes()));
+        assert!(!inside(&sub, input(&dir).as_bytes()));
+        assert!(!inside(&sub, br#"{"cwd":"/no/such/dir"}"#));
+        std::fs::remove_dir(&sub).unwrap();
     }
 }

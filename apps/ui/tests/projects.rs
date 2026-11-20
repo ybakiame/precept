@@ -268,14 +268,14 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
             .clipboard()
             .is_some_and(|c| c.contains("[mcp_servers.\"precept-gamma\"]"))
     );
-    app.press("Stop sharing gamma").unwrap();
+    app.press("Share gamma with agents").unwrap();
     let start = Instant::now();
     while f.location.runtime_dir.join("agent-gamma.cap").exists() {
         assert!(start.elapsed() < Duration::from_secs(10));
         std::thread::sleep(Duration::from_millis(20));
     }
     contains(&mut app, "This project is not shared");
-    app.press("Share gamma").unwrap();
+    app.press("Share gamma with agents").unwrap();
     let start = Instant::now();
     while !f.location.runtime_dir.join("agent-gamma.cap").exists() {
         assert!(start.elapsed() < Duration::from_secs(10));
@@ -373,14 +373,42 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     app.press("delta").unwrap();
     settled(&mut app);
     app.wait_for("Configure · precept-delta").unwrap();
-    // Session-start hook for Claude Code, beside the MCP line.
-    app.press("Claude Code").unwrap();
-    contains(&mut app, "precept-hook --vendor claude --runtime-dir");
-    // The AGENTS.md pointer: previewed, written between markers, removed.
+    // One switch adds the Claude Code hook to the user config (HOME is the
+    // test root), another takes it out again; the rest of the file stays.
+    let settings = f.root.path().join(".claude/settings.json");
+    std::fs::create_dir_all(settings.parent().unwrap()).unwrap();
+    std::fs::write(&settings, "{\n  \"model\": \"keep-me\"\n}\n").unwrap();
+    contains(&mut app, "The hooks run:");
+    // The page read the file before it existed: the first switch is refused
+    // and says so; the file is read again, and the second one applies.
+    app.press("Claude Code session-start hook").unwrap();
+    contains(&mut app, "The file changed since it was read");
+    assert_eq!(
+        std::fs::read_to_string(&settings).unwrap(),
+        "{\n  \"model\": \"keep-me\"\n}\n"
+    );
+    app.press("Claude Code session-start hook").unwrap();
+    contains(&mut app, "Briefs each session · ~/.claude/settings.json");
+    let text = std::fs::read_to_string(&settings).unwrap();
+    assert!(text.contains("keep-me") && text.contains("--vendor claude --project delta"));
+    app.press("Claude Code session-start hook").unwrap();
+    let start = Instant::now();
+    while std::fs::read_to_string(&settings)
+        .unwrap()
+        .contains("precept-hook")
+    {
+        assert!(start.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        std::fs::read_to_string(&settings)
+            .unwrap()
+            .contains("keep-me")
+    );
+    // The AGENTS.md switch: previewed before writing, removed at once.
     let agents_md = f.root.path().join("delta/AGENTS.md");
     assert!(!agents_md.exists());
-    app.wait_for("Not added").unwrap();
-    app.press("Add to AGENTS.md…").unwrap();
+    app.press("Precept section in AGENTS.md").unwrap();
     app.wait_for("Add the Precept section to AGENTS.md?")
         .unwrap();
     contains(
@@ -388,13 +416,13 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         "call `get_effective_context` on the `precept-delta` MCP server",
     );
     app.press("Write to AGENTS.md").unwrap();
-    app.wait_for("Added").unwrap();
+    contains(&mut app, "In AGENTS.md · review and commit it");
     let written = std::fs::read_to_string(&agents_md).unwrap();
     assert!(written.starts_with("<!-- precept:begin v1 -->"));
-    app.press("Remove from AGENTS.md…").unwrap();
-    app.wait_for("Remove the Precept section from AGENTS.md?")
-        .unwrap();
-    app.press("Remove").unwrap();
-    app.wait_for("Not added").unwrap();
-    assert!(!agents_md.exists(), "a block-only file is deleted");
+    app.press("Precept section in AGENTS.md").unwrap();
+    let start = Instant::now();
+    while agents_md.exists() {
+        assert!(start.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }

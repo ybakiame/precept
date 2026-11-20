@@ -11,7 +11,7 @@ use precept_ui_core::{
     ProjectEntry,
     connection::Target,
     i18n::Msg,
-    mcp::{Client, Host, Launch, Pointer, hook_snippet, server_name, snippet},
+    mcp::{Client, Hooks, Host, Launch, Pointer, server_name, snippet},
 };
 use tokens::palette;
 use ui::{BadgeVariant, ButtonSize, ButtonVariant, badge, button, scale, surface, tabs};
@@ -67,11 +67,61 @@ fn current_snippet(m: &Model) -> Option<String> {
         .flatten()
 }
 
-fn current_hook(m: &Model) -> Option<String> {
-    let launch = m.agents.launch.as_ref()?;
-    (Some(&launch.name) == m.agents.project.as_ref())
-        .then(|| hook_snippet(m.agents.client, launch, &host(m)))
-        .flatten()
+/// Reads the project's session-start hook states.
+/// (A refusal shown by `apply_hook` stays until the next switch.)
+fn load_hooks(model: Signal<Model>, name: String) {
+    super::profile::call(
+        model,
+        "integration.hooks",
+        serde_json::json!({ "project": name }),
+        move |_, m, r| {
+            if m.agents.project.as_deref() != Some(name.as_str()) {
+                return;
+            }
+            match r.and_then(|v| serde_json::from_value::<Hooks>(v).map_err(|_| "Unavailable")) {
+                Ok(h) => m.agents.hooks = Some(h),
+                Err(code) => {
+                    m.agents.hooks = None;
+                    m.agents.hooks_error = Some(code.into());
+                }
+            }
+        },
+    );
+}
+
+/// Switches one harness's hook, guarded by the digest last read.
+fn apply_hook(model: Signal<Model>, vendor: &'static str, enabled: bool) {
+    let m = model.get();
+    let Some(name) = m.agents.project.clone() else {
+        return;
+    };
+    let expected = m
+        .agents
+        .hooks
+        .as_ref()
+        .and_then(|h| h.get(vendor))
+        .and_then(|h| h.sha256.clone());
+    model.update(|m| {
+        m.agents.hook_busy = Some(vendor.into());
+        m.agents.hooks_error = None;
+    });
+    super::profile::call(
+        model,
+        "integration.hooks.apply",
+        serde_json::json!({ "project": name, "vendor": vendor, "enabled": enabled, "expected_sha256": expected }),
+        move |model, m, r| {
+            m.agents.hook_busy = None;
+            if let Err(code) = r {
+                m.agents.hooks_error = Some(if code == "Conflict" {
+                    m.word(Msg::HookChanged).into()
+                } else {
+                    code.into()
+                });
+            }
+            let name = name.clone();
+            spawn(async move { load_hooks(model, name) });
+        },
+    );
 }
 
 /// Reads the project's AGENTS.md pointer status.
@@ -152,6 +202,8 @@ fn fetch(model: Signal<Model>, name: String) {
     });
     load_activity(model, name.clone());
     load_pointer(model, name.clone());
+    model.update(|m| m.agents.hooks_error = None);
+    load_hooks(model, name.clone());
     super::profile::call(
         model,
         "project.mcp",
@@ -290,46 +342,27 @@ fn project_access(model: Signal<Model>) -> impl IntoElement {
                             ),
                     )
                     .child(
-                        badge(
-                            model,
-                            m.word(if shared {
-                                Msg::AgentsShared
-                            } else {
-                                Msg::AgentsNotShared
-                            }),
-                        )
-                        .variant(if shared {
-                            BadgeVariant::Success
+                        text(m.word(if shared {
+                            Msg::AgentsShared
                         } else {
-                            BadgeVariant::Neutral
-                        }),
+                            Msg::AgentsNotShared
+                        }))
+                        .text_size(px(scale::text::CAPTION))
+                        .text_color(move || palette(model).muted),
                     )
-                    .child(
-                        button(model, "")
-                            .label_fn(word(
-                                model,
-                                if shared {
-                                    Msg::StopSharing
-                                } else {
-                                    Msg::ShareProject
-                                },
-                            ))
-                            .spoken(move || {
-                                let m = model.get();
-                                format!(
-                                    "{} {spoken_name}",
-                                    m.word(if shared {
-                                        Msg::StopSharing
-                                    } else {
-                                        Msg::ShareProject
-                                    })
-                                )
+                    .child(ui::switch(
+                        model,
+                        move || {
+                            model
+                                .get()
+                                .word(Msg::ShareWithAgents)
+                                .replace("{name}", &spoken_name)
                                 .into()
-                            })
-                            .size(ButtonSize::Small)
-                            .disabled(move || model.get().agents.busy)
-                            .on_press(move || set_shared(model, toggle_name.clone(), !shared)),
-                    ),
+                        },
+                        move || shared,
+                        move || model.get().agents.busy,
+                        move |on| set_shared(model, toggle_name.clone(), on),
+                    )),
             )
             .into_element()
     })
@@ -445,44 +478,6 @@ fn configure(model: Signal<Model>) -> impl IntoElement {
                 }))
                 .child(caption(model, |_| Some(Msg::McpRestartNote)))
                 .child(
-                    view()
-                        .gap_2()
-                        .pt_2()
-                        .style_when(move || current_hook(&model.get()).is_none(), |s| s.hidden())
-                        .child(text(word(model, Msg::HookTitle)).font_weight(FontWeight::MEDIUM))
-                        .child(caption(model, |m| {
-                            Some(match m.agents.client {
-                                Client::Codex => Msg::HowHookCodex,
-                                _ => Msg::HowHookClaude,
-                            })
-                        }))
-                        .child(
-                            view()
-                                .p_3()
-                                .rounded(px(scale::radius::CONTROL))
-                                .border_1()
-                                .border_color(move || palette(model).hairline)
-                                .bg(move || palette(model).background)
-                                .child(
-                                    text(move || current_hook(&model.get()).unwrap_or_default())
-                                        .font_family("monospace")
-                                        .text_size(px(scale::text::CAPTION)),
-                                ),
-                        )
-                        .child(view().flex_row().child(ui::copy_button(
-                            model,
-                            move || model.get().word(Msg::CopyHook).into(),
-                            move || model.get().word(Msg::CopiedConfig).into(),
-                            move || {
-                                let Some(text) = current_hook(&model.get()) else {
-                                    return false;
-                                };
-                                set_clipboard(text);
-                                true
-                            },
-                        ))),
-                )
-                .child(
                     text(move || model.get().agents.error.clone().unwrap_or_default())
                         .text_size(px(scale::text::CAPTION))
                         .text_color(move || palette(model).error),
@@ -490,75 +485,166 @@ fn configure(model: Signal<Model>) -> impl IntoElement {
         )
 }
 
-/// The AGENTS.md pointer: its state and the explicit add, update or remove.
-fn pointer_section(model: Signal<Model>) -> impl IntoElement {
-    surface(model)
-        .title_fn(word(model, Msg::PointerTitle))
-        .child(caption(model, |_| Some(Msg::PointerHelp)))
-        .child(dynamic(move || {
-            let m = model.get();
-            let Some(p) = m.agents.pointer.clone() else {
-                return text(m.agents.pointer_error.clone().unwrap_or_default())
-                    .text_size(px(scale::text::CAPTION))
-                    .text_color(move || palette(model).error)
-                    .into_element();
-            };
-            if p.malformed {
-                return text(m.word(Msg::PointerMalformed))
-                    .text_color(move || palette(model).warning)
-                    .into_element();
+/// The detail line of a hook tile.
+fn hook_detail(m: &Model, vendor: &str) -> String {
+    let Some(hooks) = m.agents.hooks.as_ref() else {
+        return m.word(Msg::TileOff).into();
+    };
+    if !hooks.available {
+        return m.word(Msg::HookUnavailable).into();
+    }
+    let Some(h) = hooks.get(vendor) else {
+        return m.word(Msg::TileOff).into();
+    };
+    if h.malformed {
+        return m.word(Msg::HookMalformed).replace("{file}", &h.file);
+    }
+    if !h.installed {
+        return m.word(Msg::TileOff).into();
+    }
+    if !h.current {
+        return m.word(Msg::HookOutdated).into();
+    }
+    m.word(if vendor == "codex" {
+        Msg::HookOnCodex
+    } else {
+        Msg::HookOn
+    })
+    .replace("{file}", &h.file)
+}
+
+fn hook_tile(model: Signal<Model>, vendor: &'static str, title: Msg) -> impl IntoElement {
+    let installed = move || {
+        model
+            .get()
+            .agents
+            .hooks
+            .as_ref()
+            .and_then(|h| h.get(vendor))
+            .is_some_and(|h| h.installed)
+    };
+    ui::quick_tile(model, icons::AGENT, installed, move |on| {
+        apply_hook(model, vendor, on)
+    })
+    .title_fn(word(model, title))
+    .spoken(move || {
+        let m = model.get();
+        m.word(Msg::HookSpoken)
+            .replace("{name}", m.word(title))
+            .into()
+    })
+    .detail(move || hook_detail(&model.get(), vendor).into())
+    .disabled(move || {
+        let m = model.get();
+        m.agents.hook_busy.is_some()
+            || m.agents
+                .hooks
+                .as_ref()
+                .is_none_or(|h| !h.available || h.get(vendor).is_none_or(|s| s.malformed))
+    })
+}
+
+fn pointer_tile(model: Signal<Model>) -> impl IntoElement {
+    let state = move || {
+        model
+            .get()
+            .agents
+            .pointer
+            .as_ref()
+            .and_then(|p| p.state.clone())
+            .unwrap_or_default()
+    };
+    ui::quick_tile(
+        model,
+        icons::FILE,
+        move || state() != "absent" && !state().is_empty(),
+        move |on| {
+            if on {
+                model.update(|m| m.agents.pointer_dialog = Some(true));
+            } else {
+                apply_pointer(model, false);
             }
-            let state = p.state.clone().unwrap_or_default();
-            let (key, variant) = match state.as_str() {
-                "current" => (Msg::PointerCurrent, BadgeVariant::Success),
-                "outdated" => (Msg::PointerOutdated, BadgeVariant::Warning),
-                _ => (Msg::PointerAbsent, BadgeVariant::Neutral),
-            };
-            let mut row = view()
+        },
+    )
+    .title_fn(word(model, Msg::TileAgentsMd))
+    .spoken(word(model, Msg::PointerSpoken))
+    .detail(move || {
+        let m = model.get();
+        let key = match m.agents.pointer.as_ref() {
+            Some(p) if p.malformed => Msg::PointerMalformed,
+            Some(p) if p.state.as_deref() == Some("current") => Msg::PointerTileOn,
+            Some(p) if p.state.as_deref() == Some("outdated") => Msg::PointerTileOutdated,
+            _ => Msg::TileOff,
+        };
+        m.word(key).into()
+    })
+    .disabled(move || {
+        let m = model.get();
+        m.agents.pointer_busy || m.agents.pointer.as_ref().is_none_or(|p| p.malformed)
+    })
+}
+
+/// The integrations: one switch per harness hook, and the AGENTS.md pointer.
+fn integrations(model: Signal<Model>) -> impl IntoElement {
+    surface(model)
+        .title_fn(word(model, Msg::IntegrationsTitle))
+        .child(caption(model, |_| Some(Msg::IntegrationsHelp)))
+        .child(
+            view()
                 .flex_row()
                 .flex_wrap()
-                .items_center()
                 .gap_2()
-                .child(text(p.path.clone()).font_family("monospace"))
-                .child(badge(model, m.word(key)).variant(variant))
-                .child(view().flex_1());
-            if state != "current" {
-                row = row.child(
-                    button(model, "")
-                        .label_fn(word(
-                            model,
-                            if state == "outdated" {
-                                Msg::PointerUpdate
-                            } else {
-                                Msg::PointerAdd
-                            },
-                        ))
-                        .variant(ButtonVariant::Primary)
-                        .size(ButtonSize::Small)
-                        .loading(move || model.get().agents.pointer_busy)
-                        .on_press(move || model.update(|m| m.agents.pointer_dialog = Some(true))),
-                );
-            }
-            if state != "absent" {
-                row = row.child(
-                    button(model, "")
-                        .label_fn(word(model, Msg::PointerRemove))
-                        .variant(ButtonVariant::Ghost)
-                        .size(ButtonSize::Small)
-                        .disabled(move || model.get().agents.pointer_busy)
-                        .on_press(move || model.update(|m| m.agents.pointer_dialog = Some(false))),
-                );
-            }
+                .child(hook_tile(model, "claude", Msg::TileClaude))
+                .child(hook_tile(model, "codex", Msg::TileCodex))
+                .child(pointer_tile(model)),
+        )
+        .child(
             view()
-                .gap_2()
-                .child(row)
-                .child(
-                    text(m.agents.pointer_error.clone().unwrap_or_default())
-                        .text_size(px(scale::text::CAPTION))
-                        .text_color(move || palette(model).error),
+                .gap_1()
+                .style_when(
+                    move || {
+                        model
+                            .get()
+                            .agents
+                            .hooks
+                            .as_ref()
+                            .and_then(|h| h.hooks.first())
+                            .is_none()
+                    },
+                    |s| s.hidden(),
                 )
-                .into_element()
-        }))
+                .child(caption(model, |_| Some(Msg::IntegrationsCommand)))
+                .child(
+                    text(move || {
+                        model
+                            .get()
+                            .agents
+                            .hooks
+                            .as_ref()
+                            .and_then(|h| h.get("claude"))
+                            .map(|h| {
+                                h.command
+                                    .replace("--vendor claude", "--vendor <claude|codex>")
+                            })
+                            .unwrap_or_default()
+                    })
+                    .font_family("monospace")
+                    .text_size(px(scale::text::CAPTION))
+                    .text_color(move || palette(model).muted),
+                ),
+        )
+        .child(
+            text(move || {
+                let m = model.get();
+                m.agents
+                    .hooks_error
+                    .clone()
+                    .or_else(|| m.agents.pointer_error.clone())
+                    .unwrap_or_default()
+            })
+            .text_size(px(scale::text::CAPTION))
+            .text_color(move || palette(model).error),
+        )
 }
 
 /// The pointer confirmation, previewing the exact block; a sibling of the
@@ -817,7 +903,7 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
                 )
                 .child(project_access(model))
                 .child(configure(model))
-                .child(pointer_section(model))
+                .child(integrations(model))
                 .child(activity(model)),
         )
 }

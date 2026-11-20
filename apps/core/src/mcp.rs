@@ -158,6 +158,37 @@ pub struct Pointer {
     pub action: Option<String>,
 }
 
+/// One harness's session-start hook for a project (`integration.hooks`).
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+pub struct HookState {
+    /// `claude` or `codex`.
+    pub vendor: String,
+    /// Where it lives, `~/`-relative for display.
+    pub file: String,
+    pub exists: bool,
+    pub sha256: Option<String>,
+    pub malformed: bool,
+    pub installed: bool,
+    /// Installed exactly as this daemon would write it.
+    pub current: bool,
+    /// The exact command the entry runs.
+    pub command: String,
+    #[serde(default)]
+    pub action: Option<String>,
+}
+
+/// Every hook of a project, or `available: false` without `precept-hook`.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+pub struct Hooks {
+    pub available: bool,
+    pub hooks: Vec<HookState>,
+}
+impl Hooks {
+    pub fn get(&self, vendor: &str) -> Option<&HookState> {
+        self.hooks.iter().find(|h| h.vendor == vendor)
+    }
+}
+
 /// The Agents page state.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct AgentsPage {
@@ -172,6 +203,11 @@ pub struct AgentsPage {
     pub error: Option<String>,
     /// Which snippet was copied last (feedback only).
     pub copied: bool,
+    /// The project's session-start hooks (`integration.hooks`).
+    pub hooks: Option<Hooks>,
+    /// The harness whose hook is being switched.
+    pub hook_busy: Option<String>,
+    pub hooks_error: Option<String>,
     /// The project's AGENTS.md pointer (`integration.pointer`).
     pub pointer: Option<Pointer>,
     /// The pointer dialog: `Some(true)` add/update, `Some(false)` remove.

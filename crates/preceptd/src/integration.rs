@@ -131,6 +131,263 @@ pub fn apply(
     Ok(out)
 }
 
+// ---- Session-start hooks in the agents' own configuration ----------------
+
+/// A harness whose session-start hook Precept can add to its user config.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Vendor {
+    /// Claude Code: `~/.claude/settings.json`.
+    Claude,
+    /// Codex: `~/.codex/hooks.json` (Codex asks to approve a new hook once).
+    Codex,
+}
+impl Vendor {
+    pub const ALL: [Vendor; 2] = [Vendor::Claude, Vendor::Codex];
+    fn file(self) -> (&'static str, &'static str) {
+        match self {
+            Vendor::Claude => (".claude", "settings.json"),
+            Vendor::Codex => (".codex", "hooks.json"),
+        }
+    }
+    fn name(self) -> &'static str {
+        match self {
+            Vendor::Claude => "claude",
+            Vendor::Codex => "codex",
+        }
+    }
+}
+
+/// Everything a hook command names: the hook executable and the project's
+/// launch inputs (the same as `precept-mcp`'s) plus the project root the hook
+/// stays silent outside of.
+pub struct HookLaunch {
+    pub hook: PathBuf,
+    pub runtime_dir: PathBuf,
+    pub endpoint: String,
+    pub capability: PathBuf,
+    pub root: PathBuf,
+}
+
+/// A POSIX shell word: plain when safe, else single-quoted.
+fn word(s: &str) -> String {
+    let plain = !s.is_empty()
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"-_./:=@+,".contains(&b));
+    if plain {
+        s.to_owned()
+    } else {
+        format!("'{}'", s.replace('\'', "'\\''"))
+    }
+}
+
+/// The exact command written for `vendor` and `project`.
+pub fn command(launch: &HookLaunch, vendor: Vendor, project: &str) -> String {
+    let path = |p: &Path| p.to_string_lossy().into_owned();
+    [
+        word(&path(&launch.hook)),
+        "--vendor".into(),
+        vendor.name().into(),
+        "--project".into(),
+        word(project),
+        "--root".into(),
+        word(&path(&launch.root)),
+        "--runtime-dir".into(),
+        word(&path(&launch.runtime_dir)),
+        "--endpoint".into(),
+        word(&launch.endpoint),
+        "--capability-file".into(),
+        word(&path(&launch.capability)),
+    ]
+    .join(" ")
+}
+
+/// Whether `cmd` is a Precept hook for `project` (any version of the command).
+fn ours(cmd: &str, project: &str) -> bool {
+    let first = cmd.split_whitespace().next().unwrap_or("");
+    first.trim_matches('\'').ends_with("precept-hook")
+        && cmd
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .windows(2)
+            .any(|w| w[0] == "--project" && w[1].trim_matches('\'') == project)
+}
+
+fn config_file(home: &Path, vendor: Vendor) -> PathBuf {
+    let (dir, file) = vendor.file();
+    home.join(dir).join(file)
+}
+
+/// The commands of `SessionStart` handlers in a Claude-shaped hooks object.
+fn session_start_commands(config: &crate::ojson::J) -> Vec<String> {
+    use crate::ojson::J;
+    let Some(J::Arr(groups)) = config.get("hooks").and_then(|h| h.get("SessionStart")) else {
+        return vec![];
+    };
+    groups
+        .iter()
+        .filter_map(|g| match g.get("hooks") {
+            Some(J::Arr(hs)) => Some(hs),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|h| h.get("command").and_then(|c| c.as_str()).map(str::to_owned))
+        .collect()
+}
+
+/// One harness's hook state for `project`.
+pub fn hook_status(
+    home: &Path,
+    vendor: Vendor,
+    project: &str,
+    expected: &str,
+) -> Result<Value, Error> {
+    let (dir, file) = vendor.file();
+    let current = read_config(&config_file(home, vendor))?;
+    let parsed = current.as_deref().map(|t| {
+        if t.trim().is_empty() {
+            Some(crate::ojson::J::Obj(vec![]))
+        } else {
+            crate::ojson::parse(t)
+        }
+    });
+    let malformed = match &parsed {
+        Some(None) => true,
+        Some(Some(j)) => !matches!(j, crate::ojson::J::Obj(_)),
+        None => false,
+    };
+    let commands = parsed
+        .flatten()
+        .map(|j| session_start_commands(&j))
+        .unwrap_or_default();
+    let mine: Vec<&String> = commands.iter().filter(|c| ours(c, project)).collect();
+    Ok(json!({
+        "vendor": vendor,
+        "file": format!("~/{dir}/{file}"),
+        "exists": current.is_some(),
+        "sha256": digest(&current),
+        "malformed": malformed,
+        "installed": !mine.is_empty(),
+        "current": mine.len() == 1 && mine[0] == expected,
+        "command": expected,
+    }))
+}
+
+/// A config file Precept may edit: absent, or bounded UTF-8 in a regular file.
+fn read_config(path: &Path) -> Result<Option<String>, Error> {
+    let meta = match fs::symlink_metadata(path) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(Error::Unavailable),
+    };
+    if !meta.file_type().is_file() {
+        return Err(Error::UnsafeRuntime);
+    }
+    if meta.len() > pointer::MAX_BYTES as u64 {
+        return Err(Error::TooLarge);
+    }
+    let raw = fs::read(path).map_err(|_| Error::Unavailable)?;
+    String::from_utf8(raw)
+        .map(Some)
+        .map_err(|_| Error::InvalidRequest)
+}
+
+/// Adds (`enabled`) or removes the Precept `SessionStart` entry for `project`
+/// if the file is still the one the status reported (`expected` digest).
+/// Every other key and hook is kept in place; the previous file is kept as
+/// `<file>.precept.bak`.
+pub fn hook_apply(
+    home: &Path,
+    vendor: Vendor,
+    project: &str,
+    cmd: &str,
+    enabled: bool,
+    expected: Option<&str>,
+) -> Result<Value, Error> {
+    use crate::ojson::J;
+    let path = config_file(home, vendor);
+    let current = read_config(&path)?;
+    let actual = current.as_ref().map(|t| pointer::digest(t.as_bytes()));
+    if actual.as_deref() != expected {
+        return Err(Error::Conflict);
+    }
+    let mut config = match current.as_deref() {
+        None => J::Obj(vec![]),
+        Some(t) if t.trim().is_empty() => J::Obj(vec![]),
+        Some(t) => crate::ojson::parse(t).ok_or(Error::InvalidRequest)?,
+    };
+    if !matches!(config, J::Obj(_)) {
+        return Err(Error::InvalidRequest);
+    }
+    let hooks = config
+        .entry("hooks", J::Obj(vec![]))
+        .ok_or(Error::InvalidRequest)?;
+    if !matches!(hooks, J::Obj(_)) {
+        return Err(Error::InvalidRequest);
+    }
+    let start = hooks
+        .entry("SessionStart", J::Arr(vec![]))
+        .ok_or(Error::InvalidRequest)?;
+    let J::Arr(groups) = start else {
+        return Err(Error::InvalidRequest);
+    };
+    // Drop this project's Precept handlers (any version), then empty groups.
+    for g in groups.iter_mut() {
+        if let J::Obj(fields) = g
+            && let Some((_, J::Arr(hs))) = fields.iter_mut().find(|(k, _)| k == "hooks")
+        {
+            hs.retain(|h| {
+                !h.get("command")
+                    .and_then(J::as_str)
+                    .is_some_and(|c| ours(c, project))
+            });
+        }
+    }
+    groups.retain(|g| !matches!(g.get("hooks"), Some(J::Arr(hs)) if hs.is_empty()));
+    if enabled {
+        groups.push(J::Obj(vec![(
+            "hooks".into(),
+            J::Arr(vec![J::Obj(vec![
+                ("type".into(), J::str("command")),
+                ("command".into(), J::str(cmd)),
+                ("timeout".into(), J::Num(10.into())),
+            ])]),
+        )]));
+    }
+    if groups.is_empty() {
+        hooks.remove("SessionStart");
+    }
+    let next = crate::ojson::pretty(&config);
+    let action = if current.as_deref() == Some(next.as_str()) || (current.is_none() && !enabled) {
+        "unchanged"
+    } else {
+        if let Some(dir) = path.parent()
+            && !dir.exists()
+        {
+            fs::create_dir_all(dir).map_err(|_| Error::Unavailable)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(dir, fs::Permissions::from_mode(0o700));
+            }
+        }
+        if let Some(old) = &current {
+            let backup = path.with_file_name(format!("{}.precept.bak", vendor.file().1));
+            write_atomic(&backup, old)?;
+        }
+        write_atomic(&path, &next)?;
+        #[cfg(unix)]
+        if current.is_none() {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
+        }
+        if enabled { "added" } else { "removed" }
+    };
+    let mut out = hook_status(home, vendor, project, cmd)?;
+    out["action"] = json!(action);
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -182,5 +439,102 @@ mod tests {
             assert_eq!(status(root, "alpha"), Err(Error::UnsafeRuntime));
             assert_eq!(apply(root, "alpha", true, None), Err(Error::UnsafeRuntime));
         }
+    }
+
+    fn launch(root: &Path) -> HookLaunch {
+        HookLaunch {
+            hook: "/usr/bin/precept-hook".into(),
+            runtime_dir: "/run/x".into(),
+            endpoint: "/run/x/control.sock".into(),
+            capability: "/run/x/agent-alpha.cap".into(),
+            root: root.into(),
+        }
+    }
+
+    #[test]
+    fn hooks_keep_other_settings_and_hooks_in_place_and_are_reversible() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let cmd = command(
+            &launch(Path::new("/home/u/my repo")),
+            Vendor::Claude,
+            "alpha",
+        );
+        assert!(cmd.starts_with(
+            "/usr/bin/precept-hook --vendor claude --project alpha --root '/home/u/my repo'"
+        ));
+        let s = hook_status(home, Vendor::Claude, "alpha", &cmd).unwrap();
+        assert_eq!(s["installed"], false);
+        assert_eq!(s["file"], "~/.claude/settings.json");
+        // Absent file: created owner-only with just our entry.
+        let added = hook_apply(home, Vendor::Claude, "alpha", &cmd, true, None).unwrap();
+        assert_eq!(added["action"], "added");
+        assert_eq!(added["current"], true);
+        let file = home.join(".claude/settings.json");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        let d = added["sha256"].as_str().unwrap().to_owned();
+        assert_eq!(
+            hook_apply(home, Vendor::Claude, "alpha", &cmd, true, Some(&d)).unwrap()["action"],
+            "unchanged"
+        );
+        // An existing file: other keys, order and hooks stay.
+        let theirs = "{\n  \"model\": \"opus\",\n  \"hooks\": {\n    \"SessionStart\": [{\"matcher\": \"startup\", \"hooks\": [{\"type\": \"command\", \"command\": \"echo hi\"}]}],\n    \"Stop\": []\n  },\n  \"theme\": \"dark\"\n}\n";
+        fs::write(&file, theirs).unwrap();
+        let d = pointer::digest(theirs.as_bytes());
+        assert_eq!(
+            hook_apply(
+                home,
+                Vendor::Claude,
+                "alpha",
+                &cmd,
+                true,
+                Some("0".repeat(64).as_str())
+            ),
+            Err(Error::Conflict)
+        );
+        let added = hook_apply(home, Vendor::Claude, "alpha", &cmd, true, Some(&d)).unwrap();
+        let text = fs::read_to_string(&file).unwrap();
+        assert!(text.find("model").unwrap() < text.find("hooks").unwrap());
+        assert!(text.find("hooks").unwrap() < text.find("theme").unwrap());
+        assert!(text.contains("echo hi") && text.contains("\"Stop\""));
+        assert_eq!(
+            fs::read_to_string(home.join(".claude/settings.json.precept.bak")).unwrap(),
+            theirs
+        );
+        // Another project's entry stays when alpha is removed.
+        let beta = command(&launch(Path::new("/b")), Vendor::Claude, "beta");
+        let d = added["sha256"].as_str().unwrap().to_owned();
+        let both = hook_apply(home, Vendor::Claude, "beta", &beta, true, Some(&d)).unwrap();
+        let d = both["sha256"].as_str().unwrap().to_owned();
+        let removed = hook_apply(home, Vendor::Claude, "alpha", &cmd, false, Some(&d)).unwrap();
+        assert_eq!(removed["installed"], false);
+        let text = fs::read_to_string(&file).unwrap();
+        assert!(text.contains("--project beta") && !text.contains("--project alpha"));
+        assert!(text.contains("echo hi"));
+        // Not JSON: refused, untouched.
+        fs::write(home.join(".codex"), "").ok();
+        fs::create_dir_all(home.join(".codex2")).unwrap();
+        let codex = home.join(".codex");
+        let _ = fs::remove_file(&codex);
+        fs::create_dir_all(&codex).unwrap();
+        fs::write(codex.join("hooks.json"), "{nope").unwrap();
+        let s = hook_status(home, Vendor::Codex, "alpha", &cmd).unwrap();
+        assert_eq!(s["malformed"], true);
+        let d = s["sha256"].as_str().unwrap().to_owned();
+        assert_eq!(
+            hook_apply(home, Vendor::Codex, "alpha", &cmd, true, Some(&d)),
+            Err(Error::InvalidRequest)
+        );
+        assert_eq!(
+            fs::read_to_string(codex.join("hooks.json")).unwrap(),
+            "{nope"
+        );
     }
 }

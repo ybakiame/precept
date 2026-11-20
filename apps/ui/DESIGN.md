@@ -300,6 +300,8 @@ Compact layouts tighten padding, never height.
 | `empty` | Optional icon and action | Icon in a 48 tinted disc; title 16 / 600; one action |
 | `surface`, `card` | Optional title | `panel`, hairline, `CONTAINER`, padding 16 |
 | `choice_card` | Selected | One option shown by its own preview (themes: "Aa" on the theme's floor with its accent and status dots), its name, a `primary` edge and a check when chosen |
+| `switch` | On, off, disabled | An on/off setting that takes effect at once (nsh/base switch): a 34 × 20 pill track that fills with `primary`, a 14 thumb that slides across it (`FAST`, ease-out); `[on ]` / `[off]` in a terminal. Settings with only two states use it, never a button pair |
+| `quick_tile` | On, off, disabled | The gallery's quick setting: the whole card is the switch; its icon well fills with `primary`, its edge turns `primary` and the card tints while on; title and one detail line (what on means, or why it is off); tiles in a row share it, 180 minimum |
 
 ### Dialog
 
@@ -422,8 +424,8 @@ work is called done. "RM" is what reduced motion does.
 | Configuration copied | As every copy button: glyph swap and "Copied" in place, no toast | Swap without scale |
 | Agent activity refreshing | The Refresh button shows its turning spinner; rows stay until the reply replaces them | Spinner rests |
 | Agent activity empty | The empty state arrives (fade, rising 4, `BASE`) | Appears |
-| AGENTS.md pointer Add / Update / Remove | The confirmation dialog opens as every dialog (scale and fade from 0.96, `BASE`), previewing the exact block | Appears |
-| Pointer written or removed | The state badge swaps in place; the Add/Remove button shows its spinner while the daemon writes | Swap without fade |
+| A switch or quick tile turns on or off | The thumb slides and the track, icon well and edge cross-fade to `primary` (`FAST`); disabled while the daemon writes | Instant |
+| AGENTS.md tile switched on | The confirmation dialog opens as every dialog (scale and fade from 0.96, `BASE`), previewing the exact block; switching off removes at once | Appears |
 
 Sound: none. Precept is a quiet developer tool.
 
