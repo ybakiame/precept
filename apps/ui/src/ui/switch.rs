@@ -14,9 +14,10 @@ const THUMB: f32 = 14.0;
 /// A quick-setting tile's narrowest width; tiles in a wrapped row share it evenly.
 const TILE_MIN: f32 = 180.0;
 
+/// The track's look; `checked:` follows the switch's own state (NSH projects
+/// it onto the parts), so the look never lags the value.
 fn track(
     model: Signal<Model>,
-    on: Rc<dyn Fn() -> bool>,
 ) -> impl Fn(nsh_core::element::StyleRefinement) -> nsh_core::element::StyleRefinement {
     move |s| {
         let p = palette(model);
@@ -25,28 +26,29 @@ fn track(
             .flex_shrink_0()
             .rounded(px(scale::radius::PILL))
             .border_1()
-            .border_color(if on() { p.primary } else { p.border })
-            .bg(if on() { p.primary } else { p.inset })
+            .border_color(p.border)
+            .bg(p.inset)
             .justify_center()
             .transition_colors()
             .duration(motion::ms(motion::FAST)())
+            .checked(|s| s.border_color(p.primary).bg(p.primary))
     }
 }
 
 fn thumb(
     model: Signal<Model>,
-    on: Rc<dyn Fn() -> bool>,
 ) -> impl Fn(nsh_core::element::StyleRefinement) -> nsh_core::element::StyleRefinement {
     move |s| {
         let p = palette(model);
         s.size(px(THUMB))
             .rounded(px(scale::radius::PILL))
-            .bg(if on() { p.on_primary } else { p.muted })
-            .ml(px(if on() { TRACK_W - THUMB - 4.0 } else { 2.0 }))
+            .bg(p.muted)
+            .ml(px(2.0))
             .shadow_sm()
             .transition()
             .duration(motion::ms(motion::FAST)())
             .ease_out()
+            .checked(|s| s.bg(p.on_primary).ml(px(TRACK_W - THUMB - 4.0)))
     }
 }
 
@@ -66,8 +68,8 @@ pub fn switch(
         .disabled(disabled)
         .accessibility_label(move || Some(label()))
         .on_change(move |next: &bool| on_change(*next))
-        .track_style(track(model, on.clone()))
-        .thumb_style(thumb(model, on))
+        .track_style(track(model))
+        .thumb_style(thumb(model))
         .focus(move |s| {
             s.ring(px(2.0))
                 .ring_color(palette(model).primary.opacity(0.55))
@@ -178,10 +180,10 @@ impl IntoElement for QuickTile {
             })
             .opacity(move || if disabled() { 0.55_f32 } else { 1.0_f32 })
             .track_style({
-                let base = track(model, on.clone());
+                let base = track(model);
                 move |s| base(s).absolute().top(px(14.0)).right(px(12.0))
             })
-            .thumb_style(thumb(model, on.clone()));
+            .thumb_style(thumb(model));
         let tile = motion::feedback(tile);
         tile.child(
             view()

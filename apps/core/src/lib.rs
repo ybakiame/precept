@@ -295,7 +295,7 @@ impl Model {
             shortcut_recording: None,
             save_failure: None,
             theme: Default::default(),
-            color_mode: appearance::ColorMode::Dark,
+            color_mode: appearance::ColorMode::System,
             locale: Default::default(),
             last_duration_ms: None,
             project_names: Vec::new(),

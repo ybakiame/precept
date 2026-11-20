@@ -902,8 +902,8 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
                     |s| s.hidden(),
                 )
                 .child(project_access(model))
-                .child(configure(model))
                 .child(integrations(model))
+                .child(configure(model))
                 .child(activity(model)),
         )
 }

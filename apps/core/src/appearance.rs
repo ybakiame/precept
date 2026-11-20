@@ -229,9 +229,10 @@ pub struct Colors {
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ColorMode {
+    /// Follows the system (the default until the operator chooses).
+    #[default]
     System,
     Light,
-    #[default]
     Dark,
 }
 impl ColorMode {

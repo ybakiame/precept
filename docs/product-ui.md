@@ -106,7 +106,8 @@ Agent sharing is a separate per-project operator switch. Configuration text can 
 copied, but Precept never writes another tool's configuration automatically. Credentials
 are never displayed.
 
-Project sharing is a switch. **Agent integrations** are quick-setting tiles, one
+Project sharing is a switch. **Agent integrations** come first, above the manual
+configuration text: quick-setting tiles, one
 switch each: the Claude Code and Codex session-start hooks (written into their user
 configuration, the exact command shown below the tiles) and the project's
 **AGENTS.md** pointer, whose switch opens a dialog previewing the exact text before
