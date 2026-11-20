@@ -21,27 +21,9 @@ pub const MAX_REQUEST: usize = 256 * 1024;
 pub const MAX_REPLY: usize = 5 * 1024 * 1024;
 /// Concurrent in-flight requests the helper accepts (UI reads and page refreshes).
 pub const MAX_IN_FLIGHT: usize = 8;
-/// The exact Operator control/read methods (the daemon client re-checks this list).
-pub const CONTROL_METHODS: [&str; 16] = [
-    "profile.info",
-    "profile.create",
-    "profile.select",
-    "profile.write.enable",
-    "profile.write.disable",
-    "profile.preferences.list",
-    "profile.preferences.get",
-    "profile.review.queue",
-    "profile.review.count",
-    "profile.review.inspect",
-    "profile.handoff.get",
-    "profile.startup.forget",
-    "project.check",
-    "project.agents",
-    "project.mcp",
-    "activity.list",
-];
-/// The project-set writes, sent with the write credential inside WSL.
-pub const PROJECT_WRITES: [&str; 2] = ["project.add", "project.remove"];
+/// The Operator control/read methods and project-set writes the helper admits:
+/// the shared lists the daemon client checks too.
+pub use precept_ipc::operator::{CONTROL_METHODS, PROJECT_WRITES};
 /// Every error string a helper may return. Anything else is replaced by
 /// `Unavailable` on the Windows side: helper text is never displayed verbatim.
 pub const KNOWN_ERRORS: [&str; 22] = [

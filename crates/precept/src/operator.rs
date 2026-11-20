@@ -51,6 +51,21 @@ pub enum Profile {
     Info,
     /// Stop selecting a remembered Profile at start.
     ForgetStartup,
+    /// Write every preference of the selected Profile to a new private file
+    /// (versioned JSON; never overwrites). Handoffs are not included.
+    Export {
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Suggest every confirmed or pending preference of an export into the
+    /// selected Profile (writes must be on). Each arrives as a suggestion to
+    /// confirm again; a repeat with the same prefix replays, adding nothing.
+    Import {
+        file: PathBuf,
+        /// Operation-id prefix (letters, digits, - and _); keep it to retry.
+        #[arg(long)]
+        operation_prefix: String,
+    },
     Write {
         #[command(subcommand)]
         command: Write,
@@ -165,6 +180,20 @@ struct HandoffInput {
 }
 pub async fn profile(location: &Location, command: Profile) -> Result<Value> {
     let (method, params) = match command {
+        Profile::Export { out } => {
+            let export = crate::transfer::collect(location).await?;
+            crate::transfer::write_new(&out, &export)?;
+            return Ok(
+                json!({"exported":export.preferences.len(),"format":crate::transfer::FORMAT,"version":crate::transfer::VERSION}),
+            );
+        }
+        Profile::Import {
+            file,
+            operation_prefix,
+        } => {
+            let export = crate::transfer::read(&file)?;
+            return crate::transfer::import(location, &export, &operation_prefix).await;
+        }
         Profile::Create { path, remember } => {
             ("profile.create", json!({"path":path,"remember":remember}))
         }

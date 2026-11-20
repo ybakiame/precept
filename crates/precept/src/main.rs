@@ -1,4 +1,5 @@
 mod operator;
+mod transfer;
 use clap::{Parser, Subcommand};
 use precept_ipc::{Access, Client, Error, Location, load_credential};
 use serde_json::json;

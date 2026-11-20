@@ -21,6 +21,19 @@ rewritten. `origin` is exactly `operator` or `agent`. Both are part of the propo
 digest. `precept preference-suggest` normalizes `--tag` (repeatable, required) and
 defaults `--origin operator`.
 
+### Profile export and import
+
+`precept profile export --out FILE` writes every preference of the selected Profile
+(personal scope and each served project) to a new owner-only file (never
+overwritten): versioned JSON `precept-profile-export` v1 with scope, key, value,
+tags, origin and source status per record. Handoffs are not carried. `precept
+profile import FILE --operation-prefix P` needs writes on and only ever creates
+suggestions through the ordinary reviewed write path (`<P>-<index>` operation
+ids, so an uncertain write can be retried exactly). It skips other statuses, records
+the Profile already holds (same scope, key, value and tags) and project records
+whose project is not served; the operator confirms imported suggestions again.
+This is how preferences move between Profile schemas: there is no migration.
+
 ## Read-only MCP stdio
 
 The Rust `precept-mcp` binary uses newline-delimited UTF-8 JSON-RPC; stdout contains only

@@ -20,6 +20,16 @@ Runtime dependencies are checked against the built binaries' direct libraries.
 
 ## Build
 
+One command for a whole round (gates, Arch package, Windows Desktop deployed from a
+Windows-side clone whose `origin` is this repository; close the Desktop first):
+
+```sh
+tools/dogfood/ship.sh round-01 --windows-clone /mnt/c/Users/<you>/code/precept --distribution archlinux
+```
+
+It prints the `sudo pacman -U ...` command for the daemon side and writes
+`.tmp/artifacts/ship/<name>/result.json`. The individual steps:
+
 ```sh
 # WSL2 Arch, clean committed checkout, offline with the existing Cargo cache
 tools/dogfood/arch-package.sh dogfood-linux-01

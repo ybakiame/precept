@@ -3,27 +3,33 @@ use crate::{Access, Client, Error, Location, Result, load_credential};
 pub use precept_core::operator::*;
 use serde_json::Value;
 
+/// The Operator read/control methods any client may send: the one list the CLI,
+/// the GUI client and the WSL bridge all check. The daemon still authorizes each.
+pub const CONTROL_METHODS: &[&str] = &[
+    "profile.info",
+    "profile.create",
+    "profile.select",
+    "profile.write.enable",
+    "profile.write.disable",
+    "profile.preferences.list",
+    "profile.preferences.get",
+    "profile.review.queue",
+    "profile.review.count",
+    "profile.review.inspect",
+    "profile.handoff.get",
+    "profile.startup.forget",
+    "project.check",
+    "project.list",
+    "project.agents",
+    "project.mcp",
+    "activity.list",
+];
+/// The project-set writes, sent with the OperatorWrite credential.
+pub const PROJECT_WRITES: &[&str] = &["project.add", "project.remove"];
+
 pub async fn control(location: &Location, method: &str, params: Value) -> Result<Value> {
     // Internal fixed operator surface; never a helper for shell/remote dispatch.
-    if !matches!(
-        method,
-        "profile.info"
-            | "profile.create"
-            | "profile.select"
-            | "profile.write.enable"
-            | "profile.write.disable"
-            | "profile.preferences.list"
-            | "profile.preferences.get"
-            | "profile.review.queue"
-            | "profile.review.count"
-            | "profile.review.inspect"
-            | "profile.handoff.get"
-            | "profile.startup.forget"
-            | "project.check"
-            | "project.agents"
-            | "project.mcp"
-            | "activity.list"
-    ) {
+    if !CONTROL_METHODS.contains(&method) {
         return Err(Error::Unsupported);
     }
     let cap = load_credential(location, &location.credential_path(None)?)?;
@@ -64,7 +70,7 @@ pub async fn mutate(location: &Location, request: &Mutation) -> Result<Value> {
 /// Adds or removes a project in the daemon's set: an operator write, sent with
 /// the current write credential (the daemon re-checks the exact grant).
 pub async fn project_write(location: &Location, method: &str, params: Value) -> Result<Value> {
-    if !matches!(method, "project.add" | "project.remove") {
+    if !PROJECT_WRITES.contains(&method) {
         return Err(Error::Unsupported);
     }
     let path = location.root()?.join("operator-write.cap");

@@ -59,22 +59,7 @@ impl crate::native::Inputs {
     pub fn project_call(&self, method: &str, params: Value) -> Result<Value, &'static str> {
         use crate::bridge::{CallError, Op, PROJECT_WRITES};
         let write = PROJECT_WRITES.contains(&method);
-        if !write
-            && !matches!(
-                method,
-                "project.check"
-                    | "profile.startup.forget"
-                    | "profile.info"
-                    | "profile.review.count"
-                    | "profile.create"
-                    | "profile.select"
-                    | "profile.write.enable"
-                    | "profile.write.disable"
-                    | "project.agents"
-                    | "project.mcp"
-                    | "activity.list"
-            )
-        {
+        if !write && !crate::bridge::CONTROL_METHODS.contains(&method) {
             return Err("Unsupported");
         }
         if self.wsl_distribution.is_some() {
