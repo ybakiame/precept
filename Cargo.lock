@@ -18,7 +18,6 @@ version = "0.1.0"
 dependencies = [
  "acp-core",
  "acp-ipc",
- "acp-session",
  "acp-store",
  "acp-write",
  "clap",
@@ -70,23 +69,10 @@ name = "acp-query"
 version = "0.1.0"
 dependencies = [
  "acp-ipc",
- "acp-session",
  "clap",
  "serde",
  "serde_json",
  "tokio",
-]
-
-[[package]]
-name = "acp-session"
-version = "0.1.0"
-dependencies = [
- "acp-ipc",
- "getrandom",
- "serde",
- "serde_json",
- "tokio",
- "toml",
 ]
 
 [[package]]

@@ -30,25 +30,18 @@ struct Args {
     /// remembered startup Profile live here, changed only through the daemon.
     #[arg(long)]
     state_dir: PathBuf,
-    /// Private TOML session configuration; no path or no file disables execution.
+    /// The `acp-mcp` executable MCP clients are told to run (the Agents
+    /// page's launch line); default: the one beside this daemon.
     #[arg(long)]
-    agent_config: Option<PathBuf>,
-    /// Trusted absolute stdio bridge; per-start share_context opt-in is still required.
-    #[arg(long)]
-    context_mcp: Option<PathBuf>,
-    #[arg(long, default_value_t = 300, value_parser = clap::value_parser!(u64).range(1..=3600))]
-    context_lease_seconds: u64,
+    mcp_executable: Option<PathBuf>,
 }
 #[derive(Clone)]
 struct Service {
     profiles: Arc<profiles::Profiles>,
     lease: Arc<Mutex<RuntimeLease>>,
     credentials: Arc<RwLock<Vec<acp_ipc::Credential>>>,
-    agent_config: Option<PathBuf>,
-    context_mcp: Option<PathBuf>,
-    context_lease_seconds: u64,
-    sessions: acp_session::runtime::Supervisor,
-    grants: acp_ipc::session_lease::Registry,
+    mcp_executable: Option<PathBuf>,
+    grants: acp_ipc::peer::Peers,
     activity: activity::Activity,
 }
 #[derive(Deserialize)]
@@ -102,115 +95,8 @@ fn decode<T: serde::de::DeserializeOwned>(v: Value) -> acp_ipc::Result<T> {
     serde_json::from_value(v).map_err(|_| Error::InvalidRequest)
 }
 impl Service {
-    async fn bound_root(
-        &self,
-        project: &str,
-        permit: Arc<OwnedSemaphorePermit>,
-    ) -> acp_ipc::Result<PathBuf> {
-        let profiles = self.profiles.clone();
-        let owned_project = project.to_owned();
-        let job = tokio::task::spawn_blocking(move || {
-            let _held = permit;
-            let (store, roots) = profiles.read()?;
-            let expected = roots.get(&owned_project).ok_or(Error::Unauthorized)?;
-            let root = store
-                .read_project(&owned_project)
-                .map_err(|_| Error::NotFound)?
-                .root
-                .canonicalize()
-                .map_err(|_| Error::UnsafeRuntime)?;
-            if &root != expected {
-                return Err(Error::UnsafeRuntime);
-            }
-            Ok(root)
-        });
-        let result = match tokio::time::timeout(Duration::from_secs(5), job).await {
-            Ok(Ok(result)) => result,
-            Ok(Err(_)) => Err(Error::Unavailable),
-            Err(_) => Err(Error::Timeout),
-        };
-        if result.is_err() {
-            self.sessions.invalidate_context(project);
-        }
-        result
-    }
-    async fn session(
-        &self,
-        access: Access,
-        request: Request,
-        permit: Arc<OwnedSemaphorePermit>,
-    ) -> acp_ipc::Result<Value> {
-        // Deny before parsing params, opening storage or disclosing session/config.
-        if access != Access::Operator {
-            return Err(Error::Unauthorized);
-        }
-        if !self.profiles.selected() {
-            return Err(Error::Unavailable);
-        }
-        let p: acp_session::runtime::Params = decode(request.params)?;
-        if p.session_api_version != acp_session::SESSION_API {
-            return Err(Error::Version);
-        }
-        if !self.profiles.allowed(&p.project) {
-            return Err(Error::Unauthorized);
-        }
-        match request.method.as_str() {
-            "session.capabilities" | "session.list" | "session.get" | "session.context" => {
-                if p.share_context.is_some()
-                    || p.session_id.is_some()
-                    || p.executable.is_some()
-                    || p.confirmed.is_some()
-                    || p.prompt.is_some()
-                    || p.request_id.is_some()
-                    || p.option_id.is_some()
-                {
-                    return Err(Error::InvalidRequest);
-                }
-                match request.method.as_str() {
-                    "session.capabilities" => Ok(json!(self.sessions.capabilities())),
-                    "session.context" => Ok(self.sessions.context(&p.project)),
-                    "session.list" => Ok(json!(
-                        self.sessions
-                            .get(&p.project)
-                            .into_iter()
-                            .collect::<Vec<_>>()
-                    )),
-                    _ => Ok(json!({"session": self.sessions.get(&p.project)})),
-                }
-            }
-            "session.start" => {
-                let root = self.bound_root(&p.project, permit.clone()).await?;
-                Ok(json!(self.sessions.start(p, root)?))
-            }
-            "session.prompt" | "session.cancel" | "session.stop" | "session.permission" => {
-                if request.method == "session.prompt"
-                    || (request.method == "session.permission" && p.option_id.is_some())
-                {
-                    self.bound_root(&p.project, permit.clone()).await?;
-                }
-                Ok(json!(self.sessions.control(&request.method, p).await?))
-            }
-            _ => Err(Error::Unsupported),
-        }
-    }
-    fn validate_roots(&self, roots: &[PathBuf]) -> acp_ipc::Result<()> {
-        acp_session::runtime::Supervisor::configured(self.agent_config.as_deref(), roots)?
-            .with_context_bridge(
-                self.context_mcp.as_deref(),
-                self.profiles.location.clone(),
-                self.grants.clone(),
-                Duration::from_secs(self.context_lease_seconds),
-                roots,
-            )?;
-        Ok(())
-    }
-    fn query(
-        &self,
-        authority: &acp_ipc::session_lease::Peer,
-        request: Request,
-    ) -> acp_ipc::Result<Value> {
+    fn query(&self, authority: &acp_ipc::peer::Peer, request: Request) -> acp_ipc::Result<Value> {
         let access = authority.access();
-        let session_bound = authority.is_session();
         let params = request.params;
         if request.method == "project.mcp" {
             if access != Access::Operator {
@@ -276,14 +162,7 @@ impl Service {
             }
             return Ok(self.profiles.list());
         }
-        let (store, roots) = self.profiles.read().inspect_err(|_| {
-            // Full Profile validation can refuse an unavailable registered root
-            // before the per-project check below. Established session authority
-            // must be revoked on this earlier refusal as well.
-            if session_bound && let Access::Agent { project } = &access {
-                self.sessions.invalidate_context(project);
-            }
-        })?;
+        let (store, roots) = self.profiles.read()?;
         let (project, include, task, selector) = match (request.method.as_str(), access) {
             ("context.get", Access::Operator) => {
                 let p: OperatorContext = decode(params)?;
@@ -315,9 +194,6 @@ impl Service {
             .ok()
             .and_then(|p| p.root.canonicalize().ok());
         if root.as_ref() != roots.get(&project) {
-            if session_bound {
-                self.sessions.invalidate_context(&project);
-            }
             return Err(Error::UnsafeRuntime);
         }
         let resolver = ContextResolver::new(
@@ -344,9 +220,6 @@ impl Service {
                 .ok()
                 .and_then(|p| p.root.canonicalize().ok());
             if current.as_ref() != roots.get(&project) {
-                if session_bound {
-                    self.sessions.invalidate_context(&project);
-                }
                 return Err(Error::UnsafeRuntime);
             }
             prepared.finish(current.as_ref().ok_or(Error::UnsafeRuntime)?)
@@ -373,7 +246,7 @@ impl Service {
         }
         let location = self.profiles.location();
         let capability = location.credential_path(Some(&p.name))?;
-        let executable = self.context_mcp.clone().or_else(|| {
+        let executable = self.mcp_executable.clone().or_else(|| {
             let beside = std::env::current_exe()
                 .ok()?
                 .with_file_name(format!("acp-mcp{}", std::env::consts::EXE_SUFFIX));
@@ -394,9 +267,6 @@ impl Service {
     }
 }
 impl profiles::Hooks for Service {
-    fn validate_roots(&self, roots: &[PathBuf]) -> acp_ipc::Result<()> {
-        Service::validate_roots(self, roots)
-    }
     fn added(&self, name: &str) -> acp_ipc::Result<()> {
         let credential = self.lease.lock().unwrap().issue_agent(name)?;
         self.credentials.write().unwrap().push(credential);
@@ -415,13 +285,6 @@ impl profiles::Hooks for Service {
             .write()
             .unwrap()
             .retain(|c| !matches!(&c.access, Access::Agent { project } if project == name));
-        let sessions = self.sessions.clone();
-        let project = name.to_owned();
-        // Revoke the context lease now; stop its session off this thread.
-        sessions.invalidate_context(&project);
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            handle.spawn(async move { sessions.stop_project(&project).await });
-        }
     }
 }
 async fn peer(mut stream: Stream, service: Service, permit: Arc<OwnedSemaphorePermit>) {
@@ -484,11 +347,7 @@ async fn peer(mut stream: Stream, service: Service, permit: Arc<OwnedSemaphorePe
             .get("client")
             .and_then(Value::as_str)
             .and_then(activity::client_label);
-        let result = if request.method.starts_with("session.") {
-            service
-                .session(access.clone(), request, permit.clone())
-                .await
-        } else {
+        let result = {
             let service = service.clone();
             let held = permit.clone();
             let auth = authority.clone();
@@ -515,9 +374,6 @@ async fn peer(mut stream: Stream, service: Service, permit: Arc<OwnedSemaphorePe
         } else {
             authority.check().and(result)
         };
-        if result.is_ok() {
-            authority.record(&method);
-        }
         if let Access::Agent { project } = &access {
             let kind = match method.as_str() {
                 "daemon.health" => Some(activity::Kind::Started),
@@ -528,11 +384,7 @@ async fn peer(mut stream: Stream, service: Service, permit: Arc<OwnedSemaphorePe
             if let Some(kind) = kind {
                 service.activity.record(activity::Record {
                     kind,
-                    via: if authority.is_session() {
-                        activity::Via::Session
-                    } else {
-                        activity::Via::Mcp
-                    },
+                    via: activity::Via::Mcp,
                     project: Some(project.clone()),
                     client: client.clone(),
                     outcome: activity::outcome(&result),
@@ -580,27 +432,16 @@ async fn stop() {
 }
 async fn run(args: Args) -> acp_ipc::Result<()> {
     let state_dir = state::StateDir::open(&args.state_dir)?;
-    let grants = acp_ipc::session_lease::Registry::default();
+    let grants = acp_ipc::peer::Peers::default();
     let profiles = Arc::new(profiles::Profiles::new(
         args.location.clone(),
         state_dir,
-        grants.1.clone(),
+        grants.writes.clone(),
     )?);
     #[cfg(test)]
     process_tests::install_checkpoint(&profiles);
-    let roots = profiles.configured_roots();
-    let sessions =
-        acp_session::runtime::Supervisor::configured(args.agent_config.as_deref(), &roots)?;
     let mut lease = RuntimeLease::acquire(&args.location)?;
-    grants.cleanup_stale(&args.location)?;
-    grants.1.cleanup_stale(&args.location)?;
-    let sessions = sessions.with_context_bridge(
-        args.context_mcp.as_deref(),
-        args.location.clone(),
-        grants.clone(),
-        Duration::from_secs(args.context_lease_seconds),
-        &roots,
-    )?;
+    grants.writes.cleanup_stale(&args.location)?;
     let mut listener = acp_ipc::transport::Listener::bind(&args.location).await?;
     // Agent credentials only for projects shared with external agents.
     let credentials = Arc::new(RwLock::new(lease.credentials(&profiles.shared_names())?));
@@ -608,17 +449,14 @@ async fn run(args: Args) -> acp_ipc::Result<()> {
         profiles,
         lease: Arc::new(Mutex::new(lease)),
         credentials,
-        agent_config: args.agent_config,
-        context_mcp: args.context_mcp,
-        context_lease_seconds: args.context_lease_seconds,
-        sessions,
+        mcp_executable: args.mcp_executable,
         grants,
         activity: activity::Activity::default(),
     };
     // The Profile the operator asked to select at start, if any.
     {
         let service = service.clone();
-        tokio::task::spawn_blocking(move || service.profiles.select_remembered(&service))
+        tokio::task::spawn_blocking(move || service.profiles.select_remembered())
             .await
             .map_err(|_| Error::Unavailable)?;
     }
@@ -642,10 +480,9 @@ async fn run(args: Args) -> acp_ipc::Result<()> {
     }
     tasks.abort_all();
     while tasks.join_next().await.is_some() {}
-    service.grants.1.close();
+    service.grants.writes.close();
     let profiles = service.profiles.clone();
     let _ = tokio::task::spawn_blocking(move || profiles.disable()).await;
-    service.sessions.shutdown().await;
     drop(listener);
     let Service { lease, .. } = service;
     drop(lease);
@@ -710,9 +547,7 @@ mod tests {
                     .into(),
             },
             state_dir: state,
-            agent_config: None,
-            context_mcp: None,
-            context_lease_seconds: 300,
+            mcp_executable: None,
         };
         assert_eq!(run(args).await, Err(Error::InvalidRequest));
         assert!(

@@ -4,7 +4,7 @@
 use crate::*;
 pub(crate) mod chrome;
 use acp_ui_core::{Section, SetupTab, i18n::Msg, operator::ReviewMode};
-use features::{agents, connection, page, profile, projects, review, sessions, settings, setup};
+use features::{agents, connection, page, profile, projects, review, settings, setup};
 use tokens::{compact, palette};
 
 pub(crate) fn action(
@@ -14,21 +14,6 @@ pub(crate) fn action(
     callback: impl Fn() + 'static,
 ) -> impl IntoElement {
     ui::button(model, label.into())
-        .disabled(move || !enabled())
-        .on_press(callback)
-}
-/// A labelled action whose focus stop reports a closed catalog key (e.g. an
-/// index), never its label or other user/daemon content.
-pub(crate) fn keyed_action(
-    model: Signal<Model>,
-    label: impl Into<String>,
-    key: &'static str,
-    index: usize,
-    enabled: impl Fn() -> bool + 'static,
-    callback: impl Fn() + 'static,
-) -> impl IntoElement {
-    ui::button(model, label.into())
-        .probe_key(move || format!("{key}{index}"))
         .disabled(move || !enabled())
         .on_press(callback)
 }
@@ -72,7 +57,6 @@ pub(crate) enum Destination {
     Preferences,
     Agents,
     Handoff,
-    Sessions,
     Review,
     RuntimeChecks,
     Diagnostics,
@@ -86,8 +70,6 @@ pub(crate) fn current(m: &Model) -> Destination {
         Destination::RuntimeChecks
     } else if m.agents_page {
         Destination::Agents
-    } else if m.sessions {
-        Destination::Sessions
     } else if m.settings {
         Destination::Settings
     } else {
@@ -104,8 +86,6 @@ pub(crate) fn current(m: &Model) -> Destination {
 fn leave_workspaces(m: &mut Model) {
     m.operator.open = false;
     m.operator.review = None;
-    m.sessions = false;
-    m.session.confirm_start = false;
     m.settings = false;
     m.setup_open = false;
     m.agents_page = false;
@@ -132,7 +112,6 @@ pub(crate) fn go_review(model: Signal<Model>, mode: ReviewMode) {
 pub(crate) fn go(model: Signal<Model>, destination: Destination) {
     match destination {
         Destination::Review => review::open(model),
-        Destination::Sessions => sessions::open(model),
         Destination::RuntimeChecks => {
             let tab = model.get().setup_tab;
             go_setup(model, tab);
@@ -170,7 +149,6 @@ fn title_key(destination: Destination) -> Msg {
         Destination::Preferences => Msg::Preferences,
         Destination::Agents => Msg::AgentsDestination,
         Destination::Handoff => Msg::Handoff,
-        Destination::Sessions => Msg::Sessions,
         Destination::Review => Msg::ReviewHub,
         Destination::RuntimeChecks => Msg::RuntimeChecks,
         Destination::Diagnostics => Msg::Diagnostics,
@@ -257,7 +235,6 @@ pub(crate) fn workspace_scoped(d: Destination) -> bool {
             | Destination::Preferences
             | Destination::Agents
             | Destination::Handoff
-            | Destination::Sessions
     )
 }
 
@@ -422,7 +399,6 @@ fn sidebar(model: Signal<Model>) -> impl IntoElement {
         (Preferences, icons::section_path(Section::Preferences)),
         (Agents, icons::AGENTS),
         (Handoff, icons::section_path(Section::Handoff)),
-        (Sessions, icons::SESSIONS),
     ];
     // Review: merged pending queue + personal preferences + project preferences.
     let review_items = [(Review, icons::REVIEW)];
@@ -839,13 +815,6 @@ pub(crate) fn shell(
                                             view()
                                                 .style_when(on(Destination::Agents), |s| s.hidden())
                                                 .child(agents::page(model)),
-                                        )
-                                        .child(
-                                            view()
-                                                .style_when(on(Destination::Sessions), |s| {
-                                                    s.hidden()
-                                                })
-                                                .child(sessions::panel(model)),
                                         )
                                         .child(
                                             view()

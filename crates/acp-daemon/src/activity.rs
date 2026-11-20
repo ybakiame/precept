@@ -40,8 +40,6 @@ pub enum Kind {
 pub enum Via {
     /// An MCP client started `acp-mcp` itself with the project's credential.
     Mcp,
-    /// An ACP-started session's context bridge.
-    Session,
     /// Unknown (a refused handshake).
     Unknown,
 }

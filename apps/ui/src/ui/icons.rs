@@ -13,8 +13,6 @@ pub(crate) fn section_path(section: Section) -> &'static str {
 }
 /// Review: an inbox of suggestions awaiting a decision.
 pub(crate) const REVIEW: &str = "M3 13H8L10 16H14L16 13H21M5 6H19L21 13V19H3V6Z";
-/// Sessions: an agent process in a terminal.
-pub(crate) const SESSIONS: &str = "M4 5H20V19H4ZM8 10L11 12.5L8 15M13 15H16";
 /// Connection: a link between the app and its daemon.
 pub(crate) const CONNECTION: &str =
     "M9 15L15 9M10 6L12 4A4 4 0 0 1 20 12L18 14M14 18L12 20A4 4 0 0 1 4 12L6 10";

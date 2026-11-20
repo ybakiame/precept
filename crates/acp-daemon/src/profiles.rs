@@ -5,7 +5,7 @@ use crate::{
 };
 use acp_ipc::{
     Access, Error, Location, Result,
-    session_lease::Peer,
+    peer::Peer,
     write_grant::{Grant, Registry},
 };
 use acp_store::SqliteStore;
@@ -42,14 +42,12 @@ struct State {
 pub const SUGGESTED_PROFILE: &str = "profile.sqlite3";
 
 pub trait Hooks {
-    /// Session configuration and context bridge checks for these roots.
-    fn validate_roots(&self, roots: &[PathBuf]) -> Result<()>;
     /// External agent access to a project was turned off: withdraw only its
-    /// agent credential (the project stays; ACP sessions are unaffected).
+    /// agent credential (the project stays).
     fn withheld(&self, name: &str);
     /// A project joined the set: publish its agent credential.
     fn added(&self, name: &str) -> Result<()>;
-    /// A project left the set: revoke its credential, leases and session.
+    /// A project left the set: revoke its agent credential.
     fn removed(&self, name: &str);
 }
 pub struct Profiles {
@@ -219,7 +217,7 @@ impl Profiles {
     /// Selects the Profile the operator asked to select at start, through the
     /// same checks as `profile.select`. A failure starts unselected and is
     /// reported by `profile.info`; nothing is created, scanned or replaced.
-    pub fn select_remembered(&self, hooks: &dyn Hooks) {
+    pub fn select_remembered(&self) {
         let path = match self.state_dir.load_startup() {
             Ok(Some(path)) => path,
             Ok(None) => return,
@@ -233,7 +231,7 @@ impl Profiles {
             s.startup_failure = Some("startup_missing");
             return;
         }
-        let failure = match self.select_into(&mut s, &path, false, hooks) {
+        let failure = match self.select_into(&mut s, &path, false) {
             Ok(()) => None,
             Err(Error::UnsafeRuntime) => Some("startup_unsafe"),
             Err(_) => Some("startup_refused"),
@@ -320,12 +318,6 @@ impl Profiles {
         self.validate_paths(Some(selected.path()), projects)?;
         Ok(roots)
     }
-    pub fn configured_roots(&self) -> Vec<PathBuf> {
-        let s = self.state.lock().unwrap();
-        let mut roots = s.projects.clone();
-        roots.extend(s.roots.clone());
-        roots.into_values().collect()
-    }
     pub fn read(&self) -> Result<(SqliteStore, Roots)> {
         let s = self.state.lock().unwrap();
         let selected = s.selected.as_ref().ok_or(Error::Unavailable)?;
@@ -408,13 +400,7 @@ impl Profiles {
     }
     /// Creates (optionally) and selects `path` with every check of an explicit
     /// selection. Used by `profile.create` / `profile.select` and at start.
-    fn select_into(
-        &self,
-        s: &mut State,
-        path: &Path,
-        create: bool,
-        hooks: &dyn Hooks,
-    ) -> Result<()> {
+    fn select_into(&self, s: &mut State, path: &Path, create: bool) -> Result<()> {
         if s.selected.is_some() {
             return Err(Error::RestartRequired);
         }
@@ -433,7 +419,6 @@ impl Profiles {
             .map_err(|_| Error::UnsafeRuntime)?;
         let candidate = parent.join(path.file_name().ok_or(Error::UnsafeRuntime)?);
         self.validate_paths(Some(&candidate), &s.projects)?;
-        hooks.validate_roots(&s.projects.values().cloned().collect::<Vec<_>>())?;
         if create {
             acp_write::Profile::create(path).map_err(storage_error)?;
         }
@@ -443,7 +428,6 @@ impl Profiles {
             let roots = self.selected_roots(&selected, &projects)?;
             let mut all = projects.clone();
             all.extend(roots.clone());
-            hooks.validate_roots(&all.into_values().collect::<Vec<_>>())?;
             selected.reader().map_err(storage_error)?;
             s.selected = Some(selected);
             s.roots = roots;
@@ -495,7 +479,6 @@ impl Profiles {
         let mut all: Vec<PathBuf> = s.projects.values().cloned().collect();
         all.extend(s.roots.values().cloned());
         all.push(root.clone());
-        hooks.validate_roots(&all)?;
         let reader = s
             .selected
             .as_ref()
@@ -869,7 +852,7 @@ impl Profiles {
             "profile.create" | "profile.select" => {
                 let p: PathParams = super::decode(params)?;
                 let mut s = self.state.lock().unwrap();
-                self.select_into(&mut s, &p.path, method == "profile.create", hooks)?;
+                self.select_into(&mut s, &p.path, method == "profile.create")?;
                 s.startup_failure = None;
                 // Remembering is part of the same explicit choice. If it cannot
                 // be saved, the selection stands and `remembered` says so.

@@ -12,7 +12,7 @@ generic bridge forwarding or direct database fallback.
 
 Preview methods `profile.preferences.list`, `profile.preferences.get` and
 `profile.handoff.get` are Operator-only, bounded and exact-scope/revision. They are
-not exposed to agents, sessions, OperatorWrite peers or MCP.
+not exposed to agents, OperatorWrite peers or MCP.
 
 `suggest_preference` carries `key`, `value`, `tags` and `origin`. `tags` is one to
 five canonical tags, sorted with no repeats: lowercase letters (any script), digits
@@ -56,7 +56,7 @@ created or modified by this read path.
 The daemon keeps an in-memory log of agent requests for the operator (the newest
 500 events, emptied on restart, never written to disk): `acp-mcp` starting
 (`daemon.health`), `context.get` and `handoff.get` with their project, arrival
-(`mcp` or `session`), duration and outcome code, plus refused handshakes without a
+(`mcp`), duration and outcome code, plus refused handshakes without a
 project. A context read records only counts (preferences, contracts, documents)
 and the contract-resolution status. Never values, selectors, task ids, paths,
 tokens or response bodies. `acp-mcp` forwards the MCP client's self-reported
@@ -90,21 +90,7 @@ HEAD/branch/dirty warnings. It stores a digest rather than
 raw diffs, filenames or content. Missing data or exceeded bounds remain unverified.
 Ignored files, submodule internals and external/device state are not attested.
 
-## Optional native sessions
-
-The operator-only `session.*` extension uses session API v2 inside IPC v2. It needs
-explicit trusted executable configuration and confirmed Start. Reads, prompt,
-permission-once/deny, cancel, stop and opt-in context controls remain separate.
-A Windows GUI reaches a WSL daemon's sessions only through the typed bridge below;
-the daemon's executable configuration, policy and leases stay authoritative.
-Authentication is observed readiness; no login RPC, credential UI or automatic retry.
-
-Optional context uses a distinct expiring session credential for one
-project/agent/generation. Admission and response publication recheck authority;
-Stop, Cancel, failure, root validation failure, expiry and restart revoke it.
-Established peers retain no authority after revoke, though already delivered bytes
-cannot be recalled. Ordinary operator/project credentials have their own per-launch
-semantics and never gain write authority.
+## Retired interfaces
 
 Retired prototype interfaces exist only in Git history and local historical
 material. Current build and setup instructions are in the [README](../README.md).
@@ -125,7 +111,7 @@ explicit inputs; project, task and request data never appear in argv.
   8 in flight. `op.type` is exactly one of `snapshot`, `control` (the Operator
   read/control allowlist: `profile.info|create|select|write.enable|write.disable`,
   `profile.preferences.list|get`, `profile.review.queue|count|inspect`, `profile.handoff.get`),
-  `mutate` (one OperatorWrite `Mutation`), `session` (`session.refresh|start|prompt|permission|cancel|stop`)
+  `mutate` (one OperatorWrite `Mutation`), `project_write` (`project.add|remove`),
   `health` (daemon health with the Operator credential, for the GUI's live WSL
   status) or `cancel` (abandon an in-flight id; no reply of its own). Anything else is
   `Unsupported`/`InvalidRequest`. There is no generic IPC forwarding or shell.
@@ -146,13 +132,10 @@ explicit inputs; project, task and request data never appear in argv.
   hello, no response, daemon unreachable and runtime refused. The GUI shows the exact
   cause. A 2 s watcher reports a lost bridge or unreachable daemon without starting a
   bridge or process and without changing page data or Operator guards.
-- **Lifecycle:** session polling and Operator calls reuse the live bridge; polling
+- **Lifecycle:** page reads, the status watcher and Operator calls reuse the live bridge; polling
   never starts one, so a stopped distribution or lost helper is an explicit
   unavailable state. Closing the GUI or leaving the WSL target closes the helper
   (stdin EOF; in-flight work finishes briefly) without stopping the WSL daemon or
   touching Profile, auth or runtime files.
 - **Non-goals:** no implicit daemon start, Profile selection, write enable, agent
-  launch or authentication by the bridge; no MCP writes. Context sharing is a per-start
-  operator opt-in (off by default) carried as `share_context` on `session.start`;
-  a refresh reports the daemon's `session.context` lease. The daemon's lease
-  contract is unchanged.
+  launch or authentication by the bridge; no MCP writes.

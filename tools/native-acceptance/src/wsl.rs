@@ -26,7 +26,6 @@ pub const CELLS: &[&str] = &[
     "wsl-deprecate",
     "wsl-delete-exact-retype",
     "wsl-bridge-loss-outcome-unknown-identical-retry",
-    "wsl-session-lifecycle-agent-in-wsl",
     "wsl-no-listener-no-shell",
     "wsl-write-grant-disable",
     "wsl-gui-close-keeps-daemon-and-state",
@@ -38,7 +37,7 @@ pub const CELLS: &[&str] = &[
 pub struct Wsl {
     pub distribution: String,
     pub user: String,
-    /// Absolute Linux directory holding bin/{acp-daemon,acp-query,acp-wsl-bridge,acp-fake-agent}.
+    /// Absolute Linux directory holding bin/{acp-daemon,acp-query,acp-wsl-bridge,acp-mcp}.
     pub prefix: String,
 }
 fn wsl_exe() -> PathBuf {
@@ -113,7 +112,6 @@ pub fn linux_binaries(wsl: &Wsl) -> Value {
         "acp-daemon",
         "acp-query",
         "acp-wsl-bridge",
-        "acp-fake-agent",
         "acp-mcp",
     ];
     let paths: Vec<String> = names.iter().map(|n| wsl.bin(n)).collect();
@@ -164,18 +162,6 @@ impl Remote {
             &format!("{base}/alpha/AGENTS.md"),
             b"Synthetic S1-B contract\n",
         );
-        let config = format!("{base}/agents.toml");
-        wsl.write(
-            &config,
-            toml::to_string(&json!({"version":1,"programs":[
-                {"id":"ctx","executable":wsl.bin("acp-fake-agent"),"args":["mcp"],"env":{}},
-                {"id":"fake","executable":wsl.bin("acp-fake-agent"),"args":["permission"],"env":{}},
-                {"id":"slow","executable":wsl.bin("acp-fake-agent"),"args":["mcp-cancel"],"env":{}}
-            ]}))
-            .unwrap()
-            .as_bytes(),
-        );
-        wsl.ok("/usr/bin/chmod", &["0600", &config]);
         let alpha = wsl.ok("/usr/bin/realpath", &[&format!("{base}/alpha")]);
         let runtime = format!("{base}/runtime");
         let mut r = Self {
@@ -192,7 +178,6 @@ impl Remote {
     }
     /// Explicit daemon start inside WSL (never performed by the GUI or bridge).
     fn start_daemon(&mut self) {
-        let config = format!("{}/agents.toml", self.base);
         // The daemon's private state: alpha is its one project.
         let state = format!("{}/daemon-state", self.base);
         self.wsl
@@ -218,12 +203,6 @@ impl Remote {
                     &self.endpoint,
                     "--state-dir",
                     &state,
-                    "--agent-config",
-                    &config,
-                    // Trusted read-only context bridge; sharing still needs a
-                    // per-start operator opt-in.
-                    "--context-mcp",
-                    &self.wsl.bin("acp-mcp"),
                 ],
             )
             .stdin(Stdio::null())
@@ -333,36 +312,6 @@ fn gui_args(r: &Remote) -> Vec<String> {
     .iter()
     .map(|s| s.to_string())
     .collect()
-}
-
-/// Alt E cycles the configured programs (ctx, fake, slow) until `name` is
-/// selected. Each press waits for the GUI's own fresh probe line before deciding.
-fn select_program(ui: &mut Ui, name: &str) {
-    let Ui::Desktop(d) = ui else {
-        panic!("desktop only")
-    };
-    for _ in 0..4 {
-        let before = d.lines.lock().unwrap().len();
-        d.key("alt+e");
-        let end = Instant::now() + Duration::from_secs(5);
-        let selected = loop {
-            let line = d.lines.lock().unwrap()[before..]
-                .iter()
-                .rev()
-                .find(|l| l.starts_with("ACP_NSH_CONTEXT exe="))
-                .cloned();
-            if let Some(line) = line {
-                break line;
-            }
-            assert!(Instant::now() < end, "Alt E produced no program change");
-            thread::sleep(Duration::from_millis(25));
-        };
-        if selected.starts_with(&format!("ACP_NSH_CONTEXT exe={name} ")) {
-            evidence::event("program-selected", json!({"program":name,"key":"alt+e"}));
-            return;
-        }
-    }
-    panic!("program {name} not selectable with Alt E");
 }
 
 fn timed(label: &str, f: impl FnOnce()) {
@@ -619,130 +568,6 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     evidence::event(
         "bridge-restart",
         json!({"old_helper_killed":true,"new_helper":true,"rows_added":1}),
-    );
-    evidence::finish("PASS");
-
-    evidence::begin(
-        "wsl-session-lifecycle-agent-in-wsl",
-        "actual-os-input + wsl-process",
-    );
-    ui.key("alt+6");
-    ui.wait("configured=3", "ctx");
-    ui.capture("wsl-sessions", out);
-    // 1) `fake` without context sharing: the opt-in is off by default.
-    select_program(&mut ui, "fake");
-    ui.key("alt+7");
-    ui.wait("confirm=true", "Confirm start");
-    ui.wait("share=false enabled=", "off");
-    timed("session-start", || {
-        ui.key("alt+8");
-        ui.wait("state=Some(Ready) alive=true", "Ready");
-    });
-    ui.wait("share=false enabled=false active=false", "not shared");
-    let agents = r.wsl.pids("acp-fake-agent");
-    assert_eq!(agents.len(), 1, "agent process runs inside WSL");
-    let helper = r.wsl.pids("acp-wsl-bridge");
-    let wsl_during = windows_wsl_processes();
-    ui.key("alt+j");
-    ui.text("first synthetic turn");
-    ui.key("alt+9");
-    ui.wait("pending=1", "Synthetic test operation");
-    ui.capture("wsl-permission", out);
-    ui.key("alt+i");
-    ui.key("alt+y");
-    ui.wait("state=Some(Completed) alive=true pending=0", "Completed");
-    // While the agent is alive: no listener owned by any of this user's processes.
-    let listeners = r
-        .wsl
-        .ok("/usr/bin/ss", &["-H", "-l", "-t", "-u", "-n", "-p"]);
-    for name in ["acp-wsl-bridge", "acp-daemon", "acp-fake-agent"] {
-        assert!(!listeners.contains(name), "{name} owns a network listener");
-    }
-    evidence::event(
-        "no-listener-with-live-agent",
-        json!({"checked":["acp-wsl-bridge","acp-daemon","acp-fake-agent"]}),
-    );
-    ui.key("alt+j");
-    ui.text("second synthetic turn");
-    ui.key("alt+9");
-    ui.wait("pending=1", "Synthetic test operation");
-    ui.key("alt+i");
-    ui.key("alt+n");
-    ui.wait("pending=0", "Completed");
-    // ~10 polling intervals over the same bridge, with no new WSL processes.
-    thread::sleep(Duration::from_secs(8));
-    assert_eq!(
-        r.wsl.pids("acp-wsl-bridge"),
-        helper,
-        "polling reuses the bridge"
-    );
-    assert_eq!(windows_wsl_processes(), wsl_during, "no wsl.exe per poll");
-    ui.key("alt+x");
-    ui.wait("alive=false", "Stopped");
-    assert!(
-        r.wsl.pids("acp-fake-agent").is_empty(),
-        "agent stopped in WSL"
-    );
-
-    // 2) `ctx` with the separately confirmed opt-in: an active lease the agent
-    //    uses through the trusted context bridge; Stop revokes it.
-    select_program(&mut ui, "ctx");
-    ui.key("alt+7");
-    ui.wait("confirm=true", "Confirm start");
-    ui.wait("share=false enabled=", "off");
-    ui.key("alt+g");
-    ui.wait("share=true enabled=", "ON");
-    ui.capture("wsl-context-opt-in", out);
-    ui.key("alt+8");
-    ui.wait("state=Some(Ready) alive=true", "Ready");
-    ui.wait("share=false enabled=true active=true", "active");
-    ui.key("alt+j");
-    ui.text("use the shared context");
-    ui.key("alt+9");
-    ui.wait("active=true context_calls=1 handoff_calls=1", "active");
-    ui.wait("state=Some(Completed) alive=true", "Completed");
-    ui.capture("wsl-context-lease-used", out);
-    ui.key("alt+x");
-    ui.wait("enabled=true active=false", "revoked");
-    ui.wait("alive=false", "Stopped");
-    evidence::event(
-        "context-lease",
-        json!({"opt_in":"alt+g","active_before_stop":true,"calls":{"context":1,"handoff":1},"revoked_on_stop":true}),
-    );
-
-    // 3) Cancel of a RUNNING turn from the GUI, with an active lease: the turn
-    //    ends as cancelled, the agent stays alive and the lease is revoked.
-    select_program(&mut ui, "slow");
-    ui.key("alt+7");
-    ui.wait("share=false enabled=", "off");
-    ui.key("alt+g");
-    ui.wait("share=true enabled=", "ON");
-    ui.key("alt+8");
-    ui.wait("share=false enabled=true active=true", "active");
-    ui.key("alt+j");
-    ui.text("wait for cancellation");
-    ui.key("alt+9");
-    ui.wait("state=Some(Running) alive=true", "Running");
-    timed("cancel-running-turn", || {
-        ui.key("alt+q");
-        ui.wait("enabled=true active=false", "revoked");
-    });
-    ui.wait("stop_reason=Some(\"cancelled\")", "cancelled");
-    ui.capture("wsl-cancelled", out);
-    assert_eq!(
-        r.wsl.pids("acp-fake-agent").len(),
-        1,
-        "Cancel ends the turn, not the agent"
-    );
-    ui.key("alt+x");
-    ui.wait("alive=false", "Stopped");
-    assert!(
-        r.wsl.pids("acp-fake-agent").is_empty(),
-        "agent stopped in WSL"
-    );
-    evidence::event(
-        "cancel",
-        json!({"running_turn_cancelled":true,"stop_reason":"cancelled","lease_revoked":true,"agent_kept_until_stop":true}),
     );
     evidence::finish("PASS");
 

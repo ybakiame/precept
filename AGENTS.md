@@ -29,7 +29,7 @@ Read the relevant contracts before making changes:
 - [Product charter](docs/product.md)
 - [Architecture and data ownership](docs/architecture.md) before architecture or
   persisted-behavior changes
-- [Interfaces](docs/interfaces.md) before IPC, MCP, CLI or session changes
+- [Interfaces](docs/interfaces.md) before IPC, MCP or CLI changes
 - [Security and privacy](docs/security.md) before authorization, filesystem,
   credential or process-boundary changes
 - [UI standards](docs/product-ui.md) before operator UI changes
@@ -50,7 +50,7 @@ contracts. Code/contract disagreements require explicit human resolution.
 - UI, `acp-query`, MCP and agents never receive writable SQLite connections or raw
   SQL access. There is no daemon-unavailable direct-write fallback.
 - Operator writes require a separately versioned, typed, profile-scoped local IPC
-  capability. Operator read/session grants do not imply write authority.
+  capability. Operator read grants do not imply write authority.
 - MCP exposes exactly the two project-bound read-only tools. Agents, prompts,
   Handoffs and session context cannot confirm or mutate Profile state.
 - Profile creation and selection are explicit operator actions. Never discover,
@@ -88,7 +88,7 @@ Store validation output under `.tmp/`, not in tracked documentation.
 
 Add regressions for scope isolation, stale worktrees, malformed requests,
 authorization/revocation, schema refusal, CAS/replay, process concurrency and
-recovery where applicable. Coordinated IPC/session/MCP and Profile schema breaking
+recovery where applicable. Coordinated IPC/MCP and Profile schema breaking
 changes are acceptable during validation; do not add old/new version support or
 migration layers.
 

@@ -11,4 +11,3 @@ serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "io-std", "time", "signal", "sync", "macros"] }
 acp-ipc = { path = "../acp-ipc" }
 clap = { version = "4", features = ["derive"] }
-acp-session = { path = "../acp-session" }

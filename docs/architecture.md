@@ -18,7 +18,6 @@ flowchart LR
     Profile[("Explicit local<br/>Rust-native Profile v1")]
     Agent["Trusted agent"]
     MCP["acp-mcp<br/>two read-only tools"]
-    Session["Optional native ACP<br/>session supervisor"]
 
     Operator --> Clients
     Clients -->|"Operator IPC"| Daemon
@@ -29,14 +28,11 @@ flowchart LR
     Store --> Profile
     Agent -->|"MCP stdio"| MCP
     MCP -->|"Project capability"| Daemon
-    Daemon --> Session
-    Session -->|"Controlled ACP session"| Agent
-    Agent -->|"Separate opted-in context lease"| Daemon
 ```
 
 The daemon is the only production write owner. Clients exchange typed data and
 requests with it; they do not open writable SQLite connections or duplicate domain
-resolution. The optional session supervisor is not an OS sandbox.
+resolution.
 
 ## Components
 
@@ -45,10 +41,9 @@ resolution. The optional session supervisor is not an OS sandbox.
 | `crates/acp-core` | Preference/Handoff resolution, typed context and conflict resolution, bounded repository document and fingerprint adapters | SQLite connections, UI, process execution, protocol transport or authorization grants |
 | `crates/acp-store` | Explicit-path, strict read-only access to fresh Rust-native Profile v1 | Writes, schema migration or legacy compatibility |
 | `crates/acp-ipc`, `acp-daemon` | Local transport, peer/capability checks, scoped reads, project state, leases and daemon-owned writes | TCP listener or caller-selected wider scope |
-| `crates/acp-session` | Optional configured native agent child lifecycle and bounded observations | OS sandbox, arbitrary shell execution or credential login |
-| `crates/acp-mcp` | Read-only stdio bridge to project-bound IPC | Profile, task or session mutation |
+| `crates/acp-mcp` | Read-only stdio bridge to project-bound IPC | Profile or task mutation |
 | `crates/acp-write` | Private Profile v1 creation and typed transactions with lease/epoch fencing, CAS and receipts | Direct UI/CLI access, arbitrary existing-path writers or generic SQL |
-| `crates/acp-query` | Native operator reads, typed writes and session controls through authenticated daemon IPC | Direct database access or a second writer |
+| `crates/acp-query` | Native operator reads and typed writes through authenticated daemon IPC | Direct database access or a second writer |
 | `apps/core`, `apps/client`, `apps/ui` | Pure operator state/presentation; native IPC and Windows→WSL2 bridge; NSH Desktop/TUI surfaces | Direct database access, duplicate resolution logic or independent authority |
 
 The root product crates and operator app are separate Cargo workspaces with separate
@@ -58,15 +53,13 @@ UI is an offline synthetic target without native IPC.
 ## Windows GUI → WSL2
 
 The Windows-native Desktop can operate a daemon inside one explicitly selected WSL2
-distribution. WSL owns Linux project paths, daemon, Profile/runtime state and any
-managed agent processes. The GUI starts one long-lived `acp-wsl-bridge` helper per
+distribution. WSL owns Linux project paths, daemon and Profile/runtime state. The GUI starts one long-lived `acp-wsl-bridge` helper per
 connection through `wsl.exe --exec`, without a shell, TCP, port forwarding or
 mirrored networking.
 
 The helper loads operator capabilities inside WSL and forwards only typed requests
 to the same daemon authority used by local clients. Tokens never cross the stdio
-boundary. It cannot validate or approve mutations, open SQLite or start agent
-sessions independently. The framing, allowlists and uncertainty behavior are defined
+boundary. It cannot validate or approve mutations, open SQLite or start agents. The framing, allowlists and uncertainty behavior are defined
 in [interfaces](interfaces.md#windows-gui--wsl2-bridge).
 
 The secondary WSLg Linux GUI/TUI path connects directly to the same WSL daemon over
@@ -83,7 +76,6 @@ evidence.
 | Suggestions and reviews | User-local SQLite proposal/review records | Approval binds exact content, revision and scope; repository changes still need repository review |
 | Effective context | Derived from current sources and review state | Any cache requires source versions and invalidation; never outranks sources |
 | Session constraints and Handoff | Historical local records | Frozen references/content versions describe history, not live policy or execution authority |
-| Session capability/lease | Daemon memory and owner-only runtime files | Ephemeral, expiring and revocable; no SQLite token persistence |
 | Provenance/evidence | Minimal local records with reporter/observer/verifier attribution | No raw transcript or credential store; export requires explicit selection |
 
 The daemon's private state contains the registered project set and optional startup
@@ -138,18 +130,12 @@ bounded content fingerprint with historical state. Missing observations remain
 unknown. Historical validation JSON and source labels do not constitute fresh
 verification or a complete provenance engine.
 
-## Sessions and trust
+## Trust
 
-MCP is project-bound and read-only. Local IPC separates operator, operator-write,
-project-bound agent and optional session capabilities; OS user identity alone does
-not grant an operator role. Unix sockets and Windows named pipes remain local,
-without a browser gateway.
-
-Optional agent Start, authentication, individual permission decisions and context
-sharing are separate. Context uses a distinct expiring session credential bound to
-one project/agent/generation. Admission and response publication recheck authority;
-Stop, Cancel, expiry, failure, root drift and restart revoke it. Already delivered
-data cannot be recalled.
+MCP is project-bound and read-only. Local IPC separates operator, operator-write
+and project-bound agent capabilities; OS user identity alone does not grant an
+operator role. Unix sockets and Windows named pipes remain local, without a browser
+gateway.
 
 Agent-reported actions, daemon observations and independent verification are
 separate claims. Checksums detect specified content differences, not reporter

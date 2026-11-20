@@ -2,6 +2,7 @@
 //! Build workspace binaries first. Every daemon/root/Profile is owned synthetic.
 //! Direct SQLite changes below are explicitly contained fixture/fault injection;
 //! every subsequent process request still passes production validation.
+#[allow(dead_code)] // Shared harness; this suite uses part of it.
 mod support;
 
 use acp_core::operator::{Channel, Origin, Receipt, RecordVersion, Snapshot};
@@ -39,16 +40,6 @@ fn inspect(f: &Fixture, id: i64, revision: i64) -> Value {
             json!({"scope":{"kind":"global"},"id":id,"revision":revision}),
         )
         .unwrap()
-}
-
-fn confirm(id: i64, digest: &str, channel: Channel) -> Command {
-    Command::ConfirmPreference {
-        id,
-        scope: Scope::Global,
-        proposal_digest: digest.into(),
-        channel,
-        expected: Expected::Revision(1),
-    }
 }
 
 /// A bounded, owned real CLI process; panic paths also terminate and reap it.
@@ -100,7 +91,7 @@ impl Drop for Cli {
 
 #[test]
 fn s3_concurrent_cli_cas_and_identical_replay_commit_one_decision() {
-    let f = Fixture::created(false);
+    let f = Fixture::created();
     let binding = f.daemon.enable();
     for same_operation in [false, true] {
         let proposed = f
@@ -173,108 +164,8 @@ fn s3_concurrent_cli_cas_and_identical_replay_commit_one_decision() {
 }
 
 #[test]
-fn s3_session_review_denial_and_client_channels_never_supply_authority() {
-    let f = Fixture::created(true);
-    let binding = f.daemon.enable();
-    f.register(&binding, "alpha");
-    f.daemon.mutate(&binding, "proposal", suggest()).unwrap();
-    let exact = inspect(&f, 1, 1);
-    let digest = exact["record"]["proposal_digest"].as_str().unwrap();
-    let params = json!({"session_api_version":acp_session::SESSION_API,"project":"alpha"});
-    let mut start = params.clone();
-    start["executable"] = json!("fake");
-    start["confirmed"] = json!(true);
-    start["share_context"] = json!(true);
-    f.daemon.control("session.start", start).unwrap();
-    let deadline = Instant::now() + Duration::from_secs(15);
-    let session = loop {
-        let session = f.daemon.control("session.get", params.clone()).unwrap()["session"].clone();
-        if session["state"] == "ready" {
-            break session;
-        }
-        assert!(![json!("failed"), json!("auth_required")].contains(&session["state"]));
-        assert!(Instant::now() < deadline, "owned fake session readiness");
-        thread::sleep(Duration::from_millis(10));
-    };
-    let path = fs::read_dir(&f.daemon.location.runtime_dir)
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .find(|path| {
-            path.file_name()
-                .unwrap()
-                .to_string_lossy()
-                .starts_with("session-")
-        })
-        .unwrap();
-    let session_credential = acp_ipc::load_credential(&f.daemon.location, &path).unwrap();
-    let mut peer = f.daemon.client(&session_credential).unwrap();
-    let before = logical(&f.db);
-    for (method, params) in [
-        (
-            "profile.review.queue",
-            json!({"scope":{"kind":"global"},"after_id":0}),
-        ),
-        ("profile.review.count", json!({"scope":{"kind":"global"}})),
-        (
-            "profile.review.inspect",
-            json!({"scope":{"kind":"global"},"id":1,"revision":1}),
-        ),
-        (
-            "profile.write.enable",
-            json!({"profile_id":binding.profile_id,"generation":binding.generation,"confirm":true}),
-        ),
-    ] {
-        assert_eq!(
-            f.daemon.runtime.block_on(peer.request(method, params)),
-            Err(Error::Unauthorized)
-        );
-    }
-    for channel in [Channel::Cli, Channel::Desktop, Channel::Tui] {
-        for credential in [
-            &session_credential,
-            &f.daemon.credential("operator.cap"),
-            &f.daemon.credential("agent-alpha.cap"),
-        ] {
-            assert_eq!(
-                f.daemon.call(
-                    credential,
-                    "profile.mutate",
-                    envelope(&binding, "asserted-channel", confirm(1, digest, channel)),
-                ),
-                Err(Error::Unauthorized)
-            );
-        }
-    }
-    assert_eq!(logical(&f.db), before);
-    let mut stop = params;
-    stop["session_id"] = session["session_id"].clone();
-    f.daemon.control("session.stop", stop).unwrap();
-    f.daemon
-        .control("profile.write.disable", json!({}))
-        .unwrap();
-    let before = logical(&f.db);
-    assert_eq!(inspect(&f, 1, 1)["record"], exact["record"]);
-    let queue = f
-        .daemon
-        .control(
-            "profile.review.queue",
-            json!({"scope":{"kind":"global"},"after_id":0}),
-        )
-        .unwrap();
-    assert_eq!(queue["records"].as_array().unwrap().len(), 1);
-    assert_eq!(logical(&f.db), before);
-    assert!(
-        !f.daemon
-            .location
-            .runtime_dir
-            .join("operator-write.cap")
-            .exists()
-    );
-}
-
-#[test]
 fn s3_stale_request_bindings_refuse_before_replay_and_strict_decode() {
-    let f = Fixture::created(false);
+    let f = Fixture::created();
     let binding = f.daemon.enable();
     let original = envelope(&binding, "committed", suggest());
     let write = f.daemon.credential("operator-write.cap");
@@ -391,7 +282,7 @@ fn seed_receipt_ceiling(f: &Fixture, binding: &Binding) -> (Request, Receipt) {
 
 #[test]
 fn s3_contained_4096_fixture_process_capacity_conflict_and_exact_replay() {
-    let f = Fixture::created(false);
+    let f = Fixture::created();
     let binding = f.daemon.enable();
     f.register(&binding, "alpha");
     f.daemon
@@ -510,7 +401,7 @@ fn directory_link(target: &Path, link: &Path) {
 
 #[test]
 fn s3_symlink_or_junction_swapped_root_and_foreign_registration_refuse() {
-    let f = Fixture::created(false);
+    let f = Fixture::created();
     let binding = f.daemon.enable();
     f.register(&binding, "alpha");
     let alpha = f.temp.path().join("alpha");
@@ -697,7 +588,7 @@ fn assert_projected_context(context: &Value, project: &str, private_markers: &[S
 
 #[test]
 fn s3_only_confirmed_rows_and_their_tags_reach_real_ipc_or_mcp() {
-    let f = Fixture::created(false);
+    let f = Fixture::created();
     let binding = f.daemon.enable();
     f.register(&binding, "alpha");
     f.register(&binding, "beta");
@@ -828,7 +719,7 @@ fn s3_only_confirmed_rows_and_their_tags_reach_real_ipc_or_mcp() {
 #[test]
 fn s3_contained_identity_corruption_never_rebinds_an_existing_writer() {
     for field in ["profile_id", "generation"] {
-        let f = Fixture::created(false);
+        let f = Fixture::created();
         let binding = f.daemon.enable();
         let original = if field == "profile_id" {
             &binding.profile_id
@@ -862,7 +753,7 @@ fn s3_contained_identity_corruption_never_rebinds_an_existing_writer() {
 
 #[test]
 fn s3_intervening_commit_changes_page_watermark_without_snapshot_claim() {
-    let f = Fixture::created(false);
+    let f = Fixture::created();
     let binding = f.daemon.enable();
     for index in 0..13 {
         f.daemon

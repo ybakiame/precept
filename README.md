@@ -21,8 +21,6 @@ Desktop/TUI operator app.
 - Exactly two project-bound, read-only MCP tools: `get_effective_context` and
   `get_handoff`.
 - Historical Handoffs with revision, branch, worktree and content-drift warnings.
-- Optional, explicitly configured native agent sessions with separate Start,
-  authentication, permission and context-sharing decisions.
 - A Windows Desktop workflow that operates a daemon inside WSL2 through the typed
   `acp-wsl-bridge` helper, without TCP or shell forwarding.
 
@@ -72,8 +70,7 @@ with Diagnostics and Settings available separately. See the
 - Only the native daemon writes Profile state, through typed local IPC and an
   independent epoch-bound write grant. CLI and UI clients never open writable
   SQLite connections.
-- Operator control, operator writes, agent reads and optional session context use
-  distinct authority. One grant never implies another.
+- Operator control, operator writes and agent reads use distinct authority. One grant never implies another.
 - Document bodies require explicit opt-in and bounded, allowlisted reads.
 - Agent-reported actions, daemon observations and independent verification are
   different claims. A saved PASS is not a current PASS.

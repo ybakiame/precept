@@ -51,7 +51,7 @@ fn preview_digest(f: &Fixture, scope: &Scope, id: i64) -> String {
 
 #[test]
 fn unselected_bootstrap_strict_selection_and_no_implicit_grant() {
-    let f = Fixture::unselected(false);
+    let f = Fixture::unselected();
     assert_eq!(
         f.daemon.control("daemon.health", json!({})).unwrap()["profile_selected"],
         false
@@ -79,13 +79,6 @@ fn unselected_bootstrap_strict_selection_and_no_implicit_grant() {
         f.daemon
             .call(&agent, "profile.create", json!({"path":f.db})),
         Err(Error::Unauthorized)
-    );
-    assert_eq!(
-        f.daemon.control(
-            "session.list",
-            json!({"session_api_version":acp_session::SESSION_API,"project":"alpha"})
-        ),
-        Err(Error::Unavailable)
     );
     assert_eq!(
         f.daemon.control("profile.select", json!({"path":f.db})),
@@ -143,7 +136,7 @@ fn unselected_bootstrap_strict_selection_and_no_implicit_grant() {
 
 #[test]
 fn seven_real_ipc_commands_scope_cas_transitions_and_denials() {
-    let f = Fixture::created(false);
+    let f = Fixture::created();
     let b = f.daemon.enable();
     assert_eq!(b.owner_epoch, 1);
     f.register(&b, "alpha");
@@ -367,7 +360,7 @@ fn seven_real_ipc_commands_scope_cas_transitions_and_denials() {
 
 #[test]
 fn distinct_write_role_revokes_established_peers_and_stale_binding() {
-    let f = Fixture::created(false);
+    let f = Fixture::created();
     let b = f.daemon.enable();
     f.register(&b, "alpha");
     let write = f.daemon.credential("operator-write.cap");
@@ -468,7 +461,7 @@ fn distinct_write_role_revokes_established_peers_and_stale_binding() {
 
 #[test]
 fn independent_daemons_lease_contention_process_kill_and_restart() {
-    let mut f = Fixture::created(false);
+    let mut f = Fixture::created();
     let b = f.daemon.enable();
     f.register(&b, "alpha");
     let old = f.daemon.credential("operator-write.cap");
@@ -480,7 +473,7 @@ fn independent_daemons_lease_contention_process_kill_and_restart() {
     #[cfg(windows)]
     let alias = f.db.canonicalize().unwrap();
     assert_ne!(alias.as_os_str(), f.db.as_os_str());
-    let mut other = Daemon::launch(f.temp.path(), "run-b", Some(&alias), false);
+    let mut other = Daemon::launch(f.temp.path(), "run-b", Some(&alias));
     other.ready();
     let before = logical(&f.db);
     let start = Instant::now();
@@ -497,7 +490,7 @@ fn independent_daemons_lease_contention_process_kill_and_restart() {
     let next = other.enable();
     assert_eq!(next.owner_epoch, b.owner_epoch + 1);
     assert!(matches!(other.client(&old), Err(Error::Unauthorized)));
-    f.daemon = Daemon::launch(f.temp.path(), "run-a", Some(&f.db), false);
+    f.daemon = Daemon::launch(f.temp.path(), "run-a", Some(&f.db));
     f.daemon.ready();
     assert!(
         !f.daemon
@@ -524,7 +517,7 @@ fn independent_daemons_lease_contention_process_kill_and_restart() {
 #[test]
 fn selected_file_and_lease_substitution_refuse_valid_private_replacements() {
     for replace_db in [true, false] {
-        let f = Fixture::created(false);
+        let f = Fixture::created();
         let b = f.daemon.enable();
         let original = if replace_db {
             f.db.clone()
@@ -580,7 +573,7 @@ fn selected_file_and_lease_substitution_refuse_valid_private_replacements() {
 
 #[test]
 fn missing_legacy_and_unsafe_startup_never_create_or_repair() {
-    let f = Fixture::created(false);
+    let f = Fixture::created();
     let parent = f.db.parent().unwrap();
     let mut cases = vec![parent.join("missing")];
     for version in [1, 2] {
@@ -599,7 +592,7 @@ fn missing_legacy_and_unsafe_startup_never_create_or_repair() {
         let before = fs::read(path).ok();
         // A remembered Profile that fails its checks never stops the daemon and
         // is never created or repaired: it starts unselected and says why.
-        let mut d = Daemon::launch(f.temp.path(), &format!("bad-{n}"), Some(path), false);
+        let mut d = Daemon::launch(f.temp.path(), &format!("bad-{n}"), Some(path));
         d.ready();
         let info = d.control("profile.info", json!({})).unwrap();
         assert_eq!(info["selected"], false, "{n}");
@@ -664,7 +657,7 @@ fn missing_legacy_and_unsafe_startup_never_create_or_repair() {
 
 #[test]
 fn sqlite_contention_does_not_advance_epoch_or_mutate_data() {
-    let f = Fixture::created(false);
+    let f = Fixture::created();
     let before = logical(&f.db);
     let db = rusqlite::Connection::open(&f.db).unwrap();
     db.execute_batch("BEGIN IMMEDIATE").unwrap();
@@ -692,7 +685,7 @@ fn sqlite_contention_does_not_advance_epoch_or_mutate_data() {
 
 #[test]
 fn real_ipc_disconnected_response_preserves_same_epoch_receipt_replay_and_v1_refusal() {
-    let f = Fixture::created(false);
+    let f = Fixture::created();
     let b = f.daemon.enable();
     let write = f.daemon.credential("operator-write.cap");
     let token = serde_json::to_value(&write).unwrap()["token"].clone();
@@ -737,120 +730,8 @@ fn real_ipc_disconnected_response_preserves_same_epoch_receipt_replay_and_v1_ref
 }
 
 #[test]
-fn real_fake_session_mcp_v2_read_only_and_established_peer_revocation() {
-    let f = Fixture::created(true);
-    let b = f.daemon.enable();
-    f.register(&b, "alpha");
-    f.daemon
-        .mutate(&b, "handoff", handoff("alpha", Expected::Absent))
-        .unwrap();
-    let p = json!({"session_api_version":acp_session::SESSION_API,"project":"alpha"});
-    let mut start = p.clone();
-    start["executable"] = json!("fake");
-    start["confirmed"] = json!(true);
-    start["share_context"] = json!(true);
-    f.daemon.control("session.start", start).unwrap();
-    let deadline = Instant::now() + Duration::from_secs(15);
-    let view = loop {
-        let view = f.daemon.control("session.get", p.clone()).unwrap()["session"].clone();
-        if view["state"] == "ready" {
-            break view;
-        }
-        assert!(![json!("failed"), json!("auth_required")].contains(&view["state"]));
-        assert!(Instant::now() < deadline);
-        thread::sleep(Duration::from_millis(15));
-    };
-    let cap = fs::read_dir(&f.daemon.location.runtime_dir)
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .find(|p| {
-            p.file_name()
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .starts_with("session-")
-        })
-        .unwrap();
-    let session = acp_ipc::load_credential(&f.daemon.location, &cap).unwrap();
-    let mut established = f.daemon.client(&session).unwrap();
-    assert_eq!(
-        f.daemon.call(
-            &session,
-            "profile.mutate",
-            request(&b, "session-denied", suggest())
-        ),
-        Err(Error::Unauthorized)
-    );
-    assert_eq!(
-        f.daemon.call(&session, "profile.write.enable", json!({})),
-        Err(Error::Unauthorized)
-    );
-    assert_eq!(
-        f.daemon
-            .runtime
-            .block_on(established.request("context.get", json!({})))
-            .unwrap()["project"],
-        "alpha"
-    );
-    for (method, params) in [
-        (
-            "profile.preferences.list",
-            json!({"scope":{"kind":"global"},"after_id":0}),
-        ),
-        (
-            "profile.preferences.get",
-            json!({"scope":{"kind":"global"},"id":1}),
-        ),
-        (
-            "profile.handoff.get",
-            json!({"project":"alpha","task_id":"shared"}),
-        ),
-    ] {
-        let before = logical(&f.db);
-        assert_eq!(
-            f.daemon
-                .runtime
-                .block_on(established.request(method, params)),
-            Err(Error::Unauthorized)
-        );
-        assert_eq!(logical(&f.db), before);
-    }
-    let mut prompt = p.clone();
-    prompt["session_id"] = view["session_id"].clone();
-    prompt["prompt"] = json!("synthetic context smoke");
-    f.daemon.control("session.prompt", prompt).unwrap();
-    let deadline = Instant::now() + Duration::from_secs(15);
-    loop {
-        let observation = f.daemon.control("session.context", p.clone()).unwrap();
-        if observation["context_calls"].as_u64().unwrap_or(0) >= 2
-            && observation["handoff_calls"].as_u64().unwrap_or(0) >= 1
-        {
-            break;
-        }
-        assert!(Instant::now() < deadline);
-        thread::sleep(Duration::from_millis(15));
-    }
-    let mut stop = p;
-    stop["session_id"] = view["session_id"].clone();
-    f.daemon.control("session.stop", stop).unwrap();
-    assert_eq!(
-        f.daemon
-            .runtime
-            .block_on(established.request("context.get", json!({}))),
-        Err(Error::Unauthorized)
-    );
-    assert!(matches!(
-        f.daemon.client(&session),
-        Err(Error::Unauthorized)
-    ));
-    assert!(!cap.exists());
-    // Operator write authority is independent of the revoked session context.
-    f.daemon.mutate(&b, "still-authorized", suggest()).unwrap();
-}
-
-#[test]
 fn failed_grant_publication_and_epoch_overflow_never_activate_a_writer() {
-    let f = Fixture::created(false);
+    let f = Fixture::created();
     let path = f.daemon.location.runtime_dir.join("operator-write.cap");
     private_bytes(&path, b"synthetic collision");
     let info = f.daemon.control("profile.info", json!({})).unwrap();
@@ -895,7 +776,7 @@ fn failed_grant_publication_and_epoch_overflow_never_activate_a_writer() {
 
 #[test]
 fn all_read_roles_keep_the_independent_registered_root_binding() {
-    let f = Fixture::created(false);
+    let f = Fixture::created();
     let b = f.daemon.enable();
     f.register(&b, "alpha");
     let agent = f.daemon.credential("agent-alpha.cap");
@@ -939,7 +820,7 @@ fn all_read_roles_keep_the_independent_registered_root_binding() {
 #[test]
 fn project_review_decisions_refuse_a_root_lost_after_inspection_without_writing() {
     for action in ["confirm", "reject", "deprecate", "delete"] {
-        let f = Fixture::created(false);
+        let f = Fixture::created();
         let binding = f.daemon.enable();
         f.register(&binding, "alpha");
         let scope = Scope::Project {
@@ -1028,7 +909,7 @@ fn project_review_decisions_refuse_a_root_lost_after_inspection_without_writing(
 
 #[test]
 fn unsafe_existing_lease_files_fail_before_epoch_admission() {
-    let f = Fixture::created(false);
+    let f = Fixture::created();
     f.daemon.enable();
     f.daemon
         .control("profile.write.disable", json!({}))
@@ -1097,7 +978,7 @@ fn unsafe_existing_lease_files_fail_before_epoch_admission() {
 
 #[test]
 fn epoch_drift_refuses_existing_grant_and_never_reports_it_as_current() {
-    let f = Fixture::created(false);
+    let f = Fixture::created();
     let b = f.daemon.enable();
     let db = rusqlite::Connection::open(&f.db).unwrap();
     db.execute("UPDATE acp_profile SET owner_epoch=?1", [b.owner_epoch + 1])
@@ -1152,7 +1033,7 @@ fn cli_mutate(f: &Fixture, b: &acp_write::Binding, op: &str, args: &[&str]) -> (
 }
 #[test]
 fn native_cli_lifecycle_seven_commands_preview_cas_and_exact_retry() {
-    let f = Fixture::unselected(false);
+    let f = Fixture::unselected();
     assert_eq!(cli(&f, &["profile", "info"]).1["selected"], false);
     assert!(cli(&f, &["profile", "create", f.db.to_str().unwrap()]).0);
     let info = cli(&f, &["profile", "info"]).1;
@@ -1568,7 +1449,7 @@ fn native_cli_lifecycle_seven_commands_preview_cas_and_exact_retry() {
 }
 #[test]
 fn operator_preview_exact_scope_bounds_roles_and_malformed_state_preservation() {
-    let f = Fixture::created(false);
+    let f = Fixture::created();
     let b = f.daemon.enable();
     f.register(&b, "alpha");
     f.register(&b, "beta");
@@ -1666,7 +1547,7 @@ fn operator_preview_exact_scope_bounds_roles_and_malformed_state_preservation() 
 
 #[test]
 fn review_queue_inspect_and_digest_binding_are_exact_and_operator_only() {
-    let f = Fixture::created(false);
+    let f = Fixture::created();
     let b = f.daemon.enable();
     f.register(&b, "alpha");
     f.register(&b, "beta");

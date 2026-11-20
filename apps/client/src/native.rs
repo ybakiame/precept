@@ -23,8 +23,6 @@ pub struct Inputs {
     #[arg(long)]
     pub connection_settings: bool,
     #[arg(long)]
-    pub sessions: bool,
-    #[arg(long)]
     pub operator: bool,
     /// Explicit private runtime; omit both location flags for offline synthetic data.
     #[arg(long, requires = "endpoint")]

@@ -11,7 +11,7 @@ use std::{
 use subtle::ConstantTimeEq;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 pub mod operator;
-pub mod session_lease;
+pub mod peer;
 pub mod transport;
 pub mod write_grant;
 pub const API_VERSION: u32 = 2;
@@ -123,8 +123,6 @@ pub struct Credential {
     format: u32,
     pub access: Access,
     token: [u8; 32],
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    binding: Option<session_lease::Binding>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -247,10 +245,9 @@ pub fn load_credential(location: &Location, path: &Path) -> Result<Credential> {
         .read_to_end(&mut raw)
         .map_err(|_| Error::Unauthorized)?;
     let c: Credential = serde_json::from_slice(&raw).map_err(|_| Error::Unauthorized)?;
-    let valid_format = match (&c.access, c.format, &c.binding) {
-        (Access::Operator | Access::Agent { .. }, 1, None) => true,
-        (access, 3, None) => write_grant::binding_valid(access),
-        (Access::Agent { .. }, 2, Some(b)) => valid_project(&b.session) && valid_project(&b.agent),
+    let valid_format = match (&c.access, c.format) {
+        (Access::Operator | Access::Agent { .. }, 1) => true,
+        (access, 3) => write_grant::binding_valid(access),
         _ => false,
     };
     if !valid_format || matches!(&c.access,Access::Agent{project} if !valid_project(project)) {
@@ -344,7 +341,6 @@ impl RuntimeLease {
         getrandom::fill(&mut token).map_err(|_| Error::Unavailable)?;
         let c = Credential {
             format: 1,
-            binding: None,
             access,
             token,
         };

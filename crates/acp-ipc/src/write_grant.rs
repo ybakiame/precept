@@ -80,7 +80,6 @@ impl Registry {
             format: 3,
             access,
             token,
-            binding: None,
         };
         let mut file = transport::new_private(&path)?;
         let written = (|| {

@@ -67,8 +67,7 @@ Organize navigation around three clear operational paths plus utilities:
 - **Workspace:** one persistent workspace switcher at the top of the group (or an
   explicit `Add workspace…` shortcut to Runtime checks when none exist), followed
   by **Dashboard**, **Preferences** (effective confirmed rows), **Agents** (MCP
-  access and recent activity), **Handoff** and **Sessions** for that active
-  project. There is one workspace switcher in the app; workspace-scoped headers
+  access and recent activity) and **Handoff** for that active project. There is one workspace switcher in the app; workspace-scoped headers
   display a calm read-only scope badge rather than a second switcher.
 - **Review:** one unified **Review & preferences** hub combining the pending
   review queue (`To review`, with personal vs current-project scope toggle),
@@ -83,13 +82,13 @@ Organize navigation around three clear operational paths plus utilities:
   (opens Runtime checks → Connection) and the keyboard shortcuts button.
 
 A persistent scope indicator identifies the applied daemon target and selected
-project/worktree, plus task/session generation when relevant. Personal scope is
+project/worktree, plus the task when relevant. Personal scope is
 explicit. Selecting a project never turns a personal action into a repository
 write.
 
 Desktop uses a persistent sidebar beside one page; compact and terminal layouts use
 a wrapped destination row. The active workspace owns one primary scroll region.
-Project/target switches clear stale task, session and record detail and invalidate
+Project/target switches clear stale task and record detail and invalidate
 late completions. Draft connection settings remain distinct from the applied
 target.
 
@@ -112,8 +111,7 @@ in-memory log: when an MCP client started `acp-mcp`, what it read (by count), wh
 asked (the client's self-reported name, or how it arrived) and each outcome,
 including refused stale credentials. A headline says when the project was last
 read, or that a client started but never called a tool. Refresh is explicit; the
-log is emptied when the daemon restarts. The Sessions page lists only agents ACP
-starts, and points to this log for agents connected through MCP.
+log is emptied when the daemon restarts.
 
 ### Preferences and review
 
@@ -156,12 +154,7 @@ Changing its bytes, authority or scope discards replay authority. Receipts prove
 transactions, not reviewer identity; channel and origin labels are not
 authentication or independent verification.
 
-### Sessions, Handoff and evidence
-
-Keep authentication-required, Start review, permission requests and context sharing
-separate. Sharing is off by default. Display lease state from daemon observations,
-not agent assurances, and identify the exact session generation. Cancel, Stop,
-expiry and revocation are distinct from permission approval.
+### Handoff and evidence
 
 Handoff resume uses exact task lookup and presents objective, next action, current
 versus recorded HEAD/branch/worktree/source versions and checks to rerun.

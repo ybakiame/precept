@@ -13,7 +13,7 @@ support, signing or clean-machine claim.
 
 The Arch package ships `acp-daemon`, `acp-query`, `acp-mcp`, `acp-wsl-bridge` and
 `acp-nsh-tui` in `/usr/bin`, the unit in `/usr/lib/systemd/user/`, and this file
-with `agents.toml.example` in `/usr/share/doc/agent-control-plane/`. There is no
+in `/usr/share/doc/agent-control-plane/`. There is no
 daemon configuration file: projects and the startup Profile are chosen in the
 Desktop (or TUI, or `acp-query`) and kept by the daemon itself.
 Runtime dependencies are checked against the built binaries' direct libraries.
@@ -72,9 +72,6 @@ installed manifest, and keeps unknown files.
    (a `claude mcp add` command, a Codex `config.toml` table, or MCP JSON; on
    Windows it runs `acp-mcp` through `wsl.exe`). There is no port: the client
    starts `acp-mcp` over stdio. Or `acp-query ... project mcp|share|unshare NAME`.
-6. Optional agent sessions started by ACP: copy `agents.toml.example` to
-   `~/.config/acp/agents.toml` (0600), list your agent programs, and restart the
-   unit. Without that file, sessions are off.
 
 Status and logs: `systemctl --user status acp-daemon`, `journalctl --user -u acp-daemon`.
 Agent activity (did a configured MCP client start `acp-mcp` and read?): Agents â†’
@@ -82,13 +79,12 @@ Agent activity (did a configured MCP client start `acp-mcp` and read?): Agents â
 $R/control.sock activity --project NAME`. It is kept in daemon memory since the
 last start, by count only. `acp-mcp` also writes one line per failure to stderr,
 which the MCP client shows in its own server log.
-Stop is SIGTERM (graceful: sessions stopped, capabilities removed, lease released).
+Stop is SIGTERM (graceful: capabilities removed, lease released).
 Exit status 2 (a configuration or safety refusal, e.g. a damaged state file) is not
 restarted; fix the cause. The daemon never repairs its state to make itself start.
 
 Paths (fixed in the unit): state in `~/.local/state/acp` (0700: `projects.json`,
-`startup.json`), runtime in `.../runtime`, socket `.../runtime/control.sock`,
-agents in `~/.config/acp/agents.toml`.
+`startup.json`), runtime in `.../runtime`, socket `.../runtime/control.sock`.
 
 Upgrading from a build that used `/etc/acp/daemon.env`: pacman removes it (or
 leaves `daemon.env.pacsave` if you edited it, which nothing reads any more).

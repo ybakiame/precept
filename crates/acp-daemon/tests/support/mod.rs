@@ -98,25 +98,16 @@ pub struct Daemon {
     pub runtime: tokio::runtime::Runtime,
 }
 impl Daemon {
-    pub fn launch(base: &Path, id: &str, database: Option<&Path>, session: bool) -> Self {
-        Self::launch_with_ttl(base, id, database, session, 300)
-    }
-    pub fn launch_with_ttl(
-        base: &Path,
-        id: &str,
-        database: Option<&Path>,
-        session: bool,
-        ttl: u64,
-    ) -> Self {
+    pub fn launch(base: &Path, id: &str, database: Option<&Path>) -> Self {
         daemon_state(base, &["alpha", "beta"], database);
-        Self::start(base, id, session, ttl)
+        Self::start(base, id)
     }
     /// Starts again on the state the previous daemon left (no rewrite).
     #[allow(dead_code)]
     pub fn relaunch(base: &Path, id: &str) -> Self {
-        Self::start(base, id, false, 300)
+        Self::start(base, id)
     }
-    fn start(base: &Path, id: &str, session: bool, ttl: u64) -> Self {
+    fn start(base: &Path, id: &str) -> Self {
         let runtime_dir = base.join(id);
         let endpoint = if cfg!(windows) {
             format!("s2-{}-{id}", base.file_name().unwrap().to_string_lossy())
@@ -144,16 +135,6 @@ impl Daemon {
             // (the daemon reads %USERPROFILE% on Windows).
             .env("HOME", base)
             .env("USERPROFILE", base);
-        if session {
-            command
-                .arg("--agent-config")
-                .arg(base.join("agent.toml"))
-                .arg("--context-mcp")
-                .arg(exe("acp-mcp"))
-                .arg("--context-lease-seconds")
-                .arg(ttl.to_string())
-                .env("ACP_TEST_PARENT_SENTINEL", "must-not-reach-child");
-        }
         let child = command
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -246,7 +227,7 @@ pub struct Fixture {
     pub temp: tempfile::TempDir,
 }
 impl Fixture {
-    pub fn unselected(session: bool) -> Self {
+    pub fn unselected() -> Self {
         let temp = tempfile::Builder::new()
             .prefix("acp-s2-")
             .tempdir()
@@ -260,16 +241,13 @@ impl Fixture {
             .unwrap();
         }
         acp_ipc::transport::private_dir(&temp.path().join("state"), true).unwrap();
-        if session {
-            private_bytes(&temp.path().join("agent.toml"),toml::to_string(&json!({"version":1,"programs":[{"id":"fake","executable":exe("acp-fake-agent"),"args":["mcp"],"env":{}}]})).unwrap().as_bytes());
-        }
-        let mut daemon = Daemon::launch(temp.path(), "run-a", None, session);
+        let mut daemon = Daemon::launch(temp.path(), "run-a", None);
         daemon.ready();
         let db = temp.path().join("state/profile.sqlite3");
         Self { daemon, db, temp }
     }
-    pub fn created(session: bool) -> Self {
-        let f = Self::unselected(session);
+    pub fn created() -> Self {
+        let f = Self::unselected();
         f.daemon
             .control("profile.create", json!({"path":f.db}))
             .unwrap();

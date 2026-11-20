@@ -70,7 +70,7 @@ Tasks, by how often they happen:
 | Region | Size | Surface | Contents |
 | --- | --- | --- | --- |
 | Title bar | 36 high | `sidebar` above the sidebar, `background` above the page | Drag region, window caption buttons; the close button washes `danger` on hover |
-| Sidebar | 232 wide, the window's full height (a wrapped row below 900) | `sidebar`, trailing hairline | Brand mark and name; **Workspace** (with the app's single workspace switcher above Dashboard, Preferences, Agents, Handoff, Sessions), **Review** (`Review & preferences` with waiting count pill), **Set up** (`Runtime checks` with `✓` or `n/3` progress); foot destinations; the status row and the keyboard button |
+| Sidebar | 232 wide, the window's full height (a wrapped row below 900) | `sidebar`, trailing hairline | Brand mark and name; **Workspace** (with the app's single workspace switcher above Dashboard, Preferences, Agents, Handoff), **Review** (`Review & preferences` with waiting count pill), **Set up** (`Runtime checks` with `✓` or `n/3` progress); foot destinations; the status row and the keyboard button |
 | Page | the rest, inset 24 (8 when compact) | `background` | Header, page toolbar, one scroll region |
 | Overlay layer | the window | — | Toasts (bottom-right, 16 from the edges), menus, popovers, dialogs, sheets |
 
@@ -107,7 +107,7 @@ the daemon target, and it is a button that opens **Runtime checks → Connection
 
 **Page header.** Title (20 pt semibold, a header role), a calm read-only scope
 badge naming the active project on workspace-scoped pages (Dashboard, Preferences,
-Agents, Handoff, Sessions), an information button when the page has a longer
+Agents, Handoff), an information button when the page has a longer
 explanation, then one muted status line with the target and last read. Page-wide
 actions sit at the trailing edge as small ghost buttons with icons (Reconnect,
 and Copy visible page on copyable snapshot sections). A page's own primary command
@@ -234,7 +234,6 @@ icons are hidden and labels (and `✓`) carry the meaning.
 | `DASHBOARD` (four tiles) | Project dashboard | Project |
 | `PREFERENCES` (sliders) | Preferences | Project, Personal |
 | `HANDOFF` (page with arrow) | Handoff | Project |
-| `SESSIONS` (terminal) | Agent sessions | Project |
 | `PERSON` | Personal scope | Personal preferences |
 | `REVIEW` (inbox) | Suggestions waiting | To review |
 | `DIAGNOSTICS` (pulse) | Diagnostics | Foot |
@@ -456,7 +455,7 @@ exposed, not only drawn.
 
 **Shortcuts live in one panel, not on pages.** The catalog is
 `apps/core/src/keys.rs`: every action has a stable id, a group (General, Navigation,
-Review workspace, Sessions), a label and its default keystrokes. Every binding goes
+Review workspace), a label and its default keystrokes. Every binding goes
 through `shortcuts::bind`, so a change takes effect at once. Pages do not print
 shortcut lists.
 

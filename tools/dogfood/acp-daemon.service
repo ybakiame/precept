@@ -19,10 +19,10 @@ Type=simple
 StateDirectory=acp
 StateDirectoryMode=0700
 UMask=0077
-# Fixed paths. Agent sessions: ~/.config/acp/agents.toml (absent: sessions off;
-# see agents.toml.example). acp-mcp serves agents' read-only context.
-ExecStart=/usr/bin/acp-daemon --state-dir %S/acp --runtime-dir %S/acp/runtime --endpoint %S/acp/runtime/control.sock --agent-config %E/acp/agents.toml --context-mcp /usr/bin/acp-mcp
-# SIGTERM is a graceful stop: owned sessions are shut down, capabilities removed,
+# Fixed paths. MCP clients run /usr/bin/acp-mcp (beside the daemon) for agents'
+# read-only context.
+ExecStart=/usr/bin/acp-daemon --state-dir %S/acp --runtime-dir %S/acp/runtime --endpoint %S/acp/runtime/control.sock
+# SIGTERM is a graceful stop: capabilities are removed,
 # the lease released. KillMode=mixed only reaches leftovers after the timeout.
 KillMode=mixed
 TimeoutStopSec=20

@@ -80,9 +80,7 @@ fn checkpoint_daemon_child() {
                 &[("alpha", base.join("alpha").as_path())],
                 None,
             ),
-            agent_config: None,
-            context_mcp: None,
-            context_lease_seconds: 300,
+            mcp_executable: None,
         }))
         .unwrap();
 }

@@ -25,7 +25,7 @@ fn put(f: &Fixture, rules: Vec<Value>) {
     .unwrap();
 }
 fn setup() -> (Fixture, Binding) {
-    let f = Fixture::created(false);
+    let f = Fixture::created();
     let b = f.daemon.enable();
     f.register(&b, "alpha");
     f.register(&b, "beta");

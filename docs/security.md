@@ -65,32 +65,3 @@ is **not an OS sandbox** or a credential isolation boundary.
 
 Never persist secrets, raw transcripts or private identifiers in tracked fixtures.
 Source retirement does not delete real databases, local auth or runtime directories.
-
-## Optional native operator sessions
-
-The native Rust daemon can explicitly opt into one ACP v1 agent through a private
-trusted `--agent-config`; default remains disabled. This adds operator-only local
-session controls, separate from project-bound MCP credentials. MCP still exposes
-only its two read-only tools; Profile writes require the independent native grant.
-The child has local user privileges, **not an OS sandbox**. Permission mediation
-cannot contain an agent's independent filesystem/network access or descendants.
-The Windows→WSL typed bridge provides no credential inheritance, shell or
-auto-launch. Session capability and lifetime boundaries are defined in
-[interfaces](interfaces.md#optional-native-sessions).
-
-The daemon never retains agent-auth method IDs, descriptions, login argv/env or raw
-auth errors. It records only bounded method types/known capability bits and content-free
-activity counters. Private agent HOME is an explicit operator choice, not inherited
-or copied credentials. The agent may access it with user privileges; authentication
-and a successful session do not confer permission approval. Client login remains
-disabled; context attachment is separately opted in.
-
-Session context never reuses startup/operator credentials. A separate format-2
-capability belongs to one selected native project/agent/generation, expires by a
-monotonic deadline and is checked for every request and response admission. Stop,
-prompt Cancel, failure, root drift and shutdown revoke it; restart rejects cached
-secrets and cleans recognized private files under the runtime lock. An established
-peer cannot retain session authority after revoke. Earlier-admitted responses may
-finish writing, and delivered data cannot be recalled. Format-1 non-session users
-retain their prior per-launch behavior; they do not gain revocation guarantees.
-Same-user filesystem access remains outside this transport boundary.

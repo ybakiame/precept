@@ -14,7 +14,6 @@ pub mod operator;
 pub mod presentation;
 pub mod profile;
 pub mod projects;
-pub mod session;
 pub mod settings;
 pub mod tag_colors;
 
@@ -193,8 +192,6 @@ pub enum Probe {
 pub struct Model {
     pub operator: operator::Operator,
     pub epoch: u64,
-    pub sessions: bool,
-    pub session: session::SessionModel,
     pub connection: connection::Connection,
     pub connection_draft: connection::Connection,
     pub connection_invalid: bool,
@@ -276,8 +273,6 @@ impl Model {
         Self {
             operator: Default::default(),
             epoch: 0,
-            sessions: false,
-            session: Default::default(),
             connection: Default::default(),
             connection_draft: Default::default(),
             connection_invalid: false,
@@ -415,7 +410,6 @@ impl Model {
             return false;
         }
         self.epoch = self.epoch.checked_add(1).expect("request epoch exhausted");
-        self.session = Default::default();
         self.operator.invalidate();
         self.connection = self.connection_draft.clone();
         self.connection_invalid = false;
@@ -442,7 +436,6 @@ impl Model {
     /// Invalidating a request also invalidates every older in-flight completion.
     pub fn begin_read(&mut self) -> Result<ReadRequest, &'static str> {
         self.epoch = self.epoch.checked_add(1).expect("request epoch exhausted");
-        self.session = Default::default();
         self.operator.invalidate();
         self.data = None;
         self.selected_preference = None;
@@ -545,7 +538,6 @@ impl Model {
     }
     pub fn select(&mut self, index: usize) {
         if let Some(name) = self.project_names.get(index).cloned() {
-            self.session = Default::default();
             self.operator.invalidate();
             self.selected = index;
             self.selected_project = Some(name);

@@ -40,7 +40,7 @@ fn remove(f: &Fixture, name: &str) -> acp_ipc::Result<Value> {
 
 #[test]
 fn check_reads_one_path_and_answers_a_fixed_reason() {
-    let f = Fixture::created(false);
+    let f = Fixture::created();
     let base = f.temp.path();
     let gamma = repository(base, "gamma");
     fs::create_dir(base.join("plain")).unwrap();
@@ -115,7 +115,7 @@ fn add(f: &Fixture, name: &str, root: &str) -> acp_ipc::Result<Value> {
 
 #[test]
 fn add_applies_at_once_persists_and_remove_revokes_without_touching_the_profile() {
-    let mut f = Fixture::created(false);
+    let mut f = Fixture::created();
     let base = f.temp.path().to_path_buf();
     let gamma = repository(&base, "gamma");
     // The operator read credential cannot add or remove; agents never can.
@@ -241,7 +241,7 @@ fn add_applies_at_once_persists_and_remove_revokes_without_touching_the_profile(
 
 #[test]
 fn a_remembered_profile_is_selected_at_start_until_forgotten_and_never_write_enabled() {
-    let mut f = Fixture::unselected(false);
+    let mut f = Fixture::unselected();
     let base = f.temp.path().to_path_buf();
     let info = f
         .daemon
@@ -287,7 +287,7 @@ fn a_remembered_profile_is_selected_at_start_until_forgotten_and_never_write_ena
 
 #[test]
 fn damaged_state_refuses_to_start_and_is_left_as_is() {
-    let f = Fixture::unselected(false);
+    let f = Fixture::unselected();
     let base = f.temp.path().to_path_buf();
     drop(f.daemon);
     let projects = base.join("daemon-state/projects.json");
@@ -304,7 +304,7 @@ fn damaged_state_refuses_to_start_and_is_left_as_is() {
 
 #[test]
 fn a_vanished_root_is_listed_unavailable_never_served_and_removable() {
-    let mut f = Fixture::created(false);
+    let mut f = Fixture::created();
     let base = f.temp.path().to_path_buf();
     let gamma = repository(&base, "gamma");
     f.daemon.enable();
@@ -338,7 +338,7 @@ fn a_vanished_root_is_listed_unavailable_never_served_and_removable() {
 
 #[test]
 fn the_project_set_is_listed_before_any_profile_is_selected() {
-    let f = Fixture::unselected(false);
+    let f = Fixture::unselected();
     // An operator connecting to a fresh daemon gets a successful read.
     let listed = f.daemon.control("project.list", json!({})).unwrap();
     assert_eq!(listed[0]["name"], "alpha");
@@ -348,7 +348,7 @@ fn the_project_set_is_listed_before_any_profile_is_selected() {
 
 #[test]
 fn an_unselected_daemon_suggests_a_profile_in_its_state_directory_and_never_creates_it() {
-    let f = Fixture::unselected(false);
+    let f = Fixture::unselected();
     let info = f.daemon.control("profile.info", json!({})).unwrap();
     let suggested = Path::new(info["suggested_path"].as_str().unwrap()).to_path_buf();
     assert_eq!(info["suggested_exists"], false);
@@ -367,7 +367,7 @@ fn an_unselected_daemon_suggests_a_profile_in_its_state_directory_and_never_crea
 
 #[test]
 fn agent_access_is_switched_per_project_and_persists_without_touching_the_profile() {
-    let mut f = Fixture::created(false);
+    let mut f = Fixture::created();
     let base = f.temp.path().to_path_buf();
     let runtime = f.daemon.location.runtime_dir.clone();
     let listed = |f: &Fixture| f.daemon.control("project.list", json!({})).unwrap();

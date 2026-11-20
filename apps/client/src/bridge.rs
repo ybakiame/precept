@@ -19,17 +19,8 @@ pub const VERSION: u32 = 1;
 pub const MAX_REQUEST: usize = 256 * 1024;
 /// Helper -> client frame limit (a Snapshot is capped at 4 MiB).
 pub const MAX_REPLY: usize = 5 * 1024 * 1024;
-/// Concurrent in-flight requests the helper accepts (UI reads + session polling).
+/// Concurrent in-flight requests the helper accepts (UI reads and page refreshes).
 pub const MAX_IN_FLIGHT: usize = 8;
-/// The exact session methods the existing Sessions UI uses.
-pub const SESSION_METHODS: [&str; 6] = [
-    "session.refresh",
-    "session.start",
-    "session.prompt",
-    "session.permission",
-    "session.cancel",
-    "session.stop",
-];
 /// The exact Operator control/read methods (the daemon client re-checks this list).
 pub const CONTROL_METHODS: [&str; 16] = [
     "profile.info",
@@ -53,7 +44,7 @@ pub const CONTROL_METHODS: [&str; 16] = [
 pub const PROJECT_WRITES: [&str; 2] = ["project.add", "project.remove"];
 /// Every error string a helper may return. Anything else is replaced by
 /// `Unavailable` on the Windows side: helper text is never displayed verbatim.
-pub const KNOWN_ERRORS: [&str; 28] = [
+pub const KNOWN_ERRORS: [&str; 22] = [
     "Busy",
     "Capacity",
     "Conflict",
@@ -73,12 +64,6 @@ pub const KNOWN_ERRORS: [&str; 28] = [
     "Cancelled",
     "Permission denied",
     "Local daemon unavailable or access refused",
-    "Session unavailable",
-    "Session access refused",
-    "Invalid session capabilities",
-    "Unsupported session version",
-    "Session unavailable or request denied",
-    "Invalid session state",
     "Invalid task ID",
     "Invalid WSL snapshot",
     "Client unavailable",
@@ -122,11 +107,6 @@ pub enum Op {
     ProjectWrite {
         method: String,
         params: Value,
-    },
-    Session {
-        project: String,
-        method: String,
-        fields: Value,
     },
     /// Daemon health for the GUI's live WSL status (Operator credential).
     Health {},
@@ -197,18 +177,6 @@ pub fn admit(op: &Op) -> Result<(), &'static str> {
             }
         }
         Op::Mutate { .. } | Op::Health {} => {}
-        Op::Session {
-            project,
-            method,
-            fields,
-        } => {
-            if !SESSION_METHODS.contains(&method.as_str()) {
-                return Err("Unsupported");
-            }
-            if !acp_ipc::valid_project(project) || !fields.is_object() {
-                return Err("InvalidRequest");
-            }
-        }
         Op::Cancel { .. } => {}
     }
     Ok(())
@@ -423,11 +391,6 @@ mod native_bridge {
             Op::ProjectWrite { method, params } => {
                 crate::operator::project_write_at(location, &method, params).await
             }
-            Op::Session {
-                project,
-                method,
-                fields,
-            } => crate::session::session_raw(location, &project, &method, fields).await,
             Op::Health {} => crate::native::health_at(location).await,
             Op::Cancel { .. } => Err("InvalidRequest"),
         }
@@ -692,7 +655,7 @@ mod native_bridge {
 
     /// Returns the live bridge for `key`. Only an explicit user-initiated read
     /// (`start = true`: connect, Reconnect, navigation) may start a new helper;
-    /// polling and Operator/Session calls never start or restart one, so a lost
+    /// polling and Operator calls never start or restart one, so a lost
     /// bridge or stopped distribution stays an explicit unavailable state.
     pub fn bridge(
         key: &Key,
@@ -792,26 +755,6 @@ mod tests {
                 method: "profile.info".into(),
                 params: json!([])
             }),
-            Err("InvalidRequest")
-        );
-        let session = |p: &str, m: &str| Op::Session {
-            project: p.into(),
-            method: m.into(),
-            fields: json!({}),
-        };
-        for m in SESSION_METHODS {
-            assert_eq!(admit(&session("alpha", m)), Ok(()));
-        }
-        for m in [
-            "session.list",
-            "session.context",
-            "session.capabilities",
-            "session.exec",
-        ] {
-            assert_eq!(admit(&session("alpha", m)), Err("Unsupported"));
-        }
-        assert_eq!(
-            admit(&session("../x", "session.start")),
             Err("InvalidRequest")
         );
         assert_eq!(

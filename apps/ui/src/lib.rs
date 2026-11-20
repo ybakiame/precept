@@ -8,7 +8,7 @@ mod shortcuts;
 mod ui;
 
 pub use features::brand_preview;
-use features::{review, sessions};
+use features::review;
 use ui::{icons, tokens};
 pub static DESKTOP_RUNTIME: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();
 fn runtime_lines(locale: acp_ui_core::i18n::Locale) -> Vec<String> {
@@ -199,7 +199,6 @@ fn copy_page(model: Signal<Model>) -> bool {
         && !model.get().settings
         && !model.get().setup_open
         && !model.get().agents_page
-        && !model.get().sessions
         && !model.get().operator.open
     {
         set_clipboard(model.get().visible_lines().join("\n"));
@@ -261,7 +260,6 @@ pub fn App() -> impl IntoElement {
         {
             initial.color_mode = mode;
         }
-        initial.sessions = inputs.sessions;
         initial.operator.open = inputs.operator;
         initial.settings = inputs.settings;
         if inputs.connection_settings {
@@ -335,7 +333,6 @@ pub fn App() -> impl IntoElement {
         features::connection::opened(model);
     }
     load(model);
-    sessions::poll(model);
     #[cfg(feature = "ipc")]
     wsl_watch(model);
     console(model).into_element()
@@ -396,8 +393,6 @@ fn console(model: Signal<Model>) -> impl IntoElement {
             m.operator.open = false;
             m.operator.review = None;
             m.settings = false;
-            m.sessions = false;
-            m.session.confirm_start = false;
             m.setup_open = false;
             m.agents_page = false;
             m.set_section(section)
@@ -461,8 +456,6 @@ fn console(model: Signal<Model>) -> impl IntoElement {
                 m.operator.open = false;
                 m.operator.review = None;
                 m.operator.delete_arm = None;
-                m.sessions = false;
-                m.session.confirm_start = false;
                 m.settings = !m.settings;
                 m.setup_open = false;
                 m.agents_page = false;
@@ -500,8 +493,6 @@ fn console(model: Signal<Model>) -> impl IntoElement {
                 m.operator.review = None;
                 m.operator.delete_arm = None;
                 m.settings = false;
-                m.sessions = false;
-                m.session.confirm_start = false;
                 m.setup_open = false;
                 m.agents_page = false;
             });
@@ -527,11 +518,6 @@ fn console(model: Signal<Model>) -> impl IntoElement {
             }),
         );
     }
-    bind(
-        "go.sessions",
-        global,
-        Box::new(move || sessions::open(model)),
-    );
     bind("go.review", global, Box::new(move || review::open(model)));
     bind(
         "appearance.toggle",
@@ -578,45 +564,6 @@ fn console(model: Signal<Model>) -> impl IntoElement {
                 current.color_mode,
                 current.permission_denied
             );
-            if current.sessions {
-                eprintln!(
-                    "ACP_NSH_SESSION state={:?} alive={} pending={} revision={} busy={} configured={} confirm={}",
-                    current.session.view.as_ref().map(|v| &v.state),
-                    current
-                        .session
-                        .view
-                        .as_ref()
-                        .is_some_and(|v| v.process_alive),
-                    current
-                        .session
-                        .view
-                        .as_ref()
-                        .map_or(0, |v| v.permissions.len()),
-                    current.session.view.as_ref().map_or(0, |v| v.revision),
-                    current.session.busy,
-                    current
-                        .session
-                        .capabilities
-                        .as_ref()
-                        .map_or(0, |c| c.executables.len()),
-                    current.session.confirm_start
-                );
-                let lease = current.session.context.unwrap_or_default();
-                eprintln!(
-                    "ACP_NSH_CONTEXT exe={} share={} enabled={} active={} context_calls={} handoff_calls={} stop_reason={:?}",
-                    current.session.executable,
-                    current.session.share_context,
-                    lease.enabled,
-                    lease.active,
-                    lease.context_calls,
-                    lease.handoff_calls,
-                    current
-                        .session
-                        .view
-                        .as_ref()
-                        .and_then(|v| v.stop_reason.as_deref())
-                );
-            }
             eprintln!(
                 "ACP_NSH_STATE phase={:?} selected={} rows={} queried_chars={} filter_chars={} section={:?} page={} detail={} dark={} contrast={} elapsed={:.6}",
                 current.phase,
@@ -640,21 +587,6 @@ fn console(model: Signal<Model>) -> impl IntoElement {
 mod tests {
     use super::*;
     use nsh_engine::{EngineConfig, Root};
-    #[test]
-    fn session_surface_keeps_synthetic_and_wsl_execution_disabled() {
-        let mut app = nsh_testing::Headless::start(EngineConfig::new(Root::of::<App>())).unwrap();
-        app.wait_for("Project: alpha").unwrap();
-        app.press_key("alt+6").unwrap();
-        app.wait_for("Choose a native local or WSL Daemon target and an allowlisted project.")
-            .unwrap();
-        app.press_key("mod+shift+s").unwrap();
-        assert!(!app.screen().shows("Confirm start on this checkout"));
-        app.press_key("mod+shift+c").unwrap();
-        assert!(app.screen().clipboard().is_none());
-        app.press_key("Escape").unwrap();
-        app.press_key("alt+3").unwrap();
-        app.wait_for("Confirmed preferences").unwrap();
-    }
     #[test]
     fn component_inputs_selection_empty_scope_and_explicit_copy() {
         let mut app = nsh_testing::Headless::start(EngineConfig::new(Root::of::<App>())).unwrap();

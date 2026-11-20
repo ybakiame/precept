@@ -24,7 +24,7 @@ contract, confirmed personal choices, remaining conflicts and next action.
 
 The product is useful with one agent. It does not depend on running a fleet,
 replacing the user's editor or harness, or storing conversations. External clients
-consume scoped context; native managed sessions are an optional integration.
+consume scoped context.
 
 ## Product responsibilities
 
@@ -54,9 +54,6 @@ The native daemon is the only Profile write owner.
    or reject a proposal. Editing a reviewed value requires a new review. A project
    contract change still requires the repository's human review process.
 3. **Give an agent scoped context.** Use the project-bound two-tool MCP interface.
-   For an optional managed agent session, review Start and separately opt into
-   session context. Authentication, context sharing and permission approval are
-   independent decisions.
 4. **Resume through Handoff.** Capture objective, next action and exact historical
    checks. The receiver compares current project, HEAD, branch, worktree and
    available source versions, inspects conflicts and reruns required checks.
@@ -80,10 +77,9 @@ contents are shared only through explicit, bounded reads.
 
 ## Integration boundaries
 
-MCP is the read-only context delivery integration. Optional native agent sessions
-are operator-controlled; the daemon owns lifecycle and lease authority, and closing
-a UI does not stop the daemon or child implicitly. Neither transport is the domain
-model, and neither grants OS isolation.
+MCP is the read-only context delivery integration. ACP does not launch or supervise
+agents; closing a UI does not stop the daemon. MCP is not the domain model and
+grants no OS isolation.
 
 A future proposal-only agent extension, evidence hash chain or signature system
 requires a new explicit design and authority decision. None follows automatically

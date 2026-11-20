@@ -25,6 +25,3 @@ toml = "1.2"
 rusqlite = { version = "=0.41.1", features = ["bundled"] }
 sha2 = "0.10"
 
-[dependencies.acp-session]
-path = "../acp-session"
-features = ["runtime"]

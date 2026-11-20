@@ -28,14 +28,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "acp-session"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "acp-ui"
 version = "0.1.0"
 dependencies = [
@@ -65,7 +57,6 @@ version = "0.1.0"
 dependencies = [
  "acp-core",
  "acp-ipc",
- "acp-session",
  "acp-ui-core",
  "clap",
  "serde",
@@ -79,7 +70,6 @@ name = "acp-ui-core"
 version = "0.1.0"
 dependencies = [
  "acp-core",
- "acp-session",
  "serde",
  "serde_json",
 ]

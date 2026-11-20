@@ -15,21 +15,14 @@ pub enum Group {
     General,
     Navigation,
     Review,
-    Sessions,
 }
 impl Group {
-    pub const ALL: [Self; 4] = [
-        Self::General,
-        Self::Navigation,
-        Self::Review,
-        Self::Sessions,
-    ];
+    pub const ALL: [Self; 3] = [Self::General, Self::Navigation, Self::Review];
     pub fn label(self) -> Msg {
         match self {
             Self::General => Msg::KeysGeneral,
             Self::Navigation => Msg::KeysNavigation,
             Self::Review => Msg::KeysReview,
-            Self::Sessions => Msg::KeysSessions,
         }
     }
 }
@@ -74,7 +67,6 @@ shortcuts! {
     "go.preferences", Navigation, KeyGoPreferences, ["alt+3"];
     "go.handoff", Navigation, KeyGoHandoff, ["alt+4"];
     "go.diagnostics", Navigation, KeyGoDiagnostics, ["alt+5"];
-    "go.sessions", Navigation, KeyGoSessions, ["alt+6"];
     "go.review", Navigation, KeyGoReview, ["alt+o"];
     "go.settings", Navigation, KeyGoSettings, ["alt+0"];
     "page.next", Navigation, KeyNext, ["alt+ArrowRight", "alt+Right"];
@@ -94,18 +86,6 @@ shortcuts! {
     "review.field.value", Review, KeyFieldValue, ["alt+w"];
     "review.field.tags", Review, KeyFieldTags, ["alt+f"];
     "review.field.task", Review, KeyFieldTask, ["alt+t"];
-    "sessions.prompt", Sessions, KeyPrompt, ["alt+j"];
-    "sessions.send", Sessions, KeySend, ["mod+Enter", "alt+9"];
-    "sessions.start", Sessions, KeyStartReview, ["mod+shift+s", "alt+7"];
-    "sessions.confirm", Sessions, KeyConfirmStart, ["mod+shift+Enter", "alt+8"];
-    "sessions.auth", Sessions, KeyAuthRetry, ["alt+u"];
-    "sessions.share", Sessions, KeyShare, ["alt+g"];
-    "sessions.executable", Sessions, KeyExecutable, ["alt+e"];
-    "sessions.cancel", Sessions, KeyCancelSession, ["alt+q"];
-    "sessions.stop", Sessions, KeyStopSession, ["alt+x"];
-    "sessions.permission", Sessions, KeyPermission, ["alt+i"];
-    "sessions.deny", Sessions, KeyDeny, ["alt+n"];
-    "sessions.allow", Sessions, KeyAllow, ["alt+y"];
 }
 
 /// The catalog entry for `id`.
@@ -206,16 +186,16 @@ mod tests {
     #[test]
     fn overrides_replace_defaults_and_reset_restores_them() {
         let mut map = Keymap::default();
-        assert_eq!(map.chords("sessions.send"), ["mod+Enter", "alt+9"]);
-        map.set("sessions.send", "mod+shift+p");
-        assert_eq!(map.chords("sessions.send"), ["mod+shift+p"]);
-        assert!(map.is_custom("sessions.send"));
+        assert_eq!(map.chords("go.review"), ["alt+o"]);
+        map.set("go.review", "mod+shift+p");
+        assert_eq!(map.chords("go.review"), ["mod+shift+p"]);
+        assert!(map.is_custom("go.review"));
         assert_eq!(
             map.conflict("reconnect", "MOD+SHIFT+P").map(|s| s.id),
-            Some("sessions.send")
+            Some("go.review")
         );
-        map.reset("sessions.send");
-        assert_eq!(map.chords("sessions.send"), ["mod+Enter", "alt+9"]);
+        map.reset("go.review");
+        assert_eq!(map.chords("go.review"), ["alt+o"]);
         // Setting a single default back clears the override.
         map.set("reconnect", "mod+e");
         map.set("reconnect", "mod+r");

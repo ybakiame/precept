@@ -23,7 +23,7 @@ fn events(f: &Fixture, params: Value) -> Vec<Value> {
 
 #[test]
 fn mcp_starts_reads_and_refusals_are_logged_by_count_for_the_operator_only() {
-    let f = Fixture::created(false);
+    let f = Fixture::created();
     let b = f.daemon.enable();
     f.register(&b, "alpha");
     f.register(&b, "beta");

@@ -30,9 +30,7 @@ impl Model {
         }
     }
     pub fn source_label(&self) -> &'static str {
-        if self.sessions {
-            "OPERATOR_SESSION_VIEW"
-        } else if self.live {
+        if self.live {
             "LIVE_READ_ONLY"
         } else {
             "OFFLINE_SYNTHETIC"

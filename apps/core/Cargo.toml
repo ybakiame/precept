@@ -8,6 +8,5 @@ description = "Operator app state, presentation and i18n: pure, no I/O (also bui
 
 [dependencies]
 acp-core = { path = "../../crates/acp-core" }
-acp-session = { path = "../../crates/acp-session" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -46,13 +46,13 @@ async fn revoke_closes_admissions_drains_and_preserves_admitted_committed_respon
     };
     let mut runtime = RuntimeLease::acquire(&location).unwrap();
     let credentials = Arc::new(runtime.credentials(&[]).unwrap());
-    let grants = acp_ipc::session_lease::Registry::default();
+    let grants = acp_ipc::peer::Peers::default();
     let state = test_state(&t.path().join("daemon-state"), &[], Some(&db));
     let profiles = Arc::new(
         profiles::Profiles::new(
             location.clone(),
             state::StateDir::open(&state).unwrap(),
-            grants.1.clone(),
+            grants.writes.clone(),
         )
         .unwrap(),
     );
@@ -60,14 +60,11 @@ async fn revoke_closes_admissions_drains_and_preserves_admitted_committed_respon
         profiles: profiles.clone(),
         lease: Arc::new(Mutex::new(runtime)),
         credentials: Arc::new(RwLock::new(credentials.to_vec())),
-        agent_config: None,
-        context_mcp: None,
-        context_lease_seconds: 300,
-        sessions: Default::default(),
+        mcp_executable: None,
         grants,
         activity: crate::activity::Activity::default(),
     };
-    profiles.select_remembered(&service);
+    profiles.select_remembered();
     let (mut operator, ack) = open(&service, &credentials[0]).await;
     assert_eq!(ack["ready"], true);
     send(&mut operator, "info", "profile.info", json!({})).await;
@@ -150,7 +147,7 @@ async fn s3_root_drift_between_initial_check_and_final_admission_refuses_review(
         };
         let mut runtime = RuntimeLease::acquire(&location).unwrap();
         let credentials = Arc::new(runtime.credentials(&["alpha".into()]).unwrap());
-        let grants = acp_ipc::session_lease::Registry::default();
+        let grants = acp_ipc::peer::Peers::default();
         let state = test_state(
             &temp.path().join("daemon-state"),
             &[("alpha", root.as_path())],
@@ -160,7 +157,7 @@ async fn s3_root_drift_between_initial_check_and_final_admission_refuses_review(
             profiles::Profiles::new(
                 location.clone(),
                 state::StateDir::open(&state).unwrap(),
-                grants.1.clone(),
+                grants.writes.clone(),
             )
             .unwrap(),
         );
@@ -168,14 +165,11 @@ async fn s3_root_drift_between_initial_check_and_final_admission_refuses_review(
             profiles: profiles.clone(),
             lease: Arc::new(Mutex::new(runtime)),
             credentials: Arc::new(RwLock::new(credentials.to_vec())),
-            agent_config: None,
-            context_mcp: None,
-            context_lease_seconds: 300,
-            sessions: Default::default(),
+            mcp_executable: None,
             grants,
             activity: crate::activity::Activity::default(),
         };
-        profiles.select_remembered(&service);
+        profiles.select_remembered();
         let operator = credentials
             .iter()
             .find(|credential| credential.access == Access::Operator)
