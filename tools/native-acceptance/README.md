@@ -5,7 +5,7 @@ Follow the [repository validation requirements](../../AGENTS.md#engineering-and-
 No Python is required.
 
 Build the root daemon/query and NSH native,tui binaries from the same clean commit
-before running this standalone manifest. Its only ACP dependency is the IPC client;
+before running this standalone manifest. Its only Precept dependency is the IPC client;
 it cannot open a writable Profile. Run from the repository root:
 
 ```text
@@ -16,20 +16,20 @@ cargo test --manifest-path tools/native-acceptance/Cargo.toml --locked
 ```
 
 Choose a **new absolute** report directory below the ignored artifacts tree. On
-Linux, run `tools/native-acceptance/target/debug/acp-native-acceptance tui NEW_OUTPUT`.
+Linux, run `tools/native-acceptance/target/debug/precept-native-acceptance tui NEW_OUTPUT`.
 On native Windows, run the corresponding `.exe` with the same arguments from an
 existing process-local MSVC/Cargo/Git environment. This creates a real PTY/ConPTY,
 feeds terminal keyboard sequences and handles the terminal's cursor query. Captures
 contain actual child VT output, a bounded parsed view, and restoration assertions.
 
-`ACP_S5_APPEARANCE=dark` selects the retained S2 baseline flow's initial appearance;
+`PRECEPT_S5_APPEARANCE=dark` selects the retained S2 baseline flow's initial appearance;
 the default is `light`. Other values are refused. The S3 presentation cells also
 select **both** Light and Dark through actual focused settings buttons in each
 locale, capturing compact and large layouts. Screenshot inspection remains an
 independent requirement; a state probe is not pixel-content verification.
 
-For a targeted **development-only** smoke, set `ACP_S5_DEVELOPMENT=1` and
-`ACP_S3_CASE=empty-queue` (or another S3 extension case ID). This deliberately skips
+For a targeted **development-only** smoke, set `PRECEPT_S5_DEVELOPMENT=1` and
+`PRECEPT_S3_CASE=empty-queue` (or another S3 extension case ID). This deliberately skips
 the retained baseline and leaves every unselected cell NOT_RUN; success is labelled
 `DEV_PARTIAL_PASS`, never native acceptance PASS. Normal clean-source execution
 without the selector still requires the complete baseline and every declared cell.
@@ -56,7 +56,7 @@ cannot wedge the harness on a full pipe. Neither thread may block past one poll:
 end with `PeekNamedPipe`, because `PIPE_NOWAIT` is not honored for the read end of an
 anonymous pipe. `DESKTOP_IO_MODE stdin=… stdout=… gui_stderr=…` prints the mode actually
 achieved per direction. `tests/desktop_worker.rs` proves all of this against the owned
-`acp-fake-desktop-worker` binary on either host with no real window; that is driver
+`precept-fake-desktop-worker` binary on either host with no real window; that is driver
 evidence only and never a native GUI PASS.
 
 Bounded pipe IO is a precondition, not a preference. The setters in `src/pipe.rs` can
@@ -122,7 +122,7 @@ human-paced keyboard flows, not rapid-input/paste/IME stress behavior. Complete
 all build/test gates before native runs: a later Cargo test build can replace a
 previously built UI binary, and final binary identity checks correctly refuse it.
 
-Each run creates only its own `acp-s5-*` temporary root, synthetic alpha/beta
+Each run creates only its own `precept-s5-*` temporary root, synthetic alpha/beta
 projects, private runtime and explicitly reviewed Profile. CLI-only setup is done
 with the native CLI. A bounded local authenticated relay consumes one **actual**
 committed mutation reply and disconnects; it forwards no invented responses. Its
@@ -169,7 +169,7 @@ and a best-effort last owned frame before cleanup. Independent fixtures live in
 `s3-CELL/`; no failed exploratory artifact is overwritten.
 
 The driver creates a new private regular `state/focus.events` file inside each
-owned disposable root and passes `ACP_NATIVE_FOCUS_FILE` only to that direct UI
+owned disposable root and passes `PRECEPT_NATIVE_FOCUS_FILE` only to that direct UI
 child. The optional diagnostic sink is cached once by the UI, opens existing
 regular non-symlink/non-reparse files append-only, flushes fixed catalog-key
 focus events and refuses growth beyond 256 KiB. It creates no file, control,
@@ -205,6 +205,6 @@ is resent and there is no desktop-capture fallback. Color variation is not conte
 proof: the PNGs still require visual inspection.
 
 A normal run requires clean source before and after and records the Git SHA plus
-actual driver/daemon/query/NSH SHA-256. `ACP_S5_DEVELOPMENT=1` explicitly labels
+actual driver/daemon/query/NSH SHA-256. `PRECEPT_S5_DEVELOPMENT=1` explicitly labels
 exploratory runs DEV_PASS and allows dirty source; those are never final acceptance.
 Run all four surfaces again at the final code SHA and keep artifacts private.

@@ -166,7 +166,7 @@
           "repository_license": true
         }
       ],
-      "reason": "Declared MIT/Apache-2.0; upstream ships no license file or copyright line. Apache-2.0 is elected; its verbatim text is the hash-checked ACP/LICENSE.txt"
+      "reason": "Declared MIT/Apache-2.0; upstream ships no license file or copyright line. Apache-2.0 is elected; its verbatim text is the hash-checked Precept/LICENSE.txt"
     },
     {
       "package": "hexf-parse",

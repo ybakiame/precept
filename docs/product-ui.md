@@ -1,6 +1,6 @@
 # Operator UI standards
 
-These are the current design and interaction contracts for the ACP operator app.
+These are the current design and interaction contracts for the Precept operator app.
 Follow them together with the NSH Design Guides when changing a screen. Product
 authority comes from the [charter](product.md), [architecture](architecture.md) and
 [security](security.md); UI state never creates authority of its own.
@@ -103,11 +103,11 @@ project is destructive confirmation and does not claim to erase its Profile
 records.
 
 Agent sharing is a separate per-project operator switch. Configuration text can be
-copied, but ACP never writes another tool's configuration automatically. Credentials
+copied, but Precept never writes another tool's configuration automatically. Credentials
 are never displayed.
 
 The Agents page lists the selected project's recent agent activity from the daemon's
-in-memory log: when an MCP client started `acp-mcp`, what it read (by count), who
+in-memory log: when an MCP client started `precept-mcp`, what it read (by count), who
 asked (the client's self-reported name, or how it arrived) and each outcome,
 including refused stale credentials. A headline says when the project was last
 read, or that a client started but never called a tool. Refresh is explicit; the

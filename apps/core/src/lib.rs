@@ -1,5 +1,5 @@
 //! Operator app state, presentation and i18n. Pure: no I/O, framework, SQLite or
-//! transport; native IPC and the WSL bridge live in `acp-ui-client`.
+//! transport; native IPC and the WSL bridge live in `precept-ui-client`.
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::BTreeMap, sync::Arc};
@@ -615,7 +615,7 @@ impl Model {
     /// use here (most used first), then the starter set, without those chosen
     /// and narrowed to what `draft` starts with.
     pub fn tag_suggestions(&self, chosen: &[String], draft: &str) -> Vec<String> {
-        let draft = acp_core::operator::normalize_tag(draft).unwrap_or_default();
+        let draft = precept_core::operator::normalize_tag(draft).unwrap_or_default();
         let mut seen = std::collections::BTreeSet::new();
         let operator = self
             .operator
@@ -1022,9 +1022,9 @@ mod probe_tests {
         Discovery {
             version: DISCOVERY_VERSION,
             user: "operator".into(),
-            helper: "/usr/bin/acp-wsl-bridge".into(),
-            runtime: "/home/operator/.local/state/acp/runtime".into(),
-            endpoint: "/home/operator/.local/state/acp/runtime/control.sock".into(),
+            helper: "/usr/bin/precept-bridge".into(),
+            runtime: "/home/operator/.local/state/precept/runtime".into(),
+            endpoint: "/home/operator/.local/state/precept/runtime/control.sock".into(),
             systemd: true,
             unit_installed: true,
             daemon: DaemonStatus::Ready {
@@ -1049,9 +1049,9 @@ mod probe_tests {
         assert!(m.connection_draft.validate());
         // A manual edit during a check wins over its late result.
         let third = m.begin_probe(false);
-        m.edit_draft(|d| d.wsl_runtime = "/srv/acp/runtime".into());
+        m.edit_draft(|d| d.wsl_runtime = "/srv/precept/runtime".into());
         m.finish_probe(third, Ok(report()));
-        assert_eq!(m.connection_draft.wsl_runtime, "/srv/acp/runtime");
+        assert_eq!(m.connection_draft.wsl_runtime, "/srv/precept/runtime");
         assert_eq!(m.probe, Probe::Idle);
         // An invalid report fails closed and changes nothing.
         let fourth = m.begin_probe(false);
@@ -1066,7 +1066,7 @@ mod probe_tests {
             m.probe,
             Probe::Failed(connection::discovery_status::INVALID_REPORT)
         );
-        assert_eq!(m.connection_draft.wsl_runtime, "/srv/acp/runtime");
+        assert_eq!(m.connection_draft.wsl_runtime, "/srv/precept/runtime");
         // Applying never happens implicitly.
         assert_eq!(m.connection.target, Target::Synthetic);
     }
@@ -1082,7 +1082,7 @@ mod target_tests {
             target: Target::Wsl,
             distribution: "Synthetic".into(),
             user: "operator".into(),
-            helper: "/s/acp-wsl-bridge".into(),
+            helper: "/s/precept-bridge".into(),
             wsl_runtime: "/s/runtime".into(),
             wsl_endpoint: "/s/runtime/control.sock".into(),
             ..Default::default()

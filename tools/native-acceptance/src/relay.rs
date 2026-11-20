@@ -1,5 +1,5 @@
 //! Test-only authenticated local relay. No token logging, network or product API.
-use acp_ipc::{
+use precept_ipc::{
     Location, read_frame,
     transport::{Listener, connect},
     write_frame,
@@ -34,7 +34,7 @@ pub async fn run(args: &[String]) {
             .file_name()
             .unwrap()
             .to_string_lossy()
-            .starts_with("acp-s5-")
+            .starts_with("precept-s5-")
     );
     assert_eq!(marker.parent(), location.runtime_dir.parent());
     let mut listener = Listener::bind(&alias).await.unwrap();
@@ -128,7 +128,7 @@ pub async fn run(args: &[String]) {
                         request_hash(&value),
                     )
                     .unwrap();
-                    return Ok::<(), acp_ipc::Error>(());
+                    return Ok::<(), precept_ipc::Error>(());
                 }
                 let dropped = marker.with_file_name("dropped-receipt.json");
                 if value["method"] == "profile.mutate" && dropped.exists() {

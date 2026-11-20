@@ -79,13 +79,13 @@ mod tests {
         let mut d = ProfileDraft::default();
         assert!(d.remember, "select at start is on by default");
         assert!(d.params().is_none());
-        d.suggest(Some("/home/u/.local/state/acp/profile.sqlite3"));
+        d.suggest(Some("/home/u/.local/state/precept/profile.sqlite3"));
         assert_eq!(
             d.params().unwrap(),
-            serde_json::json!({"path":"/home/u/.local/state/acp/profile.sqlite3","remember":true})
+            serde_json::json!({"path":"/home/u/.local/state/precept/profile.sqlite3","remember":true})
         );
         d.set_path("/home/u/other.sqlite3".into());
-        d.suggest(Some("/home/u/.local/state/acp/profile.sqlite3"));
+        d.suggest(Some("/home/u/.local/state/precept/profile.sqlite3"));
         assert_eq!(d.path, "/home/u/other.sqlite3");
         d.remember = false;
         d.busy = true;

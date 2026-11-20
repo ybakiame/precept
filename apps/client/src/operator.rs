@@ -1,24 +1,24 @@
 //! Operator read/control and OperatorWrite requests: local IPC or the WSL bridge.
-use acp_core::operator::Mutation;
-use acp_ui_core::operator::Review;
+use precept_core::operator::Mutation;
+use precept_ui_core::operator::Review;
 use serde_json::Value;
 
 /// Stable UI error vocabulary for daemon results; shared by the local client
 /// and the WSL bridge helper so both targets report identically.
-pub fn operator_error(e: acp_ipc::Error) -> &'static str {
+pub fn operator_error(e: precept_ipc::Error) -> &'static str {
     match e {
-        acp_ipc::Error::Busy => "Busy",
-        acp_ipc::Error::Capacity => "Capacity",
-        acp_ipc::Error::Conflict => "Conflict",
-        acp_ipc::Error::OutcomeUnknown => "OutcomeUnknown",
-        acp_ipc::Error::Unauthorized | acp_ipc::Error::UnsafeRuntime => "Unauthorized",
-        acp_ipc::Error::RestartRequired => "RestartRequired",
-        acp_ipc::Error::StaleGeneration => "StaleGeneration",
-        acp_ipc::Error::OwnerMismatch => "OwnerMismatch",
-        acp_ipc::Error::IdempotencyConflict => "IdempotencyConflict",
-        acp_ipc::Error::InvalidRequest => "InvalidRequest",
-        acp_ipc::Error::InvalidTransition => "InvalidTransition",
-        acp_ipc::Error::ReviewMismatch => "ReviewMismatch",
+        precept_ipc::Error::Busy => "Busy",
+        precept_ipc::Error::Capacity => "Capacity",
+        precept_ipc::Error::Conflict => "Conflict",
+        precept_ipc::Error::OutcomeUnknown => "OutcomeUnknown",
+        precept_ipc::Error::Unauthorized | precept_ipc::Error::UnsafeRuntime => "Unauthorized",
+        precept_ipc::Error::RestartRequired => "RestartRequired",
+        precept_ipc::Error::StaleGeneration => "StaleGeneration",
+        precept_ipc::Error::OwnerMismatch => "OwnerMismatch",
+        precept_ipc::Error::IdempotencyConflict => "IdempotencyConflict",
+        precept_ipc::Error::InvalidRequest => "InvalidRequest",
+        precept_ipc::Error::InvalidTransition => "InvalidTransition",
+        precept_ipc::Error::ReviewMismatch => "ReviewMismatch",
         _ => "Unavailable",
     }
 }
@@ -26,12 +26,12 @@ pub fn operator_error(e: acp_ipc::Error) -> &'static str {
 /// One Operator read/control request or one OperatorWrite mutation against the
 /// daemon at `location`. Authorization stays entirely daemon-side.
 pub async fn operator_at(
-    location: &acp_ipc::Location,
+    location: &precept_ipc::Location,
     method: &str,
     params: Value,
     mutation: Option<&Mutation>,
 ) -> Result<Value, &'static str> {
-    use acp_ipc::operator;
+    use precept_ipc::operator;
     match mutation {
         Some(mutation) => operator::mutate(location, mutation).await,
         None => operator::control(location, method, params).await,
@@ -42,11 +42,11 @@ pub async fn operator_at(
 /// `project.add` / `project.remove` against the daemon at `location`, with the
 /// write credential. Authorization stays entirely daemon-side.
 pub async fn project_write_at(
-    location: &acp_ipc::Location,
+    location: &precept_ipc::Location,
     method: &str,
     params: Value,
 ) -> Result<Value, &'static str> {
-    acp_ipc::operator::project_write(location, method, params)
+    precept_ipc::operator::project_write(location, method, params)
         .await
         .map_err(operator_error)
 }
@@ -103,7 +103,7 @@ impl crate::native::Inputs {
         let Some(runtime_dir) = self.runtime_dir.clone() else {
             return Err("Unauthorized");
         };
-        let location = acp_ipc::Location {
+        let location = precept_ipc::Location {
             runtime_dir,
             endpoint: self.endpoint.clone().ok_or("Unauthorized")?,
         };
@@ -154,7 +154,7 @@ impl crate::native::Inputs {
         let Some(runtime_dir) = self.runtime_dir.clone() else {
             return Err("Unauthorized");
         };
-        let location = acp_ipc::Location {
+        let location = precept_ipc::Location {
             runtime_dir,
             endpoint: self.endpoint.clone().ok_or("Unauthorized")?,
         };
@@ -171,13 +171,13 @@ impl crate::native::Inputs {
     }
 }
 
-pub fn operation_id() -> acp_ipc::Result<String> {
-    acp_ipc::operator::operation_id()
+pub fn operation_id() -> precept_ipc::Result<String> {
+    precept_ipc::operator::operation_id()
 }
 
 #[cfg(test)]
 mod native_boundary_tests {
-    use acp_ui_core::{Model, connection::Target};
+    use precept_ui_core::{Model, connection::Target};
     #[test]
     fn offline_never_and_wsl_only_over_a_live_bridge_attempt_operator_ipc() {
         let mut m = Model::fixture();
@@ -194,7 +194,7 @@ mod native_boundary_tests {
         let inputs = crate::native::Inputs {
             wsl_distribution: Some("synthetic".into()),
             wsl_user: Some("operator".into()),
-            wsl_bridge: Some("/opt/acp-wsl-bridge".into()),
+            wsl_bridge: Some("/opt/precept-bridge".into()),
             wsl_runtime_dir: Some("/tmp/private".into()),
             wsl_endpoint: Some("/tmp/private/control.sock".into()),
             ..Default::default()

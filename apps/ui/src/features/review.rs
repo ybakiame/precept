@@ -2,7 +2,7 @@
 //! The Queue / Detail / History review workspace, the destructive delete tier and
 //! their motion are rendered here for Desktop and TUI from the one shared Model.
 use crate::*;
-use acp_ui_core::{
+use precept_ui_core::{
     connection::Target,
     i18n::{Locale, Msg, tr},
     operator::{
@@ -96,7 +96,7 @@ fn send(model: Signal<Model>, request: Review) {
             let result = {
                 let request = request.clone();
                 blocking(move || {
-                    acp_ui_client::native::Inputs::from_connection(&connection)?
+                    precept_ui_client::native::Inputs::from_connection(&connection)?
                         .operator_call(&request)
                 })
                 .await
@@ -149,7 +149,7 @@ fn review(model: Signal<Model>, action: &str) {
         return;
     }
     #[cfg(feature = "ipc")]
-    let id = acp_ui_client::operator::operation_id();
+    let id = precept_ui_client::operator::operation_id();
     #[cfg(not(feature = "ipc"))]
     let id: Result<String, &str> = Err("Unauthorized");
     if let Ok(id) = id {
@@ -216,9 +216,9 @@ fn open_delete(model: Signal<Model>, delete_open: Signal<bool>) {
     });
     delete_open.set(true);
     #[cfg(not(target_arch = "wasm32"))]
-    if std::env::var_os("ACP_UI_PROBE").is_some() {
+    if std::env::var_os("PRECEPT_UI_PROBE").is_some() {
         eprintln!(
-            "ACP_UI_DIALOG requested_open={} armed={}",
+            "PRECEPT_UI_DIALOG requested_open={} armed={}",
             delete_open.get(),
             model.with(|m| m.operator.delete_arm.is_some()),
         );
@@ -346,8 +346,8 @@ fn focus_shortcut(model: Signal<Model>, shortcut: &'static str, pane: Pane, refe
 fn field(
     model: Signal<Model>,
     key: Msg,
-    get: fn(&acp_ui_core::operator::Operator) -> &str,
-    set: fn(&mut acp_ui_core::operator::Operator, String),
+    get: fn(&precept_ui_core::operator::Operator) -> &str,
+    set: fn(&mut precept_ui_core::operator::Operator, String),
     max: usize,
 ) -> impl IntoElement {
     let reference = element_ref();
@@ -370,8 +370,8 @@ fn field(
             .value(move || get(&model.get().operator).to_owned())
             .on_focus(move || {
                 #[cfg(not(target_arch = "wasm32"))]
-                if std::env::var_os("ACP_UI_PROBE").is_some() {
-                    eprintln!("ACP_UI_FOCUS shortcut={shortcut}");
+                if std::env::var_os("PRECEPT_UI_PROBE").is_some() {
+                    eprintln!("PRECEPT_UI_FOCUS shortcut={shortcut}");
                 }
             })
             .disabled(move || model.get().operator.busy || model.get().operator.outcome_unknown)
@@ -687,7 +687,7 @@ fn detail_tab(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
     lines.push(format!(
         "{}: {}",
         m.word(Msg::OperatorTags),
-        acp_ui_core::presentation::hashtags(&r.tags)
+        precept_ui_core::presentation::hashtags(&r.tags)
     ));
     lines.push(format!(
         "{}: {}",
@@ -1036,12 +1036,12 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
     });
     effect(move || {
         #[cfg(not(target_arch = "wasm32"))]
-        if std::env::var_os("ACP_UI_PROBE").is_some() {
+        if std::env::var_os("PRECEPT_UI_PROBE").is_some() {
             let m = model.get();
             let o = &m.operator;
             if o.open {
                 eprintln!(
-                    "ACP_NSH_OPERATOR selected={} grant={} busy={} review={} unknown={} rows={} record_revision={} receipt={} error={} handoff_revision={} review_tab={:?} queue={} inspect={} delete_armed={} digest_expanded={} inspection_current={} inspected_id={} inspected_revision={} peer_total={} delete_retype_chars={} delete_ready={}",
+                    "PRECEPT_NSH_OPERATOR selected={} grant={} busy={} review={} unknown={} rows={} record_revision={} receipt={} error={} handoff_revision={} review_tab={:?} queue={} inspect={} delete_armed={} digest_expanded={} inspection_current={} inspected_id={} inspected_revision={} peer_total={} delete_retype_chars={} delete_ready={}",
                     o.info.as_ref().is_some_and(|i| i.selected),
                     o.info.as_ref().is_some_and(|i| i.write_enabled),
                     o.busy,
@@ -1070,7 +1070,7 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
                     delete_armed(model),
                 );
                 eprintln!(
-                    "ACP_NSH_REVIEW global={} selected_id={} queue_after={} queue_first={} queue_last={} queue_sequence={} queue_baseline={} queue_stale={} inspected_status={} inspected_origin={:?} history={}",
+                    "PRECEPT_NSH_REVIEW global={} selected_id={} queue_after={} queue_first={} queue_last={} queue_sequence={} queue_baseline={} queue_stale={} inspected_status={} inspected_origin={:?} history={}",
                     o.global,
                     o.selected_id.unwrap_or(0),
                     o.queue_after_id,
@@ -1114,7 +1114,7 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
                             .label_fn(move || model.get().word(Msg::GoToRuntimeChecks).into())
                             .variant(ui::ButtonVariant::Primary)
                             .on_press(move || {
-                                shell::go_setup(model, acp_ui_core::SetupTab::Connection)
+                                shell::go_setup(model, precept_ui_core::SetupTab::Connection)
                             }),
                     ),
             )
@@ -1142,7 +1142,7 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
                         return ui::surface(model)
                             .child(
                                 ui::empty(model, m.word(Msg::ReviewNeedsProjectTitle))
-                                    .icon(icons::section_path(acp_ui_core::Section::Projects))
+                                    .icon(icons::section_path(precept_ui_core::Section::Projects))
                                     .description(m.word(Msg::ReviewNeedsProjectBody))
                                     .action(
                                         ui::button(model, "")
@@ -1153,7 +1153,7 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
                                             .on_press(move || {
                                                 shell::go_setup(
                                                     model,
-                                                    acp_ui_core::SetupTab::Workspaces,
+                                                    precept_ui_core::SetupTab::Workspaces,
                                                 )
                                             }),
                                     ),
@@ -1230,8 +1230,8 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
     let content = view()
         .on_layout(move |_: &Bounds<Points>| {
             #[cfg(not(target_arch = "wasm32"))]
-            if model.get().operator.open && std::env::var_os("ACP_UI_PROBE").is_some() {
-                eprintln!("ACP_NSH_LAYOUT_READY elapsed={:.6}", probe_elapsed());
+            if model.get().operator.open && std::env::var_os("PRECEPT_UI_PROBE").is_some() {
+                eprintln!("PRECEPT_NSH_LAYOUT_READY elapsed={:.6}", probe_elapsed());
             }
         })
         .gap_4()
@@ -1277,7 +1277,7 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
             && error != last_error
             && !unknown
         {
-            let wsl = m.connection.target == acp_ui_core::connection::Target::Wsl;
+            let wsl = m.connection.target == precept_ui_core::connection::Target::Wsl;
             ui::notify(
                 ui::Tone::Error,
                 format!("{e}: {}", tr(m.locale, error_msg(e, wsl))),
@@ -1299,7 +1299,7 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
             o.global,
             o.receipt.as_ref().map(|r| r.commit_sequence),
             m.epoch,
-            m.phase == acp_ui_core::Phase::Loading,
+            m.phase == precept_ui_core::Phase::Loading,
             o.info
                 .as_ref()
                 .map(|i| (i.selected, i.write_enabled, i.binding.clone())),
@@ -1323,7 +1323,7 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
         // read guard, so a reply sent now would be discarded (and stay busy).
         let idle = o.open
             && o.pane == Pane::Preferences
-            && m.phase != acp_ui_core::Phase::Loading
+            && m.phase != precept_ui_core::Phase::Loading
             && !o.busy
             && !o.outcome_unknown
             && o.review.is_none();
@@ -1433,7 +1433,7 @@ fn writes_notice(model: Signal<Model>) -> impl IntoElement {
                 ui::button(model, "")
                     .label_fn(move || model.get().word(Msg::OpenProfileStep).into())
                     .size(ui::ButtonSize::Small)
-                    .on_press(move || shell::go_setup(model, acp_ui_core::SetupTab::Profile)),
+                    .on_press(move || shell::go_setup(model, precept_ui_core::SetupTab::Profile)),
             )
             .into_element()
     })
@@ -1819,7 +1819,7 @@ fn add_dialog(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElement 
         let o = model.get().operator;
         !o.key.trim().is_empty()
             && !o.value.trim().is_empty()
-            && acp_ui_core::operator::canonical_tags(&o.tags).is_some()
+            && precept_ui_core::operator::canonical_tags(&o.tags).is_some()
     };
     let tags_ref = element_ref();
     focus_shortcut(model, "review.field.tags", Pane::Preferences, tags_ref);
@@ -1976,11 +1976,11 @@ fn unknown_banner(model: Signal<Model>) -> impl IntoElement {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use acp_ui_core::operator::{
+    use nsh_engine::{EngineConfig, Root};
+    use precept_ui_core::operator::{
         Binding, PeerDemotion, PreferencePage, PreferenceRecord, ProfileInfo, ReviewInspect,
         ReviewQueue, digest_hex, proposal_digest,
     };
-    use nsh_engine::{EngineConfig, Root};
     use std::time::Duration;
 
     fn binding() -> Binding {

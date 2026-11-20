@@ -239,7 +239,7 @@ fn abandon(child: &mut Child) -> bool {
     reaped
 }
 
-/// Collect the child's `ACP_`-prefixed probe lines. The loop checks the stop flag every
+/// Collect the child's `PRECEPT_`-prefixed probe lines. The loop checks the stop flag every
 /// poll, so it can never outlive the harness that joins it.
 fn pump(stderr: &mut ChildStderr, lines: &Arc<Mutex<Vec<String>>>, stop: &AtomicBool) {
     let mut buf: Vec<u8> = Vec::new();
@@ -256,14 +256,14 @@ fn pump(stderr: &mut ChildStderr, lines: &Arc<Mutex<Vec<String>>>, stop: &Atomic
             // is recorded in the same collection the driver writes out.
             Ok(Poll::Eof) => {
                 let tail = String::from_utf8_lossy(&std::mem::take(&mut buf)).to_string();
-                if tail.starts_with("ACP_") {
+                if tail.starts_with("PRECEPT_") {
                     record(lines, tail);
                 }
-                record(lines, "ACP_LOG_EOF".to_owned());
+                record(lines, "PRECEPT_LOG_EOF".to_owned());
                 return;
             }
             Err(detail) => {
-                record(lines, format!("ACP_LOG_FAULT {detail}"));
+                record(lines, format!("PRECEPT_LOG_FAULT {detail}"));
                 return;
             }
         };
@@ -273,9 +273,9 @@ fn pump(stderr: &mut ChildStderr, lines: &Arc<Mutex<Vec<String>>>, stop: &Atomic
                 continue;
             }
             let text = String::from_utf8_lossy(&std::mem::take(&mut buf)).to_string();
-            if text.starts_with("ACP_") && !record(lines, text) && !truncated {
+            if text.starts_with("PRECEPT_") && !record(lines, text) && !truncated {
                 truncated = true;
-                record(lines, "ACP_LOG_TRUNCATED".to_owned());
+                record(lines, "PRECEPT_LOG_TRUNCATED".to_owned());
             }
         }
     }

@@ -25,10 +25,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Assembly failed; retain private attempt directory' }
     $report = Join-Path $parent $Name
     $packageRoot = Join-Path $report 'package'
-    $source = Get-Content -LiteralPath (Join-Path $packageRoot 'ACP/runtime/manifest.json') -Raw | ConvertFrom-Json
-    $zip = Join-Path $report ("acp-windows-x86_64-prototype-" + $source.source_sha.Substring(0,12) + ".zip")
+    $source = Get-Content -LiteralPath (Join-Path $packageRoot 'Precept/runtime/manifest.json') -Raw | ConvertFrom-Json
+    $zip = Join-Path $report ("precept-windows-x86_64-prototype-" + $source.source_sha.Substring(0,12) + ".zip")
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    # Entries are ACP/...; extraction always creates one product directory.
+    # Entries are Precept/...; extraction always creates one product directory.
     [IO.Compression.ZipFile]::CreateFromDirectory($packageRoot, $zip)
     # Extract into a NEW directory only. Inspect entries before any extraction.
     $archive = [IO.Compression.ZipFile]::OpenRead($zip)
@@ -36,7 +36,7 @@ try {
         $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
         foreach ($entry in $archive.Entries) {
             $n = $entry.FullName
-            if ($n -cnotmatch '^ACP/([A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*$' -or $n.Contains('..') -or -not $names.Add($n)) { throw 'Unsafe or colliding archive entry' }
+            if ($n -cnotmatch '^Precept/([A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*$' -or $n.Contains('..') -or -not $names.Add($n)) { throw 'Unsafe or colliding archive entry' }
         }
     } finally { $archive.Dispose() }
     $extracted = Join-Path $report 'extracted'

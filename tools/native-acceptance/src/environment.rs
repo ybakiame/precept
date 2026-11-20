@@ -1,44 +1,47 @@
 //! Child-process environment isolation for acceptance launches.
 //!
-//! Product and UI behavior can be steered by `ACP_*` variables (for example
-//! `ACP_UI_GALLERY` replaces the operator UI). A developer host must never leak
+//! Product and UI behavior can be steered by `PRECEPT_*` variables (for example
+//! `PRECEPT_UI_GALLERY` replaces the operator UI). A developer host must never leak
 //! them into an acceptance child. Windows variable names are case-insensitive,
-//! so the prefix test is too. Callers clear every inherited `ACP_*` variable,
+//! so the prefix test is too. Callers clear every inherited `PRECEPT_*` variable,
 //! then re-add exactly the test variables their surface needs.
 use std::{
     ffi::{OsStr, OsString},
     process::Command,
 };
 
-/// True for an `ACP_*` control variable name, compared case-insensitively.
-pub fn is_acp_control(key: &OsStr) -> bool {
+/// True for an `PRECEPT_*` control variable name, compared case-insensitively.
+pub fn is_precept_control(key: &OsStr) -> bool {
     key.as_encoded_bytes()
-        .get(..4)
-        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"ACP_"))
+        .get(..8)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"PRECEPT_"))
 }
 
-/// Removes from `command` every `ACP_*` variable present in `inherited`.
-pub fn clear_acp(command: &mut Command, inherited: impl IntoIterator<Item = (OsString, OsString)>) {
+/// Removes from `command` every `PRECEPT_*` variable present in `inherited`.
+pub fn clear_precept(
+    command: &mut Command,
+    inherited: impl IntoIterator<Item = (OsString, OsString)>,
+) {
     for (key, _) in inherited {
-        if is_acp_control(&key) {
+        if is_precept_control(&key) {
             command.env_remove(key);
         }
     }
 }
 
-/// Removes every `ACP_*` variable this process would pass to `command`.
-pub fn clear_inherited_acp(command: &mut Command) -> &mut Command {
-    clear_acp(command, std::env::vars_os());
+/// Removes every `PRECEPT_*` variable this process would pass to `command`.
+pub fn clear_inherited_precept(command: &mut Command) -> &mut Command {
+    clear_precept(command, std::env::vars_os());
     command
 }
 
-/// `inherited` without any `ACP_*` variable, for raw environment blocks.
-pub fn without_acp(
+/// `inherited` without any `PRECEPT_*` variable, for raw environment blocks.
+pub fn without_precept(
     inherited: impl IntoIterator<Item = (OsString, OsString)>,
 ) -> Vec<(OsString, OsString)> {
     inherited
         .into_iter()
-        .filter(|(key, _)| !is_acp_control(key))
+        .filter(|(key, _)| !is_precept_control(key))
         .collect()
 }
 
@@ -53,39 +56,42 @@ mod tests {
     #[test]
     fn prefix_is_case_insensitive_and_exact() {
         for name in [
-            "ACP_UI_GALLERY",
-            "acp_ui_gallery",
-            "Acp_Ui_Gallery",
-            "aCp_x",
-            "ACP_",
+            "PRECEPT_UI_GALLERY",
+            "precept_ui_gallery",
+            "Precept_Ui_Gallery",
+            "pReCePt_x",
+            "PRECEPT_",
         ] {
-            assert!(is_acp_control(OsStr::new(name)), "{name}");
+            assert!(is_precept_control(OsStr::new(name)), "{name}");
         }
-        for name in ["ACP", "ACPX_UI", "MY_ACP_UI", "", "PATH", "AC"] {
-            assert!(!is_acp_control(OsStr::new(name)), "{name}");
+        for name in ["Precept", "PRECEPTX_UI", "MY_PRECEPT_UI", "", "PATH", "AC"] {
+            assert!(!is_precept_control(OsStr::new(name)), "{name}");
         }
     }
 
     #[test]
     fn mixed_case_inherited_controls_are_removed_and_test_values_re_added() {
         let inherited = vars(&[
-            "Acp_Ui_Gallery",
-            "acp_ui_probe",
-            "ACP_NATIVE_FOCUS_FILE",
+            "Precept_Ui_Gallery",
+            "precept_ui_probe",
+            "PRECEPT_NATIVE_FOCUS_FILE",
             "PATH",
         ]);
         let mut command = Command::new("child");
-        clear_acp(&mut command, inherited.clone());
-        command.env("ACP_UI_PROBE", "1");
+        clear_precept(&mut command, inherited.clone());
+        command.env("PRECEPT_UI_PROBE", "1");
         let envs: Vec<_> = command
             .get_envs()
             .map(|(k, v)| (k.to_string_lossy().to_uppercase(), v.is_some()))
             .collect();
-        assert!(envs.contains(&("ACP_UI_GALLERY".into(), false)));
-        assert!(envs.contains(&("ACP_NATIVE_FOCUS_FILE".into(), false)));
-        assert!(envs.contains(&("ACP_UI_PROBE".into(), true)), "{envs:?}");
+        assert!(envs.contains(&("PRECEPT_UI_GALLERY".into(), false)));
+        assert!(envs.contains(&("PRECEPT_NATIVE_FOCUS_FILE".into(), false)));
+        assert!(
+            envs.contains(&("PRECEPT_UI_PROBE".into(), true)),
+            "{envs:?}"
+        );
         assert!(!envs.iter().any(|(k, _)| k == "PATH"));
-        let block = without_acp(inherited);
+        let block = without_precept(inherited);
         assert_eq!(block, vars(&["PATH"]));
     }
 }

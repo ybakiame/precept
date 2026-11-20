@@ -2,12 +2,12 @@
 //! to paste into Claude Code, Codex or any MCP client, and recent agent
 //! activity for the currently selected workspace.
 //!
-//! `acp-mcp` is a stdio program the client starts itself (no port, no
+//! `precept-mcp` is a stdio program the client starts itself (no port, no
 //! listener). The daemon supplies the launch line (`project.mcp`); the page only
 //! formats it. Sharing is switched per project by the daemon (`project.agents`),
 //! which withdraws or republishes that project's agent credential.
 use crate::*;
-use acp_ui_core::{
+use precept_ui_core::{
     ProjectEntry,
     connection::Target,
     i18n::Msg,
@@ -114,7 +114,7 @@ pub(crate) fn load_activity(model: Signal<Model>, name: String) {
                 return;
             }
             a.busy = false;
-            match r.and_then(acp_ui_core::activity::Page::parse) {
+            match r.and_then(precept_ui_core::activity::Page::parse) {
                 Ok(page) => a.page = Some(page),
                 Err(code) => a.error = Some(code.into()),
             }
@@ -202,11 +202,11 @@ fn project_access(model: Signal<Model>) -> impl IntoElement {
                             .min_w(px(160.0))
                             .gap_0p5()
                             .child(
-                                text(acp_ui_core::presentation::sanitize(&name, 64))
+                                text(precept_ui_core::presentation::sanitize(&name, 64))
                                     .font_weight(FontWeight::SEMIBOLD),
                             )
                             .child(
-                                text(acp_ui_core::presentation::sanitize(&entry.root, 512))
+                                text(precept_ui_core::presentation::sanitize(&entry.root, 512))
                                     .font_family("monospace")
                                     .text_size(px(scale::text::CAPTION))
                                     .text_color(move || palette(model).muted),
@@ -376,7 +376,11 @@ fn configure(model: Signal<Model>) -> impl IntoElement {
 }
 
 /// One event: time, what happened, who asked and the outcome.
-fn activity_row(model: Signal<Model>, m: &Model, e: &acp_ui_core::activity::Event) -> AnyElement {
+fn activity_row(
+    model: Signal<Model>,
+    m: &Model,
+    e: &precept_ui_core::activity::Event,
+) -> AnyElement {
     let ok = e.outcome == "ok";
     let refused = e.kind == "refused";
     view()
@@ -389,7 +393,7 @@ fn activity_row(model: Signal<Model>, m: &Model, e: &acp_ui_core::activity::Even
         .border_t_1()
         .border_color(move || palette(model).hairline)
         .child(
-            text(acp_ui_core::activity::clock(e.at_ms))
+            text(precept_ui_core::activity::clock(e.at_ms))
                 .font_family("monospace")
                 .text_size(px(scale::text::CAPTION))
                 .text_color(move || palette(model).muted)
@@ -450,7 +454,7 @@ fn activity(model: Signal<Model>) -> impl IntoElement {
                             .activity
                             .page
                             .as_ref()
-                            .map(|p| acp_ui_core::activity::date_time(p.daemon_started_ms))
+                            .map(|p| precept_ui_core::activity::date_time(p.daemon_started_ms))
                             .unwrap_or_else(|| "…".into());
                         m.word(Msg::ActivityHelp).replace("{time}", &started)
                     })
@@ -493,7 +497,7 @@ fn activity(model: Signal<Model>) -> impl IntoElement {
             let headline = match page.last_read() {
                 Some(e) => m
                     .word(Msg::ActivityLastRead)
-                    .replace("{time}", &acp_ui_core::activity::clock(e.at_ms))
+                    .replace("{time}", &precept_ui_core::activity::clock(e.at_ms))
                     .replace("{client}", &m.activity_who(e)),
                 None => m.word(Msg::ActivityNeverRead).to_owned(),
             };
@@ -520,7 +524,7 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
                                 .label_fn(word(model, Msg::GoToRuntimeChecks))
                                 .variant(ButtonVariant::Primary)
                                 .on_press(move || {
-                                    shell::go_setup(model, acp_ui_core::SetupTab::Connection)
+                                    shell::go_setup(model, precept_ui_core::SetupTab::Connection)
                                 }),
                         ),
                 )
@@ -536,7 +540,7 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
                                 .label_fn(word(model, Msg::GoToWorkspaces))
                                 .variant(ButtonVariant::Primary)
                                 .on_press(move || {
-                                    shell::go_setup(model, acp_ui_core::SetupTab::Workspaces)
+                                    shell::go_setup(model, precept_ui_core::SetupTab::Workspaces)
                                 }),
                         ),
                 )

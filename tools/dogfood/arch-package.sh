@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Builds a local Arch Linux package (pacman) of the ACP daemon side for private
-# dogfooding: acp-daemon, acp-query, acp-mcp, acp-wsl-bridge, acp-nsh-tui and the
-# acp-daemon systemd user unit. Does not install anything; installing is an explicit
+# Builds a local Arch Linux package (pacman) of the Precept daemon side for private
+# dogfooding: preceptd, precept, precept-mcp, precept-bridge, precept-tui and the
+# preceptd systemd user unit. Does not install anything; installing is an explicit
 # `sudo pacman -U` by the owner.
 #
 #   tools/dogfood/arch-package.sh <new-attempt-name>
@@ -25,10 +25,10 @@ mkdir -p -m 700 "$parent"
 out="$parent/$name"
 mkdir -m 700 "$out" || die "attempt $name already exists; use a new name"
 
-git -C "$repo" archive --format=tar --prefix="acp-$short/" -o "$out/acp-$short.tar" "$sha"
-cp "$here/acp-daemon.service" "$here/README.md" "$out/"
+git -C "$repo" archive --format=tar --prefix="precept-$short/" -o "$out/precept-$short.tar" "$sha"
+cp "$here/preceptd.service" "$here/README.md" "$out/"
 sums=""
-for f in "acp-$short.tar" acp-daemon.service README.md; do
+for f in "precept-$short.tar" preceptd.service README.md; do
   sums+="'$(sha256sum "$out/$f" | cut -d' ' -f1)' "
 done
 # Runtime dependencies, verified against the built binaries below.
@@ -38,7 +38,7 @@ sed -e "s/@PKGVER@/$pkgver/" -e "s/@SHORT@/$short/g" -e "s/@SUMS@/${sums% }/" -e
 
 (cd "$out" && BUILDDIR="$out/build" PKGDEST="$out" SRCDEST="$out" LOGDEST="$out" \
   makepkg --force --nocolor --log >/dev/null) || die "makepkg failed; see the private logs in $out"
-pkg=$(ls "$out"/agent-control-plane-"$pkgver"-1-x86_64.pkg.tar.* 2>/dev/null | head -1)
+pkg=$(ls "$out"/precept-"$pkgver"-1-x86_64.pkg.tar.* 2>/dev/null | head -1)
 [[ -n $pkg ]] || die "package file missing"
 
 # Verify: declared dependencies cover every direct DT_NEEDED owner, and no builder path leaked.

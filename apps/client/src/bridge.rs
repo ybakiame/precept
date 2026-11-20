@@ -1,19 +1,19 @@
 //! Windows-native GUI -> WSL2 backend bridge.
 //!
 //! One long-lived helper per WSL connection, launched with
-//! `wsl.exe --distribution D --user U --exec /abs/acp-wsl-bridge --runtime-dir R --endpoint E`.
+//! `wsl.exe --distribution D --user U --exec /abs/precept-bridge --runtime-dir R --endpoint E`.
 //! The helper speaks a versioned, length-framed JSON protocol on stdio and accepts
 //! only a fixed set of typed requests. It loads Operator/OperatorWrite capabilities
 //! inside WSL and calls the same daemon-authorized functions as a local client; it
 //! never validates or approves mutations itself, opens SQLite or links the Writer.
 //! Capability tokens never appear in argv, environment, frames, stdout or stderr.
-use acp_core::operator::Mutation;
+use precept_core::operator::Mutation;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::io::{Read, Write};
 
 /// Protocol identity and version, checked in the helper's first frame.
-pub const PROTOCOL: &str = "acp-wsl-bridge";
+pub const PROTOCOL: &str = "precept-bridge";
 pub const VERSION: u32 = 1;
 /// Client -> helper frame limit (a mutation is capped at 128 KiB by the daemon client).
 pub const MAX_REQUEST: usize = 256 * 1024;
@@ -154,8 +154,8 @@ pub fn admit(op: &Op) -> Result<(), &'static str> {
         Op::Snapshot { project, task } => {
             if project
                 .as_deref()
-                .is_some_and(|p| !acp_ipc::valid_project(p))
-                || (!task.is_empty() && !acp_ui_core::valid_task(task))
+                .is_some_and(|p| !precept_ipc::valid_project(p))
+                || (!task.is_empty() && !precept_ui_core::valid_task(task))
             {
                 return Err("InvalidRequest");
             }
@@ -221,7 +221,7 @@ pub use native_bridge::*;
 
 mod native_bridge {
     use super::*;
-    use acp_ipc::Location;
+    use precept_ipc::Location;
     use std::{
         collections::{HashMap, HashSet},
         process::{Child, ChildStdin, Command, Stdio},

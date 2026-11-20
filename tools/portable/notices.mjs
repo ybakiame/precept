@@ -165,7 +165,7 @@ export function noticeLedger(entries, noticesDir, repo, write) {
         texts = s.texts.map(t => {
           if (t.repository_license) {
             need(s.election === 'Apache-2.0', `${pkg.name}: repository license reuse needs an Apache-2.0 election`);
-            return store(repositoryLicense, { kind: 'license', upstream: 'ACP repository LICENSE (shipped as LICENSE.txt); verbatim Apache-2.0 text' });
+            return store(repositoryLicense, { kind: 'license', upstream: 'Precept repository LICENSE (shipped as LICENSE.txt); verbatim Apache-2.0 text' });
           }
           need(/^[a-f0-9]{64}\.txt$/.test(t.file ?? ''), `${pkg.name}: invalid supplement text`);
           const upstream = githubProvenance(t.source);

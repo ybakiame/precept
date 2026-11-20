@@ -7,7 +7,7 @@
 //! else is refused before a request. Adding and removing need the Profile's
 //! write grant; the daemon checks it again.
 use crate::*;
-use acp_ui_core::{
+use precept_ui_core::{
     ProjectEntry,
     connection::Target,
     i18n::Msg,
@@ -43,7 +43,7 @@ fn call(
 ) {
     #[cfg(feature = "ipc")]
     {
-        let inputs = acp_ui_client::native::Inputs::from_connection(&model.get().connection);
+        let inputs = precept_ui_client::native::Inputs::from_connection(&model.get().connection);
         // Detached: a call started from a dialog must settle after the dialog
         // closes (closing disposes the dialog's owner and its tasks).
         Owner::detached().run(|| {
@@ -228,7 +228,7 @@ fn state_badge(model: Signal<Model>, state: &str) -> impl IntoElement {
 /// Workspace names are management rows only; switching the active project
 /// lives solely in the sidebar workspace switcher.
 fn name_cell(entry: &ProjectEntry) -> AnyElement {
-    text(acp_ui_core::presentation::sanitize(&entry.name, 64))
+    text(precept_ui_core::presentation::sanitize(&entry.name, 64))
         .font_weight(FontWeight::SEMIBOLD)
         .text_size(px(scale::text::BODY))
         .into_element()
@@ -262,7 +262,7 @@ fn list(model: Signal<Model>) -> impl IntoElement {
             let (live, entries, _) = entries.get();
             if entries.is_empty() {
                 return ui::empty(model, model.get_untracked().word(Msg::NoProjectsYet))
-                    .icon(icons::section_path(acp_ui_core::Section::Projects))
+                    .icon(icons::section_path(precept_ui_core::Section::Projects))
                     .into_element();
             }
             view()
@@ -281,7 +281,7 @@ fn list(model: Signal<Model>) -> impl IntoElement {
                                 view().flex_1().min_w_0().gap_0p5().child(name_cell(&entry));
                             if !entry.root.is_empty() {
                                 info = info.child(
-                                    text(acp_ui_core::presentation::sanitize(&entry.root, 512))
+                                    text(precept_ui_core::presentation::sanitize(&entry.root, 512))
                                         .font_family("monospace")
                                         .text_size(px(scale::text::CAPTION))
                                         .text_color(move || palette(model).muted),
@@ -376,7 +376,7 @@ fn add_form(model: Signal<Model>) -> impl IntoElement {
                         .value(move || model.get().project_add.name.clone())
                         .invalid(move || {
                             let n = &model.get().project_add.name;
-                            !n.is_empty() && !acp_ui_core::projects::valid_name(n)
+                            !n.is_empty() && !precept_ui_core::projects::valid_name(n)
                         })
                         .on_change(move |v: &str| {
                             model.update(|m| m.project_add.set_name(v.into()))
@@ -465,7 +465,7 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
                     .label_fn(word(model, Msg::GoToProfile))
                     .size(ButtonSize::Small)
                     .variant(ButtonVariant::Primary)
-                    .on_press(move || shell::go_setup(model, acp_ui_core::SetupTab::Profile)),
+                    .on_press(move || shell::go_setup(model, precept_ui_core::SetupTab::Profile)),
             )
             .into_element()
     });

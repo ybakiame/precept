@@ -8,7 +8,7 @@
 //! turned on in place by the action that needs them (Workspaces). The daemon
 //! checks every request again.
 use crate::*;
-use acp_ui_core::i18n::Msg;
+use precept_ui_core::i18n::Msg;
 use tokens::palette;
 use ui::{BadgeVariant, ButtonSize, ButtonVariant, badge, button, field, input, scale, surface};
 
@@ -33,7 +33,7 @@ pub(crate) fn call(
 ) {
     #[cfg(feature = "ipc")]
     {
-        let inputs = acp_ui_client::native::Inputs::from_connection(&model.get().connection);
+        let inputs = precept_ui_client::native::Inputs::from_connection(&model.get().connection);
         Owner::detached().run(|| {
             spawn(async move {
                 let result = blocking(move || inputs.and_then(|i| i.project_call(method, params)))
@@ -57,7 +57,8 @@ pub(crate) fn read(model: Signal<Model>) {
     }
     call(model, "profile.info", serde_json::json!({}), |_, m, r| {
         let Ok(value) = r else { return };
-        let Ok(info) = serde_json::from_value::<acp_ui_core::operator::ProfileInfo>(value) else {
+        let Ok(info) = serde_json::from_value::<precept_ui_core::operator::ProfileInfo>(value)
+        else {
             return;
         };
         m.project_add.write_enabled = Some(info.write_enabled);
@@ -76,7 +77,7 @@ pub(crate) fn count(model: Signal<Model>) {
     }
     let suggested = |r: Result<serde_json::Value, &'static str>| {
         r.ok()
-            .and_then(|v| serde_json::from_value::<acp_ui_core::operator::ReviewCount>(v).ok())
+            .and_then(|v| serde_json::from_value::<precept_ui_core::operator::ReviewCount>(v).ok())
             .map(|c| c.suggested)
     };
     let epoch = model.get_untracked().epoch;
@@ -346,7 +347,7 @@ pub(crate) fn setup(model: Signal<Model>) -> impl IntoElement {
                 m.profile_info
                     .as_ref()
                     .and_then(|i| i.startup_failure.as_deref())
-                    .map(acp_ui_core::projects::refusal)
+                    .map(precept_ui_core::projects::refusal)
             }))
             .child(error_note(model))
             .child(
@@ -485,7 +486,7 @@ pub(crate) fn section(model: Signal<Model>) -> impl IntoElement {
                 .items_start()
                 .style_when(
                     move || {
-                        super::setup::step_done(&model.get(), acp_ui_core::SetupTab::Workspaces)
+                        super::setup::step_done(&model.get(), precept_ui_core::SetupTab::Workspaces)
                     },
                     |s| s.hidden(),
                 )
@@ -494,7 +495,7 @@ pub(crate) fn section(model: Signal<Model>) -> impl IntoElement {
                         .label_fn(word(model, Msg::NextStepWorkspaces))
                         .size(ButtonSize::Small)
                         .on_press(move || {
-                            shell::go_setup(model, acp_ui_core::SetupTab::Workspaces)
+                            shell::go_setup(model, precept_ui_core::SetupTab::Workspaces)
                         }),
                 ),
         );
@@ -510,7 +511,7 @@ pub(crate) fn section(model: Signal<Model>) -> impl IntoElement {
                             .label_fn(word(model, Msg::GoToConnection))
                             .variant(ButtonVariant::Primary)
                             .on_press(move || {
-                                shell::go_setup(model, acp_ui_core::SetupTab::Connection)
+                                shell::go_setup(model, precept_ui_core::SetupTab::Connection)
                             }),
                     ),
             )

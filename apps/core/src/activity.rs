@@ -1,5 +1,5 @@
 //! Agent activity as the daemon reports it (`activity.list`): when an MCP
-//! client started `acp-mcp` for a project, what it read (by count only) and
+//! client started `precept-mcp` for a project, what it read (by count only) and
 //! what was refused. The daemon keeps it in memory since it started; this only
 //! parses and words it. Client names are self-reported labels, sanitized.
 use crate::i18n::Msg;

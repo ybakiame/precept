@@ -29,7 +29,7 @@ for (const file of files) {
   requireCheck(!obsolete.test(text), `Unexplained active prototype reference: ${file}`);
   // Mentioning retired schema names in refusal fixtures or historical prose is
   // intentional. Only executable obsolete target/example commands are rejected.
-  requireCheck(!/(?:-p\s+acp-rehearsal|--example\s+(?:synthetic_rehearsal|contract_reader|sqlite_reader))/.test(text), `Removed Cargo target invocation: ${file}`);
+  requireCheck(!/(?:-p\s+precept-rehearsal|--example\s+(?:synthetic_rehearsal|contract_reader|sqlite_reader))/.test(text), `Removed Cargo target invocation: ${file}`);
   for (const match of text.matchAll(/--manifest-path[ '"]+([\w./-]+Cargo\.toml)/g)) {
     requireCheck(existsSync(match[1]), `Missing Cargo manifest: ${file} -> ${match[1]}`);
   }

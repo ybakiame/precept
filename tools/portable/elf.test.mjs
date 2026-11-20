@@ -8,7 +8,7 @@ const readelf = (args, file) => spawnSync('readelf', [...args, file], { encoding
 const haveReadelf = !readelf(['--version'], '').error;
 
 test('ELF facts match readelf on real dynamically linked binaries', { skip: !haveReadelf || process.platform !== 'linux' }, () => {
-  for (const file of ['/bin/ls', '/usr/bin/env', new URL('../../target/debug/acp-daemon', import.meta.url).pathname]) {
+  for (const file of ['/bin/ls', '/usr/bin/env', new URL('../../target/debug/preceptd', import.meta.url).pathname]) {
     if (!fs.existsSync(file)) continue;
     const info = elfInfo(fs.readFileSync(file));
     const dynamic = readelf(['-d', '-W'], file).stdout;

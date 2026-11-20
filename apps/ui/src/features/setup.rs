@@ -1,7 +1,7 @@
 //! Runtime checks: one guided setup surface combining Connection, Profile and
 //! Workspaces as three tabs with live completion state.
 use crate::*;
-use acp_ui_core::{SetupTab, i18n::Msg};
+use precept_ui_core::{SetupTab, i18n::Msg};
 use tokens::palette;
 use ui::scale;
 
@@ -42,7 +42,7 @@ fn tab_icon(tab: SetupTab) -> &'static str {
     match tab {
         SetupTab::Connection => icons::CONNECTION,
         SetupTab::Profile => icons::PROFILE,
-        SetupTab::Workspaces => icons::section_path(acp_ui_core::Section::Projects),
+        SetupTab::Workspaces => icons::section_path(precept_ui_core::Section::Projects),
     }
 }
 

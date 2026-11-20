@@ -1,6 +1,6 @@
-use acp_native_acceptance::environment::clear_inherited_acp;
-use acp_native_acceptance::process::OwnedProcess;
-use acp_native_acceptance::worker::WorkerRpc;
+use precept_native_acceptance::environment::clear_inherited_precept;
+use precept_native_acceptance::process::OwnedProcess;
+use precept_native_acceptance::worker::WorkerRpc;
 use serde_json::{Value, json};
 use std::{
     path::Path,
@@ -28,12 +28,12 @@ impl Desktop {
         focus: &Path,
     ) -> Self {
         let mut command = Command::new(binary);
-        // No inherited ACP_* control (e.g. ACP_UI_GALLERY) reaches the product.
-        clear_inherited_acp(&mut command)
+        // No inherited PRECEPT_* control (e.g. PRECEPT_UI_GALLERY) reaches the product.
+        clear_inherited_precept(&mut command)
             .args(args)
-            .env("ACP_UI_PROBE", "1")
-            .env("ACP_UI_PROBE_ID", nonce)
-            .env("ACP_NATIVE_FOCUS_FILE", focus)
+            .env("PRECEPT_UI_PROBE", "1")
+            .env("PRECEPT_UI_PROBE_ID", nonce)
+            .env("PRECEPT_NATIVE_FOCUS_FILE", focus)
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::piped());
         #[cfg(unix)]
@@ -125,7 +125,7 @@ impl Desktop {
                     self.lines
                         .lock()
                         .unwrap()
-                        .push(format!("ACP_INPUT_LAYOUT {}", r["input_layout"]));
+                        .push(format!("PRECEPT_INPUT_LAYOUT {}", r["input_layout"]));
                 }
                 return r;
             }
@@ -244,7 +244,7 @@ impl Desktop {
             let already = lines
                 .iter()
                 .rev()
-                .find(|s| s.starts_with("ACP_GTK backend="))
+                .find(|s| s.starts_with("PRECEPT_GTK backend="))
                 .is_some_and(|s| s.contains(&geometry));
             (geometry, already)
         };

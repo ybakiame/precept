@@ -1,6 +1,6 @@
 //! Small original outline vectors; labels always carry the same meaning in TUI.
 use crate::*;
-use acp_ui_core::Section;
+use precept_ui_core::Section;
 /// The outline path of a section's destination.
 pub(crate) fn section_path(section: Section) -> &'static str {
     match section {
@@ -30,7 +30,7 @@ pub(crate) const AGENT: &str =
     "M6 8H18V18H6ZM12 4V8M9.5 12.5H9.51M14.5 12.5H14.51M10 15.5H14M3 12V14M21 12V14";
 /// Re-read.
 pub(crate) const REFRESH: &str = "M20 12A8 8 0 1 1 12 4M20 4V8H16";
-/// The ACP mark: three stacked planes; context travels down to the agent.
+/// The Precept mark: three stacked planes; context travels down to the agent.
 pub(crate) const BRAND: &str = "M12 3L21 7.5L12 12L3 7.5ZM3 12L12 16.5L21 12M3 16.5L12 21L21 16.5";
 /// Personal scope: one person.
 pub(crate) const PERSON: &str = "M12 12A4 4 0 1 0 12 4A4 4 0 1 0 12 12M4 21C5 16 19 16 20 21";

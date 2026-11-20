@@ -228,9 +228,9 @@ impl IntoElement for AlertDialog {
                     .shadow_xl()
                     .on_layout(move |_bounds: &Bounds<Points>| {
                         #[cfg(not(target_arch = "wasm32"))]
-                        if std::env::var_os("ACP_UI_PROBE").is_some() {
+                        if std::env::var_os("PRECEPT_UI_PROBE").is_some() {
                             eprintln!(
-                                "ACP_UI_DIALOG panel_width={} panel_height={}",
+                                "PRECEPT_UI_DIALOG panel_width={} panel_height={}",
                                 _bounds.size.width.0, _bounds.size.height.0
                             );
                         }
@@ -317,9 +317,9 @@ impl IntoElement for AlertDialog {
                     .animation(ModalAnimation::None)
                     .on_open(move || {
                         #[cfg(not(target_arch = "wasm32"))]
-                        if std::env::var_os("ACP_UI_PROBE").is_some() {
+                        if std::env::var_os("PRECEPT_UI_PROBE").is_some() {
                             eprintln!(
-                                "ACP_UI_DIALOG opened=true initial_focus={} focus_bound={}",
+                                "PRECEPT_UI_DIALOG opened=true initial_focus={} focus_bound={}",
                                 initial_focus.is_some(),
                                 initial_focus.is_some_and(|reference| reference.node().is_some())
                             );
@@ -330,9 +330,9 @@ impl IntoElement for AlertDialog {
                     })
                     .on_layout(move |_bounds: &Bounds<Points>| {
                         #[cfg(not(target_arch = "wasm32"))]
-                        if std::env::var_os("ACP_UI_PROBE").is_some() {
+                        if std::env::var_os("PRECEPT_UI_PROBE").is_some() {
                             eprintln!(
-                                "ACP_UI_DIALOG root_width={} root_height={}",
+                                "PRECEPT_UI_DIALOG root_width={} root_height={}",
                                 _bounds.size.width.0, _bounds.size.height.0
                             );
                         }
@@ -389,7 +389,7 @@ mod tests {
                                 super::super::input::input(model, "Retained field")
                                     .element_ref(&field)
                                     .placeholder(
-                                        model.get().word(acp_ui_core::i18n::Msg::OperatorKey),
+                                        model.get().word(precept_ui_core::i18n::Msg::OperatorKey),
                                     )
                                     .value(move || model.get().operator.key)
                                     .on_change(move |value| {

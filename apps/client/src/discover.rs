@@ -3,26 +3,26 @@
 //!
 //! Inside Linux (the WSL helper's `--discover` / `--start-daemon` modes, or the
 //! Linux GUI in-process) it reads the conventional paths of the packaged unit
-//! (`$XDG_STATE_HOME/acp/runtime`, default `~/.local/state`), whether systemd and
+//! (`$XDG_STATE_HOME/precept/runtime`, default `~/.local/state`), whether systemd and
 //! the unit exist and whether the daemon answers a health read. On Windows it
 //! runs those modes through `wsl.exe --exec` with a fixed argument vector: no
 //! shell, no TCP, no credential in argv, environment or output.
-use acp_ui_core::connection::Discovery;
+use precept_ui_core::connection::Discovery;
 #[cfg(target_os = "windows")]
-use acp_ui_core::connection::wsl_status as status;
+use precept_ui_core::connection::wsl_status as status;
 
 /// The packaged systemd user unit.
-pub const UNIT: &str = "acp-daemon.service";
+pub const UNIT: &str = "preceptd.service";
 /// Where the Arch package installs the helper; the default for discovery.
-pub const DEFAULT_HELPER: &str = "/usr/bin/acp-wsl-bridge";
-pub use acp_ui_core::connection::discovery_status::{
+pub const DEFAULT_HELPER: &str = "/usr/bin/precept-bridge";
+pub use precept_ui_core::connection::discovery_status::{
     INVALID_REPORT, NO_SYSTEMD, NO_UNIT, START_FAILED, START_TIMEOUT,
 };
 
 #[cfg(unix)]
 mod host {
     use super::*;
-    use acp_ui_core::connection::{DISCOVERY_VERSION, DaemonStatus};
+    use precept_ui_core::connection::{DISCOVERY_VERSION, DaemonStatus};
     use std::path::{Path, PathBuf};
 
     fn state_dir() -> Option<PathBuf> {
@@ -34,7 +34,7 @@ mod host {
                     .and_then(absolute)
                     .map(|h| h.join(".local/state"))
             })
-            .map(|s| s.join("acp"))
+            .map(|s| s.join("precept"))
     }
     fn config_dir() -> Option<PathBuf> {
         std::env::var_os("XDG_CONFIG_HOME")
@@ -66,7 +66,7 @@ mod host {
         let state = state_dir().unwrap_or_default();
         let runtime = state.join("runtime");
         let endpoint = runtime.join("control.sock");
-        let location = acp_ipc::Location {
+        let location = precept_ipc::Location {
             runtime_dir: runtime.clone(),
             endpoint: endpoint.to_string_lossy().into_owned(),
         };
@@ -175,7 +175,7 @@ pub fn parse_report(raw: &[u8], wsl: bool) -> Result<Discovery, &'static str> {
         Outcome::Ok(_) => Err(INVALID_REPORT),
         // Only the fixed reasons above cross the boundary; anything else is a
         // generic failure, never a forwarded message.
-        Outcome::Error(e) => Err(acp_ui_core::connection::discovery_status::KNOWN
+        Outcome::Error(e) => Err(precept_ui_core::connection::discovery_status::KNOWN
             .into_iter()
             .find(|known| *known == e)
             .unwrap_or(START_FAILED)),
@@ -229,7 +229,7 @@ pub fn wsl_start_daemon(_: &str, _: &str, _: &str) -> Result<Discovery, &'static
 /// connection before any of them reaches `wsl.exe`.
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 fn valid_inputs(distribution: &str, user: Option<&str>, helper: &str) -> bool {
-    use acp_ui_core::connection::{Connection, Target};
+    use precept_ui_core::connection::{Connection, Target};
     Connection {
         target: Target::Wsl,
         distribution: distribution.into(),
@@ -319,14 +319,14 @@ fn run_wsl(args: &[&str], timeout: std::time::Duration) -> Result<Output, &'stat
 #[cfg(test)]
 mod tests {
     use super::*;
-    use acp_ui_core::connection::{DISCOVERY_VERSION, DaemonStatus};
+    use precept_ui_core::connection::{DISCOVERY_VERSION, DaemonStatus};
     fn sample() -> Discovery {
         Discovery {
             version: DISCOVERY_VERSION,
             user: "operator".into(),
             helper: DEFAULT_HELPER.into(),
-            runtime: "/home/operator/.local/state/acp/runtime".into(),
-            endpoint: "/home/operator/.local/state/acp/runtime/control.sock".into(),
+            runtime: "/home/operator/.local/state/precept/runtime".into(),
+            endpoint: "/home/operator/.local/state/precept/runtime/control.sock".into(),
             systemd: true,
             unit_installed: true,
             daemon: DaemonStatus::NotRunning,
@@ -366,7 +366,7 @@ mod tests {
         for (d, u, h) in [
             ("--exec", None, DEFAULT_HELPER),
             ("archlinux", Some("-root"), DEFAULT_HELPER),
-            ("archlinux", None, "acp-wsl-bridge"),
+            ("archlinux", None, "precept-bridge"),
             ("archlinux", None, "/usr/bin/../bin/sh"),
             ("arch\nlinux", None, DEFAULT_HELPER),
             ("", None, DEFAULT_HELPER),
@@ -384,10 +384,10 @@ mod tests {
             std::env::set_var("USER", "operator");
         }
         let d = local();
-        assert_eq!(d.runtime, format!("{}/acp/runtime", dir.display()));
+        assert_eq!(d.runtime, format!("{}/precept/runtime", dir.display()));
         assert_eq!(
             d.endpoint,
-            format!("{}/acp/runtime/control.sock", dir.display())
+            format!("{}/precept/runtime/control.sock", dir.display())
         );
         assert_eq!(d.daemon, DaemonStatus::NotRunning);
         assert_eq!(d.user, "operator");
@@ -395,7 +395,7 @@ mod tests {
     }
     #[cfg(unix)]
     fn tempfile_dir() -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("acp-discover-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("precept-discover-{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         d
     }

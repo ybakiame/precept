@@ -29,9 +29,9 @@ pub struct Palette {
 pub fn palette(model: Signal<Model>) -> Palette {
     let m = model.get();
     let is_dark = match m.color_mode {
-        acp_ui_core::appearance::ColorMode::System => dark(),
-        acp_ui_core::appearance::ColorMode::Dark => true,
-        acp_ui_core::appearance::ColorMode::Light => false,
+        precept_ui_core::appearance::ColorMode::System => dark(),
+        precept_ui_core::appearance::ColorMode::Dark => true,
+        precept_ui_core::appearance::ColorMode::Light => false,
     };
     let p = m.theme.colors(is_dark, m.high_contrast);
     let c = |v| AdaptiveColor::rgb(v, v);

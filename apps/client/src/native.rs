@@ -1,7 +1,7 @@
 //! Trusted operator UI client using unchanged authenticated native IPC.
-use acp_ipc::{Access, Client, Location, load_credential};
-use acp_ui_core::*;
 use clap::Parser;
+use precept_ipc::{Access, Client, Location, load_credential};
+use precept_ui_core::*;
 use std::path::PathBuf;
 
 #[derive(Clone, Parser, Default)]
@@ -43,7 +43,7 @@ pub struct Inputs {
     pub wsl_distribution: Option<String>,
     #[arg(long, requires = "wsl_distribution")]
     pub wsl_user: Option<String>,
-    /// Absolute Linux path of the acp-wsl-bridge executable inside the distribution.
+    /// Absolute Linux path of the precept-bridge executable inside the distribution.
     #[arg(long, requires = "wsl_distribution")]
     pub wsl_bridge: Option<String>,
     #[arg(long, requires = "wsl_distribution")]
@@ -52,8 +52,8 @@ pub struct Inputs {
     pub wsl_endpoint: Option<String>,
 }
 impl Inputs {
-    pub fn connection(&self) -> acp_ui_core::connection::Connection {
-        use acp_ui_core::connection::{Connection, Target};
+    pub fn connection(&self) -> precept_ui_core::connection::Connection {
+        use precept_ui_core::connection::{Connection, Target};
         Connection {
             target: if self.wsl_distribution.is_some() {
                 Target::Wsl
@@ -76,8 +76,10 @@ impl Inputs {
             synthetic_rows: self.synthetic_rows,
         }
     }
-    pub fn from_connection(c: &acp_ui_core::connection::Connection) -> Result<Self, &'static str> {
-        use acp_ui_core::connection::Target;
+    pub fn from_connection(
+        c: &precept_ui_core::connection::Connection,
+    ) -> Result<Self, &'static str> {
+        use precept_ui_core::connection::Target;
         if !c.validate() {
             return Err("Invalid connection inputs");
         }
@@ -117,7 +119,7 @@ impl Inputs {
         if !task.is_empty() && !valid_task(task) {
             return Err("Invalid task ID");
         }
-        if project.is_some_and(|p| !acp_ipc::valid_project(p)) {
+        if project.is_some_and(|p| !precept_ipc::valid_project(p)) {
             return Err("Permission denied");
         }
         if self.wsl_distribution.is_some() {
@@ -164,8 +166,8 @@ impl Inputs {
             runtime: field(&self.wsl_runtime_dir, "Explicit WSL runtime required")?,
             endpoint: field(&self.wsl_endpoint, "Explicit WSL endpoint required")?,
         };
-        let valid = acp_ui_core::connection::Connection {
-            target: acp_ui_core::connection::Target::Wsl,
+        let valid = precept_ui_core::connection::Connection {
+            target: precept_ui_core::connection::Target::Wsl,
             distribution: key.distribution.clone(),
             user: key.user.clone(),
             helper: key.helper.clone(),
@@ -199,7 +201,7 @@ impl Inputs {
     /// A failure is reported as a specific `wsl_status` reason.
     pub(crate) fn wsl_bridge(&self, start: bool) -> Result<crate::bridge::Client, &'static str> {
         use crate::bridge::{BridgeError, ConnectFailure};
-        use acp_ui_core::connection::wsl_status as status;
+        use precept_ui_core::connection::wsl_status as status;
         let key = self.wsl_key()?;
         crate::bridge::bridge(&key, start, || self.wsl_command()).map_err(|e| match e {
             BridgeError::NotStarted => status::BRIDGE_DISCONNECTED,
@@ -220,7 +222,7 @@ impl Inputs {
     /// never touches the page phase or data: `None` means no bridge yet or healthy.
     pub fn wsl_link_status(&self) -> Option<&'static str> {
         use crate::bridge::{CallError, Op};
-        use acp_ui_core::connection::wsl_status as status;
+        use precept_ui_core::connection::wsl_status as status;
         let client = crate::bridge::peek(&self.wsl_key().ok()?)?;
         if !client.alive() {
             return Some(status::BRIDGE_DISCONNECTED);
@@ -263,7 +265,7 @@ impl Inputs {
                 std::time::Duration::from_secs(20),
             )
             .map_err(|e| {
-                use acp_ui_core::connection::wsl_status as status;
+                use precept_ui_core::connection::wsl_status as status;
                 match e {
                     CallError::Remote("Permission denied") => status::RUNTIME_REFUSED,
                     CallError::Remote(_) => status::DAEMON_UNREACHABLE,
@@ -337,7 +339,7 @@ pub(crate) async fn health_at(location: &Location) -> Result<serde_json::Value, 
         .credential_path(None)
         .map_err(|_| "Local daemon unavailable or access refused")?;
     let credential = load_credential(location, &path).map_err(|e| match e {
-        acp_ipc::Error::Unauthorized | acp_ipc::Error::UnsafeRuntime
+        precept_ipc::Error::Unauthorized | precept_ipc::Error::UnsafeRuntime
             if std::fs::symlink_metadata(&path).is_ok() =>
         {
             "Permission denied"
@@ -363,7 +365,7 @@ pub(crate) async fn snapshot_at(
     task: &str,
 ) -> Result<Snapshot, &'static str> {
     fetch(location, project, task).await.map_err(|e| match e {
-        acp_ipc::Error::Unauthorized | acp_ipc::Error::UnsafeRuntime => "Permission denied",
+        precept_ipc::Error::Unauthorized | precept_ipc::Error::UnsafeRuntime => "Permission denied",
         _ => "Local daemon unavailable or access refused",
     })
 }
@@ -393,8 +395,8 @@ async fn fetch(
     location: &Location,
     selected: Option<&str>,
     task: &str,
-) -> acp_ipc::Result<Snapshot> {
-    use acp_ipc::Error;
+) -> precept_ipc::Result<Snapshot> {
+    use precept_ipc::Error;
     use serde_json::json;
     let path = location.credential_path(None).map_err(|error| {
         if std::fs::symlink_metadata(&location.runtime_dir)
@@ -546,10 +548,10 @@ mod tests {
             }
             out
         };
-        let raw = encode("archlinux\r\nacp-s1b-ubuntu\r\n");
-        assert!(parse_distribution_list(&raw, "acp-s1b-ubuntu"));
-        assert!(parse_distribution_list(&raw, "ACP-S1B-Ubuntu"));
-        assert!(!parse_distribution_list(&raw, "acp-s1b"));
+        let raw = encode("archlinux\r\nprecept-s1b-ubuntu\r\n");
+        assert!(parse_distribution_list(&raw, "precept-s1b-ubuntu"));
+        assert!(parse_distribution_list(&raw, "Precept-S1B-Ubuntu"));
+        assert!(!parse_distribution_list(&raw, "precept-s1b"));
         assert!(!parse_distribution_list(&[], "archlinux"));
     }
     #[test]
@@ -559,7 +561,7 @@ mod tests {
         let base = Inputs {
             wsl_distribution: Some("synthetic".into()),
             wsl_user: Some("operator".into()),
-            wsl_bridge: Some("/opt/acp/bin/acp-wsl-bridge".into()),
+            wsl_bridge: Some("/opt/precept/bin/precept-bridge".into()),
             wsl_runtime_dir: Some("/tmp/private".into()),
             wsl_endpoint: Some("/tmp/private/control.sock".into()),
             ..Default::default()
@@ -574,7 +576,7 @@ mod tests {
                 "--user",
                 "operator",
                 "--exec",
-                "/opt/acp/bin/acp-wsl-bridge",
+                "/opt/precept/bin/precept-bridge",
                 "--runtime-dir",
                 "/tmp/private",
                 "--endpoint",
@@ -610,7 +612,7 @@ mod tests {
         // Without an explicit user read no bridge is ever started.
         assert_eq!(
             base.wsl_bridge(false).err(),
-            Some(acp_ui_core::connection::wsl_status::BRIDGE_DISCONNECTED)
+            Some(precept_ui_core::connection::wsl_status::BRIDGE_DISCONNECTED)
         );
     }
 }

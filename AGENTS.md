@@ -1,4 +1,4 @@
-# AGENTS.md — Agent Control Plane
+# AGENTS.md — Precept
 
 ## Repository records
 
@@ -19,7 +19,7 @@ document, update every tracked reference and check the final diff and links.
 
 ## Product and authority
 
-ACP is a local-first developer context and policy layer, not another agent harness.
+Precept is a local-first developer context and policy layer, not another agent harness.
 Current code and tracked project contracts are authoritative. Material under
 `.tmp/` is local or historical context only; it never overrides the active tree and
 is not fresh validation evidence.
@@ -46,8 +46,8 @@ contracts. Code/contract disagreements require explicit human resolution.
   (`PRAGMA user_version=1`). Legacy Python v1 and synthetic v2 are incompatible
   historical formats. Do not add legacy readers, migration, downgrade or fallback.
 - The native daemon is the only production write owner and the only caller of the
-  private `acp-write` implementation. `acp-store` remains read-only.
-- UI, `acp-query`, MCP and agents never receive writable SQLite connections or raw
+  private `precept-write` implementation. `precept-store` remains read-only.
+- UI, `precept`, MCP and agents never receive writable SQLite connections or raw
   SQL access. There is no daemon-unavailable direct-write fallback.
 - Operator writes require a separately versioned, typed, profile-scoped local IPC
   capability. Operator read grants do not imply write authority.
@@ -77,7 +77,7 @@ cargo test --workspace --all-targets --locked
 ```
 
 For UI changes, run the equivalent `apps/Cargo.toml` format, Clippy and test gates
-with `acp-ui/native,acp-ui/tui`, plus affected shared presentation
+with `precept-ui/native,precept-ui/tui`, plus affected shared presentation
 and real-daemon integration checks. Run native Windows and Linux/WSL acceptance
 when the changed boundary is platform-sensitive. Headless tests do not prove native
 window, keyboard, terminal, accessibility or device behavior.

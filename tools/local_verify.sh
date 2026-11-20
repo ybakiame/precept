@@ -50,9 +50,9 @@ else
 fi
 if [[ $suite != core ]]; then
   run_gate apps-fmt cargo fmt --manifest-path apps/Cargo.toml --all -- --check
-  run_gate apps-build cargo build --manifest-path apps/Cargo.toml --workspace --features acp-ui/native,acp-ui/tui --bins --locked
-  run_gate apps-clippy cargo clippy --manifest-path apps/Cargo.toml --workspace --all-targets --features acp-ui/native,acp-ui/tui --locked -- -D warnings
-  run_gate apps-tests cargo test --manifest-path apps/Cargo.toml --workspace --all-targets --features acp-ui/native,acp-ui/tui --locked
+  run_gate apps-build cargo build --manifest-path apps/Cargo.toml --workspace --features precept-ui/native,precept-ui/tui --bins --locked
+  run_gate apps-clippy cargo clippy --manifest-path apps/Cargo.toml --workspace --all-targets --features precept-ui/native,precept-ui/tui --locked -- -D warnings
+  run_gate apps-tests cargo test --manifest-path apps/Cargo.toml --workspace --all-targets --features precept-ui/native,precept-ui/tui --locked
 fi
 run_gate diff git diff --check
 # No native window/PTY/model/hosted CI claim is inferred from these gates.

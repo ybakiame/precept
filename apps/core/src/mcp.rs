@@ -1,8 +1,8 @@
 //! MCP client configuration for one project: what to paste into Claude Code,
-//! Codex or any MCP client so it starts `acp-mcp` (a stdio program: no port,
+//! Codex or any MCP client so it starts `precept-mcp` (a stdio program: no port,
 //! no listener). The daemon supplies the executable and exact arguments
 //! (`project.mcp`); this only formats them. Paths only, never a token: the
-//! capability file is read by `acp-mcp` itself, inside the daemon's system.
+//! capability file is read by `precept-mcp` itself, inside the daemon's system.
 use serde::Deserialize;
 
 /// The daemon's launch line for a project (`project.mcp`).
@@ -36,9 +36,9 @@ pub enum Host {
     WindowsToWsl { distribution: String, user: String },
 }
 
-/// The MCP server name a client lists: `acp-<project>`.
+/// The MCP server name a client lists: `precept-<project>`.
 pub fn server_name(project: &str) -> String {
-    format!("acp-{project}")
+    format!("precept-{project}")
 }
 
 /// The command and arguments the client runs.
@@ -79,7 +79,7 @@ fn toml_string(s: &str) -> String {
 }
 
 /// The text to copy for `client`, or `None` when the daemon did not report an
-/// `acp-mcp` executable.
+/// `precept-mcp` executable.
 pub fn snippet(client: Client, launch: &Launch, host: &Host) -> Option<String> {
     let (cmd, args) = command(launch, host)?;
     let name = server_name(&launch.name);
@@ -134,16 +134,16 @@ mod tests {
         Launch {
             name: "alpha".into(),
             shared: true,
-            executable: Some("/usr/bin/acp-mcp".into()),
+            executable: Some("/usr/bin/precept-mcp".into()),
             args: [
                 "--runtime-dir",
-                "/home/u/.local/state/acp/runtime",
+                "/home/u/.local/state/precept/runtime",
                 "--endpoint",
-                "/home/u/.local/state/acp/runtime/control.sock",
+                "/home/u/.local/state/precept/runtime/control.sock",
                 "--project",
                 "alpha",
                 "--capability-file",
-                "/home/u/.local/state/acp/runtime/agent-alpha.cap",
+                "/home/u/.local/state/precept/runtime/agent-alpha.cap",
             ]
             .map(String::from)
             .to_vec(),
@@ -153,17 +153,21 @@ mod tests {
     fn claude_code_gets_one_command_and_windows_wraps_wsl_exe() {
         let same = snippet(Client::ClaudeCode, &launch(), &Host::Same).unwrap();
         assert!(same.starts_with(
-            "claude mcp add --scope user acp-alpha -- /usr/bin/acp-mcp --runtime-dir "
+            "claude mcp add --scope user precept-alpha -- /usr/bin/precept-mcp --runtime-dir "
         ));
         assert!(
-            same.ends_with("--capability-file /home/u/.local/state/acp/runtime/agent-alpha.cap")
+            same.ends_with(
+                "--capability-file /home/u/.local/state/precept/runtime/agent-alpha.cap"
+            )
         );
         let host = Host::WindowsToWsl {
             distribution: "archlinux".into(),
             user: "u".into(),
         };
         let win = snippet(Client::ClaudeCode, &launch(), &host).unwrap();
-        assert!(win.contains("-- wsl.exe -d archlinux -u u --exec /usr/bin/acp-mcp --runtime-dir"));
+        assert!(
+            win.contains("-- wsl.exe -d archlinux -u u --exec /usr/bin/precept-mcp --runtime-dir")
+        );
     }
     #[test]
     fn codex_toml_and_json_carry_the_same_command() {
@@ -172,16 +176,16 @@ mod tests {
             user: "u".into(),
         };
         let toml = snippet(Client::Codex, &launch(), &host).unwrap();
-        assert!(toml.contains("[mcp_servers.\"acp-alpha\"]"));
+        assert!(toml.contains("[mcp_servers.\"precept-alpha\"]"));
         assert!(toml.contains("command = \"wsl.exe\""));
         assert!(toml.contains("\"Ubuntu 24.04\""));
         let json: serde_json::Value =
             serde_json::from_str(&snippet(Client::Json, &launch(), &Host::Same).unwrap()).unwrap();
         assert_eq!(
-            json["mcpServers"]["acp-alpha"]["command"],
-            "/usr/bin/acp-mcp"
+            json["mcpServers"]["precept-alpha"]["command"],
+            "/usr/bin/precept-mcp"
         );
-        assert_eq!(json["mcpServers"]["acp-alpha"]["args"][5], "alpha");
+        assert_eq!(json["mcpServers"]["precept-alpha"]["args"][5], "alpha");
         // A shell word with a space is quoted.
         let claude = snippet(Client::ClaudeCode, &launch(), &host).unwrap();
         assert!(claude.contains("-d 'Ubuntu 24.04' -u u"));

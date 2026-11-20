@@ -4,7 +4,7 @@
 //! controls; they do not restyle base components or write colors, radii or
 //! fonts. A look a feature needs becomes a new variant or size here first.
 //!
-//! `gallery` is a debug-only surface (mounted with `ACP_UI_GALLERY`, never in
+//! `gallery` is a debug-only surface (mounted with `PRECEPT_UI_GALLERY`, never in
 //! normal navigation) showing every control in its variants and states, in
 //! light and dark.
 mod prelude;

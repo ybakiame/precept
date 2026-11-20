@@ -1,8 +1,8 @@
 #Requires -Version 7
 <#
-Deploys a locally built ACP Windows portable ZIP (tools/portable/windows-package.ps1)
+Deploys a locally built Precept Windows portable ZIP (tools/portable/windows-package.ps1)
 into a portable product directory for private dogfooding, and creates one shortcut
-inside it that starts the Desktop against the ACP daemon in WSL2.
+inside it that starts the Desktop against the Precept daemon in WSL2.
 
 Portable mode: no installer, service, PATH, registry, Start menu or startup entry.
 State stays in WSL (the daemon is the only Profile write owner); nothing here creates,
@@ -12,14 +12,14 @@ selects or write-enables a Profile.
       -Distribution <wsl-distro> -User <linux-user> [-Destination <dir>] [-Replace]
 
 -Replace removes only the files listed in the installed runtime\manifest.json (after
-checking that no ACP process runs from the destination) and keeps unknown files.
+checking that no Precept process runs from the destination) and keeps unknown files.
 #>
 param(
   [Parameter(Mandatory)] [string] $AttemptDir,
   [Parameter(Mandatory)] [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._ -]{0,63}$')] [string] $Distribution,
   [Parameter(Mandatory)] [ValidatePattern('^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}$')] [string] $User,
-  [string] $Destination = (Join-Path $env:LOCALAPPDATA 'Programs\ACP'),
-  [string] $WslBridge = '/usr/bin/acp-wsl-bridge',
+  [string] $Destination = (Join-Path $env:LOCALAPPDATA 'Programs\Precept'),
+  [string] $WslBridge = '/usr/bin/precept-bridge',
   [string] $WslStateDir,
   # Optional: fixes the language at every launch. Absent, the Desktop uses
   # the language saved in its settings.toml (English until one is chosen).
@@ -32,7 +32,7 @@ function Fail($m) { throw "windows-deploy: $m" }
 
 $AttemptDir = [IO.Path]::GetFullPath($AttemptDir)
 $Destination = [IO.Path]::GetFullPath($Destination)
-if (-not $WslStateDir) { $WslStateDir = "/home/$User/.local/state/acp" }
+if (-not $WslStateDir) { $WslStateDir = "/home/$User/.local/state/precept" }
 foreach ($p in @($WslBridge, $WslStateDir)) {
   if ($p -notmatch '^/[^\x00-\x1f]*$' -or ($p -split '/') -contains '..') { Fail "Linux path must be absolute: $p" }
 }
@@ -43,16 +43,16 @@ if ($result.extract_inventory -ne 'PASS') { Fail 'packaging attempt did not pass
 $zip = Join-Path $AttemptDir $result.archive
 if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLower() -ne $result.archive_sha256) { Fail 'ZIP hash mismatch' }
 
-# 2. Destination: empty/new, or -Replace of a previous ACP deployment.
+# 2. Destination: empty/new, or -Replace of a previous Precept deployment.
 if (Test-Path -LiteralPath $Destination) {
   $item = Get-Item -LiteralPath $Destination -Force
   if ($item.LinkType) { Fail 'destination is a link' }
   $existing = @(Get-ChildItem -LiteralPath $Destination -Force)
   if ($existing.Count -gt 0) {
     $old = Join-Path $Destination 'runtime\manifest.json'
-    if (-not $Replace -or -not (Test-Path -LiteralPath $old)) { Fail 'destination is not empty (use -Replace for a previous ACP deployment)' }
+    if (-not $Replace -or -not (Test-Path -LiteralPath $old)) { Fail 'destination is not empty (use -Replace for a previous Precept deployment)' }
     $running = Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith("$Destination\", [StringComparison]::OrdinalIgnoreCase) }
-    if ($running) { Fail "ACP processes still run from the destination: $($running.Name -join ', ')" }
+    if ($running) { Fail "Precept processes still run from the destination: $($running.Name -join ', ')" }
     $m = Get-Content -LiteralPath $old -Raw | ConvertFrom-Json
     foreach ($f in $m.files) {
       if ($f.file -notmatch '^(bin|notices)/[A-Za-z0-9._-]+$|^(README|LICENSE)\.txt$') { Fail "unexpected manifest entry $($f.file)" }
@@ -60,7 +60,7 @@ if (Test-Path -LiteralPath $Destination) {
       if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
     }
     Remove-Item -LiteralPath $old -Force
-    $lnk = Join-Path $Destination 'ACP Desktop (WSL).lnk'
+    $lnk = Join-Path $Destination 'Precept Desktop (WSL).lnk'
     if (Test-Path -LiteralPath $lnk) { Remove-Item -LiteralPath $lnk -Force }
     foreach ($d in 'bin', 'notices', 'runtime') {
       $dir = Join-Path $Destination $d
@@ -72,11 +72,11 @@ if (Test-Path -LiteralPath $Destination) {
 }
 
 # 3. Extract into a fresh staging directory next to the destination, verify, then move.
-$stage = Join-Path (Split-Path $Destination) ".acp-deploy-$([guid]::NewGuid().ToString('N'))"
+$stage = Join-Path (Split-Path $Destination) ".precept-deploy-$([guid]::NewGuid().ToString('N'))"
 New-Item -ItemType Directory -Path $stage | Out-Null
 try {
   Expand-Archive -LiteralPath $zip -DestinationPath $stage
-  $root = Join-Path $stage 'ACP'
+  $root = Join-Path $stage 'Precept'
   $manifest = Get-Content -LiteralPath (Join-Path $root 'runtime\manifest.json') -Raw | ConvertFrom-Json
   foreach ($f in $manifest.files) {
     if ((Get-FileHash -LiteralPath (Join-Path $root $f.file) -Algorithm SHA256).Hash.ToLower() -ne $f.sha256) { Fail "file hash mismatch: $($f.file)" }
@@ -105,17 +105,17 @@ $arguments = @(
   '--wsl-runtime-dir', "$WslStateDir/runtime", '--wsl-endpoint', "$WslStateDir/runtime/control.sock"
 ) | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }
 $shell = New-Object -ComObject WScript.Shell
-$link = $shell.CreateShortcut((Join-Path $Destination 'ACP Desktop (WSL).lnk'))
-$link.TargetPath = Join-Path $Destination 'bin\acp-nsh-native.exe'
+$link = $shell.CreateShortcut((Join-Path $Destination 'Precept Desktop (WSL).lnk'))
+$link.TargetPath = Join-Path $Destination 'bin\precept-desktop.exe'
 $link.Arguments = $arguments -join ' '
 $link.WorkingDirectory = $Destination
-$link.Description = 'ACP Desktop connected to the ACP daemon in WSL2'
+$link.Description = 'Precept Desktop connected to the Precept daemon in WSL2'
 $link.Save()
 
 [pscustomobject]@{
   destination_files = (Get-ChildItem -LiteralPath $Destination -Recurse -File).Count
   source_sha = $manifest.source_sha
   archive_sha256 = $result.archive_sha256
-  shortcut = 'ACP Desktop (WSL).lnk'
+  shortcut = 'Precept Desktop (WSL).lnk'
   status = 'DEPLOYED'
 } | ConvertTo-Json

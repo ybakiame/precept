@@ -204,8 +204,8 @@ mod tests {
     fn unc_paths_of_the_connected_distribution_map_to_linux_paths_only() {
         for (picked, linux) in [
             (
-                "\\\\wsl.localhost\\archlinux\\home\\me\\code\\acp",
-                "/home/me/code/acp",
+                "\\\\wsl.localhost\\archlinux\\home\\me\\code\\precept",
+                "/home/me/code/precept",
             ),
             ("\\\\wsl$\\archlinux\\home\\me\\repo\\", "/home/me/repo"),
             (

@@ -2,8 +2,8 @@
 //! the resume context of the looked-up task, and the way into review. Facts are
 //! label / value rows (`ui::properties`), never colon-joined strings.
 use crate::*;
-use acp_ui_core::presentation::sanitize;
-use acp_ui_core::{SetupTab, i18n::Msg};
+use precept_ui_core::presentation::sanitize;
+use precept_ui_core::{SetupTab, i18n::Msg};
 use shell::target_words;
 use tokens::{compact, palette};
 use ui::{BadgeVariant, ButtonSize, ButtonVariant, badge, button, properties, scale, surface};
@@ -73,8 +73,8 @@ fn note(model: Signal<Model>, value: impl Into<SharedString>) -> impl IntoElemen
 pub(crate) fn daemon(model: Signal<Model>) -> impl IntoElement {
     let m = model.get();
     let transport = match m.connection.target {
-        acp_ui_core::connection::Target::Synthetic => "—",
-        acp_ui_core::connection::Target::Wsl => "wsl.exe --exec → Unix IPC",
+        precept_ui_core::connection::Target::Synthetic => "—",
+        precept_ui_core::connection::Target::Wsl => "wsl.exe --exec → Unix IPC",
         _ => {
             if cfg!(windows) {
                 "Windows named pipe"

@@ -31,7 +31,7 @@ is **not an OS sandbox** or a credential isolation boundary.
   the Windows bridge never list or scan directories; agents cannot check or add.
 - External agent access is switched per project by the operator
   (`project.agents`): an unshared project has no agent credential, and a held
-  token is refused. `acp-mcp` is stdio-only (no port); the GUI shows client
+  token is refused. `precept-mcp` is stdio-only (no port); the GUI shows client
   configuration to copy and never writes other tools' files.
 - The agent activity log is daemon memory only (bounded, emptied on restart),
   readable by the Operator alone, and records methods, outcomes, counts and the

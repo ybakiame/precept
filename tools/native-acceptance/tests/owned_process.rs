@@ -1,6 +1,6 @@
 //! Ownership regressions for the child processes this harness launches. They drive an
 //! owned mock GUI only; they never constitute native GUI acceptance.
-use acp_native_acceptance::process::{OwnedCleanup, OwnedProcess, set_cleanup_sink};
+use precept_native_acceptance::process::{OwnedCleanup, OwnedProcess, set_cleanup_sink};
 use std::{
     panic::{self, AssertUnwindSafe},
     path::Path,
@@ -10,7 +10,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-const FAKE: &str = env!("CARGO_BIN_EXE_acp-fake-desktop-worker");
+const FAKE: &str = env!("CARGO_BIN_EXE_precept-fake-desktop-worker");
 /// Cleanup must finish inside this window, not merely "eventually".
 const BOUNDED: Duration = Duration::from_secs(10);
 
@@ -50,7 +50,7 @@ fn adopted_child_is_reaped_and_its_log_thread_joined_on_terminate() {
         "blocking",
         "adoption requires bounded reads"
     );
-    wait_for_log(&process, "ACP_GUI_SYNTHETIC");
+    wait_for_log(&process, "PRECEPT_GUI_SYNTHETIC");
     let start = Instant::now();
     let done = process.terminate();
     assert_eq!(
@@ -97,7 +97,7 @@ fn a_panic_during_initialization_still_reaps_the_owned_child() {
     panic::set_hook(Box::new(|_| {}));
     let outcome = panic::catch_unwind(AssertUnwindSafe(|| {
         let process = OwnedProcess::adopt(mock_gui("gui-hang"), "gui").expect("adoption");
-        wait_for_log(&process, "ACP_GUI_SYNTHETIC");
+        wait_for_log(&process, "PRECEPT_GUI_SYNTHETIC");
         // Pretend the window worker refused its session half way through initialization.
         // Ownership already exists, so unwinding must clean the child up.
         panic!("injected initialization failure");

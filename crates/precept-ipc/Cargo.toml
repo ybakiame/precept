@@ -1,0 +1,25 @@
+[package]
+name = "precept-ipc"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "Apache-2.0"
+
+[dependencies]
+precept-core = { path = "../precept-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "io-std", "time", "signal", "sync", "macros"] }
+getrandom = "0.4"
+subtle = "2"
+sha2 = "0.10"
+clap = { version = "4", features = ["derive"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Pipes", "Win32_System_Threading", "Win32_System_Memory", "Win32_System_SystemServices"] }
+
+[dev-dependencies]
+tempfile = "3"

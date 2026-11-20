@@ -10,14 +10,14 @@ describes the current Rust-native architecture and its durable target boundaries
 ```mermaid
 flowchart LR
     Operator["Operator"]
-    Clients["NSH Desktop/TUI<br/>native acp-query"]
+    Clients["NSH Desktop/TUI<br/>native precept"]
     Daemon["Rust daemon"]
-    Core["acp-core"]
-    Writer["acp-write"]
-    Store["acp-store<br/>read-only"]
+    Core["precept-core"]
+    Writer["precept-write"]
+    Store["precept-store<br/>read-only"]
     Profile[("Explicit local<br/>Rust-native Profile v1")]
     Agent["Trusted agent"]
-    MCP["acp-mcp<br/>two read-only tools"]
+    MCP["precept-mcp<br/>two read-only tools"]
 
     Operator --> Clients
     Clients -->|"Operator IPC"| Daemon
@@ -38,12 +38,12 @@ resolution.
 
 | Component | Responsibility | Must not own |
 | --- | --- | --- |
-| `crates/acp-core` | Preference/Handoff resolution, typed context and conflict resolution, bounded repository document and fingerprint adapters | SQLite connections, UI, process execution, protocol transport or authorization grants |
-| `crates/acp-store` | Explicit-path, strict read-only access to fresh Rust-native Profile v1 | Writes, schema migration or legacy compatibility |
-| `crates/acp-ipc`, `acp-daemon` | Local transport, peer/capability checks, scoped reads, project state, leases and daemon-owned writes | TCP listener or caller-selected wider scope |
-| `crates/acp-mcp` | Read-only stdio bridge to project-bound IPC | Profile or task mutation |
-| `crates/acp-write` | Private Profile v1 creation and typed transactions with lease/epoch fencing, CAS and receipts | Direct UI/CLI access, arbitrary existing-path writers or generic SQL |
-| `crates/acp-query` | Native operator reads and typed writes through authenticated daemon IPC | Direct database access or a second writer |
+| `crates/precept-core` | Preference/Handoff resolution, typed context and conflict resolution, bounded repository document and fingerprint adapters | SQLite connections, UI, process execution, protocol transport or authorization grants |
+| `crates/precept-store` | Explicit-path, strict read-only access to fresh Rust-native Profile v1 | Writes, schema migration or legacy compatibility |
+| `crates/precept-ipc`, `preceptd` | Local transport, peer/capability checks, scoped reads, project state, leases and daemon-owned writes | TCP listener or caller-selected wider scope |
+| `crates/precept-mcp` | Read-only stdio bridge to project-bound IPC | Profile or task mutation |
+| `crates/precept-write` | Private Profile v1 creation and typed transactions with lease/epoch fencing, CAS and receipts | Direct UI/CLI access, arbitrary existing-path writers or generic SQL |
+| `crates/precept` | Native operator reads and typed writes through authenticated daemon IPC | Direct database access or a second writer |
 | `apps/core`, `apps/client`, `apps/ui` | Pure operator state/presentation; native IPC and Windows→WSL2 bridge; NSH Desktop/TUI surfaces | Direct database access, duplicate resolution logic or independent authority |
 
 The root product crates and operator app are separate Cargo workspaces with separate
@@ -53,7 +53,7 @@ UI is an offline synthetic target without native IPC.
 ## Windows GUI → WSL2
 
 The Windows-native Desktop can operate a daemon inside one explicitly selected WSL2
-distribution. WSL owns Linux project paths, daemon and Profile/runtime state. The GUI starts one long-lived `acp-wsl-bridge` helper per
+distribution. WSL owns Linux project paths, daemon and Profile/runtime state. The GUI starts one long-lived `precept-bridge` helper per
 connection through `wsl.exe --exec`, without a shell, TCP, port forwarding or
 mirrored networking.
 
@@ -96,7 +96,7 @@ a Profile only when the operator requested that exact path. Write enablement is
 independent, bounded to the Profile/generation/owner epoch and never remembered
 across daemon runs.
 
-Only the daemon links and invokes `acp-write`. Operator read/control and write
+Only the daemon links and invokes `precept-write`. Operator read/control and write
 capabilities are separate. Transactions use exact typed commands, expected
 revisions or absence, immutable operation IDs, request digests, same-epoch receipts
 and strict preference transitions. Disabling writes drains admitted work and

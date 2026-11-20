@@ -1,6 +1,6 @@
-# ACP Operator
+# Precept Operator
 
-The ACP Operator provides shared NSH Desktop and TUI interfaces for the local ACP
+The Precept Operator provides shared NSH Desktop and TUI interfaces for the local Precept
 daemon. It uses the same operator authority and scoped data as the native CLI; it
 never opens a Profile directly or creates a second write owner. The optional Web
 target is an offline synthetic preview without daemon IPC.
@@ -38,8 +38,8 @@ origin claims are not authentication or independent verification.
 
 ## Platform boundaries
 
-The Windows Desktop can operate an ACP daemon inside an explicitly selected WSL2
-distribution through `acp-wsl-bridge`. The bridge carries typed requests only; it
+The Windows Desktop can operate an Precept daemon inside an explicitly selected WSL2
+distribution through `precept-bridge`. The bridge carries typed requests only; it
 does not open SQLite, expose a network listener or grant authority. Closing the UI
 or leaving the WSL target closes the helper without stopping the daemon or changing
 Profile state.

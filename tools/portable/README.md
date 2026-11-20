@@ -22,7 +22,7 @@ are not copied as archive aliases. No target-directory glob or fake/test driver 
 Archive layout (one top-level directory, so extraction never scatters files):
 
 ```
-ACP/
+Precept/
 ├── bin/          the five product executables only
 ├── runtime/      manifest.json: provenance, prerequisites, size/SHA-256 of every other file
 ├── notices/      NOTICE.txt, dependency-notices.json, <sha256>.txt license texts
@@ -36,7 +36,7 @@ by Windows Update. The recipe derives the required DLLs from the actual PE impor
 refuses debug CRTs and records `prerequisites[].minimum_version` = the MSVC build
 tools version (the installed redistributable must be the same or later). Smoke
 asserts each process loads the VC++ runtime from the Windows installation and
-nothing but the executable from `ACP\bin`.
+nothing but the executable from `Precept\bin`.
 
 Cargo runs with inherited `RUSTFLAGS`/wrapper/target/profile overrides removed and
 `--remap-path-prefix` for checkout, Cargo home and build output. Any remaining
@@ -66,7 +66,7 @@ and tool metadata can contain private developer paths and remain ignored. The ZI
 contains only the explicit file inventory, provenance, notices and local instructions;
 no Node/PowerShell helper, Rust toolchain, snapshots, raw logs, credentials or data.
 The ZIP name carries its source SHA suffix; the exact archive hash/file list live beside it.
-`ACP/runtime/manifest.json` identifies clean source SHA/tree, both locks, target/flags,
+`Precept/runtime/manifest.json` identifies clean source SHA/tree, both locks, target/flags,
 builder, VC++ redistributable version/signer and every other file's hash. This is a reproducible recipe,
 not a deterministic-output, signed, completed-SBOM or complete-license claim.
 First-party license: Apache-2.0 (`LICENSE`, `NOTICE`). Third-party obligations remain a review gate.
@@ -76,7 +76,7 @@ artifacts private until that separate exclusion is resolved without deleting gua
 
 `windows-smoke.ps1` builds only the separate non-shipping harness and runs its
 focused lint/tests. It launches **extracted** product binaries against a new private
-synthetic fixture outside Git (`-PackageDir` is the extraction root holding `ACP/`), explicitly creates a fresh Profile, enables writes
+synthetic fixture outside Git (`-PackageDir` is the extraction root holding `Precept/`), explicitly creates a fresh Profile, enables writes
 only to register its allowlisted synthetic project, then revokes them. It tests
 MCP tools/context/refusals, stale capabilities, endpoint collision, normal/crash
 restart and runtime lease release. Desktop and ConPTY reuse existing bounded owned
@@ -123,14 +123,14 @@ The generated `.tar.gz`, inventory and checksum sidecars stay under the ignored 
 artifact directory. Do not commit or upload them; formal distribution and signing are
 deferred until an explicitly approved release stage.
 
-The same `ACP/{bin,runtime,notices}` layout ships six executables (including the S1-B
-`acp-wsl-bridge` helper). `elf.mjs` records the interpreter, DT_NEEDED, RPATH/RUNPATH
+The same `Precept/{bin,runtime,notices}` layout ships six executables (including the S1-B
+`precept-bridge` helper). `elf.mjs` records the interpreter, DT_NEEDED, RPATH/RUNPATH
 (refused) and symbol-version needs; direct DT_NEEDED owners (`dpkg -S`) become the
 declared runtime packages written into the README `apt-get` line. OS-owned libraries
 are never bundled. The tar is sorted, owned 0:0 and timestamped at the commit; the
 listing policy refuses links, devices, traversal and unexpected modes.
 
-`acp-linux-portable-smoke` (tools/native-acceptance) runs in the target:
+`precept-linux-portable-smoke` (tools/native-acceptance) runs in the target:
 `missing-deps BIN_DIR NEW_REPORT` before the packages are installed, the packaged
 smoke `EXTRACTED_PARENT NEW_REPORT WINDOW_WORKER` (Wayland through WSLg via the
 Windows window worker), and `archive ARCHIVE INVENTORY NEW_WORK_DIR` for listing

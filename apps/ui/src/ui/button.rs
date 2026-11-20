@@ -160,7 +160,7 @@ impl Button {
             let mut button = self;
             static SINK: std::sync::LazyLock<Option<std::path::PathBuf>> =
                 std::sync::LazyLock::new(|| {
-                    std::env::var_os("ACP_NATIVE_FOCUS_FILE")
+                    std::env::var_os("PRECEPT_NATIVE_FOCUS_FILE")
                         .map(std::path::PathBuf::from)
                         .filter(|path| safe_probe_file(path, 0))
                 });

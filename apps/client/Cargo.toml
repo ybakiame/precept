@@ -1,5 +1,5 @@
 [package]
-name = "acp-ui-client"
+name = "precept-ui-client"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
@@ -7,9 +7,9 @@ publish = false
 description = "Operator app transport: native IPC to the daemon and the Windows -> WSL2 bridge"
 
 [dependencies]
-acp-ui-core = { path = "../core" }
-acp-core = { path = "../../crates/acp-core" }
-acp-ipc = { path = "../../crates/acp-ipc" }
+precept-ui-core = { path = "../core" }
+precept-core = { path = "../../crates/precept-core" }
+precept-ipc = { path = "../../crates/precept-ipc" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt", "net", "time", "process", "io-util", "io-std", "sync", "macros"] }
@@ -18,11 +18,11 @@ clap = { version = "4", features = ["derive"] }
 toml = "1.2"
 
 [[bin]]
-name = "acp-wsl-bridge"
-path = "src/bin/acp_wsl_bridge.rs"
+name = "precept-bridge"
+path = "src/bin/precept_bridge.rs"
 
 [[bin]]
-name = "acp-ui-snapshot"
-path = "src/bin/acp_ui_snapshot.rs"
+name = "precept-ui-snapshot"
+path = "src/bin/precept_ui_snapshot.rs"
 
 [dev-dependencies]

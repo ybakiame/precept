@@ -3,108 +3,6 @@
 version = 4
 
 [[package]]
-name = "acp-core"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
-]
-
-[[package]]
-name = "acp-daemon"
-version = "0.1.0"
-dependencies = [
- "acp-core",
- "acp-ipc",
- "acp-store",
- "acp-write",
- "clap",
- "libc",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "tokio",
- "toml",
- "windows-sys",
-]
-
-[[package]]
-name = "acp-ipc"
-version = "0.1.0"
-dependencies = [
- "acp-core",
- "clap",
- "getrandom",
- "libc",
- "serde",
- "serde_json",
- "sha2",
- "subtle",
- "tempfile",
- "tokio",
- "windows-sys",
-]
-
-[[package]]
-name = "acp-mcp"
-version = "0.1.0"
-dependencies = [
- "acp-core",
- "acp-ipc",
- "acp-store",
- "clap",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
-]
-
-[[package]]
-name = "acp-query"
-version = "0.1.0"
-dependencies = [
- "acp-ipc",
- "clap",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "acp-store"
-version = "0.1.0"
-dependencies = [
- "acp-core",
- "acp-ipc",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
- "windows-sys",
-]
-
-[[package]]
-name = "acp-write"
-version = "0.1.0"
-dependencies = [
- "acp-core",
- "acp-store",
- "getrandom",
- "libc",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "windows-sys",
-]
-
-[[package]]
 name = "anstream"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -467,6 +365,108 @@ name = "pkg-config"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
+
+[[package]]
+name = "precept"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "precept-ipc",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "precept-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
+name = "precept-ipc"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "getrandom",
+ "libc",
+ "precept-core",
+ "serde",
+ "serde_json",
+ "sha2",
+ "subtle",
+ "tempfile",
+ "tokio",
+ "windows-sys",
+]
+
+[[package]]
+name = "precept-mcp"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "precept-core",
+ "precept-ipc",
+ "precept-store",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "precept-store"
+version = "0.1.0"
+dependencies = [
+ "precept-core",
+ "precept-ipc",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "windows-sys",
+]
+
+[[package]]
+name = "precept-write"
+version = "0.1.0"
+dependencies = [
+ "getrandom",
+ "libc",
+ "precept-core",
+ "precept-store",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "windows-sys",
+]
+
+[[package]]
+name = "preceptd"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "libc",
+ "precept-core",
+ "precept-ipc",
+ "precept-store",
+ "precept-write",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "toml",
+ "windows-sys",
+]
 
 [[package]]
 name = "proc-macro2"

@@ -3,8 +3,8 @@
 //! docs/product-ui.md). Also the shared action helpers the feature pages use.
 use crate::*;
 pub(crate) mod chrome;
-use acp_ui_core::{Section, SetupTab, i18n::Msg, operator::ReviewMode};
 use features::{agents, connection, page, profile, projects, review, settings, setup};
+use precept_ui_core::{Section, SetupTab, i18n::Msg, operator::ReviewMode};
 use tokens::{compact, palette};
 
 pub(crate) fn action(
@@ -29,8 +29,8 @@ pub(crate) fn word_action(
         .disabled(move || !enabled())
         .on_press(move || {
             #[cfg(not(target_arch = "wasm32"))]
-            if std::env::var_os("ACP_UI_PROBE").is_some() {
-                eprintln!("ACP_UI_ACTION key={key:?}");
+            if std::env::var_os("PRECEPT_UI_PROBE").is_some() {
+                eprintln!("PRECEPT_UI_ACTION key={key:?}");
             }
             callback();
         })
@@ -254,7 +254,7 @@ fn header_scope_badge(model: Signal<Model>) -> impl IntoElement {
         let Some(name) = state.get() else {
             return view().into_element();
         };
-        ui::badge(model, acp_ui_core::presentation::sanitize(&name, 48))
+        ui::badge(model, precept_ui_core::presentation::sanitize(&name, 48))
             .variant(ui::BadgeVariant::Neutral)
             .into_element()
     })
@@ -384,7 +384,7 @@ fn current_project(model: Signal<Model>) -> String {
 /// Where the data comes from, in words: the target and, for WSL, the distribution.
 pub(crate) fn target_words(m: &Model) -> String {
     match m.connection.target {
-        acp_ui_core::connection::Target::Wsl if !m.connection.distribution.is_empty() => {
+        precept_ui_core::connection::Target::Wsl if !m.connection.distribution.is_empty() => {
             format!("{} · {}", m.target_label(), m.connection.distribution)
         }
         _ => m.target_label().into(),
@@ -466,7 +466,7 @@ fn sidebar(model: Signal<Model>) -> impl IntoElement {
                         .child(ui::icon::glyph(icons::BRAND, ui::scale::icon::LG)),
                 )
                 .child(
-                    text("Agent Control Plane")
+                    text("Precept")
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_size(px(ui::scale::text::BODY)),
                 ),

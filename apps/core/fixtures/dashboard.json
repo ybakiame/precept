@@ -3,7 +3,7 @@
     "api_version": 2,
     "ready": true,
     "schema": "Version1",
-    "service": "acp-daemon",
+    "service": "preceptd",
     "version": "0.1.0",
     "worktree_fingerprint": "unavailable"
   },

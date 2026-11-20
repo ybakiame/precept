@@ -28,7 +28,7 @@ pub fn data_color(text: &str) -> Option<AdaptiveColor> {
 pub fn tag_color(model: Signal<Model>, tag: &str) -> AdaptiveColor {
     let chosen = model.get().tag_color(tag);
     data_color(&chosen)
-        .or_else(|| data_color(&acp_ui_core::tag_colors::generated(tag)))
+        .or_else(|| data_color(&precept_ui_core::tag_colors::generated(tag)))
         .unwrap_or_else(|| palette(model).muted)
 }
 

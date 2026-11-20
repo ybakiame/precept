@@ -1,7 +1,7 @@
 //! One read-only presentation and interaction surface for NSH desktop and TUI.
-use acp_ui_core::{Model, Phase};
 use nsh_base::button;
 use nsh_core::prelude::*;
+use precept_ui_core::{Model, Phase};
 mod features;
 mod shell;
 mod shortcuts;
@@ -11,8 +11,8 @@ pub use features::brand_preview;
 use features::review;
 use ui::{icons, tokens};
 pub static DESKTOP_RUNTIME: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();
-fn runtime_lines(locale: acp_ui_core::i18n::Locale) -> Vec<String> {
-    use acp_ui_core::i18n::{Msg, tr};
+fn runtime_lines(locale: precept_ui_core::i18n::Locale) -> Vec<String> {
+    use precept_ui_core::i18n::{Msg, tr};
     if TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed) {
         return vec!["Backend: NSH / ratatui / crossterm terminal".into()];
     }
@@ -61,7 +61,7 @@ pub fn ephemeral_storage() -> std::sync::Arc<dyn nsh_core::storage::StorageBacke
     std::sync::Arc::new(Empty)
 }
 
-#[native_module("acp-ui/native")]
+#[native_module("precept-ui/native")]
 fn native(registry: &mut Registry) {
     registry.register::<App>();
 }
@@ -73,11 +73,12 @@ nsh_platform_web::rust_app!(
 );
 
 #[cfg(feature = "ipc")]
-pub static INPUTS: std::sync::OnceLock<acp_ui_client::native::Inputs> = std::sync::OnceLock::new();
+pub static INPUTS: std::sync::OnceLock<precept_ui_client::native::Inputs> =
+    std::sync::OnceLock::new();
 
 fn load(model: Signal<Model>) {
     #[cfg(feature = "ipc")]
-    let inputs = acp_ui_client::native::Inputs::from_connection(&model.get().connection);
+    let inputs = precept_ui_client::native::Inputs::from_connection(&model.get().connection);
     // NSH's clock uses the host monotonic timer on WASM as well as native;
     // std::time::Instant panics on wasm32-unknown-unknown.
     let started = nsh_core::time::now();
@@ -107,7 +108,7 @@ fn load(model: Signal<Model>) {
                 if model.get().live {
                     Err("Client unavailable")
                 } else {
-                    let mut s = acp_ui_core::Snapshot::fixture();
+                    let mut s = precept_ui_core::Snapshot::fixture();
                     for p in &mut s.projects {
                         if p.handoff
                             .as_ref()
@@ -175,16 +176,16 @@ fn review_or_page(model: Signal<Model>, delta: i32) {
 }
 fn toggle_theme(model: Signal<Model>) {
     let actual_dark = match model.get().color_mode {
-        acp_ui_core::appearance::ColorMode::System => dark(),
-        acp_ui_core::appearance::ColorMode::Dark => true,
-        acp_ui_core::appearance::ColorMode::Light => false,
+        precept_ui_core::appearance::ColorMode::System => dark(),
+        precept_ui_core::appearance::ColorMode::Dark => true,
+        precept_ui_core::appearance::ColorMode::Light => false,
     };
     model.update(|m| {
         m.dark = !actual_dark;
         m.color_mode = if m.dark {
-            acp_ui_core::appearance::ColorMode::Dark
+            precept_ui_core::appearance::ColorMode::Dark
         } else {
-            acp_ui_core::appearance::ColorMode::Light
+            precept_ui_core::appearance::ColorMode::Light
         };
     });
     set_color_scheme(if model.get().dark {
@@ -212,27 +213,27 @@ fn copy_page(model: Signal<Model>) -> bool {
 pub fn App() -> impl IntoElement {
     // Debug-only design-system gallery; never reached from normal navigation.
     #[cfg(not(target_arch = "wasm32"))]
-    if std::env::var_os("ACP_UI_GALLERY").is_some() {
+    if std::env::var_os("PRECEPT_UI_GALLERY").is_some() {
         return ui::gallery::gallery().into_element();
     }
     #[cfg(feature = "ipc")]
     let inputs = INPUTS.get().cloned().unwrap_or_default();
     let mut initial = Model::loading();
     initial.operator.channel = if TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed) {
-        acp_ui_core::operator::Channel::Tui
+        precept_ui_core::operator::Channel::Tui
     } else {
-        acp_ui_core::operator::Channel::Desktop
+        precept_ui_core::operator::Channel::Desktop
     };
     #[cfg(feature = "ipc")]
     {
         // Saved settings first; explicit launch arguments win over them.
         #[cfg(not(test))]
         if persist_settings()
-            && let Some(saved) = acp_ui_client::settings::load_settings()
+            && let Some(saved) = precept_ui_client::settings::load_settings()
         {
             saved.apply(
                 &mut initial,
-                acp_ui_core::settings::Explicit {
+                precept_ui_core::settings::Explicit {
                     theme: inputs.theme.is_some(),
                     mode: inputs.appearance.is_some(),
                     language: inputs.locale.is_some(),
@@ -242,21 +243,21 @@ pub fn App() -> impl IntoElement {
         if let Some(locale) = inputs
             .locale
             .as_deref()
-            .and_then(acp_ui_core::i18n::Locale::parse)
+            .and_then(precept_ui_core::i18n::Locale::parse)
         {
             initial.locale = locale;
         }
         if let Some(theme) = inputs
             .theme
             .as_deref()
-            .and_then(acp_ui_core::appearance::ThemeId::from_id)
+            .and_then(precept_ui_core::appearance::ThemeId::from_id)
         {
             initial.theme = theme;
         }
         if let Some(mode) = inputs
             .appearance
             .as_deref()
-            .and_then(acp_ui_core::appearance::ColorMode::from_id)
+            .and_then(precept_ui_core::appearance::ColorMode::from_id)
         {
             initial.color_mode = mode;
         }
@@ -264,18 +265,18 @@ pub fn App() -> impl IntoElement {
         initial.settings = inputs.settings;
         if inputs.connection_settings {
             initial.setup_open = true;
-            initial.setup_tab = acp_ui_core::SetupTab::Connection;
+            initial.setup_tab = precept_ui_core::SetupTab::Connection;
         }
         initial.section = match inputs.section.as_str() {
             "projects" => {
                 initial.setup_open = true;
-                initial.setup_tab = acp_ui_core::SetupTab::Workspaces;
-                acp_ui_core::Section::Dashboard
+                initial.setup_tab = precept_ui_core::SetupTab::Workspaces;
+                precept_ui_core::Section::Dashboard
             }
-            "preferences" => acp_ui_core::Section::Preferences,
-            "handoff" => acp_ui_core::Section::Handoff,
-            "diagnostics" => acp_ui_core::Section::Diagnostics,
-            _ => acp_ui_core::Section::Dashboard,
+            "preferences" => precept_ui_core::Section::Preferences,
+            "handoff" => precept_ui_core::Section::Handoff,
+            "diagnostics" => precept_ui_core::Section::Diagnostics,
+            _ => precept_ui_core::Section::Dashboard,
         };
         initial.connection = inputs.connection();
         initial.connection_draft = initial.connection.clone();
@@ -285,18 +286,18 @@ pub fn App() -> impl IntoElement {
         // tests, which must not read or write the developer's settings.
         #[cfg(not(test))]
         if !inputs.is_live() && inputs.synthetic_rows.is_none() {
-            match acp_ui_client::settings::load() {
+            match precept_ui_client::settings::load() {
                 Some(saved) => {
-                    initial.live = saved.target != acp_ui_core::connection::Target::Synthetic;
+                    initial.live = saved.target != precept_ui_core::connection::Target::Synthetic;
                     initial.connection = saved.clone();
                     initial.connection_draft = saved;
                 }
                 None if !TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed) => {
                     initial.setup_open = true;
-                    initial.setup_tab = acp_ui_core::SetupTab::Connection;
+                    initial.setup_tab = precept_ui_core::SetupTab::Connection;
                     // The primary workflow: a daemon inside WSL2.
                     if cfg!(target_os = "windows") {
-                        initial.connection_draft.target = acp_ui_core::connection::Target::Wsl;
+                        initial.connection_draft.target = precept_ui_core::connection::Target::Wsl;
                     }
                 }
                 None => {}
@@ -305,10 +306,10 @@ pub fn App() -> impl IntoElement {
         initial.task_id = inputs.task_id.unwrap_or_default();
         initial.selected_project = inputs.project;
     }
-    initial.dark = initial.color_mode != acp_ui_core::appearance::ColorMode::Light;
+    initial.dark = initial.color_mode != precept_ui_core::appearance::ColorMode::Light;
     set_color_scheme(match initial.color_mode {
-        acp_ui_core::appearance::ColorMode::System => Appearance::System,
-        acp_ui_core::appearance::ColorMode::Light => Appearance::Light,
+        precept_ui_core::appearance::ColorMode::System => Appearance::System,
+        precept_ui_core::appearance::ColorMode::Light => Appearance::Light,
         _ => Appearance::Dark,
     });
     let model = signal(initial);
@@ -316,7 +317,7 @@ pub fn App() -> impl IntoElement {
     // never the values the app started with.
     #[cfg(all(feature = "ipc", not(test)))]
     if persist_settings() {
-        let chosen = computed(move || acp_ui_core::settings::Settings::of(&model.get()));
+        let chosen = computed(move || precept_ui_core::settings::Settings::of(&model.get()));
         let first = std::cell::Cell::new(true);
         effect(move || {
             let settings = chosen.get();
@@ -324,11 +325,11 @@ pub fn App() -> impl IntoElement {
                 return;
             }
             // A refused or failed save leaves this session's choice as it is.
-            let _ = acp_ui_client::settings::save_settings(&settings);
+            let _ = precept_ui_client::settings::save_settings(&settings);
         });
     }
     if model.get_untracked().setup_open
-        && model.get_untracked().setup_tab == acp_ui_core::SetupTab::Connection
+        && model.get_untracked().setup_tab == precept_ui_core::SetupTab::Connection
     {
         features::connection::opened(model);
     }
@@ -344,7 +345,7 @@ pub fn App() -> impl IntoElement {
 /// the display-only `wsl_link` field (page phase, data and guards are untouched).
 #[cfg(feature = "ipc")]
 fn wsl_watch(model: Signal<Model>) {
-    use acp_ui_core::connection::Target;
+    use precept_ui_core::connection::Target;
     spawn(async move {
         loop {
             timer(std::time::Duration::from_secs(2)).await;
@@ -357,7 +358,7 @@ fn wsl_watch(model: Signal<Model>) {
             }
             let probe = connection.clone();
             let status = blocking(move || {
-                acp_ui_client::native::Inputs::from_connection(&probe)
+                precept_ui_client::native::Inputs::from_connection(&probe)
                     .ok()
                     .and_then(|inputs| inputs.wsl_link_status())
             })
@@ -384,9 +385,9 @@ fn console(model: Signal<Model>) -> impl IntoElement {
         shortcuts::bind(model, id, options, handler)
     };
     // Leaves every workspace for a section (and focuses nothing).
-    let to_section = move |section: acp_ui_core::Section| {
-        if section == acp_ui_core::Section::Projects {
-            shell::go_setup(model, acp_ui_core::SetupTab::Workspaces);
+    let to_section = move |section: precept_ui_core::Section| {
+        if section == precept_ui_core::Section::Projects {
+            shell::go_setup(model, precept_ui_core::SetupTab::Workspaces);
             return;
         }
         model.update(|m| {
@@ -409,7 +410,7 @@ fn console(model: Signal<Model>) -> impl IntoElement {
         "preferences.filter",
         auto,
         Box::new(move || {
-            to_section(acp_ui_core::Section::Preferences);
+            to_section(precept_ui_core::Section::Preferences);
             filter_ref.focus();
         }),
     );
@@ -417,7 +418,7 @@ fn console(model: Signal<Model>) -> impl IntoElement {
         "handoff.task",
         auto,
         Box::new(move || {
-            to_section(acp_ui_core::Section::Handoff);
+            to_section(precept_ui_core::Section::Handoff);
             task_ref.focus();
         }),
     );
@@ -427,8 +428,8 @@ fn console(model: Signal<Model>) -> impl IntoElement {
         Box::new(move || {
             model.update(|m| {
                 m.locale = match m.locale {
-                    acp_ui_core::i18n::Locale::En => acp_ui_core::i18n::Locale::ZhCn,
-                    _ => acp_ui_core::i18n::Locale::En,
+                    precept_ui_core::i18n::Locale::En => precept_ui_core::i18n::Locale::ZhCn,
+                    _ => precept_ui_core::i18n::Locale::En,
                 }
             })
         }),
@@ -436,11 +437,14 @@ fn console(model: Signal<Model>) -> impl IntoElement {
     for (id, theme) in [
         (
             "theme.instrument",
-            acp_ui_core::appearance::ThemeId::Instrument,
+            precept_ui_core::appearance::ThemeId::Instrument,
         ),
-        ("theme.ledger", acp_ui_core::appearance::ThemeId::Ledger),
-        ("theme.harbor", acp_ui_core::appearance::ThemeId::Harbor),
-        ("theme.graphite", acp_ui_core::appearance::ThemeId::Graphite),
+        ("theme.ledger", precept_ui_core::appearance::ThemeId::Ledger),
+        ("theme.harbor", precept_ui_core::appearance::ThemeId::Harbor),
+        (
+            "theme.graphite",
+            precept_ui_core::appearance::ThemeId::Graphite,
+        ),
     ] {
         bind(
             id,
@@ -506,7 +510,7 @@ fn console(model: Signal<Model>) -> impl IntoElement {
         "go.diagnostics",
     ]
     .into_iter()
-    .zip(acp_ui_core::Section::ALL)
+    .zip(precept_ui_core::Section::ALL)
     {
         bind(
             id,
@@ -547,14 +551,14 @@ fn console(model: Signal<Model>) -> impl IntoElement {
     );
     #[cfg(not(target_arch = "wasm32"))]
     effect(move || {
-        if std::env::var_os("ACP_UI_PROBE").is_some() {
+        if std::env::var_os("PRECEPT_UI_PROBE").is_some() {
             let current = model.get();
             eprintln!(
-                "ACP_UI_WSL link={:?} failure={:?}",
+                "PRECEPT_UI_WSL link={:?} failure={:?}",
                 current.wsl_link, current.read_failure
             );
             eprintln!(
-                "ACP_UI_SESSION target={:?} draft={:?} invalid={} settings={} locale={:?} theme={:?} mode={:?} denied={}",
+                "PRECEPT_UI_SESSION target={:?} draft={:?} invalid={} settings={} locale={:?} theme={:?} mode={:?} denied={}",
                 current.connection.target,
                 current.connection_draft.target,
                 current.connection_invalid,
@@ -565,7 +569,7 @@ fn console(model: Signal<Model>) -> impl IntoElement {
                 current.permission_denied
             );
             eprintln!(
-                "ACP_NSH_STATE phase={:?} selected={} rows={} queried_chars={} filter_chars={} section={:?} page={} detail={} dark={} contrast={} elapsed={:.6}",
+                "PRECEPT_NSH_STATE phase={:?} selected={} rows={} queried_chars={} filter_chars={} section={:?} page={} detail={} dark={} contrast={} elapsed={:.6}",
                 current.phase,
                 current.selected,
                 current.rows().len(),
@@ -714,16 +718,16 @@ mod tests {
     }
     #[component]
     fn Workload() -> impl IntoElement {
-        let mut data = acp_ui_core::Snapshot::fixture();
+        let mut data = precept_ui_core::Snapshot::fixture();
         let row = data.projects[0].context.preferences[0].clone();
         data.projects[0].context.preferences = (0..10_000)
-            .map(|i| acp_ui_core::Preference {
+            .map(|i| precept_ui_core::Preference {
                 key: format!("event-{i:05}"),
                 ..row.clone()
             })
             .collect();
         let mut model = Model::loading();
-        model.section = acp_ui_core::Section::Preferences;
+        model.section = precept_ui_core::Section::Preferences;
         model.receive(Ok(data));
         console(signal(model))
     }

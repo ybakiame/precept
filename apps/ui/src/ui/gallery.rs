@@ -1,5 +1,5 @@
 //! Debug-only gallery: every `ui` control in its variants, sizes and states, in
-//! light and dark. It is mounted only when `ACP_UI_GALLERY` is set (see `App`),
+//! light and dark. It is mounted only when `PRECEPT_UI_GALLERY` is set (see `App`),
 //! never reached from normal navigation, so the look can be inspected without
 //! touching product screens. A headless test mounts it to verify the controls
 //! render and the destructive dialog opens and dismisses.
@@ -8,7 +8,7 @@ use super::{
     BadgeVariant, ButtonSize, ButtonVariant, alert_dialog, badge, button, empty, field, input,
     menu, nav_item, properties, radio_group, surface, tabs,
 };
-use acp_ui_core::appearance::{ColorMode, ThemeId};
+use precept_ui_core::appearance::{ColorMode, ThemeId};
 
 const INBOX: &str = "M3 13H8L10 16H14L16 13H21M5 6H19L21 13V19H3V6Z";
 const REFRESH: &str = "M20 12A8 8 0 1 1 12 4M20 4V8H16";
@@ -186,7 +186,7 @@ pub fn Gallery() -> impl IntoElement {
         model,
         || "Linux runtime directory".into(),
         input(model, "Linux runtime directory")
-            .value(|| "/home/operator/.local/state/acp/runtime".into()),
+            .value(|| "/home/operator/.local/state/precept/runtime".into()),
     )
     .help(|| "An absolute path private to this user.".into())
     .into_element();
@@ -325,10 +325,10 @@ pub fn Gallery() -> impl IntoElement {
         move |v| markdown.set(v),
     )
     .into_element();
-    // `ACP_UI_GALLERY=dialog` opens the form dialog, `=toast` shows a toast,
+    // `PRECEPT_UI_GALLERY=dialog` opens the form dialog, `=toast` shows a toast,
     // `=sheet` opens the sheet: overlays reviewable in a still capture.
     #[cfg(not(target_arch = "wasm32"))]
-    match std::env::var("ACP_UI_GALLERY").as_deref() {
+    match std::env::var("PRECEPT_UI_GALLERY").as_deref() {
         Ok("dialog") => form_open.set(true),
         Ok("sheet") => sheet_open.set(true),
         Ok("toast") => {

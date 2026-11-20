@@ -3,7 +3,7 @@ use nsh_platform_linux::gtk4::{self as gtk, glib, prelude::*};
 use std::{cell::Cell, rc::Rc, time::Duration};
 
 pub fn install() {
-    let probe = std::env::var_os("ACP_UI_PROBE").is_some();
+    let probe = std::env::var_os("PRECEPT_UI_PROBE").is_some();
     let mut last = String::new();
     let attached = Rc::new(Cell::new(false));
     glib::timeout_add_local(Duration::from_millis(50), move || {
@@ -12,7 +12,7 @@ pub fn install() {
                 continue;
             };
             let state = format!(
-                "ACP_GTK backend={} renderer={} mapped={} width={} height={} decorated={}",
+                "PRECEPT_GTK backend={} renderer={} mapped={} width={} height={} decorated={}",
                 gtk::prelude::WidgetExt::display(window).type_().name(),
                 window
                     .renderer()
@@ -24,7 +24,7 @@ pub fn install() {
                 window.is_decorated()
             );
             if let Some(renderer) = window.renderer() {
-                let _ = acp_ui::DESKTOP_RUNTIME.set((
+                let _ = precept_ui::DESKTOP_RUNTIME.set((
                     gtk::prelude::WidgetExt::display(window)
                         .type_()
                         .name()
@@ -33,7 +33,7 @@ pub fn install() {
                 ));
             }
             if probe && state != last {
-                eprintln!("{state} elapsed={:.6}", acp_ui::probe_elapsed());
+                eprintln!("{state} elapsed={:.6}", precept_ui::probe_elapsed());
                 last = state;
             }
             if probe
@@ -46,8 +46,8 @@ pub fn install() {
                     count.set(n);
                     if n <= 20 {
                         eprintln!(
-                            "ACP_GTK_FRAME after_paint={n} elapsed={:.6}",
-                            acp_ui::probe_elapsed()
+                            "PRECEPT_GTK_FRAME after_paint={n} elapsed={:.6}",
+                            precept_ui::probe_elapsed()
                         );
                     }
                 });

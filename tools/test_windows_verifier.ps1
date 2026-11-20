@@ -7,15 +7,15 @@ function Restore-Environment($Saved) {
     }
     foreach ($key in $Saved.Keys) { [Environment]::SetEnvironmentVariable($key, $Saved[$key], 'Process') }
 }
-$root = Join-Path ([System.IO.Path]::GetTempPath()) ('acp-s5-verify-' + [guid]::NewGuid().ToString('N'))
+$root = Join-Path ([System.IO.Path]::GetTempPath()) ('precept-s5-verify-' + [guid]::NewGuid().ToString('N'))
 $repo = Join-Path $root 'repo'
 New-Item -ItemType Directory -Path (Join-Path $repo 'tools') | Out-Null
 Copy-Item -LiteralPath (Join-Path $SourceRoot 'tools/windows_local_verify.ps1') -Destination (Join-Path $repo 'tools/windows_local_verify.ps1')
 $env:GIT_CONFIG_NOSYSTEM = '1'
 $env:GIT_CONFIG_GLOBAL = Join-Path $root 'empty.gitconfig'
 Set-Content -LiteralPath $env:GIT_CONFIG_GLOBAL -Value ''
-$env:ACP_S5_TRACE = Join-Path $root 'cargo-trace'
-function cargo { Add-Content -LiteralPath $env:ACP_S5_TRACE -Value ($args -join ' '); $global:LASTEXITCODE = 0 }
+$env:PRECEPT_S5_TRACE = Join-Path $root 'cargo-trace'
+function cargo { Add-Content -LiteralPath $env:PRECEPT_S5_TRACE -Value ($args -join ' '); $global:LASTEXITCODE = 0 }
 $results = [System.Collections.Generic.List[object]]::new()
 function Git-Run([string[]]$Arguments) {
     $result = & git @Arguments 2>$null
@@ -23,7 +23,7 @@ function Git-Run([string[]]$Arguments) {
     return $result
 }
 function Check-Case([string]$Name, [string]$Base, [bool]$Pass = $false, [bool]$Existing = $false) {
-    Remove-Item -LiteralPath $env:ACP_S5_TRACE -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $env:PRECEPT_S5_TRACE -ErrorAction SilentlyContinue
     $report = Join-Path $root $Name
     if ($Existing) { New-Item -ItemType Directory -Path $report | Out-Null }
     $ok = $true
@@ -39,7 +39,7 @@ function Check-Case([string]$Name, [string]$Base, [bool]$Pass = $false, [bool]$E
         if ($changed.Count) { throw "Helper did not restore caller process environment: $Name ($($changed -join ', '))" }
     }
     if ($ok -ne $Pass) { throw "Unexpected helper outcome: $Name ($failure)" }
-    if ((Test-Path $env:ACP_S5_TRACE) -ne $Pass) { throw "Cargo before valid branch diff: $Name" }
+    if ((Test-Path $env:PRECEPT_S5_TRACE) -ne $Pass) { throw "Cargo before valid branch diff: $Name" }
     if ($Name -eq 'committed-whitespace') {
         $data = Get-Content -Raw -LiteralPath (Join-Path $report 'report.json') | ConvertFrom-Json
         if ($data.gates[0].name -ne 'branch-diff' -or $data.gates[0].exit_code -ne 2 -or $data.gates[0].status -ne 'FAIL') { throw 'Whitespace failure report incorrect' }

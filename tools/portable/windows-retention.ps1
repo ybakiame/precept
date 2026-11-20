@@ -15,7 +15,7 @@ foreach ($name in @('profile.sqlite3','auth-retain.txt','unknown-retain.txt')) {
     $before[$name] = (Get-FileHash -LiteralPath (Join-Path $state "state/$name") -Algorithm SHA256).Hash
 }
 # Unknown files beside and inside the product tree must survive exact removal.
-$sentinels = @('synthetic-auth-retain.txt', 'ACP/bin/unknown-retain.txt')
+$sentinels = @('synthetic-auth-retain.txt', 'Precept/bin/unknown-retain.txt')
 foreach ($name in $sentinels) {
     $file = [IO.File]::Open((Join-Path $extracted $name), [IO.FileMode]::CreateNew, [IO.FileAccess]::Write)
     try { $bytes = [Text.Encoding]::UTF8.GetBytes('SYNTHETIC RETAIN'); $file.Write($bytes) } finally { $file.Dispose() }
@@ -31,8 +31,8 @@ foreach ($name in $sentinels) {
     if ([IO.File]::ReadAllText((Join-Path $extracted $name)) -ne 'SYNTHETIC RETAIN') { throw 'Unknown extraction file retention failed' }
 }
 # Empty product directories go; a directory holding an unknown file stays.
-foreach ($gone in @('ACP/runtime', 'ACP/notices')) { if (Test-Path -LiteralPath (Join-Path $extracted $gone)) { throw "Empty product directory retained: $gone" } }
-$left = @(Get-ChildItem -LiteralPath (Join-Path $extracted 'ACP') -Recurse -Force -File | ForEach-Object { [IO.Path]::GetRelativePath($extracted, $_.FullName).Replace('\', '/') })
-if ($left.Count -ne 1 -or $left[0] -ne 'ACP/bin/unknown-retain.txt') { throw 'Unexpected files after exact removal' }
+foreach ($gone in @('Precept/runtime', 'Precept/notices')) { if (Test-Path -LiteralPath (Join-Path $extracted $gone)) { throw "Empty product directory retained: $gone" } }
+$left = @(Get-ChildItem -LiteralPath (Join-Path $extracted 'Precept') -Recurse -Force -File | ForEach-Object { [IO.Path]::GetRelativePath($extracted, $_.FullName).Replace('\', '/') })
+if ($left.Count -ne 1 -or $left[0] -ne 'Precept/bin/unknown-retain.txt') { throw 'Unexpected files after exact removal' }
 [ordered]@{ source_sha = $report.source_sha; result = 'PASS'; removed_inventory_files = $removal.removed_files; retained_directories = $removal.retained_directories; retained_separate_profile_auth_unknown = $true; retained_unknown_extraction_files = $sentinels.Count; recursive_delete = $false } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $attempt 'retention.json')
 'PASS: exact owned product removal; separate synthetic Profile/auth/unknown and unknown extraction files retained'

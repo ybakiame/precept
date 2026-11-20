@@ -1,8 +1,8 @@
 //! Real NSH components over real daemon IPC; not native GUI/Wayland/TTY evidence.
 #![cfg(feature = "native")]
-use acp_ipc::{Location, operator};
 use nsh_core::prelude::*;
 use nsh_engine::{EngineConfig, Root};
+use precept_ipc::{Location, operator};
 use serde_json::{Value, json};
 use std::{
     path::{Path, PathBuf},
@@ -15,14 +15,14 @@ fn daemon_state(
     dir: &std::path::Path,
     projects: &[(&str, &std::path::Path)],
 ) -> std::path::PathBuf {
-    acp_ipc::transport::private_dir(dir, true).unwrap();
+    precept_ipc::transport::private_dir(dir, true).unwrap();
     let list: Vec<serde_json::Value> = projects
         .iter()
         .map(|(n, r)| serde_json::json!({"name":n,"root":r.canonicalize().unwrap()}))
         .collect();
     let path = dir.join("projects.json");
     let _ = std::fs::remove_file(&path);
-    let mut file = acp_ipc::transport::new_private(&path).unwrap();
+    let mut file = precept_ipc::transport::new_private(&path).unwrap();
     std::io::Write::write_all(
         &mut file,
         serde_json::json!({"format":1,"projects":list})
@@ -51,12 +51,12 @@ fn bin(name: &str) -> PathBuf {
 impl Fixture {
     fn new() -> Self {
         let root = tempfile::Builder::new()
-            .prefix("acp-s3-ui-")
+            .prefix("precept-s3-ui-")
             .tempdir()
             .unwrap();
         std::fs::create_dir(root.path().join("alpha")).unwrap();
         std::fs::write(root.path().join("alpha/AGENTS.md"), "Synthetic contract\n").unwrap();
-        acp_ipc::transport::private_dir(&root.path().join("state"), true).unwrap();
+        precept_ipc::transport::private_dir(&root.path().join("state"), true).unwrap();
         let runtime_dir = root.path().join("runtime");
         let endpoint = if cfg!(windows) {
             format!("s3-{}", root.path().file_name().unwrap().to_string_lossy())
@@ -67,7 +67,7 @@ impl Fixture {
             runtime_dir,
             endpoint,
         };
-        let child = Command::new(bin("acp-daemon"))
+        let child = Command::new(bin("preceptd"))
             .arg("--runtime-dir")
             .arg(&location.runtime_dir)
             .arg("--endpoint")
@@ -97,7 +97,7 @@ impl Fixture {
         }
         f
     }
-    fn call(&self, method: &str, params: Value) -> acp_ipc::Result<Value> {
+    fn call(&self, method: &str, params: Value) -> precept_ipc::Result<Value> {
         tokio_runtime(|| operator::control(&self.location, method, params))
     }
     fn info(&self) -> Value {
@@ -106,7 +106,7 @@ impl Fixture {
     fn register(&self) {
         let info = self.info();
         let b = &info["binding"];
-        let result = Command::new(bin("acp-query"))
+        let result = Command::new(bin("precept"))
             .arg("--runtime-dir")
             .arg(&self.location.runtime_dir)
             .arg("--endpoint")
@@ -166,8 +166,8 @@ fn writes_on(app: &mut nsh_testing::Headless) {
 #[test]
 fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     let mut f = Fixture::new();
-    acp_ui::INPUTS
-        .set(acp_ui_client::native::Inputs {
+    precept_ui::INPUTS
+        .set(precept_ui_client::native::Inputs {
             runtime_dir: Some(f.location.runtime_dir.clone()),
             endpoint: Some(f.location.endpoint.clone()),
             operator: true,
@@ -175,7 +175,7 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
         })
         .ok()
         .unwrap();
-    let mut cfg = EngineConfig::new(Root::of::<acp_ui::App>());
+    let mut cfg = EngineConfig::new(Root::of::<precept_ui::App>());
     cfg.viewport = Size::new(px(1080.0), px(760.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
     app.wait_for("No Profile selected").unwrap();

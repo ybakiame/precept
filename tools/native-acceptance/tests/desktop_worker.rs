@@ -1,14 +1,14 @@
 //! Boundedness, correlation and cleanup regressions for the owned native-window
 //! worker pipe. These exercise the harness only, against an owned fake worker. They
 //! never drive a real window and never constitute native GUI acceptance.
-use acp_native_acceptance::worker::{Cleanup, SpawnError, WorkerRpc};
+use precept_native_acceptance::worker::{Cleanup, SpawnError, WorkerRpc};
 use serde_json::{Value, json};
 use std::{
     path::Path,
     time::{Duration, Instant},
 };
 
-const FAKE: &str = env!("CARGO_BIN_EXE_acp-fake-desktop-worker");
+const FAKE: &str = env!("CARGO_BIN_EXE_precept-fake-desktop-worker");
 const GENEROUS: Duration = Duration::from_secs(20);
 const TIGHT: Duration = Duration::from_millis(250);
 /// A stalled call must finish inside this window, not merely "eventually".

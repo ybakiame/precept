@@ -43,7 +43,7 @@ fn main() {
     // harness terminates it. Drives the owned-process guard, never a real window.
     if mode == "gui-hang" {
         let err = io::stderr();
-        let _ = writeln!(err.lock(), "ACP_GUI_SYNTHETIC mode=gui-hang");
+        let _ = writeln!(err.lock(), "PRECEPT_GUI_SYNTHETIC mode=gui-hang");
         let _ = err.lock().flush();
         thread::sleep(Duration::from_secs(60));
         return;

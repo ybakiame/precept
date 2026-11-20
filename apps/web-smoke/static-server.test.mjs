@@ -6,7 +6,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { serveStatic } from './static-server.mjs';
 test('loopback assets preserve WASM MIME and deny traversal, directories and writes', async () => {
-  const temp = await mkdtemp(path.join(tmpdir(), 'acp-s4-web-'));
+  const temp = await mkdtemp(path.join(tmpdir(), 'precept-s4-web-'));
   await mkdir(path.join(temp, 'assets'));
   await writeFile(path.join(temp, 'assets/index.html'), 'synthetic');
   await writeFile(path.join(temp, 'assets/app.wasm'), new Uint8Array([0, 97, 115, 109]));

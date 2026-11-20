@@ -53,7 +53,7 @@ test('committed supplements are hash-exact and pinned to GitHub commits', () => 
 });
 
 function fixture(t) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'acp-notices-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'precept-notices-'));
   t.after(() => fs.rmSync(root, { recursive: true }));
   const crate = (rel, files = {}) => {
     const d = path.join(root, rel);
@@ -136,7 +136,7 @@ test('ledger refuses NOTICE-only and empty license files instead of marking them
 });
 
 function fakeRepo(t, entries) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'acp-supp-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'precept-supp-'));
   t.after(() => fs.rmSync(root, { recursive: true }));
   const dir = path.join(root, 'tools/portable/notice-supplements');
   fs.mkdirSync(dir, { recursive: true });

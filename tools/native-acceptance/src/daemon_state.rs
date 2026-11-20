@@ -6,7 +6,7 @@ use std::{io::Write, path::Path};
 
 /// Writes `projects.json` (canonical roots) and, when given, `startup.json`.
 pub fn write(dir: &Path, projects: &[(&str, &Path)], startup: Option<&Path>) {
-    acp_ipc::transport::private_dir(dir, true).unwrap();
+    precept_ipc::transport::private_dir(dir, true).unwrap();
     let list: Vec<serde_json::Value> = projects
         .iter()
         .map(|(name, root)| serde_json::json!({"name":name,"root":root.canonicalize().unwrap()}))
@@ -27,7 +27,7 @@ pub fn write(dir: &Path, projects: &[(&str, &Path)], startup: Option<&Path>) {
 fn put(dir: &Path, name: &str, body: serde_json::Value) {
     let path = dir.join(name);
     let _ = std::fs::remove_file(&path);
-    acp_ipc::transport::new_private(&path)
+    precept_ipc::transport::new_private(&path)
         .unwrap()
         .write_all(body.to_string().as_bytes())
         .unwrap();

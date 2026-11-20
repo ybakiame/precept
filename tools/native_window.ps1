@@ -5,7 +5,7 @@ Add-Type -TypeDefinition @'
 using System;
 using System.Text;
 using System.Runtime.InteropServices;
-public static class AcpWindow {
+public static class PreceptWindow {
  public delegate bool EnumProc(IntPtr h, IntPtr p);
  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc f, IntPtr p);
  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
@@ -63,18 +63,18 @@ $originalLayout = [IntPtr]::Zero
 $layoutWindow = [IntPtr]::Zero
 function Owned-Window {
     $script:ownedHandles = [System.Collections.Generic.List[IntPtr]]::new()
-    [AcpWindow]::EnumWindows({ param($h,$unused)
+    [PreceptWindow]::EnumWindows({ param($h,$unused)
         $text = [System.Text.StringBuilder]::new(512)
-        [void][AcpWindow]::GetWindowText($h,$text,512)
+        [void][PreceptWindow]::GetWindowText($h,$text,512)
         $title = $text.ToString()
-        $owned = $title.StartsWith('Agent Control Plane ', [StringComparison]::Ordinal) -and $(if ($remote) { $title.Contains(" [$nonce]") } else { $title.EndsWith(" [$nonce]", [StringComparison]::Ordinal) })
-        if ([AcpWindow]::IsWindowVisible($h) -and $owned) { $script:ownedHandles.Add($h) }
+        $owned = $title.StartsWith('Precept ', [StringComparison]::Ordinal) -and $(if ($remote) { $title.Contains(" [$nonce]") } else { $title.EndsWith(" [$nonce]", [StringComparison]::Ordinal) })
+        if ([PreceptWindow]::IsWindowVisible($h) -and $owned) { $script:ownedHandles.Add($h) }
         return $true
     },[IntPtr]::Zero) | Out-Null
     if ($ownedHandles.Count -ne 1) { throw 'Owned nonce window unavailable or ambiguous' }
     $h = $ownedHandles[0]
     [uint32]$ownerId = 0
-    [void][AcpWindow]::GetWindowThreadProcessId($h,[ref]$ownerId)
+    [void][PreceptWindow]::GetWindowThreadProcessId($h,[ref]$ownerId)
     if ($remote) {
         if ((Get-Process -Id $ownerId).ProcessName -ne 'msrdc') { throw 'Unexpected WSLg host process' }
     } elseif ($ownerId -ne $expected) { throw 'Window process ownership changed' }
@@ -83,54 +83,54 @@ function Owned-Window {
 function Ensure-English([IntPtr]$Window) {
     if ($remote) { return $null }
     [uint32]$ownerId=0
-    $thread=[AcpWindow]::GetWindowThreadProcessId($Window,[ref]$ownerId)
-    $current=[AcpWindow]::GetKeyboardLayout($thread)
+    $thread=[PreceptWindow]::GetWindowThreadProcessId($Window,[ref]$ownerId)
+    $current=[PreceptWindow]::GetKeyboardLayout($thread)
     $switched=$false
     if (($current.ToInt64() -band 0x3ff) -ne 9) {
-        $count=[AcpWindow]::GetKeyboardLayoutList(0,$null)
+        $count=[PreceptWindow]::GetKeyboardLayoutList(0,$null)
         if ($count -lt 1 -or $count -gt 64) { throw 'Installed keyboard layout list unavailable' }
         $layouts=[IntPtr[]]::new($count)
-        [void][AcpWindow]::GetKeyboardLayoutList($count,$layouts)
+        [void][PreceptWindow]::GetKeyboardLayoutList($count,$layouts)
         $english=@($layouts | Where-Object { ($_.ToInt64() -band 0x3ff) -eq 9 })
         if ($english.Count -eq 0) { throw 'An already-installed English layout is required; none will be installed' }
         if ($originalLayout -eq [IntPtr]::Zero) { $script:originalLayout=$current; $script:layoutWindow=$Window }
-        if (-not [AcpWindow]::PostMessage($Window,0x50,[IntPtr]::Zero,$english[0])) { throw 'Owned window input-layout request refused' }
+        if (-not [PreceptWindow]::PostMessage($Window,0x50,[IntPtr]::Zero,$english[0])) { throw 'Owned window input-layout request refused' }
         $deadline=[DateTime]::UtcNow.AddSeconds(3)
-        while (([AcpWindow]::GetKeyboardLayout($thread).ToInt64() -band 0x3ff) -ne 9) {
+        while (([PreceptWindow]::GetKeyboardLayout($thread).ToInt64() -band 0x3ff) -ne 9) {
             if ([DateTime]::UtcNow -gt $deadline) { throw 'Owned window did not acknowledge English layout' }
             Start-Sleep -Milliseconds 20
         }
         $switched=$true
     }
-    if ((Owned-Window) -ne $Window -or [AcpWindow]::GetForegroundWindow() -ne $Window) { throw 'Foreground changed during input-layout check' }
+    if ((Owned-Window) -ne $Window -or [PreceptWindow]::GetForegroundWindow() -ne $Window) { throw 'Foreground changed during input-layout check' }
     return @{english=$true;switched=$switched}
 }
-function Invoke-OwnedDrag([IntPtr]$Window, [AcpWindow+POINT]$Point, [int]$Dx, [int]$Dy) {
-    $saved=[AcpWindow+POINT]::new()
-    if (-not [AcpWindow]::GetCursorPos([ref]$saved)) { throw 'Pointer unavailable' }
+function Invoke-OwnedDrag([IntPtr]$Window, [PreceptWindow+POINT]$Point, [int]$Dx, [int]$Dy) {
+    $saved=[PreceptWindow+POINT]::new()
+    if (-not [PreceptWindow]::GetCursorPos([ref]$saved)) { throw 'Pointer unavailable' }
     $pressed=$false
     try {
-        if (-not [AcpWindow]::SetCursorPos($Point.x,$Point.y)) { throw 'Owned pointer move refused' }
-        if ((Owned-Window) -ne $Window -or [AcpWindow]::GetForegroundWindow() -ne $Window) { throw 'Foreground changed before drag' }
-        if ([AcpWindow]::GetAncestor([AcpWindow]::WindowFromPoint($Point),2) -ne $Window) { throw 'Owned drag target is occluded' }
-        [AcpWindow]::mouse_event(2,0,0,0,[UIntPtr]::Zero); $pressed=$true
+        if (-not [PreceptWindow]::SetCursorPos($Point.x,$Point.y)) { throw 'Owned pointer move refused' }
+        if ((Owned-Window) -ne $Window -or [PreceptWindow]::GetForegroundWindow() -ne $Window) { throw 'Foreground changed before drag' }
+        if ([PreceptWindow]::GetAncestor([PreceptWindow]::WindowFromPoint($Point),2) -ne $Window) { throw 'Owned drag target is occluded' }
+        [PreceptWindow]::mouse_event(2,0,0,0,[UIntPtr]::Zero); $pressed=$true
         Start-Sleep -Milliseconds 100
         for($step=1; $step -le 12; $step++) {
-            if ((Owned-Window) -ne $Window -or [AcpWindow]::GetForegroundWindow() -ne $Window) { throw 'Foreground changed during drag' }
-            if (-not [AcpWindow]::SetCursorPos(($Point.x+[int]($Dx*$step/12)),($Point.y+[int]($Dy*$step/12)))) { throw 'Owned drag refused' }
+            if ((Owned-Window) -ne $Window -or [PreceptWindow]::GetForegroundWindow() -ne $Window) { throw 'Foreground changed during drag' }
+            if (-not [PreceptWindow]::SetCursorPos(($Point.x+[int]($Dx*$step/12)),($Point.y+[int]($Dy*$step/12)))) { throw 'Owned drag refused' }
             Start-Sleep -Milliseconds 20
         }
         Start-Sleep -Milliseconds 100
     } finally {
-        if ($pressed) { [AcpWindow]::mouse_event(4,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 100 }
-        [void][AcpWindow]::SetCursorPos($saved.x,$saved.y)
+        if ($pressed) { [PreceptWindow]::mouse_event(4,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 100 }
+        [void][PreceptWindow]::SetCursorPos($saved.x,$saved.y)
     }
 }
 # Pointer position saved by 'hover'; restored by 'unhover', 'close' and on exit.
 $pointerSaved=$null
 function Restore-Pointer {
     if ($null -ne $script:pointerSaved) {
-        [void][AcpWindow]::SetCursorPos($script:pointerSaved.x,$script:pointerSaved.y)
+        [void][PreceptWindow]::SetCursorPos($script:pointerSaved.x,$script:pointerSaved.y)
         $script:pointerSaved=$null
     }
 }
@@ -153,7 +153,7 @@ try {
         }
         if (-not $nonce) { throw 'Initialize owned window first' }
         $h = Owned-Window
-        $active = [AcpWindow]::GetForegroundWindow() -eq $h
+        $active = [PreceptWindow]::GetForegroundWindow() -eq $h
         if ($command.action -eq 'observe') { @{status='ok';rpc_id=$rid;foreground=$active} | ConvertTo-Json -Compress; continue }
         if ($command.action -in @('key','text','capture','resize','hover') -and -not $active) { @{status='foreground_required';rpc_id=$rid;nonce=$nonce} | ConvertTo-Json -Compress; continue }
         $layout=$null
@@ -166,18 +166,18 @@ try {
                 $code = switch ($last) { 'escape' {27}; 'tab' {9}; 'enter' {13}; 'space' {32}; 'right' {39}; 'left' {37}; 'home' {36}; 'end' {35}; default { if ($last -notmatch '^[a-z0-9]$') { throw 'Unsupported synthetic key' }; [int][char]$last.ToUpperInvariant() } }
                 $mods = @(); if ($parts -contains 'ctrl') {$mods += 17}; if ($parts -contains 'alt') {$mods += 18}; if ($parts -contains 'shift') {$mods += 16}
                 if ($command.key -eq 'ctrl+1' -or ($parts -contains 'win')) { throw 'Reserved key refused' }
-                try { foreach($m in $mods) { [AcpWindow]::SendKey($m,$false) }; [AcpWindow]::SendKey($code,$false); [AcpWindow]::SendKey($code,$true) }
-                finally { [array]::Reverse($mods); foreach($m in $mods) { [AcpWindow]::SendKey($m,$true) } }
+                try { foreach($m in $mods) { [PreceptWindow]::SendKey($m,$false) }; [PreceptWindow]::SendKey($code,$false); [PreceptWindow]::SendKey($code,$true) }
+                finally { [array]::Reverse($mods); foreach($m in $mods) { [PreceptWindow]::SendKey($m,$true) } }
             }
             'text' {
                 if ($command.text.Length -gt 1024 -or $command.text.Contains("`n") -or $command.text.Contains("`r")) { throw 'Synthetic field bound exceeded' }
                 foreach($c in $command.text.ToCharArray()) {
-                    $current = Owned-Window; if ($current -ne $h -or [AcpWindow]::GetForegroundWindow() -ne $h) { throw 'Foreground changed during native input' }
-                    $scan = [int][AcpWindow]::VkKeyScan($c)
+                    $current = Owned-Window; if ($current -ne $h -or [PreceptWindow]::GetForegroundWindow() -ne $h) { throw 'Foreground changed during native input' }
+                    $scan = [int][PreceptWindow]::VkKeyScan($c)
                     if ([int]$c -lt 32 -or [int]$c -gt 126 -or $scan -lt 0 -or ($scan -shr 8) -gt 1) { throw 'Only fixed ASCII synthetic fields supported' }
                     $shift = ($scan -band 256) -ne 0
-                    try { if ($shift) { [AcpWindow]::SendKey(16,$false) }; [AcpWindow]::SendKey(($scan -band 255),$false); [AcpWindow]::SendKey(($scan -band 255),$true) }
-                    finally { if ($shift) { [AcpWindow]::SendKey(16,$true) } }
+                    try { if ($shift) { [PreceptWindow]::SendKey(16,$false) }; [PreceptWindow]::SendKey(($scan -band 255),$false); [PreceptWindow]::SendKey(($scan -band 255),$true) }
+                    finally { if ($shift) { [PreceptWindow]::SendKey(16,$true) } }
                     # Pace synthetic text across UI frames; do not resend input.
                     Start-Sleep -Milliseconds 25
                 }
@@ -188,29 +188,29 @@ try {
                 if ($remote) {
                     # SetWindowPos resizes only WSLg's RDP host, not the GTK surface.
                     # Drive the app's native bottom-right resize grip instead.
-                    $rect=[AcpWindow+RECT]::new()
-                    if (-not [AcpWindow]::GetWindowRect($h,[ref]$rect)) { throw 'Owned bounds unavailable' }
-                    $work=[AcpWindow]::WorkArea($h)
+                    $rect=[PreceptWindow+RECT]::new()
+                    if (-not [PreceptWindow]::GetWindowRect($h,[ref]$rect)) { throw 'Owned bounds unavailable' }
+                    $work=[PreceptWindow]::WorkArea($h)
                     if ($w -gt ($work.right-$work.left-16) -or $height -gt ($work.bottom-$work.top-16)) { throw 'Owned monitor cannot fit required viewport' }
                     $left=[Math]::Min([Math]::Max($rect.left,$work.left+8),$work.right-$w-8)
                     $top=[Math]::Min([Math]::Max($rect.top,$work.top+8),$work.bottom-$height-8)
                     if ($left -ne $rect.left -or $top -ne $rect.top) {
                         # Move via the owned app title bar so the required grip
                         # destination is not silently clamped by the monitor edge.
-                        $point=[AcpWindow+POINT]::new(); $point.x=$rect.left+80; $point.y=$rect.top+18
+                        $point=[PreceptWindow+POINT]::new(); $point.x=$rect.left+80; $point.y=$rect.top+18
                         Invoke-OwnedDrag $h $point ($left-$rect.left) ($top-$rect.top)
-                        if (-not [AcpWindow]::GetWindowRect($h,[ref]$rect)) { throw 'Owned moved bounds unavailable' }
+                        if (-not [PreceptWindow]::GetWindowRect($h,[ref]$rect)) { throw 'Owned moved bounds unavailable' }
                     }
                     $dw=$w-($rect.right-$rect.left); $dh=$height-($rect.bottom-$rect.top)
                     if ($dw -ne 0 -or $dh -ne 0) {
-                        $point=[AcpWindow+POINT]::new(); $point.x=$rect.right-4; $point.y=$rect.bottom-4
+                        $point=[PreceptWindow+POINT]::new(); $point.x=$rect.right-4; $point.y=$rect.bottom-4
                         Invoke-OwnedDrag $h $point $dw $dh
                     }
-                } elseif (-not [AcpWindow]::SetWindowPos($h,[IntPtr]::Zero,0,0,$w,$height,0x16)) { throw 'Owned resize refused' }
+                } elseif (-not [PreceptWindow]::SetWindowPos($h,[IntPtr]::Zero,0,0,$w,$height,0x16)) { throw 'Owned resize refused' }
             }
             'capture' {
                 if ($command.name -notmatch '^[a-z0-9-]+\.png$') { throw 'Invalid capture name' }
-                $rect=[AcpWindow+RECT]::new(); if (-not [AcpWindow]::GetWindowRect($h,[ref]$rect)) {throw 'Owned bounds unavailable'}
+                $rect=[PreceptWindow+RECT]::new(); if (-not [PreceptWindow]::GetWindowRect($h,[ref]$rect)) {throw 'Owned bounds unavailable'}
                 $w=$rect.right-$rect.left;$height=$rect.bottom-$rect.top
                 if ($w -lt 100 -or $w -gt 2000 -or $height -lt 100 -or $height -gt 1600) {throw 'Capture bounds refused'}
                 $bitmap=[Drawing.Bitmap]::new($w,$height)
@@ -219,15 +219,15 @@ try {
                     try {
                         $clock=[Diagnostics.Stopwatch]::StartNew();$attempts=0
                         do {
-                            if ((Owned-Window) -ne $h -or [AcpWindow]::GetForegroundWindow() -ne $h) {throw 'Owned capture lost foreground'}
-                            $now=[AcpWindow+RECT]::new()
-                            if (-not [AcpWindow]::GetWindowRect($h,[ref]$now) -or $now.right-$now.left -ne $w -or $now.bottom-$now.top -ne $height) {throw 'Owned capture bounds changed'}
-                            if ([AcpWindow]::DwmFlush() -ne 0) {throw 'Owned composition unavailable'}
+                            if ((Owned-Window) -ne $h -or [PreceptWindow]::GetForegroundWindow() -ne $h) {throw 'Owned capture lost foreground'}
+                            $now=[PreceptWindow+RECT]::new()
+                            if (-not [PreceptWindow]::GetWindowRect($h,[ref]$now) -or $now.right-$now.left -ne $w -or $now.bottom-$now.top -ne $height) {throw 'Owned capture bounds changed'}
+                            if ([PreceptWindow]::DwmFlush() -ne 0) {throw 'Owned composition unavailable'}
                             $graphics.Clear([Drawing.Color]::Black);$dc=$graphics.GetHdc()
-                            try { if (-not [AcpWindow]::PrintWindow($h,$dc,2)) {throw 'Owned render capture failed'} }
+                            try { if (-not [PreceptWindow]::PrintWindow($h,$dc,2)) {throw 'Owned render capture failed'} }
                             finally {$graphics.ReleaseHdc($dc)}
                             $data=$bitmap.LockBits([Drawing.Rectangle]::new(0,0,$w,$height),[Drawing.Imaging.ImageLockMode]::ReadOnly,[Drawing.Imaging.PixelFormat]::Format32bppArgb)
-                            try {$rendered=[AcpWindow]::HasColorVariation($data.Scan0,$data.Stride,$w,$height)}
+                            try {$rendered=[PreceptWindow]::HasColorVariation($data.Scan0,$data.Stride,$w,$height)}
                             finally {$bitmap.UnlockBits($data)}
                             $attempts += 1
                             if ($rendered) {break}
@@ -235,7 +235,7 @@ try {
                             Start-Sleep -Milliseconds 16
                         } while ($true)
                     } finally {$graphics.Dispose()}
-                    if ((Owned-Window) -ne $h -or [AcpWindow]::GetForegroundWindow() -ne $h) {throw 'Owned capture lost foreground'}
+                    if ((Owned-Window) -ne $h -or [PreceptWindow]::GetForegroundWindow() -ne $h) {throw 'Owned capture lost foreground'}
                     $file=Join-Path $images $command.name
                     $bitmap.Save($file,[Drawing.Imaging.ImageFormat]::Png)
                     # Optional single-pixel sample (window-relative) for color assertions.
@@ -253,19 +253,19 @@ try {
                 # Pointer over one window-relative point of the owned, foreground,
                 # unoccluded window; the original position is kept for restore.
                 $x=[int]$command.x;$y=[int]$command.y
-                $rect=[AcpWindow+RECT]::new(); if (-not [AcpWindow]::GetWindowRect($h,[ref]$rect)) {throw 'Owned bounds unavailable'}
+                $rect=[PreceptWindow+RECT]::new(); if (-not [PreceptWindow]::GetWindowRect($h,[ref]$rect)) {throw 'Owned bounds unavailable'}
                 if ($x -lt 8 -or $y -lt 40 -or $x -gt ($rect.right-$rect.left-8) -or $y -gt ($rect.bottom-$rect.top-8)) {throw 'Hover point outside owned client area'}
-                $point=[AcpWindow+POINT]::new(); $point.x=$rect.left+$x; $point.y=$rect.top+$y
-                if ([AcpWindow]::GetAncestor([AcpWindow]::WindowFromPoint($point),2) -ne $h) {throw 'Owned hover target is occluded'}
+                $point=[PreceptWindow+POINT]::new(); $point.x=$rect.left+$x; $point.y=$rect.top+$y
+                if ([PreceptWindow]::GetAncestor([PreceptWindow]::WindowFromPoint($point),2) -ne $h) {throw 'Owned hover target is occluded'}
                 if ($null -eq $script:pointerSaved) {
-                    $saved=[AcpWindow+POINT]::new()
-                    if (-not [AcpWindow]::GetCursorPos([ref]$saved)) {throw 'Pointer unavailable'}
+                    $saved=[PreceptWindow+POINT]::new()
+                    if (-not [PreceptWindow]::GetCursorPos([ref]$saved)) {throw 'Pointer unavailable'}
                     $script:pointerSaved=$saved
                 }
-                if (-not [AcpWindow]::SetCursorPos($point.x,$point.y)) {throw 'Owned pointer move refused'}
+                if (-not [PreceptWindow]::SetCursorPos($point.x,$point.y)) {throw 'Owned pointer move refused'}
             }
             'unhover' { Restore-Pointer }
-            'close' { Restore-Pointer; [AcpWindow]::PostMessage($h,0x10,[IntPtr]::Zero,[IntPtr]::Zero) | Out-Null }
+            'close' { Restore-Pointer; [PreceptWindow]::PostMessage($h,0x10,[IntPtr]::Zero,[IntPtr]::Zero) | Out-Null }
             default { throw 'Unsupported bounded window action' }
         }
         @{status='ok';rpc_id=$rid;input_layout=$layout} | ConvertTo-Json -Compress
@@ -274,6 +274,6 @@ try {
 } finally {
     Restore-Pointer
     if ($originalLayout -ne [IntPtr]::Zero) {
-        try { if ((Owned-Window) -eq $layoutWindow) { [void][AcpWindow]::PostMessage($layoutWindow,0x50,[IntPtr]::Zero,$originalLayout) } } catch { }
+        try { if ((Owned-Window) -eq $layoutWindow) { [void][PreceptWindow]::PostMessage($layoutWindow,0x50,[IntPtr]::Zero,$originalLayout) } } catch { }
     }
 }

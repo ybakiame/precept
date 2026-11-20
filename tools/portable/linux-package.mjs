@@ -1,10 +1,10 @@
 // Developer-only Linux x86_64 portable recipe. No install, activation or publish.
 //
-// Archive: one top-level ACP/ directory inside a .tar.gz
-//   ACP/bin/                    six product executables (0755)
-//   ACP/runtime/manifest.json   provenance, ELF facts, declared runtime packages, file hashes
-//   ACP/notices/                NOTICE.txt, dependency ledger, license texts
-//   ACP/README.txt, ACP/LICENSE.txt (Apache-2.0)
+// Archive: one top-level Precept/ directory inside a .tar.gz
+//   Precept/bin/                    six product executables (0755)
+//   Precept/runtime/manifest.json   provenance, ELF facts, declared runtime packages, file hashes
+//   Precept/notices/                NOTICE.txt, dependency ledger, license texts
+//   Precept/README.txt, Precept/LICENSE.txt (Apache-2.0)
 // OS-owned libraries (glibc, loader, GTK, GStreamer, Mesa, fonts, D-Bus) are never
 // bundled: they are declared user-distro runtime dependencies.
 import fs from 'node:fs';
@@ -17,11 +17,11 @@ import { apacheLicenseSha256, builderPathScan, cargoEnvironment, digest, freshDi
 import { ElfError, elfInfo, minimumVersions } from './elf.mjs';
 import { noticeLedger, NoticeError } from './notices.mjs';
 
-export const binaries = ['acp-daemon', 'acp-query', 'acp-mcp', 'acp-nsh-native', 'acp-nsh-tui', 'acp-wsl-bridge'];
+export const binaries = ['preceptd', 'precept', 'precept-mcp', 'precept-desktop', 'precept-tui', 'precept-bridge'];
 export const target = 'x86_64-unknown-linux-gnu';
 export const interpreter = '/lib64/ld-linux-x86-64.so.2';
 const need = (ok, message) => { if (!ok) throw new PolicyError(message); };
-export const removable = /^ACP\/(bin\/acp-(daemon|query|mcp|nsh-native|nsh-tui|wsl-bridge)|runtime\/manifest\.json|notices\/(NOTICE\.txt|dependency-notices\.json|[a-f0-9]{64}\.txt)|README\.txt|LICENSE\.txt)$/;
+export const removable = /^Precept\/(bin\/(preceptd|precept|precept-(mcp|desktop|tui|bridge))|runtime\/manifest\.json|notices\/(NOTICE\.txt|dependency-notices\.json|[a-f0-9]{64}\.txt)|README\.txt|LICENSE\.txt)$/;
 
 /// Every shipped ELF must use the system loader and carry no RPATH/RUNPATH:
 /// libraries always come from the user distribution, never from the archive.
@@ -32,17 +32,17 @@ export function checkElf(name, info) {
   return info;
 }
 
-/// `tar -tvz` listing lines: only ACP/ paths, no traversal, absolute paths, links or
-/// devices; executables 0755 under ACP/bin, everything else 0644 files / 0755 dirs.
+/// `tar -tvz` listing lines: only Precept/ paths, no traversal, absolute paths, links or
+/// devices; executables 0755 under Precept/bin, everything else 0644 files / 0755 dirs.
 export function checkTarListing(lines) {
   const entries = [];
   for (const line of lines.filter(Boolean)) {
     const m = /^([-d])([rwx-]{9})\s+\S+\s+\d+\s+\S+\s+\S+\s+(\S+)$/.exec(line);
     need(m, 'Unexpected archive entry type or listing');
     const [, kind, perms, name] = m;
-    need(/^ACP(\/[A-Za-z0-9][A-Za-z0-9._-]*)*\/?$/.test(name) && !name.split('/').includes('..'), 'Unsafe archive path');
+    need(/^Precept(\/[A-Za-z0-9][A-Za-z0-9._-]*)*\/?$/.test(name) && !name.split('/').includes('..'), 'Unsafe archive path');
     const file = name.replace(/\/$/, '');
-    const expected = kind === 'd' || file.startsWith('ACP/bin/') ? 'rwxr-xr-x' : 'rw-r--r--';
+    const expected = kind === 'd' || file.startsWith('Precept/bin/') ? 'rwxr-xr-x' : 'rw-r--r--';
     need(perms === expected, `Unexpected mode for ${file}`);
     entries.push({ file, directory: kind === 'd' });
   }
@@ -89,14 +89,14 @@ export function build(repo, parent, name, cargoProgram) {
   const report = freshDirectory(parent, name);
   fs.chmodSync(report, 0o700);
   const packageRoot = freshDirectory(report, 'package');
-  const acp = freshDirectory(packageRoot, 'ACP');
-  const bin = freshDirectory(acp, 'bin'), runtime = freshDirectory(acp, 'runtime'), notices = freshDirectory(acp, 'notices');
+  const precept = freshDirectory(packageRoot, 'Precept');
+  const bin = freshDirectory(precept, 'bin'), runtime = freshDirectory(precept, 'runtime'), notices = freshDirectory(precept, 'notices');
   const targetDir = path.join(report, 'build-target');
-  const remaps = [[repo, '/acp/source'], [cargoHome(), '/cargo'], [report, '/acp/build']];
+  const remaps = [[repo, '/precept/source'], [cargoHome(), '/cargo'], [report, '/precept/build']];
   const env = cargoEnvironment(process.env, remaps.map(([from, to]) => `--remap-path-prefix=${from}=${to}`));
   const osRelease = Object.fromEntries(fs.readFileSync('/etc/os-release', 'utf8').split('\n')
     .map(l => l.split('=')).filter(p => p.length === 2).map(([k, v]) => [k, v.replace(/^"|"$/g, '')]));
-  const manifest = { format: 1, platform: 'linux', layout: 'ACP/{bin,runtime,notices}', prototype: true, public_distribution: false,
+  const manifest = { format: 1, platform: 'linux', layout: 'Precept/{bin,runtime,notices}', prototype: true, public_distribution: false,
     source_sha: sha, source_tree: tree, target, profile: 'release', nsh_revision: pin, license: 'Apache-2.0',
     builder: { distribution: `${osRelease.NAME} ${osRelease.VERSION}`, kernel: os.release(), node: process.version,
       glibc: run('ldd', ['--version']).split('\n')[0], cargo: run(cargoProgram, ['--version'], { env }),
@@ -108,9 +108,9 @@ export function build(repo, parent, name, cargoProgram) {
       'Third-party notices reviewed against a permissive-license policy; the ledger is not a linker-derived SBOM; signing and publication undecided'] };
   for (const file of ['Cargo.lock', 'apps/Cargo.lock']) manifest.locks[file] = digest(fs.readFileSync(path.join(repo, file)));
   const workspaces = [
-    ['core', 'Cargo.toml', ['acp-daemon', 'acp-query', 'acp-mcp'], []],
-    ['operator', 'apps/Cargo.toml', ['acp-ui', 'acp-ui-client'],
-      ['--features', 'acp-ui/native,acp-ui/tui']]];
+    ['core', 'Cargo.toml', ['preceptd', 'precept', 'precept-mcp'], []],
+    ['operator', 'apps/Cargo.toml', ['precept-ui', 'precept-ui-client'],
+      ['--features', 'precept-ui/native,precept-ui/tui']]];
   for (const [label, manifestFile, packages, features] of workspaces) {
     const args = ['build', '--manifest-path', manifestFile, '--release', '--locked', '--target', target,
       '--target-dir', targetDir, '--message-format=json', ...packages.flatMap(p => ['-p', p]), '--bins', ...features];
@@ -160,22 +160,22 @@ export function build(repo, parent, name, cargoProgram) {
   const readme = fs.readFileSync(path.join(repo, 'tools/portable/README-linux.txt'), 'utf8')
     .replace('{{RUNTIME_PACKAGES}}', packageLine)
     .replace('{{GLIBC}}', manifest.runtime.minimum_symbol_versions.GLIBC ?? 'unknown');
-  fs.writeFileSync(path.join(acp, 'README.txt'), readme, { flag: 'wx', mode: 0o644 });
-  fs.writeFileSync(path.join(acp, 'LICENSE.txt'), license, { flag: 'wx', mode: 0o644 });
+  fs.writeFileSync(path.join(precept, 'README.txt'), readme, { flag: 'wx', mode: 0o644 });
+  fs.writeFileSync(path.join(precept, 'LICENSE.txt'), license, { flag: 'wx', mode: 0o644 });
   manifest.notices = { linked_packages: ledger.packages.filter(p => p.linkage === 'linked').length,
     compile_time_packages: ledger.packages.filter(p => p.linkage !== 'linked').length, ...ledger.summary };
-  manifest.files = inventory(acp);
+  manifest.files = inventory(precept);
   fs.writeFileSync(path.join(runtime, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx', mode: 0o644 });
   for (const file of ['runtime/manifest.json', 'notices/dependency-notices.json', 'notices/NOTICE.txt', 'README.txt', 'LICENSE.txt']) {
-    const scan = builderPathScan(fs.readFileSync(path.join(acp, file)), { checkout: repo, user_home: os.homedir(), report });
+    const scan = builderPathScan(fs.readFileSync(path.join(precept, file)), { checkout: repo, user_home: os.homedir(), report });
     need(!Object.values(scan).some(Boolean), 'Private build path in archive metadata');
   }
-  for (const dir of [acp, bin, runtime, notices]) fs.chmodSync(dir, 0o755);
+  for (const dir of [precept, bin, runtime, notices]) fs.chmodSync(dir, 0o755);
   need(run('git', ['rev-parse', 'HEAD'], { cwd: repo }) === sha && !run('git', ['status', '--porcelain'], { cwd: repo }), 'Source changed during build');
   // tar.gz: sorted names, numeric root owner, commit time, no links (verified below).
-  const archive = path.join(report, `acp-linux-x86_64-prototype-${sha.slice(0, 12)}.tar.gz`);
+  const archive = path.join(report, `precept-linux-x86_64-prototype-${sha.slice(0, 12)}.tar.gz`);
   run('tar', ['--sort=name', '--owner=0', '--group=0', '--numeric-owner', `--mtime=@${commitTime}`,
-    '-C', packageRoot, '-czf', archive, 'ACP']);
+    '-C', packageRoot, '-czf', archive, 'Precept']);
   const entries = checkTarListing(run('tar', ['-tvzf', archive, '--numeric-owner']).split('\n'));
   const extracted = path.join(report, 'extracted');
   need(!fs.existsSync(extracted), 'Extraction collision refused');
@@ -183,7 +183,7 @@ export function build(repo, parent, name, cargoProgram) {
   run('tar', ['-xzf', archive, '-C', extracted, '--no-same-owner']);
   const files = inventory(packageRoot);
   verifyInventory(extracted, files);
-  for (const b of binaries) need((fs.statSync(path.join(extracted, 'ACP/bin', b)).mode & 0o777) === 0o755, `${b} not executable after extraction`);
+  for (const b of binaries) need((fs.statSync(path.join(extracted, 'Precept/bin', b)).mode & 0o777) === 0o755, `${b} not executable after extraction`);
   fs.writeFileSync(path.join(report, 'archive-inventory.json'), JSON.stringify(files, null, 2) + '\n', { flag: 'wx' });
   const result = { archive: path.basename(archive), archive_sha256: digest(fs.readFileSync(archive)),
     archive_bytes: fs.statSync(archive).size, archive_entries: entries.length, extract_inventory: 'PASS', source_sha: sha };

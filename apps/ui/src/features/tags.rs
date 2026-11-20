@@ -5,8 +5,8 @@
 //! saved to `settings.toml` once each change ends. Presentation only: no
 //! Profile write, nothing an agent receives.
 use crate::*;
-use acp_ui_core::Model;
-use acp_ui_core::i18n::Msg;
+use precept_ui_core::Model;
+use precept_ui_core::i18n::Msg;
 use tokens::palette;
 
 /// Opens the sheet (from the Preferences page).
@@ -54,7 +54,7 @@ fn row(
             .child(
                 text(format!(
                     "#{}",
-                    acp_ui_core::presentation::sanitize(&name, 32)
+                    precept_ui_core::presentation::sanitize(&name, 32)
                 ))
                 .font_weight(FontWeight::MEDIUM)
                 .flex_1()
@@ -195,9 +195,9 @@ mod tests {
 
     #[component]
     fn TagConsole() -> impl IntoElement {
-        let mut model = acp_ui_core::Model::loading();
-        model.section = acp_ui_core::Section::Preferences;
-        model.receive(Ok(acp_ui_core::Snapshot::fixture()));
+        let mut model = precept_ui_core::Model::loading();
+        model.section = precept_ui_core::Section::Preferences;
+        model.receive(Ok(precept_ui_core::Snapshot::fixture()));
         crate::console(signal(model))
     }
 

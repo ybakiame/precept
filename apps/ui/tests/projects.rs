@@ -1,9 +1,9 @@
 //! The Workspace page over a real daemon: check, add and remove a project.
 //! Real NSH components and IPC; not native GUI/Wayland/TTY evidence.
 #![cfg(feature = "native")]
-use acp_ipc::{Location, operator};
 use nsh_core::prelude::*;
 use nsh_engine::{EngineConfig, Root};
+use precept_ipc::{Location, operator};
 use serde_json::{Value, json};
 use std::{
     path::{Path, PathBuf},
@@ -16,14 +16,14 @@ fn daemon_state(
     dir: &std::path::Path,
     projects: &[(&str, &std::path::Path)],
 ) -> std::path::PathBuf {
-    acp_ipc::transport::private_dir(dir, true).unwrap();
+    precept_ipc::transport::private_dir(dir, true).unwrap();
     let list: Vec<serde_json::Value> = projects
         .iter()
         .map(|(n, r)| serde_json::json!({"name":n,"root":r.canonicalize().unwrap()}))
         .collect();
     let path = dir.join("projects.json");
     let _ = std::fs::remove_file(&path);
-    let mut file = acp_ipc::transport::new_private(&path).unwrap();
+    let mut file = precept_ipc::transport::new_private(&path).unwrap();
     std::io::Write::write_all(
         &mut file,
         serde_json::json!({"format":1,"projects":list})
@@ -52,12 +52,12 @@ fn bin(name: &str) -> PathBuf {
 impl Fixture {
     fn new() -> Self {
         let root = tempfile::Builder::new()
-            .prefix("acp-s3-ui-")
+            .prefix("precept-s3-ui-")
             .tempdir()
             .unwrap();
         std::fs::create_dir(root.path().join("alpha")).unwrap();
         std::fs::write(root.path().join("alpha/AGENTS.md"), "Synthetic contract\n").unwrap();
-        acp_ipc::transport::private_dir(&root.path().join("state"), true).unwrap();
+        precept_ipc::transport::private_dir(&root.path().join("state"), true).unwrap();
         let runtime_dir = root.path().join("runtime");
         let endpoint = if cfg!(windows) {
             format!("s3-{}", root.path().file_name().unwrap().to_string_lossy())
@@ -68,7 +68,7 @@ impl Fixture {
             runtime_dir,
             endpoint,
         };
-        let child = Command::new(bin("acp-daemon"))
+        let child = Command::new(bin("preceptd"))
             .arg("--runtime-dir")
             .arg(&location.runtime_dir)
             .arg("--endpoint")
@@ -101,7 +101,7 @@ impl Fixture {
         }
         f
     }
-    fn call(&self, method: &str, params: Value) -> acp_ipc::Result<Value> {
+    fn call(&self, method: &str, params: Value) -> precept_ipc::Result<Value> {
         tokio_runtime(|| operator::control(&self.location, method, params))
     }
     fn info(&self) -> Value {
@@ -111,7 +111,7 @@ impl Fixture {
     fn register(&self) {
         let info = self.info();
         let b = &info["binding"];
-        let result = Command::new(bin("acp-query"))
+        let result = Command::new(bin("precept"))
             .arg("--runtime-dir")
             .arg(&self.location.runtime_dir)
             .arg("--endpoint")
@@ -158,15 +158,15 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     std::fs::write(gamma.join("AGENTS.md"), "Synthetic contract.\n").unwrap();
     // A fresh daemon: no Profile, no writes. Everything below is the GUI.
     assert_eq!(f.info()["selected"], false);
-    acp_ui::INPUTS
-        .set(acp_ui_client::native::Inputs {
+    precept_ui::INPUTS
+        .set(precept_ui_client::native::Inputs {
             runtime_dir: Some(f.location.runtime_dir.clone()),
             endpoint: Some(f.location.endpoint.clone()),
             ..Default::default()
         })
         .ok()
         .unwrap();
-    let mut cfg = EngineConfig::new(Root::of::<acp_ui::App>());
+    let mut cfg = EngineConfig::new(Root::of::<precept_ui::App>());
     cfg.viewport = Size::new(px(1080.0), px(900.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
     // A fresh daemon has no usable project yet: Dashboard shows onboarding and
@@ -248,8 +248,8 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     );
     // Agents (under Workspace): the launch line for gamma, per client; sharing per project.
     app.press("Agents").unwrap();
-    app.wait_for("Configure · acp-gamma").unwrap();
-    contains(&mut app, "claude mcp add --scope user acp-gamma -- ");
+    app.wait_for("Configure · precept-gamma").unwrap();
+    contains(&mut app, "claude mcp add --scope user precept-gamma -- ");
     contains(&mut app, "--project gamma --capability-file ");
     let token = std::fs::read_to_string(f.location.runtime_dir.join("agent-gamma.cap")).unwrap();
     assert!(
@@ -260,13 +260,13 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         "never a token on screen"
     );
     app.press("Codex").unwrap();
-    contains(&mut app, "[mcp_servers.\"acp-gamma\"]");
+    contains(&mut app, "[mcp_servers.\"precept-gamma\"]");
     app.press("Copy").unwrap();
     app.wait_for("Copied").unwrap();
     assert!(
         app.screen()
             .clipboard()
-            .is_some_and(|c| c.contains("[mcp_servers.\"acp-gamma\"]"))
+            .is_some_and(|c| c.contains("[mcp_servers.\"precept-gamma\"]"))
     );
     app.press("Stop sharing gamma").unwrap();
     let start = Instant::now();
@@ -281,14 +281,14 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         assert!(start.elapsed() < Duration::from_secs(10));
         std::thread::sleep(Duration::from_millis(20));
     }
-    // Recent agent activity: empty until a client starts acp-mcp and reads.
+    // Recent agent activity: empty until a client starts precept-mcp and reads.
     contains(
         &mut app,
         "No agent has used this project since the daemon started",
     );
     {
         use std::io::{BufRead, BufReader, Write};
-        let mut mcp = Command::new(bin("acp-mcp"))
+        let mut mcp = Command::new(bin("precept-mcp"))
             .arg("--runtime-dir")
             .arg(&f.location.runtime_dir)
             .arg("--endpoint")
@@ -325,7 +325,7 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         &mut app,
         "Read context: 0 preferences, 0 contracts, 1 documents",
     );
-    contains(&mut app, "Started acp-mcp");
+    contains(&mut app, "Started precept-mcp");
     // A second project, then switch from the ONE sidebar workspace switcher:
     // the read it starts must finish after the menu closes (never stuck Reading).
     let delta = f.root.path().join("delta");
@@ -368,9 +368,9 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     }
     // The Agents page follows the same sidebar workspace switcher.
     app.press("Agents").unwrap();
-    app.wait_for("Configure · acp-gamma").unwrap();
+    app.wait_for("Configure · precept-gamma").unwrap();
     app.press("gamma").unwrap();
     app.press("delta").unwrap();
     settled(&mut app);
-    app.wait_for("Configure · acp-delta").unwrap();
+    app.wait_for("Configure · precept-delta").unwrap();
 }

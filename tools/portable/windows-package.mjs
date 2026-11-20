@@ -1,10 +1,10 @@
 // Developer-only Windows portable recipe. No install, activation or publish.
 //
 // Archive layout (all entries under one top-level product directory):
-//   ACP/bin/                    five product executables only
-//   ACP/runtime/manifest.json   provenance, prerequisites, every other file's size/SHA-256
-//   ACP/notices/                NOTICE.txt, dependency ledger, notice texts
-//   ACP/README.txt, ACP/LICENSE.txt (Apache-2.0)
+//   Precept/bin/                    five product executables only
+//   Precept/runtime/manifest.json   provenance, prerequisites, every other file's size/SHA-256
+//   Precept/notices/                NOTICE.txt, dependency ledger, notice texts
+//   Precept/README.txt, Precept/LICENSE.txt (Apache-2.0)
 // The Microsoft Visual C++ v14 runtime is a documented user prerequisite, not bundled.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -14,8 +14,8 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { noticeLedger, NoticeError } from './notices.mjs';
 
-export const binaries = ['acp-daemon.exe', 'acp-query.exe', 'acp-mcp.exe', 'acp-nsh-native.exe', 'acp-nsh-tui.exe'];
-export const product = 'ACP';
+export const binaries = ['preceptd.exe', 'precept.exe', 'precept-mcp.exe', 'precept-desktop.exe', 'precept-tui.exe'];
+export const product = 'Precept';
 export const pin = '554163758e30d2f62f814096a6327937dcb4fe49';
 export const target = 'x86_64-pc-windows-msvc';
 // SHA-256 of the canonical https://www.apache.org/licenses/LICENSE-2.0.txt (11,358 bytes).
@@ -183,13 +183,13 @@ export function verifyInventory(root, expected) {
 }
 
 // Explicit removal of an owned extracted prototype, never product-data cleanup.
-// Paths are relative to the extraction root, so they start with `ACP/`.
-const removable = /^ACP\/(bin\/acp-(daemon|query|mcp|nsh-native|nsh-tui)\.exe|runtime\/manifest\.json|notices\/(NOTICE\.txt|dependency-notices\.json|[a-f0-9]{64}\.txt)|README\.txt|LICENSE\.txt)$/;
-const productDirectories = ['ACP/bin', 'ACP/runtime', 'ACP/notices', 'ACP'];
+// Paths are relative to the extraction root, so they start with `Precept/`.
+const removable = /^Precept\/(bin\/(preceptd|precept|precept-(mcp|desktop|tui))\.exe|runtime\/manifest\.json|notices\/(NOTICE\.txt|dependency-notices\.json|[a-f0-9]{64}\.txt)|README\.txt|LICENSE\.txt)$/;
+const productDirectories = ['Precept/bin', 'Precept/runtime', 'Precept/notices', 'Precept'];
 /// `allowed`/`required` default to the Windows layout; the Linux recipe passes its own.
 export function removeOwnedProduct(root, files, allowed = removable, required = binaries) {
   requireValue(Array.isArray(files) && files.length >= required.length + 4 && files.length <= 10000, 'Invalid removal inventory');
-  requireValue(required.every(name => files.some(f => f.file === `ACP/bin/${name}`)), 'Incomplete removal inventory');
+  requireValue(required.every(name => files.some(f => f.file === `Precept/bin/${name}`)), 'Incomplete removal inventory');
   realDirectoryChain(root);
   const seen = new Set();
   for (const f of files) {
@@ -229,16 +229,16 @@ export function build(repo, parent, name, cargoProgram) {
   const report = freshDirectory(parent, name);
   command('pwsh', ['-NoProfile', '-NonInteractive', '-File', path.join(repo, 'tools/portable/private-output.ps1'), '-Directory', report], repo);
   const packageRoot = freshDirectory(report, 'package');
-  const acp = freshDirectory(packageRoot, product);
-  const bin = freshDirectory(acp, 'bin'), runtime = freshDirectory(acp, 'runtime'), notices = freshDirectory(acp, 'notices');
+  const precept = freshDirectory(packageRoot, product);
+  const bin = freshDirectory(precept, 'bin'), runtime = freshDirectory(precept, 'runtime'), notices = freshDirectory(precept, 'notices');
   const targetDir = path.join(report, 'build-target');
 
   // Builder-private prefixes are remapped in compiler-recorded paths. Later
   // remaps win, so the nested private report directory comes after the checkout.
-  const remaps = [[repo, '/acp/source'], [cargoHome(), '/cargo'], [report, '/acp/build']];
+  const remaps = [[repo, '/precept/source'], [cargoHome(), '/cargo'], [report, '/precept/build']];
   const rustflags = remaps.map(([from, to]) => `--remap-path-prefix=${from}=${to}`);
   const env = cargoEnvironment(process.env, rustflags);
-  const manifest = { format: 2, layout: 'ACP/{bin,runtime,notices}', prototype: true, public_distribution: false,
+  const manifest = { format: 2, layout: 'Precept/{bin,runtime,notices}', prototype: true, public_distribution: false,
     source_sha: sha, source_tree: tree, target, profile: 'release', nsh_revision: pin,
     builder: { os_build: os.release(), node: process.version,
       vc_tools: vcTools,
@@ -253,8 +253,8 @@ export function build(repo, parent, name, cargoProgram) {
   requireValue(fs.readFileSync(path.join(repo, 'apps/ui/Cargo.toml'), 'utf8').includes(pin), 'NSH pin mismatch');
 
   const workspaces = [
-    ['core', 'Cargo.toml', ['acp-daemon', 'acp-query', 'acp-mcp'], []],
-    ['operator', 'apps/Cargo.toml', ['acp-ui'], ['--features', 'native,tui']]];
+    ['core', 'Cargo.toml', ['preceptd', 'precept', 'precept-mcp'], []],
+    ['operator', 'apps/Cargo.toml', ['precept-ui'], ['--features', 'native,tui']]];
   // A new target directory for each attempt prevents packaging stale build products.
   for (const [label, manifestFile, packages, features] of workspaces) {
     const args = ['build', '--manifest-path', manifestFile, '--release', '--locked', '--target', target,
@@ -302,16 +302,16 @@ export function build(repo, parent, name, cargoProgram) {
   const ledger = noticeLedger(noticeEntries, notices, repo, (file, bytes) => fs.writeFileSync(file, bytes, { flag: 'wx' }));
   fs.writeFileSync(path.join(notices, 'dependency-notices.json'), JSON.stringify(ledger, null, 2) + '\n', { flag: 'wx' });
   fs.writeFileSync(path.join(notices, 'NOTICE.txt'), notice, { flag: 'wx' });
-  fs.copyFileSync(path.join(repo, 'tools/portable/README-portable.txt'), path.join(acp, 'README.txt'), fs.constants.COPYFILE_EXCL);
-  fs.writeFileSync(path.join(acp, 'LICENSE.txt'), license, { flag: 'wx' });
+  fs.copyFileSync(path.join(repo, 'tools/portable/README-portable.txt'), path.join(precept, 'README.txt'), fs.constants.COPYFILE_EXCL);
+  fs.writeFileSync(path.join(precept, 'LICENSE.txt'), license, { flag: 'wx' });
   manifest.notices = { linked_packages: ledger.packages.filter(p => p.linkage === 'linked').length,
     compile_time_packages: ledger.packages.filter(p => p.linkage !== 'linked').length, ...ledger.summary };
-  manifest.files = inventory(acp);
+  manifest.files = inventory(precept);
   fs.writeFileSync(path.join(runtime, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx' });
 
   // No private source paths, credentials or raw compiler diagnostics in archive text.
   for (const file of ['runtime/manifest.json', 'notices/dependency-notices.json', 'notices/NOTICE.txt', 'README.txt', 'LICENSE.txt']) {
-    const scan = builderPathScan(fs.readFileSync(path.join(acp, file)), { checkout: repo, user_home: os.homedir(), report });
+    const scan = builderPathScan(fs.readFileSync(path.join(precept, file)), { checkout: repo, user_home: os.homedir(), report });
     requireValue(!Object.values(scan).some(Boolean), 'Private build path in archive metadata');
   }
   requireValue(command('git', ['rev-parse', 'HEAD'], repo) === sha && !command('git', ['status', '--porcelain'], repo), 'Source changed during build');

@@ -1,10 +1,10 @@
-//! Real-process bridge tests on Linux: client -> acp-wsl-bridge helper -> real
-//! acp-daemon over authenticated Unix IPC. The Windows `wsl.exe` hop is covered
+//! Real-process bridge tests on Linux: client -> precept-bridge helper -> real
+//! preceptd over authenticated Unix IPC. The Windows `wsl.exe` hop is covered
 //! by native Windows acceptance; everything after it is exercised here.
 //! Build the root workspace binaries first (`cargo build` at the repository root).
 #![cfg(unix)]
-use acp_core::operator::{Binding, Command as Op2, Expected, Mutation, Origin, Scope};
-use acp_ui_client::bridge::{self, CallError, Client, ConnectFailure, Op, Reply};
+use precept_core::operator::{Binding, Command as Op2, Expected, Mutation, Origin, Scope};
+use precept_ui_client::bridge::{self, CallError, Client, ConnectFailure, Op, Reply};
 use serde_json::{Value, json};
 use std::{
     io::{Read, Write},
@@ -18,7 +18,7 @@ fn bin(name: &str) -> PathBuf {
         .join("../../target/debug")
         .join(name)
 }
-const HELPER: &str = env!("CARGO_BIN_EXE_acp-wsl-bridge");
+const HELPER: &str = env!("CARGO_BIN_EXE_precept-bridge");
 
 /// Private synthetic root removed on drop; never a user directory.
 /// The daemon's state directory for a test: its projects and, when given, the
@@ -27,14 +27,14 @@ fn daemon_state(
     dir: &std::path::Path,
     projects: &[(&str, &std::path::Path)],
 ) -> std::path::PathBuf {
-    acp_ipc::transport::private_dir(dir, true).unwrap();
+    precept_ipc::transport::private_dir(dir, true).unwrap();
     let list: Vec<serde_json::Value> = projects
         .iter()
         .map(|(n, r)| serde_json::json!({"name":n,"root":r.canonicalize().unwrap()}))
         .collect();
     let path = dir.join("projects.json");
     let _ = std::fs::remove_file(&path);
-    let mut file = acp_ipc::transport::new_private(&path).unwrap();
+    let mut file = precept_ipc::transport::new_private(&path).unwrap();
     std::io::Write::write_all(
         &mut file,
         serde_json::json!({"format":1,"projects":list})
@@ -50,10 +50,10 @@ impl Root {
         let mut raw = [0u8; 8];
         getrandom_fill(&mut raw);
         let path = std::env::temp_dir().join(format!(
-            "acp-s1b-bridge-{}",
+            "precept-s1b-bridge-{}",
             raw.iter().map(|b| format!("{b:02x}")).collect::<String>()
         ));
-        acp_ipc::transport::private_dir(&path, true).unwrap();
+        precept_ipc::transport::private_dir(&path, true).unwrap();
         Self(path)
     }
 }
@@ -63,7 +63,7 @@ impl Drop for Root {
     }
 }
 fn getrandom_fill(buf: &mut [u8]) {
-    let id = acp_ipc::operator::operation_id().unwrap();
+    let id = precept_ipc::operator::operation_id().unwrap();
     for (i, b) in buf.iter_mut().enumerate() {
         *b = u8::from_str_radix(&id[i * 2..i * 2 + 2], 16).unwrap();
     }
@@ -86,10 +86,10 @@ impl Daemon {
         let root = Root::new();
         std::fs::create_dir(root.0.join("alpha")).unwrap();
         std::fs::write(root.0.join("alpha/AGENTS.md"), "Synthetic contract\n").unwrap();
-        acp_ipc::transport::private_dir(&root.0.join("state"), true).unwrap();
+        precept_ipc::transport::private_dir(&root.0.join("state"), true).unwrap();
         let runtime = root.0.join("runtime");
         let endpoint = runtime.join("control.sock").to_str().unwrap().to_owned();
-        let child = Command::new(bin("acp-daemon"))
+        let child = Command::new(bin("preceptd"))
             .arg("--runtime-dir")
             .arg(&runtime)
             // The test's private root is the daemon user's home for scope checks.
@@ -134,7 +134,7 @@ impl Daemon {
         Client::connect(self.helper(), Duration::from_secs(10)).unwrap()
     }
     fn register(&self, b: &Binding) {
-        let out = Command::new(bin("acp-query"))
+        let out = Command::new(bin("precept"))
             .arg("--runtime-dir")
             .arg(&self.runtime)
             .args(["--endpoint", &self.endpoint, "project-register", "alpha"])
@@ -245,7 +245,7 @@ fn operator_profile_and_review_parity_through_the_bridge() {
     // Before a Profile exists the read still succeeds (a connected daemon is
     // not "unreachable"): no navigable project, the daemon's set unregistered,
     // and the bridge answers exactly as the local client (no fixture fallback).
-    let local = acp_ui_client::native::Inputs {
+    let local = precept_ui_client::native::Inputs {
         runtime_dir: Some(d.runtime.clone()),
         endpoint: Some(d.endpoint.clone()),
         ..Default::default()
@@ -255,7 +255,7 @@ fn operator_profile_and_review_parity_through_the_bridge() {
     assert!(
         !before.directory.is_empty() && before.directory.iter().all(|p| p.state == "unregistered")
     );
-    let bridged: acp_ui_core::Snapshot = serde_json::from_value(snapshot(&c).unwrap()).unwrap();
+    let bridged: precept_ui_core::Snapshot = serde_json::from_value(snapshot(&c).unwrap()).unwrap();
     assert!(bridged.projects.is_empty());
     assert_eq!(
         serde_json::to_value(&bridged.directory).unwrap(),
@@ -294,7 +294,7 @@ fn operator_profile_and_review_parity_through_the_bridge() {
     let snap = snapshot(&c).unwrap();
     assert_eq!(snap["projects"][0]["name"], "alpha");
     assert_eq!(
-        serde_json::from_value::<acp_ui_core::Snapshot>(snap)
+        serde_json::from_value::<precept_ui_core::Snapshot>(snap)
             .unwrap()
             .projects,
         local.fetch().unwrap().projects
@@ -434,7 +434,7 @@ fn helper_refuses_malformed_unknown_versioned_and_oversized_frames_without_leaki
     let hello = raw.reply();
     assert_eq!(
         (hello.id, hello.ok.clone().unwrap()["bridge"].clone()),
-        (0, json!("acp-wsl-bridge"))
+        (0, json!("precept-bridge"))
     );
     // Malformed JSON: refused with id 0, stream continues.
     raw.send_bytes(&[0, 0, 0, 3, b'{', b'x', b'}']);
@@ -627,12 +627,12 @@ fn client_rejects_wrong_hello_mismatched_ids_and_ambiguous_replies() {
         c.args(["-c", "cat \"$0\"; exec sleep 30"]).arg(path);
         c
     };
-    let hello = json!({"version":1,"id":0,"ok":{"bridge":"acp-wsl-bridge","version":1}});
+    let hello = json!({"version":1,"id":0,"ok":{"bridge":"precept-bridge","version":1}});
     assert!(
         Client::connect(
             script(
                 "v2",
-                vec![json!({"version":1,"id":0,"ok":{"bridge":"acp-wsl-bridge","version":2}})]
+                vec![json!({"version":1,"id":0,"ok":{"bridge":"precept-bridge","version":2}})]
             ),
             Duration::from_secs(5)
         )
@@ -716,7 +716,7 @@ fn health_reports_daemon_reachability_over_the_live_bridge() {
     let mut d = Daemon::start();
     let c = d.client();
     let health = c.call(Op::Health {}, Duration::from_secs(5)).unwrap();
-    assert_eq!(health["service"], "acp-daemon");
+    assert_eq!(health["service"], "preceptd");
     // Daemon stops while the bridge stays alive: an explicit unavailable answer.
     let _ = d.child.kill();
     let _ = d.child.wait();

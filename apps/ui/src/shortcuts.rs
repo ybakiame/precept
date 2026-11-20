@@ -1,16 +1,16 @@
 //! Keyboard shortcuts: every shortcut is bound through [`bind`] from the
-//! catalog in `acp_ui_core::keys`, so a change in the Shortcuts panel rebinds
+//! catalog in `precept_ui_core::keys`, so a change in the Shortcuts panel rebinds
 //! it at once and is kept in `settings.toml`. The panel (a sheet) lists every
 //! shortcut by group, filters them, and records a new keystroke for one.
 //!
 //! While a keystroke is being recorded no shortcut is bound (they would take
 //! the keys first), and the recorder captures every key.
 use crate::*;
-use acp_ui_core::{
+use nsh_core::keymap::{Keystroke, Modifiers};
+use precept_ui_core::{
     i18n::Msg,
     keys::{Group, SHORTCUTS, Shortcut},
 };
-use nsh_core::keymap::{Keystroke, Modifiers};
 use std::rc::Rc;
 use tokens::palette;
 use ui::{ButtonSize, ButtonVariant, button, icon_button, scale};
@@ -512,7 +512,7 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use acp_ui_core::keys::Keymap;
+    use precept_ui_core::keys::Keymap;
 
     fn mods(ctrl: bool, alt: bool, shift: bool, cmd: bool) -> Modifiers {
         Modifiers {

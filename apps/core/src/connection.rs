@@ -62,7 +62,7 @@ impl Connection {
         }
     }
 }
-/// Version of the read-only discovery report (`acp-wsl-bridge --discover`).
+/// Version of the read-only discovery report (`precept-bridge --discover`).
 pub const DISCOVERY_VERSION: u32 = 1;
 
 /// Whether the daemon answered a health read through the host's operator
@@ -80,7 +80,7 @@ pub enum DaemonStatus {
 
 /// What a fixed, read-only check of one daemon host reports: who runs there,
 /// the conventional paths of the packaged systemd user unit
-/// (`$XDG_STATE_HOME/acp/runtime`), whether systemd and the unit are present and
+/// (`$XDG_STATE_HOME/precept/runtime`), whether systemd and the unit are present and
 /// whether the daemon answers. No credential, Profile path or preference value.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -157,9 +157,9 @@ impl Saved {
 pub mod discovery_status {
     use crate::i18n::Msg;
     pub const NO_SYSTEMD: &str = "systemd is not running in this Linux environment";
-    pub const NO_UNIT: &str = "The acp-daemon user service is not installed";
-    pub const START_FAILED: &str = "systemd could not start acp-daemon";
-    pub const START_TIMEOUT: &str = "acp-daemon did not become ready";
+    pub const NO_UNIT: &str = "The preceptd user service is not installed";
+    pub const START_FAILED: &str = "systemd could not start preceptd";
+    pub const START_TIMEOUT: &str = "preceptd did not become ready";
     pub const INVALID_REPORT: &str = "Invalid discovery report";
     pub const KNOWN: [&str; 4] = [NO_SYSTEMD, NO_UNIT, START_FAILED, START_TIMEOUT];
     pub fn message(reason: &str) -> Option<Msg> {
@@ -238,9 +238,9 @@ mod tests {
         Discovery {
             version: DISCOVERY_VERSION,
             user: "operator".into(),
-            helper: "/usr/bin/acp-wsl-bridge".into(),
-            runtime: "/home/operator/.local/state/acp/runtime".into(),
-            endpoint: "/home/operator/.local/state/acp/runtime/control.sock".into(),
+            helper: "/usr/bin/precept-bridge".into(),
+            runtime: "/home/operator/.local/state/precept/runtime".into(),
+            endpoint: "/home/operator/.local/state/precept/runtime/control.sock".into(),
             systemd: true,
             unit_installed: true,
             daemon: DaemonStatus::Ready {
@@ -281,7 +281,7 @@ mod tests {
                 ..report()
             },
             Discovery {
-                helper: "acp-wsl-bridge".into(),
+                helper: "precept-bridge".into(),
                 ..report()
             },
         ] {
@@ -367,7 +367,7 @@ mod tests {
         c.target = Target::Wsl;
         c.distribution = "Synthetic Linux".into();
         c.user = "operator".into();
-        c.helper = "/synthetic/acp-ui-snapshot".into();
+        c.helper = "/synthetic/precept-ui-snapshot".into();
         c.wsl_runtime = "/synthetic/runtime".into();
         c.wsl_endpoint = "/synthetic/ipc.sock".into();
         assert!(c.validate());

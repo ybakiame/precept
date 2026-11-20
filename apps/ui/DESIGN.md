@@ -1,8 +1,8 @@
-# ACP Operator design system
+# Precept Operator design system
 
-![Agent Control Plane](design/brand.svg)
+![Precept](design/brand.svg)
 
-This is the visual and interaction system of the ACP Operator (Desktop, Web preview
+This is the visual and interaction system of the Precept Operator (Desktop, Web preview
 and TUI). It turns the [NSH Design Guides](https://nsh.dev/docs/design-guides.md)
 into this app's decisions: its tokens, its controls, its motion and its words.
 Product behavior and authority rules live in the [UI standards](../../docs/product-ui.md);
@@ -18,14 +18,14 @@ the illustrations under `design/`.
 
 > **Open it, see where things stand, make the one decision that is waiting.**
 
-ACP is a place developers return to for a minute at a time: to check the daemon is
+Precept is a place developers return to for a minute at a time: to check the daemon is
 up, to confirm a suggestion an agent made, to hand a task to the next session. The
 interface earns that return visit by being *fast to read* and *pleasant to touch*.
 
 | Quality | What it means on screen | What it rules out |
 | --- | --- | --- |
 | **Calm** | Graphite surfaces, one accent, hairlines instead of boxes, generous but regular spacing | Heavy outlines on every control, colored panels, alert banners for ordinary facts |
-| **Certain** | Every state in words, the next action named, exact records before decisions | Spinners without labels, success claims ACP did not observe, color-only status |
+| **Certain** | Every state in words, the next action named, exact records before decisions | Spinners without labels, success claims Precept did not observe, color-only status |
 | **Alive** | A live dot that pings while the daemon answers, segment selections that slide, dialogs that rise, a check that grows in when a step completes | Ambient decoration, motion on data that ticks, entrance animations on every refresh |
 
 Six working principles:
@@ -48,7 +48,7 @@ Six working principles:
 
 ## 2. Who, where, and the primary tasks
 
-The primary setup is a Windows Desktop window operating an ACP daemon that runs as
+The primary setup is a Windows Desktop window operating an Precept daemon that runs as
 a systemd user service inside WSL2. The TUI and the offline Web preview share the
 same semantics. Mobile is not a target.
 
@@ -226,7 +226,7 @@ icons are hidden and labels (and `✓`) carry the meaning.
 
 | Icon | Meaning | Used in |
 | --- | --- | --- |
-| `BRAND` (three planes and a node) | Agent Control Plane | Sidebar brand, this file |
+| `BRAND` (three planes and a node) | Precept | Sidebar brand, this file |
 | `CONNECTION` (link) | Daemon connection | Set up 1 |
 | `PROFILE` (card) | The Profile | Set up 2 |
 | `WORKSPACES` (folder) | Projects (workspaces) | Set up 3 |
@@ -260,7 +260,7 @@ The Markdown editor's toolbar has its own glyphs (`UNDO`, `REDO`, `BOLD`, `ITALI
 ## 8. Components
 
 The `ui` layer is the only place that styles `nsh/base`. A feature that needs a new
-look adds a variant here first. Run the gallery (`ACP_UI_GALLERY=1`) to see every
+look adds a variant here first. Run the gallery (`PRECEPT_UI_GALLERY=1`) to see every
 control in every variant, size and state in light and dark.
 
 ### Sizes
@@ -423,7 +423,7 @@ work is called done. "RM" is what reduced motion does.
 | Agent activity refreshing | The Refresh button shows its turning spinner; rows stay until the reply replaces them | Spinner rests |
 | Agent activity empty | The empty state arrives (fade, rising 4, `BASE`) | Appears |
 
-Sound: none. ACP is a quiet developer tool.
+Sound: none. Precept is a quiet developer tool.
 
 ## 10. Words
 
@@ -435,7 +435,7 @@ or need more input. Sentence case in English.
 | --- | --- | --- | --- |
 | The local service | daemon | Daemon | server, backend |
 | Personal store | Profile | Profile | database, account |
-| A checkout ACP knows | workspace / project | 工作区 / 项目 | repo (in UI copy) |
+| A checkout Precept knows | workspace / project | 工作区 / 项目 | repo (in UI copy) |
 | An agent's proposal | suggestion | 建议 | request, ticket |
 | Accept a suggestion | Confirm | 确认 | Approve, OK |
 | Allowing Profile changes | Writes on / off | 写入已开启 / 已关闭 | permissions, admin |
@@ -494,7 +494,7 @@ shortcut lists.
 | Motion tokens and helpers | `src/ui/motion.rs` |
 | Icon family | `src/ui/icons.rs`, `src/ui/icon.rs` |
 | Controls | `src/ui/*.rs` |
-| Gallery | `src/ui/gallery.rs` (`ACP_UI_GALLERY=1`) |
+| Gallery | `src/ui/gallery.rs` (`PRECEPT_UI_GALLERY=1`) |
 | Illustrations in this file | `design/*.svg` (documentation only; never loaded by the app) |
 
 ## 14. Done means

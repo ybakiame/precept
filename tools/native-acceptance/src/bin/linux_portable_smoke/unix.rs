@@ -1,6 +1,6 @@
 //! Unix body of the Linux packaged smoke (see the bin root).
 use super::{desktop, tty};
-use acp_ipc::{Access, Client, Error, Location, load_credential, transport};
+use precept_ipc::{Access, Client, Error, Location, load_credential, transport};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
@@ -22,8 +22,8 @@ impl Drop for Owned {
 }
 fn command(binary: &Path) -> Command {
     let mut cmd = Command::new(binary);
-    // No inherited ACP_* control (any case: Windows names are case-insensitive).
-    acp_native_acceptance::environment::clear_inherited_acp(&mut cmd);
+    // No inherited PRECEPT_* control (any case: Windows names are case-insensitive).
+    precept_native_acceptance::environment::clear_inherited_precept(&mut cmd);
     cmd
 }
 fn bounded(mut cmd: Command) -> (bool, Value) {
@@ -67,7 +67,7 @@ struct Fixture {
 impl Fixture {
     fn start(bins: PathBuf) -> Self {
         let parent = tempfile::Builder::new()
-            .prefix("acp-m5-zip-")
+            .prefix("precept-m5-zip-")
             .tempdir()
             .unwrap()
             .keep();
@@ -102,12 +102,12 @@ impl Fixture {
     }
     fn daemon(bins: &Path, root: &Path, location: &Location) -> Owned {
         let state = root.join("daemon-state");
-        acp_native_acceptance::daemon_state::write(
+        precept_native_acceptance::daemon_state::write(
             &state,
             &[("synthetic", &root.join("synthetic"))],
             None,
         );
-        let mut cmd = command(&bins.join("acp-daemon"));
+        let mut cmd = command(&bins.join("preceptd"));
         cmd.arg("--runtime-dir")
             .arg(&location.runtime_dir)
             .args(["--endpoint", &location.endpoint, "--state-dir"])
@@ -123,7 +123,7 @@ impl Fixture {
         Owned(cmd.spawn().unwrap())
     }
     fn query(&self, args: &[&str]) -> (bool, Value) {
-        let mut cmd = command(&self.bins.join("acp-query"));
+        let mut cmd = command(&self.bins.join("precept"));
         cmd.arg("--runtime-dir")
             .arg(&self.location.runtime_dir)
             .args(["--endpoint", &self.location.endpoint])
@@ -142,7 +142,7 @@ impl Fixture {
     fn mutation(&self, args: &[&str]) -> Value {
         let binding = self.ok(&["profile", "info"])["binding"].clone();
         let epoch = binding["owner_epoch"].to_string();
-        let id = acp_ipc::operator::operation_id().unwrap();
+        let id = precept_ipc::operator::operation_id().unwrap();
         let mut all = args.to_vec();
         all.extend([
             "--profile-id",
@@ -196,7 +196,7 @@ impl Fixture {
                 .exists()
         );
         // The stable coordination file is retained; acquiring it proves release.
-        let _lease = acp_ipc::RuntimeLease::acquire(&self.location).unwrap();
+        let _lease = precept_ipc::RuntimeLease::acquire(&self.location).unwrap();
     }
 }
 struct Mcp {
@@ -205,7 +205,7 @@ struct Mcp {
 }
 impl Mcp {
     fn start(f: &Fixture) -> Self {
-        let mut cmd = command(&f.bins.join("acp-mcp"));
+        let mut cmd = command(&f.bins.join("precept-mcp"));
         cmd.arg("--runtime-dir")
             .arg(&f.location.runtime_dir)
             .args([
@@ -256,7 +256,7 @@ impl Mcp {
     }
 }
 struct Package {
-    acp: PathBuf,
+    precept: PathBuf,
     bins: PathBuf,
     manifest: Value,
 }
@@ -274,7 +274,7 @@ impl Package {
         self.shipped()
             .into_iter()
             .map(|file| {
-                let bytes = fs::read(self.acp.join(&file)).unwrap();
+                let bytes = fs::read(self.precept.join(&file)).unwrap();
                 json!({"file":file,"sha256":format!("{:x}", Sha256::digest(bytes))})
             })
             .collect()
@@ -293,13 +293,13 @@ impl Package {
             .collect();
         libs.sort();
         libs.dedup();
-        // Anything under the extracted ACP/ tree is refused, not only bin/.
-        let acp = self.acp.to_str().unwrap();
+        // Anything under the extracted Precept/ tree is refused, not only bin/.
+        let precept = self.precept.to_str().unwrap();
         let mut distribution = Vec::new();
         let mut wsl_provided = Vec::new();
         for lib in &libs {
             assert!(
-                !lib.starts_with(acp),
+                !lib.starts_with(precept),
                 "{surface}: library loaded from the archive: {lib}"
             );
             // WSL mounts its GPU/DXCore integration here; it is not a distro package.
@@ -363,7 +363,10 @@ pub async fn main() {
     }
     let args: Vec<_> = std::env::args().collect();
     assert_eq!(args.len(), 4, "EXTRACTED_PACKAGE NEW_REPORT WINDOW_WORKER");
-    let acp = PathBuf::from(&args[1]).canonicalize().unwrap().join("ACP");
+    let precept = PathBuf::from(&args[1])
+        .canonicalize()
+        .unwrap()
+        .join("Precept");
     let out = PathBuf::from(&args[2]);
     // Private (0700) from creation: evidence names private fixture paths.
     {
@@ -371,17 +374,17 @@ pub async fn main() {
         fs::DirBuilder::new().mode(0o700).create(&out).unwrap();
     }
     let manifest: Value =
-        serde_json::from_slice(&fs::read(acp.join("runtime/manifest.json")).unwrap()).unwrap();
+        serde_json::from_slice(&fs::read(precept.join("runtime/manifest.json")).unwrap()).unwrap();
     let package = Package {
-        bins: acp.join("bin"),
-        acp,
+        bins: precept.join("bin"),
+        precept,
         manifest,
     };
     let manifest = &package.manifest;
     let bins = package.bins.clone();
     // Every archived file matches the in-archive manifest before any launch.
     for m in manifest["files"].as_array().unwrap() {
-        let bytes = fs::read(package.acp.join(m["file"].as_str().unwrap())).unwrap();
+        let bytes = fs::read(package.precept.join(m["file"].as_str().unwrap())).unwrap();
         assert_eq!(
             format!("{:x}", Sha256::digest(bytes)),
             m["sha256"].as_str().unwrap()
@@ -399,12 +402,13 @@ pub async fn main() {
     {
         use std::os::unix::fs::MetadataExt;
         let uid = unsafe { libc::getuid() };
-        for path in [package.acp.clone(), bins.clone()] {
+        for path in [package.precept.clone(), bins.clone()] {
             let m = fs::symlink_metadata(&path).unwrap();
             assert!(m.is_dir() && m.uid() == uid && m.mode() & 0o022 == 0);
         }
         for b in &before {
-            let m = fs::symlink_metadata(package.acp.join(b["file"].as_str().unwrap())).unwrap();
+            let m =
+                fs::symlink_metadata(package.precept.join(b["file"].as_str().unwrap())).unwrap();
             assert!(
                 m.is_file()
                     && m.uid() == uid
@@ -446,7 +450,7 @@ pub async fn main() {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&unsafe_root, fs::Permissions::from_mode(0o755)).unwrap();
     }
-    let mut unsafe_daemon = command(&bins.join("acp-daemon"));
+    let mut unsafe_daemon = command(&bins.join("preceptd"));
     unsafe_daemon
         .arg("--runtime-dir")
         .arg(&unsafe_root)
@@ -456,7 +460,7 @@ pub async fn main() {
     assert!(!unsafe_root.join("operator.cap").exists());
     let file_root = f.root.join("file-runtime");
     fs::write(&file_root, "RETAIN").unwrap();
-    let mut file_daemon = command(&bins.join("acp-daemon"));
+    let mut file_daemon = command(&bins.join("preceptd"));
     file_daemon
         .arg("--runtime-dir")
         .arg(&file_root)
@@ -523,7 +527,7 @@ pub async fn main() {
         Error::Unauthorized
     );
     record("project-credential-cannot-write");
-    let mut wrong = command(&bins.join("acp-mcp"));
+    let mut wrong = command(&bins.join("precept-mcp"));
     wrong
         .arg("--runtime-dir")
         .arg(&f.location.runtime_dir)
@@ -574,8 +578,8 @@ pub async fn main() {
         "--operator".into(),
     ];
     {
-        let mut ui = tty::Tty::start(&bins.join("acp-nsh-tui"), &ui_args, &out, &focus);
-        ui.wait("Agent Control Plane");
+        let mut ui = tty::Tty::start(&bins.join("precept-tui"), &ui_args, &out, &focus);
+        ui.wait("Precept");
         let tui_libs = package.modules(ui.pid(), &out, "pty");
         // The TUI needs no GUI stack: no GTK, GStreamer or Pango is mapped.
         assert!(
@@ -588,7 +592,7 @@ pub async fn main() {
         );
         ui.capture(&out.join("pty.txt"));
         ui.resize(100, 35);
-        ui.wait("Agent Control Plane");
+        ui.wait("Precept");
         ui.close();
         let end = Instant::now() + Duration::from_secs(2);
         loop {
@@ -605,24 +609,24 @@ pub async fn main() {
     }
     record("packaged-pty-render-resize-normal-restore");
     {
-        let nonce = &acp_ipc::operator::operation_id().unwrap()[..16];
+        let nonce = &precept_ipc::operator::operation_id().unwrap()[..16];
         let mut ui = desktop::Desktop::start(
-            &bins.join("acp-nsh-native"),
+            &bins.join("precept-desktop"),
             &ui_args,
             nonce,
             &args[3],
             &out,
             &focus,
         );
-        ui.wait_after("ACP_NSH_STATE phase=Ready", 0);
+        ui.wait_after("PRECEPT_NSH_STATE phase=Ready", 0);
         // A real Wayland connection through WSLg's Weston, not XWayland.
-        ui.wait_after("ACP_GTK backend=GdkWaylandDisplay", 0);
+        ui.wait_after("PRECEPT_GTK backend=GdkWaylandDisplay", 0);
         let gtk = ui
             .lines
             .lock()
             .unwrap()
             .iter()
-            .find(|l| l.starts_with("ACP_GTK backend="))
+            .find(|l| l.starts_with("PRECEPT_GTK backend="))
             .cloned()
             .unwrap();
         let libs = package.modules(ui.pid(), &out, "wayland");
@@ -744,12 +748,12 @@ fn missing_deps(bins: &Path, out: &Path) {
     fs::create_dir(out).unwrap();
     let mut results = Vec::new();
     for name in [
-        "acp-daemon",
-        "acp-query",
-        "acp-mcp",
-        "acp-nsh-tui",
-        "acp-wsl-bridge",
-        "acp-nsh-native",
+        "preceptd",
+        "precept",
+        "precept-mcp",
+        "precept-tui",
+        "precept-bridge",
+        "precept-desktop",
     ] {
         let o = command(&bins.join(name))
             .arg("--help")
@@ -759,7 +763,7 @@ fn missing_deps(bins: &Path, out: &Path) {
         let stderr = String::from_utf8_lossy(&o.stderr);
         let first = stderr.lines().next().unwrap_or_default();
         let missing = first.contains("error while loading shared libraries");
-        if name == "acp-nsh-native" {
+        if name == "precept-desktop" {
             assert!(
                 missing && o.status.code() == Some(127),
                 "Desktop must name its missing library"
@@ -790,8 +794,8 @@ fn missing_deps(bins: &Path, out: &Path) {
 }
 
 /// Archive listing policy (mirrors `checkTarListing` in linux-package.mjs): only
-/// `ACP/` paths of safe components, regular files and directories only (no links,
-/// devices or traversal), executables 0755 under `ACP/bin`, other files 0644.
+/// `Precept/` paths of safe components, regular files and directories only (no links,
+/// devices or traversal), executables 0755 under `Precept/bin`, other files 0644.
 fn check_listing(archive: &Path) -> Result<usize, String> {
     let o = Command::new("tar")
         .arg("-tvzf")
@@ -821,14 +825,14 @@ fn check_listing(archive: &Path) -> Result<usize, String> {
                 && c.bytes()
                     .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
         };
-        if !(file == "ACP"
+        if !(file == "Precept"
             || file
-                .strip_prefix("ACP/")
+                .strip_prefix("Precept/")
                 .is_some_and(|r| r.split('/').all(component)))
         {
             return Err("unsafe path".into());
         }
-        let expected = if kind == "d" || file.starts_with("ACP/bin/") {
+        let expected = if kind == "d" || file.starts_with("Precept/bin/") {
             "rwxr-xr-x"
         } else {
             "rw-r--r--"
@@ -866,33 +870,36 @@ fn archive(archive: &Path, inventory: &Path, work: &Path) {
     // Hostile archives, built here with GNU tar; each must be refused before extraction.
     let hostile = work.join("hostile");
     private(&hostile);
-    fs::create_dir_all(hostile.join("src/ACP/bin")).unwrap();
-    fs::write(hostile.join("src/ACP/bin/x"), "x").unwrap();
+    fs::create_dir_all(hostile.join("src/Precept/bin")).unwrap();
+    fs::write(hostile.join("src/Precept/bin/x"), "x").unwrap();
     fs::set_permissions(
-        hostile.join("src/ACP/bin/x"),
+        hostile.join("src/Precept/bin/x"),
         fs::Permissions::from_mode(0o755),
     )
     .unwrap();
-    std::os::unix::fs::symlink("/etc", hostile.join("src/ACP/link")).unwrap();
+    std::os::unix::fs::symlink("/etc", hostile.join("src/Precept/link")).unwrap();
     let src = hostile.join("src");
     let cases: [(&str, Vec<&str>); 5] = [
         (
             "traversal",
-            vec!["--transform=s,^ACP/bin/x$,ACP/../x,", "ACP/bin/x"],
+            vec![
+                "--transform=s,^Precept/bin/x$,Precept/../x,",
+                "Precept/bin/x",
+            ],
         ),
         (
             "absolute",
             vec![
                 "-P",
-                "--transform=s,^ACP/bin/x$,/tmp/acp-hostile-x,",
-                "ACP/bin/x",
+                "--transform=s,^Precept/bin/x$,/tmp/precept-hostile-x,",
+                "Precept/bin/x",
             ],
         ),
-        ("symlink", vec!["ACP/link"]),
-        ("setuid", vec!["--mode=u+s", "ACP/bin/x"]),
+        ("symlink", vec!["Precept/link"]),
+        ("setuid", vec!["--mode=u+s", "Precept/bin/x"]),
         (
             "outside-root",
-            vec!["--transform=s,^ACP/bin/x$,other/x,", "ACP/bin/x"],
+            vec!["--transform=s,^Precept/bin/x$,other/x,", "Precept/bin/x"],
         ),
     ];
     for (name, extra) in cases {
@@ -919,7 +926,7 @@ fn archive(archive: &Path, inventory: &Path, work: &Path) {
         );
     }
     cells.push(json!({"id":"fresh-extraction-inventory","status":"PASS","files":files.len()}));
-    let readme = a.join("ACP/README.txt");
+    let readme = a.join("Precept/README.txt");
     fs::write(&readme, "LOCAL EDIT RETAINED\n").unwrap();
     assert!(
         !tar(&["--keep-old-files", "-xzf", archive.to_str().unwrap()], &a),
@@ -946,14 +953,14 @@ fn archive(archive: &Path, inventory: &Path, work: &Path) {
         &["--keep-old-files", "-xzf", archive.to_str().unwrap()],
         &b
     ));
-    fs::write(b.join("ACP/bin/unknown-retain"), "RETAIN").unwrap();
+    fs::write(b.join("Precept/bin/unknown-retain"), "RETAIN").unwrap();
     let state = work.join("state");
     private(&state);
     fs::write(state.join("profile.sqlite3"), "SYNTHETIC RETAIN").unwrap();
     fs::write(state.join("auth-retain.txt"), "SYNTHETIC RETAIN").unwrap();
     let runtime = work.join("runtime");
     let mut daemon = Owned(
-        command(&b.join("ACP/bin/acp-daemon"))
+        command(&b.join("Precept/bin/preceptd"))
             .arg("--runtime-dir")
             .arg(&runtime)
             .arg("--endpoint")
@@ -987,10 +994,10 @@ fn archive(archive: &Path, inventory: &Path, work: &Path) {
     }
     let (removed, retained) = remove_owned(&b, &files).unwrap();
     assert_eq!(removed, files.len());
-    assert_eq!(retained, vec!["ACP/bin", "ACP"]);
-    assert_eq!(fs::read_dir(b.join("ACP/bin")).unwrap().count(), 1);
+    assert_eq!(retained, vec!["Precept/bin", "Precept"]);
+    assert_eq!(fs::read_dir(b.join("Precept/bin")).unwrap().count(), 1);
     assert_eq!(
-        fs::read(b.join("ACP/bin/unknown-retain")).unwrap(),
+        fs::read(b.join("Precept/bin/unknown-retain")).unwrap(),
         b"RETAIN"
     );
     assert_eq!(
@@ -1016,24 +1023,24 @@ fn archive(archive: &Path, inventory: &Path, work: &Path) {
 /// empty known directories. Unknown files are never touched.
 fn remove_owned(root: &Path, files: &[Value]) -> Result<(usize, Vec<&'static str>), &'static str> {
     let bins = [
-        "acp-daemon",
-        "acp-query",
-        "acp-mcp",
-        "acp-nsh-native",
-        "acp-nsh-tui",
-        "acp-wsl-bridge",
+        "preceptd",
+        "precept",
+        "precept-mcp",
+        "precept-desktop",
+        "precept-tui",
+        "precept-bridge",
     ];
     let allowed = |f: &str| {
-        bins.iter().any(|b| f == format!("ACP/bin/{b}"))
+        bins.iter().any(|b| f == format!("Precept/bin/{b}"))
             || [
-                "ACP/runtime/manifest.json",
-                "ACP/notices/NOTICE.txt",
-                "ACP/notices/dependency-notices.json",
-                "ACP/README.txt",
-                "ACP/LICENSE.txt",
+                "Precept/runtime/manifest.json",
+                "Precept/notices/NOTICE.txt",
+                "Precept/notices/dependency-notices.json",
+                "Precept/README.txt",
+                "Precept/LICENSE.txt",
             ]
             .contains(&f)
-            || f.strip_prefix("ACP/notices/")
+            || f.strip_prefix("Precept/notices/")
                 .and_then(|n| n.strip_suffix(".txt"))
                 .is_some_and(|h| {
                     h.len() == 64
@@ -1042,9 +1049,11 @@ fn remove_owned(root: &Path, files: &[Value]) -> Result<(usize, Vec<&'static str
                 })
     };
     if files.is_empty()
-        || !bins
-            .iter()
-            .all(|b| files.iter().any(|f| f["file"] == format!("ACP/bin/{b}")))
+        || !bins.iter().all(|b| {
+            files
+                .iter()
+                .any(|f| f["file"] == format!("Precept/bin/{b}"))
+        })
     {
         return Err("incomplete removal inventory");
     }
@@ -1083,7 +1092,7 @@ fn remove_owned(root: &Path, files: &[Value]) -> Result<(usize, Vec<&'static str
     // visible process runs one of these exact product files.
     let products: Vec<PathBuf> = bins
         .iter()
-        .map(|b| root.join("ACP/bin").join(b).canonicalize().unwrap())
+        .map(|b| root.join("Precept/bin").join(b).canonicalize().unwrap())
         .collect();
     for entry in fs::read_dir("/proc").unwrap().flatten() {
         if let Ok(exe) = fs::read_link(entry.path().join("exe"))
@@ -1096,7 +1105,12 @@ fn remove_owned(root: &Path, files: &[Value]) -> Result<(usize, Vec<&'static str
         fs::remove_file(root.join(f["file"].as_str().unwrap())).map_err(|_| "unlink failed")?;
     }
     let mut retained = Vec::new();
-    for d in ["ACP/bin", "ACP/runtime", "ACP/notices", "ACP"] {
+    for d in [
+        "Precept/bin",
+        "Precept/runtime",
+        "Precept/notices",
+        "Precept",
+    ] {
         if fs::remove_dir(root.join(d)).is_err() && root.join(d).exists() {
             retained.push(d);
         }

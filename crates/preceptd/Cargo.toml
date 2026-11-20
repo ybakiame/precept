@@ -1,0 +1,27 @@
+[package]
+name = "preceptd"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "Apache-2.0"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "io-std", "time", "signal", "sync", "macros", "process"] }
+precept-ipc = { path = "../precept-ipc" }
+clap = { version = "4", features = ["derive"] }
+precept-core = { path = "../precept-core" }
+precept-store = { path = "../precept-store" }
+precept-write = { path = "../precept-write", features = ["daemon-owner"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+[dev-dependencies]
+tempfile = "3"
+toml = "1.2"
+rusqlite = { version = "=0.41.1", features = ["bundled"] }
+sha2 = "0.10"
+

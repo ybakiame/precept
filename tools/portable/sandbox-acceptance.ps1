@@ -1,9 +1,9 @@
 # Runs INSIDE a disposable Windows Sandbox (Windows PowerShell 5.1). Synthetic state only.
-# Input  C:\acp-input  (read-only): the ZIP, vc_redist.x64.exe, expected.json, this script.
-# Output C:\acp-output (writable):  result.json, log.txt, hwnd.png.
+# Input  C:\precept-input  (read-only): the ZIP, vc_redist.x64.exe, expected.json, this script.
+# Output C:\precept-output (writable):  result.json, log.txt, hwnd.png.
 # Ends by shutting the sandbox down; nothing here touches the host.
 $ErrorActionPreference = 'Stop'
-$in = 'C:\acp-input'; $out = 'C:\acp-output'
+$in = 'C:\precept-input'; $out = 'C:\precept-output'
 $log = Join-Path $out 'log.txt'
 $expected = Get-Content -LiteralPath (Join-Path $in 'expected.json') -Raw | ConvertFrom-Json
 $cells = New-Object System.Collections.ArrayList
@@ -18,7 +18,7 @@ function Owner([string]$path) { $acl = Get-Acl -LiteralPath $path; "owner=$($acl
 Add-Type -AssemblyName System.Drawing
 Add-Type -TypeDefinition @'
 using System; using System.ComponentModel; using System.Runtime.InteropServices; using System.Text;
-public static class AcpNative {
+public static class PreceptNative {
   [DllImport("kernel32.dll")] public static extern uint SetErrorMode(uint mode);
   [DllImport("kernel32.dll", SetLastError=true)] public static extern bool GenerateConsoleCtrlEvent(uint ev, uint group);
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
@@ -74,9 +74,9 @@ public static class AcpNative {
   }
 }
 '@
-[void][AcpNative]::SetProcessDPIAware()
+[void][PreceptNative]::SetProcessDPIAware()
 # Loader failures must return an exit code, never block on a hard-error dialog.
-[void][AcpNative]::SetErrorMode(0x8003)
+[void][PreceptNative]::SetErrorMode(0x8003)
 
 function Run([string]$exe, [string[]]$arguments, [int]$seconds = 15) {
     $psi = New-Object Diagnostics.ProcessStartInfo $exe
@@ -101,9 +101,9 @@ $os = Get-CimInstance Win32_OperatingSystem
 $result = [ordered]@{ environment = [ordered]@{ kind = 'Windows Sandbox (disposable, networking disabled)'; os = $os.Caption; build = $os.BuildNumber; user = $env:USERNAME
     gpu = @(Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name }) }; cells = $cells }
 Log "start build=$($os.BuildNumber)"
-$product = Join-Path $env:LOCALAPPDATA 'acp-product'
-$state = Join-Path $env:LOCALAPPDATA 'acp-sandbox-state'
-$acp = Join-Path $product 'ACP'; $bin = Join-Path $acp 'bin'
+$product = Join-Path $env:LOCALAPPDATA 'precept-product'
+$state = Join-Path $env:LOCALAPPDATA 'precept-sandbox-state'
+$precept = Join-Path $product 'Precept'; $bin = Join-Path $precept 'bin'
 $manifest = $null; $daemonPid = 0; $daemon = $null
 
 Cell 'clean-target-has-no-vc-runtime' {
@@ -113,24 +113,24 @@ Cell 'clean-target-has-no-vc-runtime' {
     'registry key and System32 DLL absent'
 }
 Cell 'zip-hash-extract-new-dir-manifest-verify' {
-    $zip = Get-ChildItem -LiteralPath $in -Filter 'acp-windows-x86_64-*.zip'
+    $zip = Get-ChildItem -LiteralPath $in -Filter 'precept-windows-x86_64-*.zip'
     Need (@($zip).Count -eq 1) 'expected one ZIP'
     Need ((Get-FileHash -LiteralPath $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -eq $expected.archive_sha256) 'ZIP hash mismatch'
     Need (-not (Test-Path $product)) 'extraction collision'
     # .NET extraction: the Archive module is not loadable in every sandbox image.
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive = [IO.Compression.ZipFile]::OpenRead($zip.FullName)
-    try { foreach ($e in $archive.Entries) { Need ($e.FullName -cmatch '^ACP/([A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*$' -and -not $e.FullName.Contains('..')) "unsafe entry $($e.FullName)" } }
+    try { foreach ($e in $archive.Entries) { Need ($e.FullName -cmatch '^Precept/([A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*$' -and -not $e.FullName.Contains('..')) "unsafe entry $($e.FullName)" } }
     finally { $archive.Dispose() }
     [IO.Compression.ZipFile]::ExtractToDirectory($zip.FullName, $product)
-    Need (((@(Get-ChildItem -LiteralPath $product -Force) | ForEach-Object { $_.Name }) -join ',') -eq 'ACP') 'archive must create only ACP\'
-    $script:manifest = Get-Content -LiteralPath (Join-Path $acp 'runtime\manifest.json') -Raw | ConvertFrom-Json
+    Need (((@(Get-ChildItem -LiteralPath $product -Force) | ForEach-Object { $_.Name }) -join ',') -eq 'Precept') 'archive must create only Precept\'
+    $script:manifest = Get-Content -LiteralPath (Join-Path $precept 'runtime\manifest.json') -Raw | ConvertFrom-Json
     foreach ($f in $manifest.files) {
-        Need ((Get-FileHash -LiteralPath (Join-Path $acp $f.file) -Algorithm SHA256).Hash.ToLowerInvariant() -eq $f.sha256) "hash mismatch $($f.file)"
+        Need ((Get-FileHash -LiteralPath (Join-Path $precept $f.file) -Algorithm SHA256).Hash.ToLowerInvariant() -eq $f.sha256) "hash mismatch $($f.file)"
     }
     Need (@(Get-ChildItem -LiteralPath $bin -File).Count -eq 5) 'bin must hold exactly five executables'
     # The shipped README must document exactly what this acceptance executes.
-    $readme = Get-Content -LiteralPath (Join-Path $acp 'README.txt') -Raw
+    $readme = Get-Content -LiteralPath (Join-Path $precept 'README.txt') -Raw
     foreach ($needle in 'https://aka.ms/vc14/vc_redist.x64.exe', '$acl.SetOwner($me); $acl.SetAccessRuleProtection($true, $false)', 'FileSystemAccessRule($me, ''FullControl'', ''ContainerInherit,ObjectInherit'', ''None'', ''Allow'')') {
         Need ($readme.Contains($needle)) "README lacks: $needle"
     }
@@ -138,7 +138,7 @@ Cell 'zip-hash-extract-new-dir-manifest-verify' {
 }
 Cell 'missing-prerequisite-fails-to-load-all-five' {
     $codes = foreach ($b in $manifest.binaries) {
-        $exe = Join-Path $acp $b.file
+        $exe = Join-Path $precept $b.file
         # Direct CreateProcess so the no-dialog error mode is inherited.
         $psi = New-Object Diagnostics.ProcessStartInfo -ArgumentList $exe
         $psi.Arguments = '--help'
@@ -181,16 +181,16 @@ Set-Content -LiteralPath (Join-Path $synthetic 'AGENTS.md') -Value 'Synthetic sa
 New-Item -ItemType Directory -Path (Join-Path $synthetic '.git') | Out-Null
 Set-Content -LiteralPath (Join-Path $state 'unknown-retain.txt') -Value 'SYNTHETIC RETAIN'
 $runtime = Join-Path $state 'runtime'
-$endpoint = 'acp-sandbox-' + [guid]::NewGuid().ToString('N').Substring(0, 12)
+$endpoint = 'precept-sandbox-' + [guid]::NewGuid().ToString('N').Substring(0, 12)
 $loc = @('--runtime-dir', $runtime, '--endpoint', $endpoint)
-$query = Join-Path $bin 'acp-query.exe'
+$query = Join-Path $bin 'precept.exe'
 function Q([string[]]$a) { Run $query ($loc + $a) }
 function Why($r) { "exit $($r.code) error=$($r.json.error) stderr=$(($r.err -split "`n" | Select-Object -First 2) -join ' | ')" }
 
 
 Cell 'daemon-start-no-implicit-profile' {
     # Its OWN console window, as README instructs; the Process object keeps the handle.
-    $script:daemon = Start-Process -FilePath (Join-Path $bin 'acp-daemon.exe') -PassThru -ArgumentList @('--runtime-dir', ('"' + $runtime + '"'), '--endpoint', $endpoint, '--state-dir', ('"' + (Join-Path $state 'daemon') + '"'))
+    $script:daemon = Start-Process -FilePath (Join-Path $bin 'preceptd.exe') -PassThru -ArgumentList @('--runtime-dir', ('"' + $runtime + '"'), '--endpoint', $endpoint, '--state-dir', ('"' + (Join-Path $state 'daemon') + '"'))
     $script:daemonPid = $daemon.Id
     $deadline = (Get-Date).AddSeconds(20)
     do { Start-Sleep -Milliseconds 200; $info = Q @('profile', 'info') } while ($info.code -ne 0 -and (Get-Date) -lt $deadline)
@@ -211,7 +211,7 @@ Cell 'explicit-synthetic-profile-grant-register' {
     $before = "$($b.profile_id)/$($b.generation)/$($b.owner_epoch)"
     $b = (Q @('profile', 'info')).json.binding
     $op = -join ((1..16) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) })
-    $canonical = [AcpNative]::FinalPath($synthetic)
+    $canonical = [PreceptNative]::FinalPath($synthetic)
     $r = Q @('project', 'check', $canonical)
     Need ($r.code -eq 0 -and $r.json.ok -eq $true) "project check failed: $(Why $r)"
     $r = Q @('project', 'add', 'synthetic', $r.json.root)
@@ -224,7 +224,7 @@ Cell 'mcp-exactly-two-read-tools-and-context' {
     # UTF-8 (65001) console that is a BOM. Record it, then use BOM-less UTF-8.
     Log "console input encoding $([Console]::InputEncoding.WebName) cp=$([Console]::InputEncoding.CodePage) preamble=$([Console]::InputEncoding.GetPreamble().Length)"
     [Console]::InputEncoding = New-Object Text.UTF8Encoding $false
-    $psi = New-Object Diagnostics.ProcessStartInfo (Join-Path $bin 'acp-mcp.exe')
+    $psi = New-Object Diagnostics.ProcessStartInfo (Join-Path $bin 'precept-mcp.exe')
     $psi.Arguments = '--runtime-dir "' + $runtime + '" --endpoint ' + $endpoint + ' --project synthetic --capability-file "' + (Join-Path $runtime 'agent-synthetic.cap') + '"'
     $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true; $psi.RedirectStandardInput = $true; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
     $p = [Diagnostics.Process]::Start($psi); $mcpErr = $p.StandardError.ReadToEndAsync()
@@ -252,7 +252,7 @@ Cell 'write-grant-revoked' {
     'write_enabled=false'
 }
 Cell 'hwnd-desktop-render-close-daemon-survives' {
-    $psi = New-Object Diagnostics.ProcessStartInfo (Join-Path $bin 'acp-nsh-native.exe')
+    $psi = New-Object Diagnostics.ProcessStartInfo (Join-Path $bin 'precept-desktop.exe')
     $psi.Arguments = '--runtime-dir "' + $runtime + '" --endpoint ' + $endpoint + ' --operator'
     $psi.UseShellExecute = $false
     $p = [Diagnostics.Process]::Start($psi)
@@ -260,8 +260,8 @@ Cell 'hwnd-desktop-render-close-daemon-survives' {
     do { Start-Sleep -Milliseconds 250; $p.Refresh() } while ($p.MainWindowHandle -eq [IntPtr]::Zero -and -not $p.HasExited -and (Get-Date) -lt $deadline)
     Need (-not $p.HasExited -and $p.MainWindowHandle -ne [IntPtr]::Zero) "no window (exited=$($p.HasExited))"
     Start-Sleep -Seconds 4
-    [void][AcpNative]::SetForegroundWindow($p.MainWindowHandle); Start-Sleep -Milliseconds 500
-    $r = New-Object AcpNative+RECT; [void][AcpNative]::GetWindowRect($p.MainWindowHandle, [ref]$r)
+    [void][PreceptNative]::SetForegroundWindow($p.MainWindowHandle); Start-Sleep -Milliseconds 500
+    $r = New-Object PreceptNative+RECT; [void][PreceptNative]::GetWindowRect($p.MainWindowHandle, [ref]$r)
     $bmp = New-Object Drawing.Bitmap ($r.Right - $r.Left), ($r.Bottom - $r.Top)
     $g = [Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($r.Left, $r.Top, 0, 0, $bmp.Size); $g.Dispose()
     $bmp.Save((Join-Path $out 'hwnd.png'), [Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose()
@@ -276,7 +276,7 @@ Cell 'hwnd-desktop-render-close-daemon-survives' {
 }
 Cell 'conpty-tui-render-ctrl-q-exit' {
     # Shares this console: types Ctrl+Q into the input buffer the TUI reads.
-    $psi = New-Object Diagnostics.ProcessStartInfo (Join-Path $bin 'acp-nsh-tui.exe')
+    $psi = New-Object Diagnostics.ProcessStartInfo (Join-Path $bin 'precept-tui.exe')
     $psi.Arguments = '--runtime-dir "' + $runtime + '" --endpoint ' + $endpoint + ' --operator'
     $psi.UseShellExecute = $false
     $p = [Diagnostics.Process]::Start($psi)
@@ -284,7 +284,7 @@ Cell 'conpty-tui-render-ctrl-q-exit' {
     Need (-not $p.HasExited) "TUI exited early ($($p.ExitCode))"
     $vc = VcModules $p
     Need (($vc -join ',') -eq 'VCRUNTIME140.dll@System32') "VC modules: $($vc -join ',')"
-    [AcpNative]::SendCtrlQ()
+    [PreceptNative]::SendCtrlQ()
     Need ($p.WaitForExit(10000)) 'TUI did not exit on Ctrl+Q'
     Need ($p.ExitCode -eq 0) "exit $($p.ExitCode)"
     "$($vc -join ','); Ctrl+Q exit 0"
@@ -292,7 +292,7 @@ Cell 'conpty-tui-render-ctrl-q-exit' {
 Cell 'graceful-stop-cleans-credentials' {
     Need ($daemonPid -ne 0) 'no daemon'
     $p = $daemon
-    $err = [AcpNative]::CtrlCInConsoleOf([uint32]$daemonPid)
+    $err = [PreceptNative]::CtrlCInConsoleOf([uint32]$daemonPid)
     Need ($null -eq $err) "Ctrl+C failed: $err"
     Need ($p.WaitForExit(15000)) 'daemon did not exit'
     Need ($p.ExitCode -eq 0) "daemon exit $($p.ExitCode)"
@@ -304,16 +304,16 @@ Cell 'graceful-stop-cleans-credentials' {
 Cell 'exact-removal-retains-state-and-unknown' {
     $before = (Get-FileHash -LiteralPath $db -Algorithm SHA256).Hash
     Set-Content -LiteralPath (Join-Path $bin 'unknown-retain.txt') -Value 'SYNTHETIC RETAIN'
-    $list = @($manifest.files | ForEach-Object { $_ }) + @([pscustomobject]@{ file = 'runtime/manifest.json'; sha256 = (Get-FileHash -LiteralPath (Join-Path $acp 'runtime\manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant() })
+    $list = @($manifest.files | ForEach-Object { $_ }) + @([pscustomobject]@{ file = 'runtime/manifest.json'; sha256 = (Get-FileHash -LiteralPath (Join-Path $precept 'runtime\manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant() })
     foreach ($f in $list) {
-        $path = Join-Path $acp $f.file
+        $path = Join-Path $precept $f.file
         $item = Get-Item -LiteralPath $path -Force
         Need (-not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) "alias $($f.file)"
         Need ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -eq $f.sha256) "changed $($f.file)"
     }
-    foreach ($f in $list) { Remove-Item -LiteralPath (Join-Path $acp $f.file) -Force }
-    foreach ($d in 'runtime', 'notices', 'bin', '.') { $dir = Join-Path $acp $d; if (@(Get-ChildItem -LiteralPath $dir -Force).Count -eq 0) { [IO.Directory]::Delete($dir) } }
-    Need (-not (Test-Path (Join-Path $acp 'runtime')) -and -not (Test-Path (Join-Path $acp 'notices'))) 'empty product dirs remain'
+    foreach ($f in $list) { Remove-Item -LiteralPath (Join-Path $precept $f.file) -Force }
+    foreach ($d in 'runtime', 'notices', 'bin', '.') { $dir = Join-Path $precept $d; if (@(Get-ChildItem -LiteralPath $dir -Force).Count -eq 0) { [IO.Directory]::Delete($dir) } }
+    Need (-not (Test-Path (Join-Path $precept 'runtime')) -and -not (Test-Path (Join-Path $precept 'notices'))) 'empty product dirs remain'
     Need ((Get-Content -LiteralPath (Join-Path $bin 'unknown-retain.txt')) -eq 'SYNTHETIC RETAIN') 'unknown product-dir file lost'
     Need ((Get-FileHash -LiteralPath $db -Algorithm SHA256).Hash -eq $before) 'Profile changed'
     Need ((Get-Content -LiteralPath (Join-Path $state 'unknown-retain.txt')) -eq 'SYNTHETIC RETAIN') 'state unknown file lost'

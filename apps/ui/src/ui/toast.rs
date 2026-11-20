@@ -173,7 +173,7 @@ pub fn toaster(model: Signal<Model>) -> impl IntoElement {
                         super::button::icon_button(model, super::icons::CLOSE, move || {
                             model
                                 .get()
-                                .word(acp_ui_core::i18n::Msg::DismissNotification)
+                                .word(precept_ui_core::i18n::Msg::DismissNotification)
                                 .into()
                         })
                         .size(super::button::ButtonSize::Small)

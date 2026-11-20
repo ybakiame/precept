@@ -2,7 +2,7 @@
 
 ## Native local operator
 
-`acp-query` talks to an explicitly addressed native daemon through authenticated
+`precept` talks to an explicitly addressed native daemon through authenticated
 IPC v2. It supports Profile create/select/info, independent write enable/disable,
 exact scoped Preference/Handoff previews and typed mutations. Use its command help
 for current syntax. Operator control/read is distinct from the
@@ -18,12 +18,12 @@ not exposed to agents, OperatorWrite peers or MCP.
 five canonical tags, sorted with no repeats: lowercase letters (any script), digits
 and inner hyphens, 1–32 characters each. A non-canonical list is refused, never
 rewritten. `origin` is exactly `operator` or `agent`. Both are part of the proposal
-digest. `acp-query preference-suggest` normalizes `--tag` (repeatable, required) and
+digest. `precept preference-suggest` normalizes `--tag` (repeatable, required) and
 defaults `--origin operator`.
 
 ## Read-only MCP stdio
 
-The Rust `acp-mcp` binary uses newline-delimited UTF-8 JSON-RPC; stdout contains only
+The Rust `precept-mcp` binary uses newline-delimited UTF-8 JSON-RPC; stdout contains only
 protocol output and failures are sanitized. It uses an explicit protected native
 credential and endpoint, with one bound project. Tool arguments cannot change scope.
 
@@ -54,19 +54,19 @@ created or modified by this read path.
 ### Agent activity
 
 The daemon keeps an in-memory log of agent requests for the operator (the newest
-500 events, emptied on restart, never written to disk): `acp-mcp` starting
+500 events, emptied on restart, never written to disk): `precept-mcp` starting
 (`daemon.health`), `context.get` and `handoff.get` with their project, arrival
 (`mcp`), duration and outcome code, plus refused handshakes without a
 project. A context read records only counts (preferences, contracts, documents)
 and the contract-resolution status. Never values, selectors, task ids, paths,
-tokens or response bodies. `acp-mcp` forwards the MCP client's self-reported
+tokens or response bodies. `precept-mcp` forwards the MCP client's self-reported
 `clientInfo` name and version as an optional `client` label on agent `context.get`
 and `handoff.get` (bounded, printable, never authentication). Operator-only
 `activity.list` takes optional `project` and `before` (an event id) and returns
 `daemon_started_ms`, `capacity`, up to 200 events newest first and `more`; a
-project filter includes refused handshakes. `acp-query activity` prints it.
+project filter includes refused handshakes. `precept activity` prints it.
 
-`acp-mcp` writes one sanitized line per failure to stderr (refused arguments,
+`precept-mcp` writes one sanitized line per failure to stderr (refused arguments,
 calls before initialization, daemon errors by code), which MCP clients show in
 their own server logs. Stdout stays protocol-only.
 
@@ -97,15 +97,15 @@ material. Current build and setup instructions are in the [README](../README.md)
 
 ## Windows GUI → WSL2 bridge
 
-One long-lived `acp-wsl-bridge` process serves each active WSL connection,
+One long-lived `precept-bridge` process serves each active WSL connection,
 started only by an explicit user action (connect, Reconnect, navigation, or an
-Operator action) as `wsl.exe --distribution D --user U --exec /abs/acp-wsl-bridge
+Operator action) as `wsl.exe --distribution D --user U --exec /abs/precept-bridge
 --runtime-dir R --endpoint E`. The distribution, user and three paths are validated
 explicit inputs; project, task and request data never appear in argv.
 
 - **Framing:** u32 big-endian length + JSON. Client→helper frames ≤ 256 KiB;
   helper→client ≤ 5 MiB. Empty or oversized frames end the stream.
-- **Hello:** the helper's first frame is `{"version":1,"id":0,"ok":{"bridge":"acp-wsl-bridge","version":1}}`;
+- **Hello:** the helper's first frame is `{"version":1,"id":0,"ok":{"bridge":"precept-bridge","version":1}}`;
   any other identity or version refuses the connection.
 - **Requests:** `{"version":1,"id":N,"op":{...}}`, strict fields, `id` ≥ 1, at most
   8 in flight. `op.type` is exactly one of `snapshot`, `control` (the Operator

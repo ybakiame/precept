@@ -9,15 +9,15 @@
 //!   button each, an input that adds on Enter or a comma, the limit and
 //!   validity in its help line, and suggestion buttons below.
 use super::prelude::*;
-use acp_ui_core::i18n::Msg;
-use acp_ui_core::operator::{MAX_TAGS, normalize_tag};
+use precept_ui_core::i18n::Msg;
+use precept_ui_core::operator::{MAX_TAGS, normalize_tag};
 use std::rc::Rc;
 
 /// One tag, as shown on a row or a record: its color as a dot and a light
 /// tint behind theme text (`#name` in its color in a terminal).
 pub fn tag(model: Signal<Model>, name: &str) -> AnyElement {
     let key = name.to_owned();
-    let label: SharedString = acp_ui_core::presentation::sanitize(name, 32).into();
+    let label: SharedString = precept_ui_core::presentation::sanitize(name, 32).into();
     if terminal() {
         return text(format!("#{label}"))
             .text_color(move || super::tag_color(model, &key))
@@ -68,7 +68,7 @@ pub fn tag_toggle(
 ) -> super::button::Button {
     let label: SharedString = format!(
         "#{} · {count}",
-        acp_ui_core::presentation::sanitize(name, 32)
+        precept_ui_core::presentation::sanitize(name, 32)
     )
     .into();
     let selected = Rc::new(selected);

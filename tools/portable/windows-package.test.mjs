@@ -8,7 +8,7 @@ import { apacheLicenseSha256, binaries, builderPathScan, cargoEnvironment, diges
   regular, removeOwnedProduct, vcRuntimeImports, verifyInventory } from './windows-package.mjs';
 
 function fixture(t) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'acp-package-test-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'precept-package-test-'));
   t.after(() => fs.rmSync(root, { recursive: true })); // Only our mkdtemp fixture.
   return root;
 }
@@ -41,21 +41,21 @@ test('output never adopts an existing directory or follows a symlink/junction pa
   assert.equal(fs.readFileSync(path.join(made, 'sentinel'), 'utf8'), 'retain');
 });
 test('inventory refuses changed bytes, unlisted credentials and aliased executables', t => {
-  const root = fixture(t); const file = path.join(root, 'acp-daemon.exe'); fs.writeFileSync(file, 'product');
-  const expected = [{file:'acp-daemon.exe',size:7,sha256:digest(Buffer.from('product'))}];
+  const root = fixture(t); const file = path.join(root, 'preceptd.exe'); fs.writeFileSync(file, 'product');
+  const expected = [{file:'preceptd.exe',size:7,sha256:digest(Buffer.from('product'))}];
   verifyInventory(root, expected);
   fs.writeFileSync(file, 'changed'); assert.throws(() => verifyInventory(root, expected)); fs.writeFileSync(file, 'product');
   fs.writeFileSync(path.join(root, 'operator.cap'), 'synthetic-not-a-token'); assert.throws(() => verifyInventory(root, expected));
   fs.linkSync(file, path.join(root, 'alias.exe')); assert.throws(() => regular(file));
 });
 test('shipping contract is exactly five product entrypoints', () => {
-  assert.deepEqual([...binaries].sort(), ['acp-daemon.exe','acp-mcp.exe','acp-nsh-native.exe','acp-nsh-tui.exe','acp-query.exe']);
+  assert.deepEqual([...binaries].sort(), ['precept-desktop.exe','precept-mcp.exe','precept-tui.exe','precept.exe','preceptd.exe']);
 });
 
 test('committed first-party LICENSE is the verbatim Apache-2.0 text and NOTICE names the holder', () => {
   const repo = fileURLToPath(new URL('../..', import.meta.url));
   assert.equal(digest(fs.readFileSync(path.join(repo, 'LICENSE'))), apacheLicenseSha256);
-  assert.match(fs.readFileSync(path.join(repo, 'NOTICE'), 'utf8'), /^Agent Control Plane\nCopyright 2026 ybakiame\n/);
+  assert.match(fs.readFileSync(path.join(repo, 'NOTICE'), 'utf8'), /^Precept\nCopyright 2026 ybakiame\n/);
 });
 
 test('VC++ prerequisite set follows actual imports; debug CRTs refuse; UCRT is not listed', () => {
@@ -100,30 +100,30 @@ test('cargo environment drops inherited flags, wrappers, target and profile over
 });
 
 test('builder path scan finds ASCII/UTF-16, either separator, any case, and reports booleans only', () => {
-  const prefixes = { checkout: 'C:\\Users\\Dev\\src\\acp', user_home: 'C:\\Users\\Dev' };
-  const clean = builderPathScan(Buffer.from('/acp/source/crates/x.rs /cargo/registry'), prefixes);
+  const prefixes = { checkout: 'C:\\Users\\Dev\\src\\precept', user_home: 'C:\\Users\\Dev' };
+  const clean = builderPathScan(Buffer.from('/precept/source/crates/x.rs /cargo/registry'), prefixes);
   assert.deepEqual(clean, { checkout: false, user_home: false });
-  assert.deepEqual(builderPathScan(Buffer.from('panic at c:/users/dev/src/acp/crates'), prefixes), { checkout: true, user_home: true });
+  assert.deepEqual(builderPathScan(Buffer.from('panic at c:/users/dev/src/precept/crates'), prefixes), { checkout: true, user_home: true });
   assert.deepEqual(builderPathScan(Buffer.from('C:\\Users\\Dev\\.cargo', 'utf16le'), prefixes), { checkout: false, user_home: true });
 });
 
 function product(root) {
-  const names = [...binaries.map(b => `ACP/bin/${b}`),
-    'ACP/runtime/manifest.json', 'ACP/notices/dependency-notices.json', 'ACP/notices/NOTICE.txt',
-    `ACP/notices/${'a'.repeat(64)}.txt`, 'ACP/README.txt', 'ACP/LICENSE.txt'];
-  for (const dir of ['ACP', 'ACP/bin', 'ACP/runtime', 'ACP/notices']) fs.mkdirSync(path.join(root, dir));
+  const names = [...binaries.map(b => `Precept/bin/${b}`),
+    'Precept/runtime/manifest.json', 'Precept/notices/dependency-notices.json', 'Precept/notices/NOTICE.txt',
+    `Precept/notices/${'a'.repeat(64)}.txt`, 'Precept/README.txt', 'Precept/LICENSE.txt'];
+  for (const dir of ['Precept', 'Precept/bin', 'Precept/runtime', 'Precept/notices']) fs.mkdirSync(path.join(root, dir));
   return names.map(file => { fs.writeFileSync(path.join(root, file), 'product'); return { file, sha256: digest(Buffer.from('product')) }; });
 }
 test('removal preflights every file, refuses forged paths, retains Profile/auth/unknown files', t => {
   const root = fixture(t);
   const files = product(root);
   for (const name of ['profile.sqlite3', 'operator.cap', 'unknown.txt']) fs.writeFileSync(path.join(root, name), 'retain');
-  for (const forged of ['../operator.cap', 'ACP/../operator.cap', 'operator.cap', 'ACP/bin/evil.dll', 'ACP/bin/VCRUNTIME140.dll', 'ACP/runtime/operator.cap', 'ACP/bin/acp-daemon.exe.bak']) {
+  for (const forged of ['../operator.cap', 'Precept/../operator.cap', 'operator.cap', 'Precept/bin/evil.dll', 'Precept/bin/VCRUNTIME140.dll', 'Precept/runtime/operator.cap', 'Precept/bin/preceptd.exe.bak']) {
     assert.throws(() => removeOwnedProduct(root, [...files, { file: forged, sha256: digest(Buffer.from('retain')) }]));
   }
-  const changed = path.join(root, 'ACP/README.txt'); fs.writeFileSync(changed, 'changed');
+  const changed = path.join(root, 'Precept/README.txt'); fs.writeFileSync(changed, 'changed');
   assert.throws(() => removeOwnedProduct(root, files));
-  assert.ok(fs.existsSync(path.join(root, 'ACP/bin', binaries[0]))); // No partial removal before preflight.
+  assert.ok(fs.existsSync(path.join(root, 'Precept/bin', binaries[0]))); // No partial removal before preflight.
   fs.writeFileSync(changed, 'product');
   assert.deepEqual(removeOwnedProduct(root, files), { removed_files: files.length, retained_directories: [] });
   assert.deepEqual(fs.readdirSync(root).sort(), ['operator.cap', 'profile.sqlite3', 'unknown.txt']);
@@ -132,18 +132,18 @@ test('removal preflights every file, refuses forged paths, retains Profile/auth/
 test('removal keeps a product directory holding an unknown file and never follows a directory alias', t => {
   const root = fixture(t);
   const files = product(root);
-  fs.writeFileSync(path.join(root, 'ACP/bin/unknown.txt'), 'retain');
-  assert.deepEqual(removeOwnedProduct(root, files).retained_directories, ['ACP/bin', 'ACP']);
-  assert.deepEqual(fs.readdirSync(path.join(root, 'ACP')), ['bin']);
-  assert.deepEqual(fs.readdirSync(path.join(root, 'ACP/bin')), ['unknown.txt']);
+  fs.writeFileSync(path.join(root, 'Precept/bin/unknown.txt'), 'retain');
+  assert.deepEqual(removeOwnedProduct(root, files).retained_directories, ['Precept/bin', 'Precept']);
+  assert.deepEqual(fs.readdirSync(path.join(root, 'Precept')), ['bin']);
+  assert.deepEqual(fs.readdirSync(path.join(root, 'Precept/bin')), ['unknown.txt']);
 
   const aliased = fixture(t);
   const outside = fixture(t);
   const listed = product(outside);
-  fs.mkdirSync(path.join(aliased, 'ACP'));
-  fs.symlinkSync(path.join(outside, 'ACP/bin'), path.join(aliased, 'ACP/bin'), process.platform === 'win32' ? 'junction' : 'dir');
-  for (const dir of ['runtime', 'notices']) fs.cpSync(path.join(outside, 'ACP', dir), path.join(aliased, 'ACP', dir), { recursive: true });
-  for (const file of ['README.txt', 'LICENSE.txt']) fs.copyFileSync(path.join(outside, 'ACP', file), path.join(aliased, 'ACP', file));
+  fs.mkdirSync(path.join(aliased, 'Precept'));
+  fs.symlinkSync(path.join(outside, 'Precept/bin'), path.join(aliased, 'Precept/bin'), process.platform === 'win32' ? 'junction' : 'dir');
+  for (const dir of ['runtime', 'notices']) fs.cpSync(path.join(outside, 'Precept', dir), path.join(aliased, 'Precept', dir), { recursive: true });
+  for (const file of ['README.txt', 'LICENSE.txt']) fs.copyFileSync(path.join(outside, 'Precept', file), path.join(aliased, 'Precept', file));
   assert.throws(() => removeOwnedProduct(aliased, listed));
-  assert.equal(fs.readdirSync(path.join(outside, 'ACP/bin')).length, binaries.length);
+  assert.equal(fs.readdirSync(path.join(outside, 'Precept/bin')).length, binaries.length);
 });

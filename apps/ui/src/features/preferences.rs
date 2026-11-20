@@ -4,9 +4,9 @@
 //! not draw a list in its parent's scroll, pages of rows with Previous and
 //! Next (keyboard-first, whole cells).
 use crate::*;
-use acp_ui_core::i18n::Msg;
-use acp_ui_core::presentation::sanitize;
-use acp_ui_core::{Model, Preference};
+use precept_ui_core::i18n::Msg;
+use precept_ui_core::presentation::sanitize;
+use precept_ui_core::{Model, Preference};
 use shell::*;
 use std::rc::Rc;
 use tokens::palette;
@@ -162,7 +162,7 @@ pub(crate) fn preferences(model: Signal<Model>) -> impl IntoElement {
                     .size(ui::ButtonSize::Small)
                     .disabled(move || model.get().selected_project.is_none())
                     .on_press(move || {
-                        shell::go_review(model, acp_ui_core::operator::ReviewMode::Project)
+                        shell::go_review(model, precept_ui_core::operator::ReviewMode::Project)
                     }),
             ),
         );
@@ -192,7 +192,7 @@ pub(crate) fn preferences(model: Signal<Model>) -> impl IntoElement {
                         current.detail_page + 1,
                         current.detail_pages(),
                         scope_word(&current, &selected.scope),
-                        acp_ui_core::presentation::hashtags(&selected.tags)
+                        precept_ui_core::presentation::hashtags(&selected.tags)
                     ),
                 ],
             ))
@@ -234,8 +234,8 @@ pub(crate) fn preferences(model: Signal<Model>) -> impl IntoElement {
         for (offset, r) in rows
             .iter()
             .enumerate()
-            .skip(page * acp_ui_core::PAGE_SIZE)
-            .take(acp_ui_core::PAGE_SIZE)
+            .skip(page * precept_ui_core::PAGE_SIZE)
+            .take(precept_ui_core::PAGE_SIZE)
         {
             list = list.child(row(model, r, offset));
         }
@@ -255,7 +255,8 @@ pub(crate) fn preferences(model: Signal<Model>) -> impl IntoElement {
                     model,
                     Msg::NextPage,
                     move || {
-                        (model.get().page + 1) * acp_ui_core::PAGE_SIZE < model.get().rows().len()
+                        (model.get().page + 1) * precept_ui_core::PAGE_SIZE
+                            < model.get().rows().len()
                     },
                     move || model.update(|m| m.page_by(1)),
                 ))

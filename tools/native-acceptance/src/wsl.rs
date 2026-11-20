@@ -1,7 +1,7 @@
 //! S1-B: Windows-native HWND GUI -> WSL2 daemon end-to-end acceptance.
 //!
 //! The GUI runs on Windows with `--wsl-*` arguments and reaches the daemon only
-//! through its persistent `acp-wsl-bridge` helper. Independent observations use
+//! through its persistent `precept-bridge` helper. Independent observations use
 //! the WSL-side CLI through `wsl.exe --exec` (no shell). All state is a fresh
 //! synthetic run directory inside the disposable test distribution.
 use super::{Owned, Ui, desktop, evidence};
@@ -37,7 +37,7 @@ pub const CELLS: &[&str] = &[
 pub struct Wsl {
     pub distribution: String,
     pub user: String,
-    /// Absolute Linux directory holding bin/{acp-daemon,acp-query,acp-wsl-bridge,acp-mcp}.
+    /// Absolute Linux directory holding bin/{preceptd,precept,precept-bridge,precept-mcp}.
     pub prefix: String,
 }
 fn wsl_exe() -> PathBuf {
@@ -108,12 +108,7 @@ impl Wsl {
 
 /// SHA-256 of the Linux product binaries actually executed, taken inside WSL.
 pub fn linux_binaries(wsl: &Wsl) -> Value {
-    let names = [
-        "acp-daemon",
-        "acp-query",
-        "acp-wsl-bridge",
-        "acp-mcp",
-    ];
+    let names = ["preceptd", "precept", "precept-bridge", "precept-mcp"];
     let paths: Vec<String> = names.iter().map(|n| wsl.bin(n)).collect();
     let mut args = vec!["--"];
     args.extend(paths.iter().map(String::as_str));
@@ -195,7 +190,7 @@ impl Remote {
         let child = self
             .wsl
             .command(
-                &self.wsl.bin("acp-daemon"),
+                &self.wsl.bin("preceptd"),
                 &[
                     "--runtime-dir",
                     &self.runtime,
@@ -218,7 +213,7 @@ impl Remote {
         }
     }
     fn daemon_pid(&self) -> String {
-        let pids = self.wsl.pids("acp-daemon");
+        let pids = self.wsl.pids("preceptd");
         assert_eq!(pids.len(), 1, "exactly one owned WSL daemon");
         pids[0].clone()
     }
@@ -227,7 +222,7 @@ impl Remote {
         let pid = self.daemon_pid();
         self.wsl.ok("/usr/bin/kill", &["-INT", &pid]);
         let end = Instant::now() + Duration::from_secs(15);
-        while !self.wsl.pids("acp-daemon").is_empty() {
+        while !self.wsl.pids("preceptd").is_empty() {
             assert!(Instant::now() < end, "graceful WSL daemon exit");
             thread::sleep(Duration::from_millis(100));
         }
@@ -236,7 +231,7 @@ impl Remote {
     fn query(&self, args: &[&str]) -> (bool, Value) {
         let mut all = vec!["--runtime-dir", &self.runtime, "--endpoint", &self.endpoint];
         all.extend_from_slice(args);
-        let (ok, out) = self.wsl.run(&self.wsl.bin("acp-query"), &all);
+        let (ok, out) = self.wsl.run(&self.wsl.bin("precept"), &all);
         (ok, serde_json::from_str(&out).unwrap_or(Value::Null))
     }
     fn info(&self) -> Value {
@@ -296,7 +291,7 @@ fn gui_args(r: &Remote) -> Vec<String> {
         "--wsl-user",
         &r.wsl.user,
         "--wsl-bridge",
-        &r.wsl.bin("acp-wsl-bridge"),
+        &r.wsl.bin("precept-bridge"),
         "--wsl-runtime-dir",
         &r.runtime,
         "--wsl-endpoint",
@@ -340,7 +335,7 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
         json!({"distribution":r.wsl.distribution,"user":r.wsl.user,"daemon_pid":r.daemon_pid()}),
     );
     assert!(
-        r.wsl.pids("acp-wsl-bridge").is_empty(),
+        r.wsl.pids("precept-bridge").is_empty(),
         "no bridge before the GUI"
     );
 
@@ -367,7 +362,7 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
         "timing",
         json!({"step":"gui-launch-to-operator-state","ms":started.elapsed().as_millis() as u64}),
     );
-    let bridge = r.wsl.pids("acp-wsl-bridge");
+    let bridge = r.wsl.pids("precept-bridge");
     assert_eq!(bridge.len(), 1, "one persistent bridge per connection");
     assert_eq!(r.info()["selected"], false);
     ui.capture("wsl-unselected", out);
@@ -429,7 +424,7 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
         ui.wait("phase=Ready", "alpha");
     });
     assert_eq!(
-        r.wsl.pids("acp-wsl-bridge"),
+        r.wsl.pids("precept-bridge"),
         bridge,
         "reconnect reuses the live bridge"
     );
@@ -496,7 +491,7 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     // A wrong retype never prepares a delete.
     ui.key("alt+shift+q");
     ui.wait(
-        "ACP_UI_DIALOG opened=true",
+        "PRECEPT_UI_DIALOG opened=true",
         "Delete project alpha preference #1?",
     );
     ui.text("9");
@@ -512,7 +507,7 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     ui.wait("delete_armed=false", "Show full digest");
     ui.key("alt+shift+q");
     ui.wait(
-        "ACP_UI_DIALOG opened=true",
+        "PRECEPT_UI_DIALOG opened=true",
         "Delete project alpha preference #1?",
     );
     ui.text("1");
@@ -541,7 +536,7 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     let before = r.rows();
     // Freeze the helper, submit, then kill it: the request was written to the
     // bridge but no answer can arrive, so the outcome is unknown to the GUI.
-    let helper = r.wsl.pids("acp-wsl-bridge");
+    let helper = r.wsl.pids("precept-bridge");
     assert_eq!(helper.len(), 1);
     r.wsl.ok("/usr/bin/kill", &["-STOP", &helper[0]]);
     ui.key("alt+shift+v");
@@ -551,7 +546,7 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     ui.capture("wsl-outcome-unknown", out);
     thread::sleep(Duration::from_secs(2));
     assert!(
-        r.wsl.pids("acp-wsl-bridge").is_empty(),
+        r.wsl.pids("precept-bridge").is_empty(),
         "no automatic bridge restart"
     );
     assert_eq!(r.rows().len(), before.len(), "no automatic replay");
@@ -562,7 +557,7 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
         ui.wait(&format!("receipt={n} "), &format!("commit {n}"));
     });
     assert_eq!(r.rows().len(), before.len() + 1, "settled exactly once");
-    let restarted = r.wsl.pids("acp-wsl-bridge");
+    let restarted = r.wsl.pids("precept-bridge");
     assert_eq!(restarted.len(), 1);
     assert_ne!(restarted, helper);
     evidence::event(
@@ -575,12 +570,12 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     let listeners = r
         .wsl
         .ok("/usr/bin/ss", &["-H", "-l", "-t", "-u", "-n", "-p"]);
-    for name in ["acp-wsl-bridge", "acp-daemon"] {
+    for name in ["precept-bridge", "preceptd"] {
         assert!(!listeners.contains(name), "{name} owns a network listener");
     }
     // The helper is exec'd directly by WSL interop, never through a shell, and
     // its argv carries only the runtime and endpoint (no token, no project data).
-    let helper_pid = r.wsl.pids("acp-wsl-bridge")[0].clone();
+    let helper_pid = r.wsl.pids("precept-bridge")[0].clone();
     let parent = r.wsl.ok("/usr/bin/ps", &["-o", "ppid=", "-p", &helper_pid]);
     let parent_comm = r
         .wsl
@@ -599,7 +594,7 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
         "helper argv: exe --runtime-dir R --endpoint E"
     );
     assert!(
-        argv[0].ends_with("/acp-wsl-bridge")
+        argv[0].ends_with("/precept-bridge")
             && argv[1] == "--runtime-dir"
             && argv[3] == "--endpoint"
     );
@@ -627,7 +622,7 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     let daemon = r.daemon_pid();
     ui.close();
     let end = Instant::now() + Duration::from_secs(15);
-    while !r.wsl.pids("acp-wsl-bridge").is_empty() {
+    while !r.wsl.pids("precept-bridge").is_empty() {
         assert!(Instant::now() < end, "bridge helper exits after GUI close");
         thread::sleep(Duration::from_millis(100));
     }
@@ -658,7 +653,7 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     // Detected live, with no user action: the watcher's health check over the
     // still-running bridge reports the stopped daemon.
     ui.wait(
-        "ACP_UI_WSL link=Some(\"WSL daemon not running or not reachable\")",
+        "PRECEPT_UI_WSL link=Some(\"WSL daemon not running or not reachable\")",
         "unavailable",
     );
     ui.capture("wsl-daemon-stopped-live", out);
@@ -695,17 +690,17 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     for (i, (field, value, cause)) in [
         (
             1,
-            "acp-s1b-missing".to_owned(),
+            "precept-s1b-missing".to_owned(),
             "WSL distribution not found",
         ),
         (
             3,
-            "acp-nobody".to_owned(),
+            "precept-nobody".to_owned(),
             "WSL user not available in this distribution",
         ),
         (
             5,
-            format!("{}/bin/acp-missing-helper", r.wsl.prefix),
+            format!("{}/bin/precept-missing-helper", r.wsl.prefix),
             "Bridge helper not found or not executable in WSL",
         ),
         (
@@ -747,7 +742,7 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     )));
     ui.key("alt+o");
     ui.wait("selected=true grant=false busy=false", "Profile selected");
-    ui.wait("ACP_UI_WSL link=None", "Profile selected");
+    ui.wait("PRECEPT_UI_WSL link=None", "Profile selected");
     let terminated = Command::new(wsl_exe())
         .args(["--terminate", &r.wsl.distribution])
         .status()
@@ -755,13 +750,13 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     assert!(terminated.success());
     r.daemon = None;
     ui.wait(
-        "ACP_UI_WSL link=Some(\"WSL bridge disconnected\")",
+        "PRECEPT_UI_WSL link=Some(\"WSL bridge disconnected\")",
         "disconnected",
     );
     ui.capture("wsl-bridge-disconnected-live", out);
     thread::sleep(Duration::from_secs(3));
     assert!(
-        r.wsl.pids("acp-wsl-bridge").is_empty(),
+        r.wsl.pids("precept-bridge").is_empty(),
         "no automatic bridge restart"
     );
     ui.close();

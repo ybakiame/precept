@@ -8,7 +8,7 @@ mod screen;
 #[allow(dead_code)]
 #[path = "../tty.rs"]
 mod tty;
-use acp_ipc::{Access, Client, Error, Location, load_credential, transport};
+use precept_ipc::{Access, Client, Error, Location, load_credential, transport};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
@@ -30,8 +30,8 @@ impl Drop for Owned {
 }
 fn command(binary: &Path) -> Command {
     let mut cmd = Command::new(binary);
-    // No inherited ACP_* control (any case: Windows names are case-insensitive).
-    acp_native_acceptance::environment::clear_inherited_acp(&mut cmd);
+    // No inherited PRECEPT_* control (any case: Windows names are case-insensitive).
+    precept_native_acceptance::environment::clear_inherited_precept(&mut cmd);
     cmd
 }
 fn bounded(mut cmd: Command) -> (bool, Value) {
@@ -75,7 +75,7 @@ struct Fixture {
 impl Fixture {
     fn start(bins: PathBuf) -> Self {
         let parent = tempfile::Builder::new()
-            .prefix("acp-m5-zip-")
+            .prefix("precept-m5-zip-")
             .tempdir()
             .unwrap()
             .keep();
@@ -111,12 +111,12 @@ impl Fixture {
     }
     fn daemon(bins: &Path, root: &Path, location: &Location) -> Owned {
         let state = root.join("daemon-state");
-        acp_native_acceptance::daemon_state::write(
+        precept_native_acceptance::daemon_state::write(
             &state,
             &[("synthetic", &root.join("synthetic"))],
             None,
         );
-        let mut cmd = command(&bins.join("acp-daemon.exe"));
+        let mut cmd = command(&bins.join("preceptd.exe"));
         cmd.arg("--runtime-dir")
             .arg(&location.runtime_dir)
             .args(["--endpoint", &location.endpoint, "--state-dir"])
@@ -132,7 +132,7 @@ impl Fixture {
         Owned(cmd.spawn().unwrap())
     }
     fn query(&self, args: &[&str]) -> (bool, Value) {
-        let mut cmd = command(&self.bins.join("acp-query.exe"));
+        let mut cmd = command(&self.bins.join("precept.exe"));
         cmd.arg("--runtime-dir")
             .arg(&self.location.runtime_dir)
             .args(["--endpoint", &self.location.endpoint])
@@ -151,7 +151,7 @@ impl Fixture {
     fn mutation(&self, args: &[&str]) -> Value {
         let binding = self.ok(&["profile", "info"])["binding"].clone();
         let epoch = binding["owner_epoch"].to_string();
-        let id = acp_ipc::operator::operation_id().unwrap();
+        let id = precept_ipc::operator::operation_id().unwrap();
         let mut all = args.to_vec();
         all.extend([
             "--profile-id",
@@ -200,7 +200,7 @@ impl Fixture {
                 .exists()
         );
         // The stable coordination file is retained; acquiring it proves release.
-        let _lease = acp_ipc::RuntimeLease::acquire(&self.location).unwrap();
+        let _lease = precept_ipc::RuntimeLease::acquire(&self.location).unwrap();
     }
 }
 struct Mcp {
@@ -209,7 +209,7 @@ struct Mcp {
 }
 impl Mcp {
     fn start(f: &Fixture) -> Self {
-        let mut cmd = command(&f.bins.join("acp-mcp.exe"));
+        let mut cmd = command(&f.bins.join("precept-mcp.exe"));
         cmd.arg("--runtime-dir")
             .arg(&f.location.runtime_dir)
             .args([
@@ -260,7 +260,7 @@ impl Mcp {
     }
 }
 struct Package {
-    acp: PathBuf,
+    precept: PathBuf,
     bins: PathBuf,
     manifest: Value,
 }
@@ -278,7 +278,7 @@ impl Package {
         self.shipped()
             .into_iter()
             .map(|file| {
-                let bytes = fs::read(self.acp.join(&file)).unwrap();
+                let bytes = fs::read(self.precept.join(&file)).unwrap();
                 json!({"file":file,"sha256":format!("{:x}", Sha256::digest(bytes))})
             })
             .collect()
@@ -362,21 +362,24 @@ async fn main() {
     }
     let args: Vec<_> = std::env::args().collect();
     assert_eq!(args.len(), 4, "EXTRACTED_PACKAGE NEW_REPORT WINDOW_WORKER");
-    let acp = PathBuf::from(&args[1]).canonicalize().unwrap().join("ACP");
+    let precept = PathBuf::from(&args[1])
+        .canonicalize()
+        .unwrap()
+        .join("Precept");
     let out = PathBuf::from(&args[2]);
     fs::create_dir(&out).unwrap();
     let manifest: Value =
-        serde_json::from_slice(&fs::read(acp.join("runtime/manifest.json")).unwrap()).unwrap();
+        serde_json::from_slice(&fs::read(precept.join("runtime/manifest.json")).unwrap()).unwrap();
     let package = Package {
-        bins: acp.join("bin"),
-        acp,
+        bins: precept.join("bin"),
+        precept,
         manifest,
     };
     let manifest = &package.manifest;
     let bins = package.bins.clone();
     // Every archived file matches the in-archive manifest before any launch.
     for m in manifest["files"].as_array().unwrap() {
-        let bytes = fs::read(package.acp.join(m["file"].as_str().unwrap())).unwrap();
+        let bytes = fs::read(package.precept.join(m["file"].as_str().unwrap())).unwrap();
         assert_eq!(
             format!("{:x}", Sha256::digest(bytes)),
             m["sha256"].as_str().unwrap()
@@ -392,13 +395,14 @@ async fn main() {
     transport::private_dir(&bins, false).unwrap();
     for b in &before {
         drop(
-            transport::open_private(&package.acp.join(b["file"].as_str().unwrap()), false).unwrap(),
+            transport::open_private(&package.precept.join(b["file"].as_str().unwrap()), false)
+                .unwrap(),
         );
     }
     let mut f = Fixture::start(bins.clone());
     // Keep the retained root private and out of public evidence. Only this file names it.
     transport::private_dir(&out, true).unwrap();
-    package.modules(f.daemon.0.id(), "acp-daemon.exe", &out, &args[3], "daemon");
+    package.modules(f.daemon.0.id(), "preceptd.exe", &out, &args[3], "daemon");
     fs::write(
         out.join("private-fixture-root.txt"),
         f.root.to_str().unwrap(),
@@ -433,7 +437,7 @@ async fn main() {
         .arg("-Directory")
         .arg(&unsafe_root);
     assert!(bounded(acl).0);
-    let mut unsafe_daemon = command(&bins.join("acp-daemon.exe"));
+    let mut unsafe_daemon = command(&bins.join("preceptd.exe"));
     unsafe_daemon
         .arg("--runtime-dir")
         .arg(&unsafe_root)
@@ -442,7 +446,7 @@ async fn main() {
     assert!(!unsafe_root.join("operator.cap").exists());
     let file_root = f.root.join("file-runtime");
     fs::write(&file_root, "RETAIN").unwrap();
-    let mut file_daemon = command(&bins.join("acp-daemon.exe"));
+    let mut file_daemon = command(&bins.join("preceptd.exe"));
     file_daemon
         .arg("--runtime-dir")
         .arg(&file_root)
@@ -508,7 +512,7 @@ async fn main() {
         Error::Unauthorized
     );
     record("project-credential-cannot-write");
-    let mut wrong = command(&bins.join("acp-mcp.exe"));
+    let mut wrong = command(&bins.join("precept-mcp.exe"));
     wrong
         .arg("--runtime-dir")
         .arg(&f.location.runtime_dir)
@@ -559,12 +563,12 @@ async fn main() {
         "--operator".into(),
     ];
     {
-        let mut ui = tty::Tty::start(&bins.join("acp-nsh-tui.exe"), &ui_args, &out, &focus);
-        ui.wait("Agent Control Plane");
-        package.modules(ui.pid(), "acp-nsh-tui.exe", &out, &args[3], "conpty");
+        let mut ui = tty::Tty::start(&bins.join("precept-tui.exe"), &ui_args, &out, &focus);
+        ui.wait("Precept");
+        package.modules(ui.pid(), "precept-tui.exe", &out, &args[3], "conpty");
         ui.capture(&out.join("conpty.txt"));
         ui.resize(100, 35);
-        ui.wait("Agent Control Plane");
+        ui.wait("Precept");
         ui.close();
         let end = Instant::now() + Duration::from_secs(2);
         loop {
@@ -581,17 +585,17 @@ async fn main() {
     }
     record("packaged-conpty-render-resize-normal-restore");
     {
-        let nonce = &acp_ipc::operator::operation_id().unwrap()[..16];
+        let nonce = &precept_ipc::operator::operation_id().unwrap()[..16];
         let mut ui = desktop::Desktop::start(
-            &bins.join("acp-nsh-native.exe"),
+            &bins.join("precept-desktop.exe"),
             &ui_args,
             nonce,
             &args[3],
             &out,
             &focus,
         );
-        ui.wait_after("ACP_NSH_STATE phase=Ready", 0);
-        package.modules(ui.pid(), "acp-nsh-native.exe", &out, &args[3], "hwnd");
+        ui.wait_after("PRECEPT_NSH_STATE phase=Ready", 0);
+        package.modules(ui.pid(), "precept-desktop.exe", &out, &args[3], "hwnd");
         ui.resize(920, 640);
         // Sidebar "Sessions" (Default button) at rest, then under the real
         // pointer: the hover wash must stay near the dark rest fill so the light

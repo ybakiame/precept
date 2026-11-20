@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 180" width="720" height="180" role="img" aria-labelledby="t d">
   <title id="t">Agent Control Plane</title>
-  <desc id="d">The ACP mark: three stacked planes with a context node. A signal travels from the top plane to the bottom one, the way context reaches an agent.</desc>
+  <desc id="d">The Precept mark: three stacked planes with a context node. A signal travels from the top plane to the bottom one, the way context reaches an agent.</desc>
   <rect width="720" height="180" rx="16" fill="#111113"/>
   <g transform="translate(48 30) scale(5)" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.4">
     <path d="M12 3L21 7.5L12 12L3 7.5Z" stroke="#b4bcff">

@@ -13,10 +13,10 @@ pub(crate) mod setup;
 pub(crate) mod tags;
 
 use crate::*;
-use acp_ui_core::Section;
-use acp_ui_core::i18n::Msg;
 use handoff::handoff;
 use overview::{daemon, dashboard, onboarding};
+use precept_ui_core::Section;
+use precept_ui_core::i18n::Msg;
 use preferences::preferences;
 use shell::*;
 use tokens::compact;
@@ -30,8 +30,8 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
         .style_when(compact, |s| s.gap_2())
         .on_layout(move |_: &Bounds<Points>| {
             #[cfg(not(target_arch = "wasm32"))]
-            if model.get().phase == Phase::Ready && std::env::var_os("ACP_UI_PROBE").is_some() {
-                eprintln!("ACP_NSH_LAYOUT_READY elapsed={:.6}", probe_elapsed());
+            if model.get().phase == Phase::Ready && std::env::var_os("PRECEPT_UI_PROBE").is_some() {
+                eprintln!("PRECEPT_NSH_LAYOUT_READY elapsed={:.6}", probe_elapsed());
             }
         });
     if current.phase != Phase::Ready {

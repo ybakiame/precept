@@ -1,16 +1,16 @@
 //! B0 revision: one information architecture, theme collection, bilingual UI.
 //! This root only consumes a built-in synthetic snapshot. Native IPC is never initialized.
-use acp_ui_core::{
-    Model,
-    appearance::{ColorMode, Colors, ThemeId},
-    i18n::{Locale, Msg, tr},
-    presentation::sanitize,
-};
 use nsh_base::button;
 use nsh_core::{
     desktop::{MainWindowOptions, ResizeEdge, WindowFrameStyle, WindowMode},
     element::desktop::current_window,
     prelude::*,
+};
+use precept_ui_core::{
+    Model,
+    appearance::{ColorMode, Colors, ThemeId},
+    i18n::{Locale, Msg, tr},
+    presentation::sanitize,
 };
 use std::sync::OnceLock;
 
@@ -246,11 +246,7 @@ fn titlebar(ui: Signal<Ui>) -> impl IntoElement {
                 .justify_center()
                 .window_drag(true)
                 .child(
-                    text(format!(
-                        "Agent Control Plane / {}",
-                        ui.get().word(Msg::Preview)
-                    ))
-                    .text_size(px(12.0)),
+                    text(format!("Precept / {}", ui.get().word(Msg::Preview))).text_size(px(12.0)),
                 ),
         )
         .child(caption(ui, Msg::Minimize, "M5 12H19", move || {
@@ -687,10 +683,10 @@ fn preview(config: Config) -> impl IntoElement {
     let model = signal(Model::fixture());
     set_mode(ui, config.mode);
     effect(move || {
-        if std::env::var_os("ACP_UI_PROBE").is_some() {
+        if std::env::var_os("PRECEPT_UI_PROBE").is_some() {
             let s = ui.get().config;
             eprintln!(
-                "ACP_BRAND_UI theme={:?} page={:?} locale={:?} mode={:?} contrast={}",
+                "PRECEPT_BRAND_UI theme={:?} page={:?} locale={:?} mode={:?} contrast={}",
                 s.theme, s.page, s.locale, s.mode, s.contrast
             );
         }
@@ -747,7 +743,7 @@ fn preview(config: Config) -> impl IntoElement {
                         .gap_2()
                         .items_center()
                         .child(
-                            text("ACP")
+                            text("Precept")
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_size(px(18.0)),
                         )
@@ -776,9 +772,9 @@ fn preview(config: Config) -> impl IntoElement {
                         Page::Appearance => body.child(appearance(ui)),
                     };
                     body.on_layout(move |_: &Bounds<Points>| {
-                        if std::env::var_os("ACP_UI_PROBE").is_some() {
+                        if std::env::var_os("PRECEPT_UI_PROBE").is_some() {
                             eprintln!(
-                                "ACP_NSH_LAYOUT_READY brand_preview=true elapsed={:.6}",
+                                "PRECEPT_NSH_LAYOUT_READY brand_preview=true elapsed={:.6}",
                                 super::probe_elapsed()
                             );
                         }

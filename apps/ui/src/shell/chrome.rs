@@ -1,10 +1,10 @@
 //! Custom native window chrome shared by the actual console.
 use crate::*;
-use acp_ui_core::i18n::Msg;
 use nsh_core::{
     desktop::{ResizeEdge, WindowMode},
     element::desktop::current_window,
 };
+use precept_ui_core::i18n::Msg;
 use tokens::palette;
 // Paths are centered in a 24×24 viewBox. No font glyph metrics or baseline offset.
 fn caption(
@@ -77,7 +77,7 @@ pub(crate) fn titlebar(model: Signal<Model>) -> impl IntoElement {
                 .justify_center()
                 .window_drag(true)
                 .child(
-                    text("Agent Control Plane")
+                    text("Precept")
                         .text_size(px(ui::scale::text::CAPTION))
                         .text_color(move || palette(model).muted)
                         .style_when(move || !ui::tokens::compact(), |s| s.hidden()),

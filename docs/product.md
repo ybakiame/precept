@@ -1,6 +1,6 @@
-# Agent Control Plane — product charter
+# Precept — product charter
 
-**Agent Control Plane is a local-first, developer-centric control plane for
+**Precept is a local-first, developer-centric control plane for
 engineering context, project rules and continuity across coding agents and
 harnesses.**
 
@@ -77,7 +77,7 @@ contents are shared only through explicit, bounded reads.
 
 ## Integration boundaries
 
-MCP is the read-only context delivery integration. ACP does not launch or supervise
+MCP is the read-only context delivery integration. Precept does not launch or supervise
 agents; closing a UI does not stop the daemon. MCP is not the domain model and
 grants no OS isolation.
 
@@ -94,9 +94,9 @@ from the existing read tools, receipts or Handoff checksums.
 - No cloud account, remote sync, multi-user collaboration, enterprise enforcement,
   vector database or third-party memory-service requirement.
 - No OS sandbox, trusted execution attestation, digital-signature claim, universal
-  MCP/ACP certification or guaranteed vendor behavior.
+  MCP/Precept certification or guaranteed vendor behavior.
 - No platform, accessibility, device, model or clean-machine support claim inferred
   from compilation, headless tests or historical evidence.
 
-ACP remains at validation stage. Packaging, installation, release and real-profile
+Precept remains at validation stage. Packaging, installation, release and real-profile
 activation require their own explicit decisions and current evidence.

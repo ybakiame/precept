@@ -18,13 +18,15 @@ impl Drop for Restore {
     }
 }
 fn main() -> io::Result<()> {
-    acp_ui::TERMINAL_SURFACE.store(true, std::sync::atomic::Ordering::Relaxed);
-    acp_ui::PROBE_STARTED.set(std::time::Instant::now()).ok();
-    let preview = acp_ui::brand_preview::configure().map_err(io::Error::other)?;
+    precept_ui::TERMINAL_SURFACE.store(true, std::sync::atomic::Ordering::Relaxed);
+    precept_ui::PROBE_STARTED
+        .set(std::time::Instant::now())
+        .ok();
+    let preview = precept_ui::brand_preview::configure().map_err(io::Error::other)?;
     if !preview {
-        acp_ui::PERSIST_SETTINGS.store(true, std::sync::atomic::Ordering::Relaxed);
-        acp_ui::INPUTS
-            .set(acp_ui_client::native::Inputs::parse())
+        precept_ui::PERSIST_SETTINGS.store(true, std::sync::atomic::Ordering::Relaxed);
+        precept_ui::INPUTS
+            .set(precept_ui_client::native::Inputs::parse())
             .ok();
     }
     terminal::enable_raw_mode()?;
@@ -32,13 +34,13 @@ fn main() -> io::Result<()> {
     execute!(io::stdout(), EnterAlternateScreen, EnableBracketedPaste)?;
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
     let mut options = AppOptions::default();
-    options.storage = Some(acp_ui::ephemeral_storage());
+    options.storage = Some(precept_ui::ephemeral_storage());
     options.cache = nsh_platform_tui::CacheOptions::off();
     let mut view = AppView::new(options);
     view.load(App::Rust(if preview {
-        Root::of::<acp_ui::brand_preview::BrandPreview>()
+        Root::of::<precept_ui::brand_preview::BrandPreview>()
     } else {
-        Root::of::<acp_ui::App>()
+        Root::of::<precept_ui::App>()
     }))?;
     loop {
         view.draw_terminal(&mut terminal)?;

@@ -1,12 +1,12 @@
-# Agent Control Plane
+# Precept
 
-Agent Control Plane (ACP) is a local-first context and policy layer for coding
+Precept (Precept) is a local-first context and policy layer for coding
 agents. It combines current repository rules, confirmed personal preferences and
 explicit task Handoffs while preserving the difference between current facts,
 historical claims and independent verification. It is not an agent harness or an OS
 sandbox.
 
-ACP is validation-stage software, not a production release. The supported product
+Precept is validation-stage software, not a production release. The supported product
 runtime is Rust, with a native daemon, operator CLI, read-only MCP bridge and NSH
 Desktop/TUI operator app.
 
@@ -22,7 +22,7 @@ Desktop/TUI operator app.
   `get_handoff`.
 - Historical Handoffs with revision, branch, worktree and content-drift warnings.
 - A Windows Desktop workflow that operates a daemon inside WSL2 through the typed
-  `acp-wsl-bridge` helper, without TCP or shell forwarding.
+  `precept-bridge` helper, without TCP or shell forwarding.
 
 ## Build from source
 
@@ -38,7 +38,7 @@ with:
 
 ```text
 cargo build --manifest-path apps/Cargo.toml --workspace \
-  --features acp-ui/native,acp-ui/tui --bins --locked
+  --features precept-ui/native,precept-ui/tui --bins --locked
 ```
 
 The optional Web target is an offline synthetic preview. It has no daemon API,
@@ -74,7 +74,7 @@ with Diagnostics and Settings available separately. See the
 - Document bodies require explicit opt-in and bounded, allowlisted reads.
 - Agent-reported actions, daemon observations and independent verification are
   different claims. A saved PASS is not a current PASS.
-- ACP does not provide OS sandboxing, credential isolation from same-user processes,
+- Precept does not provide OS sandboxing, credential isolation from same-user processes,
   hidden telemetry, remote synchronization or automatic repository rewriting.
 - Keep secrets, credentials, raw conversations, device identifiers and real Profile
   data out of tracked files.

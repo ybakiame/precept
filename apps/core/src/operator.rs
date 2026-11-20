@@ -3,7 +3,7 @@ use crate::{
     Model,
     connection::{Connection, Target},
 };
-pub use acp_core::operator::*;
+pub use precept_core::operator::*;
 use serde_json::{Value, json};
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
@@ -964,7 +964,7 @@ mod tests {
             target: Target::Wsl,
             distribution: "Synthetic Linux".into(),
             user: "operator".into(),
-            helper: "/synthetic/acp-wsl-bridge".into(),
+            helper: "/synthetic/precept-bridge".into(),
             wsl_runtime: "/synthetic/runtime".into(),
             wsl_endpoint: "/synthetic/runtime/control.sock".into(),
             ..Default::default()

@@ -1,21 +1,21 @@
 [package]
-name = "acp-native-acceptance"
+name = "precept-native-acceptance"
 version = "0.0.0"
 edition = "2024"
 publish = false
 [workspace]
 [lib]
-name = "acp_native_acceptance"
+name = "precept_native_acceptance"
 path = "src/lib.rs"
 [[bin]]
-name = "acp-native-acceptance"
+name = "precept-native-acceptance"
 path = "src/main.rs"
 [[bin]]
-name = "acp-fake-desktop-worker"
+name = "precept-fake-desktop-worker"
 path = "src/bin/fake_desktop_worker.rs"
 [dependencies]
 toml = "1.2"
-acp-ipc = { path = "../../crates/acp-ipc" }
+precept-ipc = { path = "../../crates/precept-ipc" }
 serde_json = "1"
 sha2 = "0.10"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
@@ -28,9 +28,9 @@ libc = "0.2"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Console", "Win32_System_Threading", "Win32_System_Pipes"] }
 
 [[bin]]
-name = "acp-portable-smoke"
+name = "precept-portable-smoke"
 path = "src/bin/portable_smoke.rs"
 
 [[bin]]
-name = "acp-linux-portable-smoke"
+name = "precept-linux-portable-smoke"
 path = "src/bin/linux_portable_smoke.rs"

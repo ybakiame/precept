@@ -1,15 +1,15 @@
 //! The connection kept between launches, in a private per-user directory:
-//! `%LOCALAPPDATA%\ACP-state\connection.json` on Windows (outside the portable
-//! product directory), `$XDG_CONFIG_HOME/acp/connection.json` elsewhere.
+//! `%LOCALAPPDATA%\Precept-state\connection.json` on Windows (outside the portable
+//! product directory), `$XDG_CONFIG_HOME/precept/connection.json` elsewhere.
 //!
 //! Only the target and its non-secret coordinates are stored (`Saved`); never a
 //! credential, Profile path or preference value. `settings.toml` beside it
 //! keeps the operator's settings (appearance, language, shortcuts). The directory and file must be
-//! private (acp-ipc's owner-only checks); anything else refuses rather than
+//! private (precept-ipc's owner-only checks); anything else refuses rather than
 //! loosening permissions or following a link.
-use acp_ipc::transport::{new_private, open_private, private_dir};
-use acp_ui_core::connection::{Connection, Saved};
-use acp_ui_core::settings::Settings;
+use precept_ipc::transport::{new_private, open_private, private_dir};
+use precept_ui_core::connection::{Connection, Saved};
+use precept_ui_core::settings::Settings;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
@@ -25,7 +25,7 @@ pub fn directory() -> Option<PathBuf> {
         std::env::var_os("LOCALAPPDATA")
             .map(PathBuf::from)
             .filter(|p| p.is_absolute())
-            .map(|p| p.join("ACP-state"))
+            .map(|p| p.join("Precept-state"))
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -38,7 +38,7 @@ pub fn directory() -> Option<PathBuf> {
                     .filter(|p| p.is_absolute())
                     .map(|h| h.join(".config"))
             })
-            .map(|p| p.join("acp"))
+            .map(|p| p.join("precept"))
     }
 }
 
@@ -127,10 +127,11 @@ fn write(dir: &std::path::Path, name: &str, body: &[u8]) -> Result<(), &'static 
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
-    use acp_ui_core::connection::Target;
+    use precept_ui_core::connection::Target;
     use std::os::unix::fs::PermissionsExt;
     fn scratch(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("acp-settings-{name}-{}", std::process::id()));
+        let d =
+            std::env::temp_dir().join(format!("precept-settings-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
@@ -140,16 +141,16 @@ mod tests {
             target: Target::Wsl,
             distribution: "archlinux".into(),
             user: "operator".into(),
-            helper: "/usr/bin/acp-wsl-bridge".into(),
-            wsl_runtime: "/home/operator/.local/state/acp/runtime".into(),
-            wsl_endpoint: "/home/operator/.local/state/acp/runtime/control.sock".into(),
+            helper: "/usr/bin/precept-bridge".into(),
+            wsl_runtime: "/home/operator/.local/state/precept/runtime".into(),
+            wsl_endpoint: "/home/operator/.local/state/precept/runtime/control.sock".into(),
             ..Default::default()
         }
     }
     #[test]
     fn saves_privately_reloads_and_replaces() {
         let root = scratch("save");
-        let dir = root.join("acp");
+        let dir = root.join("precept");
         save_to(&dir, &wsl()).unwrap();
         let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode(&dir), 0o700);
@@ -168,9 +169,9 @@ mod tests {
     }
     #[test]
     fn settings_save_as_private_toml_beside_the_connection_and_refuse_shared_files() {
-        use acp_ui_core::settings::Appearance;
+        use precept_ui_core::settings::Appearance;
         let root = scratch("settings");
-        let dir = root.join("acp");
+        let dir = root.join("precept");
         let settings = Settings {
             format: Settings::FORMAT,
             appearance: Appearance {
@@ -222,7 +223,7 @@ mod tests {
     #[test]
     fn refuses_shared_or_invalid_files_instead_of_loosening() {
         let root = scratch("refuse");
-        let dir = root.join("acp");
+        let dir = root.join("precept");
         save_to(&dir, &wsl()).unwrap();
         std::fs::set_permissions(dir.join(FILE), std::fs::Permissions::from_mode(0o644)).unwrap();
         assert_eq!(load_from(&dir), None, "group/world readable file refused");
@@ -241,7 +242,10 @@ mod tests {
         let mut bad = wsl();
         bad.wsl_runtime = "relative".into();
         assert!(save_to(&dir, &bad).is_err());
-        assert_eq!(save_to(&root.join("missing/acp"), &wsl()), Err(UNAVAILABLE));
+        assert_eq!(
+            save_to(&root.join("missing/precept"), &wsl()),
+            Err(UNAVAILABLE)
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 }

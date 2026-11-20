@@ -59,7 +59,7 @@ struct Fixture {
 impl Fixture {
     fn new(repo: PathBuf) -> Self {
         let root = tempfile::Builder::new()
-            .prefix("acp-s5-")
+            .prefix("precept-s5-")
             .tempdir()
             .unwrap();
         let runtime = root.path().join("runtime");
@@ -74,7 +74,7 @@ impl Fixture {
         } else {
             runtime.join("relay.sock").to_str().unwrap().to_owned()
         };
-        acp_ipc::transport::private_dir(&root.path().join("state"), true).unwrap();
+        precept_ipc::transport::private_dir(&root.path().join("state"), true).unwrap();
         for name in ["alpha", "beta"] {
             fs::create_dir(root.path().join(name)).unwrap();
             fs::write(
@@ -139,8 +139,8 @@ impl Fixture {
         endpoint: &str,
         db: Option<&Path>,
     ) -> Owned {
-        let mut c = Command::new(Self::bin(repo, "acp-daemon"));
-        acp_native_acceptance::environment::clear_inherited_acp(&mut c)
+        let mut c = Command::new(Self::bin(repo, "preceptd"));
+        precept_native_acceptance::environment::clear_inherited_precept(&mut c)
             .arg("--runtime-dir")
             .arg(runtime)
             .arg("--endpoint")
@@ -149,7 +149,7 @@ impl Fixture {
         // `db` is the Profile the operator asked to select at start.
         let state = runtime.with_extension("state");
         let (alpha, beta) = (base.join("alpha"), base.join("beta"));
-        acp_native_acceptance::daemon_state::write(
+        precept_native_acceptance::daemon_state::write(
             &state,
             &[("alpha", &alpha), ("beta", &beta)],
             db,
@@ -163,9 +163,9 @@ impl Fixture {
         )
     }
     fn query_at(&self, runtime: &Path, endpoint: &str, args: &[&str]) -> (bool, Value) {
-        let result = acp_native_acceptance::environment::clear_inherited_acp(&mut Command::new(
-            Self::bin(&self.repo, "acp-query"),
-        ))
+        let result = precept_native_acceptance::environment::clear_inherited_precept(
+            &mut Command::new(Self::bin(&self.repo, "precept")),
+        )
         .arg("--runtime-dir")
         .arg(runtime)
         .arg("--endpoint")
@@ -329,7 +329,7 @@ impl Ui {
         }
         self.key(key);
         if let (Self::Desktop(d), Some(after)) = (&self, focus_after) {
-            d.wait_after(&format!("ACP_UI_FOCUS shortcut={key}"), after);
+            d.wait_after(&format!("PRECEPT_UI_FOCUS shortcut={key}"), after);
         }
         match self {
             // Desktop ctrl+a selects all, so typing replaces the field content.
@@ -367,7 +367,7 @@ impl Ui {
             Self::Tty(_) if cfg!(windows) => tty_tabs.1,
             Self::Tty(_) => tty_tabs.0,
         };
-        let trace = std::env::var_os("ACP_S5_KEYBOARD_TRACE").is_some();
+        let trace = std::env::var_os("PRECEPT_S5_KEYBOARD_TRACE").is_some();
         self.key(anchor);
         let trace_name = trace.then(|| {
             marker
@@ -531,7 +531,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         .fold(0u64, |a, b| a.wrapping_mul(131).wrapping_add(b as u64));
     let nonce = format!("{hash:016x}");
     let nsh = repo.join("apps/target/debug").join(format!(
-        "acp-nsh-{}{}",
+        "precept-nsh-{}{}",
         if surface == "desktop" {
             "native"
         } else {
@@ -539,7 +539,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         },
         std::env::consts::EXE_SUFFIX
     ));
-    let appearance = match std::env::var("ACP_S5_APPEARANCE").as_deref() {
+    let appearance = match std::env::var("PRECEPT_S5_APPEARANCE").as_deref() {
         Ok("dark") => "dark",
         Ok("light") | Err(std::env::VarError::NotPresent) => "light",
         _ => panic!("fixed appearance required"),
@@ -1126,7 +1126,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     );
     ui.key("alt+shift+q");
     ui.wait(
-        "ACP_UI_DIALOG opened=true initial_focus=true focus_bound=true",
+        "PRECEPT_UI_DIALOG opened=true initial_focus=true focus_bound=true",
         "Delete project alpha preference #4?",
     );
     ui.capture("review-delete-compact", out);
@@ -1159,7 +1159,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     // Blind Enter on a fresh empty retype field also prepares nothing.
     ui.key("alt+shift+q");
     ui.wait(
-        "ACP_UI_DIALOG opened=true initial_focus=true focus_bound=true",
+        "PRECEPT_UI_DIALOG opened=true initial_focus=true focus_bound=true",
         "Delete project alpha preference #4?",
     );
     ui.wait(
@@ -1183,7 +1183,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     // and commits the delete.
     ui.key("alt+shift+q");
     ui.wait(
-        "ACP_UI_DIALOG opened=true initial_focus=true focus_bound=true",
+        "PRECEPT_UI_DIALOG opened=true initial_focus=true focus_bound=true",
         "Delete project alpha preference #4?",
     );
     ui.text("4");
@@ -1344,7 +1344,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     );
     ui.key("alt+shift+q");
     ui.wait(
-        "ACP_UI_DIALOG opened=true initial_focus=true focus_bound=true",
+        "PRECEPT_UI_DIALOG opened=true initial_focus=true focus_bound=true",
         "偏好 #1？",
     );
     let zh_sequence = f.commit_sequence();
@@ -1399,7 +1399,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
                     assert!(
                         lines
                             .iter()
-                            .any(|l| l.starts_with("ACP_GTK_FRAME after_paint="))
+                            .any(|l| l.starts_with("PRECEPT_GTK_FRAME after_paint="))
                     );
                     "WSLg native Wayland"
                 } else {
@@ -1444,8 +1444,8 @@ fn main() {
         assert!(result.status.success(), "source metadata unavailable");
         String::from_utf8(result.stdout).unwrap().trim().to_owned()
     };
-    let development = std::env::var_os("ACP_S5_DEVELOPMENT").is_some();
-    let only = std::env::var("ACP_S3_CASE").ok();
+    let development = std::env::var_os("PRECEPT_S5_DEVELOPMENT").is_some();
+    let only = std::env::var("PRECEPT_S3_CASE").ok();
     assert!(
         only.is_none() || development,
         "case selection is development-only, never full acceptance"
@@ -1472,14 +1472,14 @@ fn main() {
     );
     fs::create_dir(&out).expect("new report directory required");
     let nsh = repo.join("apps/target/debug").join(format!(
-        "acp-nsh-{}{}",
+        "precept-nsh-{}{}",
         if a[0] == "desktop" { "native" } else { "tui" },
         std::env::consts::EXE_SUFFIX
     ));
     let binary_paths = [
         std::env::current_exe().unwrap(),
-        Fixture::bin(&repo, "acp-daemon"),
-        Fixture::bin(&repo, "acp-query"),
+        Fixture::bin(&repo, "preceptd"),
+        Fixture::bin(&repo, "precept"),
         nsh,
     ];
     let binaries = binary_fingerprints(&binary_paths);
@@ -1558,7 +1558,7 @@ fn wsl_desktop(a: &[String]) {
         assert!(result.status.success(), "source metadata unavailable");
         String::from_utf8(result.stdout).unwrap().trim().to_owned()
     };
-    let development = std::env::var_os("ACP_S5_DEVELOPMENT").is_some();
+    let development = std::env::var_os("PRECEPT_S5_DEVELOPMENT").is_some();
     let sha = git(&["rev-parse", "HEAD"]);
     let dirty = !git(&["status", "--porcelain"]).is_empty();
     assert!(!dirty || development, "clean source required");
@@ -1580,7 +1580,7 @@ fn wsl_desktop(a: &[String]) {
     fs::create_dir(&out).expect("new report directory required");
     let gui = repo
         .join("apps/target/debug")
-        .join(format!("acp-nsh-native{}", std::env::consts::EXE_SUFFIX));
+        .join(format!("precept-desktop{}", std::env::consts::EXE_SUFFIX));
     let target = wsl::Wsl {
         distribution: a[2].clone(),
         user: a[3].clone(),

@@ -39,7 +39,7 @@ impl Session {
         );
         let is_desktop = surface == "desktop";
         let binary = repo.join("apps/target/debug").join(format!(
-            "acp-nsh-{}{}",
+            "precept-nsh-{}{}",
             if is_desktop { "native" } else { "tui" },
             std::env::consts::EXE_SUFFIX
         ));

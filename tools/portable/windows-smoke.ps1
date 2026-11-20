@@ -1,5 +1,5 @@
 # Developer host smoke of an already assembled package. No provisioning/install.
-# PackageDir is the extraction root that contains ACP/.
+# PackageDir is the extraction root that contains Precept/.
 param([Parameter(Mandatory)][string]$PackageDir, [Parameter(Mandatory)][string]$ReportDir)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -11,7 +11,7 @@ try {
     if (& git status --porcelain) { throw 'Clean committed harness required' }
     if (Test-Path -LiteralPath $ReportDir) { throw 'Report collision refused' }
     $package = (Resolve-Path -LiteralPath $PackageDir).Path
-    $manifest = Get-Content -LiteralPath (Join-Path $package 'ACP/runtime/manifest.json') -Raw | ConvertFrom-Json
+    $manifest = Get-Content -LiteralPath (Join-Path $package 'Precept/runtime/manifest.json') -Raw | ConvertFrom-Json
     $toolchain = Join-Path $env:USERPROFILE '.rustup\toolchains\1.99.1-x86_64-pc-windows-msvc\bin'
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
     $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
@@ -25,13 +25,13 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Packaging security tests failed' }
     & $cargo fmt --manifest-path tools/native-acceptance/Cargo.toml -- --check
     if ($LASTEXITCODE -ne 0) { throw 'Harness format failed' }
-    & $cargo clippy --manifest-path tools/native-acceptance/Cargo.toml --bin acp-portable-smoke --locked -- -D warnings
+    & $cargo clippy --manifest-path tools/native-acceptance/Cargo.toml --bin precept-portable-smoke --locked -- -D warnings
     if ($LASTEXITCODE -ne 0) { throw 'Harness Clippy failed' }
-    & $cargo test --manifest-path tools/native-acceptance/Cargo.toml --bin acp-portable-smoke --locked
+    & $cargo test --manifest-path tools/native-acceptance/Cargo.toml --bin precept-portable-smoke --locked
     if ($LASTEXITCODE -ne 0) { throw 'Harness terminal observer tests failed' }
-    & $cargo build --manifest-path tools/native-acceptance/Cargo.toml --bin acp-portable-smoke --locked
+    & $cargo build --manifest-path tools/native-acceptance/Cargo.toml --bin precept-portable-smoke --locked
     if ($LASTEXITCODE -ne 0) { throw 'Harness build failed' }
-    $driver = Join-Path $repo 'tools/native-acceptance/target/debug/acp-portable-smoke.exe'
+    $driver = Join-Path $repo 'tools/native-acceptance/target/debug/precept-portable-smoke.exe'
     & $driver $package ([IO.Path]::GetFullPath($ReportDir)) (Join-Path $repo 'tools/native_window.ps1')
     $smokeExit = $LASTEXITCODE
     if (Test-Path -LiteralPath $ReportDir) {

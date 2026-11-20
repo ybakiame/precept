@@ -15,7 +15,7 @@ $attempt = (Resolve-Path -LiteralPath $AttemptDir).Path
 $result = Get-Content -LiteralPath (Join-Path $attempt 'package-result.json') -Raw | ConvertFrom-Json
 $zip = Join-Path $attempt $result.archive
 if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $result.archive_sha256) { throw 'ZIP hash differs from package-result.json' }
-$manifest = Get-Content -LiteralPath (Join-Path $attempt 'package/ACP/runtime/manifest.json') -Raw | ConvertFrom-Json
+$manifest = Get-Content -LiteralPath (Join-Path $attempt 'package/Precept/runtime/manifest.json') -Raw | ConvertFrom-Json
 
 # The redistributable installer shipped with the same Visual Studio that built the binaries.
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
@@ -43,11 +43,11 @@ $wsb = Join-Path $exchange 'acceptance.wsb'
   <AudioInput>Disable</AudioInput>
   <VideoInput>Disable</VideoInput>
   <MappedFolders>
-    <MappedFolder><HostFolder>$inDir</HostFolder><SandboxFolder>C:\acp-input</SandboxFolder><ReadOnly>true</ReadOnly></MappedFolder>
-    <MappedFolder><HostFolder>$outDir</HostFolder><SandboxFolder>C:\acp-output</SandboxFolder><ReadOnly>false</ReadOnly></MappedFolder>
+    <MappedFolder><HostFolder>$inDir</HostFolder><SandboxFolder>C:\precept-input</SandboxFolder><ReadOnly>true</ReadOnly></MappedFolder>
+    <MappedFolder><HostFolder>$outDir</HostFolder><SandboxFolder>C:\precept-output</SandboxFolder><ReadOnly>false</ReadOnly></MappedFolder>
   </MappedFolders>
   <LogonCommand>
-    <Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\acp-input\sandbox-acceptance.ps1</Command>
+    <Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\precept-input\sandbox-acceptance.ps1</Command>
   </LogonCommand>
 </Configuration>
 "@ | Set-Content -LiteralPath $wsb -Encoding UTF8
