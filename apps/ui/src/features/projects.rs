@@ -225,33 +225,12 @@ fn state_badge(model: Signal<Model>, state: &str) -> impl IntoElement {
     badge(model, model.get_untracked().word(key)).variant(variant)
 }
 
-/// A served project's name opens it (in-app navigation is a button); the
-/// others are plain text.
-fn name_cell(model: Signal<Model>, entry: &ProjectEntry) -> AnyElement {
-    let label = acp_ui_core::presentation::sanitize(&entry.name, 64);
-    if entry.state != "ready" {
-        return text(label)
-            .font_weight(FontWeight::MEDIUM)
-            .text_size(px(scale::text::BODY))
-            .into_element();
-    }
-    let name = entry.name.clone();
-    view()
-        .items_start()
-        .child(
-            button(model, label)
-                .variant(ButtonVariant::Ghost)
-                .selected({
-                    let name = name.clone();
-                    move || model.get().project().is_some_and(|p| p.name == name)
-                })
-                .on_press(move || {
-                    let index = model.get().project_names.iter().position(|n| *n == name);
-                    if let Some(index) = index {
-                        switch_project(model, index);
-                    }
-                }),
-        )
+/// Workspace names are management rows only; switching the active project
+/// lives solely in the sidebar workspace switcher.
+fn name_cell(entry: &ProjectEntry) -> AnyElement {
+    text(acp_ui_core::presentation::sanitize(&entry.name, 64))
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_size(px(scale::text::BODY))
         .into_element()
 }
 
@@ -274,56 +253,64 @@ fn list(model: Signal<Model>) -> impl IntoElement {
                 .collect(),
             None => Vec::new(),
         };
-        (live, entries)
+        (live, entries, m.locale)
     });
-    dynamic(move || {
-        let (live, entries) = entries.get();
-        if entries.is_empty() {
-            return note(model, |_| Some(Msg::NoProjectsYet)).into_element();
-        }
-        view()
-            .gap_1()
-            .children(entries.into_iter().map(move |entry| {
-                let name = entry.name.clone();
-                let mut row = view()
-                    .flex_row()
-                    .items_center()
-                    .gap_3()
-                    .min_h(px(scale::control::LG))
-                    .child(
-                        view()
-                            .flex_1()
-                            .min_w_0()
-                            .gap_0p5()
-                            .child(name_cell(model, &entry))
-                            .child(
-                                text(acp_ui_core::presentation::sanitize(&entry.root, 512))
-                                    .text_size(px(scale::text::CAPTION))
-                                    .text_color(move || palette(model).muted),
-                            ),
-                    )
-                    .child(state_badge(model, &entry.state));
-                if live {
-                    row = row.child(
-                        button(model, "")
-                            .label_fn(word(model, Msg::RemoveProject))
-                            .spoken({
-                                let name = entry.name.clone();
-                                move || {
-                                    format!("{} {name}", model.get().word(Msg::RemoveConfirm))
-                                        .into()
-                                }
-                            })
-                            .size(ButtonSize::Small)
-                            .on_press(move || {
-                                model.update(|m| m.project_remove = Some(name.clone()))
-                            }),
-                    );
-                }
-                row
-            }))
-            .into_element()
-    })
+    surface(model)
+        .title_fn(word(model, Msg::ManagedWorkspaces))
+        .child(note(model, |_| Some(Msg::WorkspacesIntro)))
+        .child(dynamic(move || {
+            let (live, entries, _) = entries.get();
+            if entries.is_empty() {
+                return ui::empty(model, model.get_untracked().word(Msg::NoProjectsYet))
+                    .icon(icons::section_path(acp_ui_core::Section::Projects))
+                    .into_element();
+            }
+            view()
+                .children(entries.into_iter().enumerate().map(move |(index, entry)| {
+                    let name = entry.name.clone();
+                    let mut row = view()
+                        .flex_row()
+                        .items_center()
+                        .gap_3()
+                        .py_2()
+                        .min_h(px(scale::control::LG))
+                        .style_when(move || index > 0, |s| s.border_t_1())
+                        .border_color(move || palette(model).hairline)
+                        .child({
+                            let mut info =
+                                view().flex_1().min_w_0().gap_0p5().child(name_cell(&entry));
+                            if !entry.root.is_empty() {
+                                info = info.child(
+                                    text(acp_ui_core::presentation::sanitize(&entry.root, 512))
+                                        .font_family("monospace")
+                                        .text_size(px(scale::text::CAPTION))
+                                        .text_color(move || palette(model).muted),
+                                );
+                            }
+                            info
+                        })
+                        .child(state_badge(model, &entry.state));
+                    if live {
+                        row = row.child(
+                            button(model, "")
+                                .label_fn(word(model, Msg::RemoveProject))
+                                .spoken({
+                                    let name = entry.name.clone();
+                                    move || {
+                                        format!("{} {name}", model.get().word(Msg::RemoveConfirm))
+                                            .into()
+                                    }
+                                })
+                                .size(ButtonSize::Small)
+                                .on_press(move || {
+                                    model.update(|m| m.project_remove = Some(name.clone()))
+                                }),
+                        );
+                    }
+                    row
+                }))
+                .into_element()
+        }))
 }
 
 /// The add form: folder (dialog or typed), the daemon's check, the name, Add.
@@ -447,14 +434,51 @@ fn add_form(model: Signal<Model>) -> impl IntoElement {
     )
 }
 
-/// The Workspace page (mounted by the shell, outside the per-change page
-/// rebuild, so its fields keep focus while typing).
+/// The Workspaces tab (mounted inside Runtime checks, outside per-change page
+/// rebuilds, so its fields keep focus while typing). Purely manages workspaces.
 pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
+    let profile_notice = dynamic(move || {
+        let m = model.get();
+        if !m.live || m.project_add.profile_selected != Some(false) {
+            return view().into_element();
+        }
+        view()
+            .flex_row()
+            .flex_wrap()
+            .items_center()
+            .gap_2()
+            .p_3()
+            .rounded(px(scale::radius::CONTAINER))
+            .border_1()
+            .border_color(move || palette(model).hairline)
+            .bg(move || palette(model).panel)
+            .child(badge(model, m.word(Msg::OperatorUnselected)).variant(BadgeVariant::Warning))
+            .child(
+                text(move || model.get().word(Msg::NeedsProfile))
+                    .flex_1()
+                    .min_w(px(180.0))
+                    .text_size(px(scale::text::CAPTION))
+                    .text_color(move || palette(model).muted),
+            )
+            .child(
+                button(model, "")
+                    .label_fn(word(model, Msg::GoToProfile))
+                    .size(ButtonSize::Small)
+                    .variant(ButtonVariant::Primary)
+                    .on_press(move || shell::go_setup(model, acp_ui_core::SetupTab::Profile)),
+            )
+            .into_element()
+    });
     view()
-        .gap_6()
+        .gap_4()
         .max_w(px(scale::layout::FORM))
+        .child(profile_notice)
         .child(list(model))
-        .child(note(model, |m| (!m.live).then_some(Msg::DemoProjects)))
+        .child(
+            view()
+                .style_when(move || model.get().live, |s| s.hidden())
+                .child(note(model, |m| (!m.live).then_some(Msg::DemoProjects))),
+        )
         .child(
             view()
                 .items_start()
@@ -468,6 +492,8 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
                 .child(
                     button(model, "")
                         .label_fn(word(model, Msg::AddProject))
+                        .icon(icons::PLUS)
+                        .variant(ButtonVariant::Primary)
                         .on_press(move || model.update(|m| m.project_add.open = true)),
                 ),
         )

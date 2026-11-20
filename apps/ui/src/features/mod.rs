@@ -10,18 +10,19 @@ pub(crate) mod projects;
 pub(crate) mod review;
 pub(crate) mod sessions;
 pub(crate) mod settings;
+pub(crate) mod setup;
 pub(crate) mod tags;
 
 use crate::*;
 use acp_ui_core::Section;
 use acp_ui_core::i18n::Msg;
 use handoff::handoff;
-use overview::{daemon, dashboard};
+use overview::{daemon, dashboard, onboarding};
 use preferences::preferences;
 use shell::*;
 use tokens::compact;
 
-/// The current section's page.
+/// The current section's page (Dashboard, Preferences, Handoff, Diagnostics).
 pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
     let current = model.get();
     let mut body = view()
@@ -35,6 +36,11 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
             }
         });
     if current.phase != Phase::Ready {
+        if current.section == Section::Dashboard
+            && matches!(current.phase, Phase::Empty | Phase::Unavailable)
+        {
+            return body.child(onboarding(model)).child(daemon(model));
+        }
         return body.child(daemon(model)).child(card(
             model,
             current.read_label(),
@@ -86,7 +92,6 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
     }
     let title = match current.section {
         Section::Dashboard => "Selected project / repository snapshot",
-        Section::Projects => current.word(Msg::Projects),
         Section::Handoff => current.word(Msg::ResumeSummary),
         _ => current.word(Msg::Diagnostics),
     };

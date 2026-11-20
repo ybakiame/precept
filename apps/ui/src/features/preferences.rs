@@ -153,25 +153,18 @@ pub(crate) fn preferences(model: Signal<Model>) -> impl IntoElement {
                 .text_color(move || palette(model).muted),
             ),
     );
-    // Managing records is the review workspace, fixed to one scope.
+    // Managing or adding records navigates cleanly to the unified Review hub.
     if current.live {
         body = body.child(
-            view()
-                .flex_row()
-                .flex_wrap()
-                .gap_2()
-                .child(word_action(
-                    model,
-                    Msg::ManageProjectPreferences,
-                    move || model.get().selected_project.is_some(),
-                    move || review::open_mode(model, acp_ui_core::operator::ReviewMode::Project),
-                ))
-                .child(word_action(
-                    model,
-                    Msg::ManagePersonalPreferences,
-                    || true,
-                    move || review::open_mode(model, acp_ui_core::operator::ReviewMode::Personal),
-                )),
+            view().items_start().child(
+                ui::button(model, "")
+                    .label_fn(move || model.get().word(Msg::OpenPreferencesManager).into())
+                    .size(ui::ButtonSize::Small)
+                    .disabled(move || model.get().selected_project.is_none())
+                    .on_press(move || {
+                        shell::go_review(model, acp_ui_core::operator::ReviewMode::Project)
+                    }),
+            ),
         );
     }
     body = body.child(tag_filters(model, &current));

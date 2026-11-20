@@ -140,9 +140,6 @@ pub(crate) fn watch_count(model: Signal<Model>) {
 fn selected(m: &Model) -> Option<bool> {
     m.profile_info.as_ref().map(|i| i.selected)
 }
-fn needs_setup(m: &Model) -> bool {
-    m.live && selected(m) == Some(false)
-}
 
 /// Re-reads when a page that depends on the Profile becomes visible on a live
 /// connection, and after every new snapshot read there (a read clears the
@@ -153,13 +150,9 @@ pub(crate) fn watch(model: Signal<Model>) {
         let shown = m.live
             && matches!(
                 shell::current(&m),
-                shell::Destination::Connection
-                    | shell::Destination::Profile
-                    | shell::Destination::Section(
-                        acp_ui_core::Section::Dashboard | acp_ui_core::Section::Projects
-                    )
+                shell::Destination::RuntimeChecks | shell::Destination::Dashboard
             );
-        (shown, m.epoch)
+        (shown, m.setup_tab, m.epoch)
     });
     effect(move || {
         if visible.get().0 {
@@ -399,16 +392,8 @@ pub(crate) fn setup(model: Signal<Model>) -> impl IntoElement {
     )
 }
 
-/// Shown where a page needs the Profile and none is selected yet.
-pub(crate) fn setup_when_needed(model: Signal<Model>) -> impl IntoElement {
-    view()
-        .max_w(px(scale::layout::FORM))
-        .style_when(move || !needs_setup(&model.get()), |s| s.hidden())
-        .child(setup(model))
-}
-
-/// The Connection page's Profile: setup while none is selected, otherwise the
-/// startup choice and this run's writes.
+/// The Runtime checks Profile tab: offline guidance when disconnected, setup
+/// while none is selected, otherwise the startup choice and this run's writes.
 pub(crate) fn section(model: Signal<Model>) -> impl IntoElement {
     let writes_on = move || {
         model
@@ -417,93 +402,141 @@ pub(crate) fn section(model: Signal<Model>) -> impl IntoElement {
             .as_ref()
             .is_some_and(|i| i.write_enabled)
     };
-    let current = surface(model)
-        .title_fn(word(model, Msg::ProfileSection))
+    let current = view()
+        .gap_4()
         .child(
-            view()
-                .gap_3()
+            surface(model)
+                .title_fn(word(model, Msg::ProfileSection))
                 .child(
                     view()
-                        .flex_row()
-                        .flex_wrap()
-                        .items_center()
-                        .gap_2()
-                        .child(state_badge(model, |_| (Msg::OperatorSelected, true)))
-                        .child(caption(model, |m| {
-                            Some(if m.profile_info.as_ref().is_some_and(|i| i.remembered) {
-                                Msg::SelectedAtStart
-                            } else {
-                                Msg::NotSelectedAtStart
-                            })
-                        }))
+                        .gap_3()
                         .child(
                             view()
-                                .style_when(
-                                    move || {
-                                        !model
-                                            .get()
-                                            .profile_info
-                                            .as_ref()
-                                            .is_some_and(|i| i.startup_profile)
-                                    },
-                                    |s| s.hidden(),
-                                )
+                                .flex_row()
+                                .flex_wrap()
+                                .items_center()
+                                .gap_2()
+                                .child(state_badge(model, |_| (Msg::OperatorSelected, true)))
+                                .child(caption(model, |m| {
+                                    Some(if m.profile_info.as_ref().is_some_and(|i| i.remembered) {
+                                        Msg::SelectedAtStart
+                                    } else {
+                                        Msg::NotSelectedAtStart
+                                    })
+                                }))
                                 .child(
-                                    button(model, "")
-                                        .label_fn(word(model, Msg::ForgetStartup))
-                                        .size(ButtonSize::Small)
-                                        .on_press(move || forget(model)),
+                                    view()
+                                        .style_when(
+                                            move || {
+                                                !model
+                                                    .get()
+                                                    .profile_info
+                                                    .as_ref()
+                                                    .is_some_and(|i| i.startup_profile)
+                                            },
+                                            |s| s.hidden(),
+                                        )
+                                        .child(
+                                            button(model, "")
+                                                .label_fn(word(model, Msg::ForgetStartup))
+                                                .size(ButtonSize::Small)
+                                                .on_press(move || forget(model)),
+                                        ),
                                 ),
-                        ),
-                )
-                .child(
-                    view()
-                        .flex_row()
-                        .flex_wrap()
-                        .items_center()
-                        .gap_2()
-                        .child(state_badge(model, |m| {
-                            let on = m.profile_info.as_ref().is_some_and(|i| i.write_enabled);
-                            (if on { Msg::WritesOn } else { Msg::WritesOff }, on)
-                        }))
-                        .child(
-                            view().style_when(writes_on, |s| s.hidden()).child(
-                                button(model, "")
-                                    .label_fn(word(model, Msg::EnableWrites))
-                                    .size(ButtonSize::Small)
-                                    .loading(move || model.get().profile_setup.busy)
-                                    .on_press(move || enable_writes(model, |_| {})),
-                            ),
                         )
                         .child(
                             view()
-                                .style_when(move || !writes_on(), |s| s.hidden())
+                                .flex_row()
+                                .flex_wrap()
+                                .items_center()
+                                .gap_2()
+                                .child(state_badge(model, |m| {
+                                    let on =
+                                        m.profile_info.as_ref().is_some_and(|i| i.write_enabled);
+                                    (if on { Msg::WritesOn } else { Msg::WritesOff }, on)
+                                }))
                                 .child(
-                                    button(model, "")
-                                        .label_fn(word(model, Msg::DisableWrites))
-                                        .size(ButtonSize::Small)
-                                        .loading(move || model.get().profile_setup.busy)
-                                        .on_press(move || disable_writes(model)),
+                                    view().style_when(writes_on, |s| s.hidden()).child(
+                                        button(model, "")
+                                            .label_fn(word(model, Msg::EnableWrites))
+                                            .size(ButtonSize::Small)
+                                            .loading(move || model.get().profile_setup.busy)
+                                            .on_press(move || enable_writes(model, |_| {})),
+                                    ),
+                                )
+                                .child(
+                                    view()
+                                        .style_when(move || !writes_on(), |s| s.hidden())
+                                        .child(
+                                            button(model, "")
+                                                .label_fn(word(model, Msg::DisableWrites))
+                                                .size(ButtonSize::Small)
+                                                .loading(move || model.get().profile_setup.busy)
+                                                .on_press(move || disable_writes(model)),
+                                        ),
                                 ),
-                        ),
+                        )
+                        .child(caption(model, |_| Some(Msg::WritesHelp)))
+                        .child(error_note(model)),
+                ),
+        )
+        .child(
+            view()
+                .items_start()
+                .style_when(
+                    move || {
+                        super::setup::step_done(&model.get(), acp_ui_core::SetupTab::Workspaces)
+                    },
+                    |s| s.hidden(),
                 )
-                .child(caption(model, |_| Some(Msg::WritesHelp)))
-                .child(error_note(model)),
+                .child(
+                    button(model, "")
+                        .label_fn(word(model, Msg::NextStepWorkspaces))
+                        .size(ButtonSize::Small)
+                        .on_press(move || {
+                            shell::go_setup(model, acp_ui_core::SetupTab::Workspaces)
+                        }),
+                ),
         );
+    let offline = dynamic(move || {
+        let m = model.get();
+        surface(model)
+            .child(
+                ui::empty(model, m.word(Msg::ProfileOfflineTitle))
+                    .icon(icons::PROFILE)
+                    .description(m.word(Msg::ProfileOfflineBody))
+                    .action(
+                        button(model, "")
+                            .label_fn(word(model, Msg::GoToConnection))
+                            .variant(ButtonVariant::Primary)
+                            .on_press(move || {
+                                shell::go_setup(model, acp_ui_core::SetupTab::Connection)
+                            }),
+                    ),
+            )
+            .into_element()
+    });
     view()
         .max_w(px(scale::layout::FORM))
-        .style_when(move || !model.get().live, |s| s.hidden())
+        .child(
+            view()
+                .style_when(move || model.get().live, |s| s.hidden())
+                .child(offline),
+        )
         .child(
             view()
                 .style_when(
-                    move || selected(&model.get()) != Some(false),
+                    move || !model.get().live || selected(&model.get()) != Some(false),
                     |s| s.hidden(),
                 )
                 .child(setup(model)),
         )
         .child(
             view()
-                .style_when(move || selected(&model.get()) != Some(true), |s| s.hidden())
+                .style_when(
+                    move || !model.get().live || selected(&model.get()) != Some(true),
+                    |s| s.hidden(),
+                )
                 .child(current),
         )
 }

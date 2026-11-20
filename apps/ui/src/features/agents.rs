@@ -1,5 +1,6 @@
-//! Set-up step 4, Agents: which projects external agents may read, and the
-//! exact configuration to paste into Claude Code, Codex or any MCP client.
+//! Agents (MCP): per-project external agent sharing, the exact configuration
+//! to paste into Claude Code, Codex or any MCP client, and recent agent
+//! activity for the currently selected workspace.
 //!
 //! `acp-mcp` is a stdio program the client starts itself (no port, no
 //! listener). The daemon supplies the launch line (`project.mcp`); the page only
@@ -13,7 +14,7 @@ use acp_ui_core::{
     mcp::{Client, Host, Launch, server_name, snippet},
 };
 use tokens::palette;
-use ui::{BadgeVariant, ButtonSize, ButtonVariant, badge, button, scale, surface};
+use ui::{BadgeVariant, ButtonSize, ButtonVariant, badge, button, scale, surface, tabs};
 
 fn word(model: Signal<Model>, key: Msg) -> impl Fn() -> SharedString + 'static {
     move || model.get().word(key).into()
@@ -32,6 +33,17 @@ fn directory(m: &Model) -> Vec<ProjectEntry> {
         .as_ref()
         .map(|d| d.directory.clone())
         .unwrap_or_default()
+}
+
+fn active_entry(m: &Model) -> Option<ProjectEntry> {
+    let entries = directory(m);
+    let wanted = m
+        .selected_project
+        .as_deref()
+        .or(m.agents.project.as_deref());
+    wanted
+        .and_then(|name| entries.iter().find(|e| e.name == name).cloned())
+        .or_else(|| entries.into_iter().next())
 }
 
 /// Where the MCP client runs: a Windows client reaches a WSL daemon through
@@ -110,17 +122,6 @@ pub(crate) fn load_activity(model: Signal<Model>, name: String) {
     );
 }
 
-/// A row chosen on this page: a served project becomes the app's current
-/// project (the read that follows refreshes this page); one the daemon does
-/// not serve yet is shown here only.
-fn choose(model: Signal<Model>, name: String) {
-    let index = model.get().project_names.iter().position(|n| *n == name);
-    match index {
-        Some(index) => crate::switch_project(model, index),
-        None => fetch(model, name),
-    }
-}
-
 fn set_shared(model: Signal<Model>, name: String, enabled: bool) {
     model.update(|m| m.agents.busy = true);
     super::profile::call(
@@ -149,13 +150,15 @@ fn set_shared(model: Signal<Model>, name: String, enabled: bool) {
     );
 }
 
-/// Picks a project and reads its launch line when the page becomes visible
-/// with daemon data (tracked: visibility and the read epoch only). The app's
-/// current project comes first, so this page and the header switcher agree.
+/// Keeps this page aligned with the one current project chosen in the sidebar.
 pub(crate) fn watch(model: Signal<Model>) {
     let ready = computed(move || {
         let m = model.get();
-        (m.agents_page && m.live && m.data.is_some(), m.epoch)
+        (
+            m.agents_page && m.live && m.data.is_some(),
+            m.epoch,
+            m.selected_project.clone(),
+        )
     });
     effect(move || {
         if !ready.get().0 {
@@ -163,67 +166,51 @@ pub(crate) fn watch(model: Signal<Model>) {
         }
         untracked(|| {
             let m = model.get();
-            let entries = directory(&m);
-            let listed = |p: &String| entries.iter().any(|e| &e.name == p);
-            let current = m.selected_project.clone().filter(listed);
-            let keep = m.agents.project.clone().filter(listed);
-            if let Some(name) = current
-                .or(keep)
-                .or_else(|| entries.first().map(|e| e.name.clone()))
-            {
-                fetch(model, name);
+            if let Some(entry) = active_entry(&m) {
+                fetch(model, entry.name);
             }
         });
     });
 }
 
-fn rows(model: Signal<Model>) -> impl IntoElement {
+/// Access toggle for the currently selected workspace (no second project list).
+fn project_access(model: Signal<Model>) -> impl IntoElement {
     let state = computed(move || {
         let m = model.get();
-        (directory(&m), m.agents.project.clone(), m.locale)
+        (active_entry(&m), m.locale)
     });
     dynamic(move || {
-        let (entries, chosen, _) = state.get();
-        if entries.is_empty() {
-            return view()
-                .gap_2()
-                .items_start()
-                .child(caption(model, |_| Some(Msg::AgentsNeedsProject)))
-                .child(
-                    button(model, "")
-                        .label_fn(word(model, Msg::Projects))
-                        .on_press(move || {
-                            shell::go(
-                                model,
-                                shell::Destination::Section(acp_ui_core::Section::Projects),
-                            )
-                        }),
-                )
-                .into_element();
-        }
+        let (Some(entry), _) = state.get() else {
+            return view().into_element();
+        };
         let m = model.get_untracked();
-        view()
-            .gap_1()
-            .children(entries.into_iter().map(move |entry| {
-                let name = entry.name.clone();
-                let toggle_name = entry.name.clone();
-                let shared = entry.agents;
+        let name = entry.name.clone();
+        let shared = entry.agents;
+        let toggle_name = name.clone();
+        let spoken_name = name.clone();
+        surface(model)
+            .title_fn(word(model, Msg::AgentsProjectStatus))
+            .child(
                 view()
                     .flex_row()
+                    .flex_wrap()
                     .items_center()
                     .gap_3()
-                    .min_h(px(scale::control::LG))
                     .child(
-                        view().flex_1().min_w_0().child(
-                            button(model, acp_ui_core::presentation::sanitize(&entry.name, 64))
-                                .variant(ButtonVariant::Ghost)
-                                .selected({
-                                    let chosen = chosen.clone();
-                                    let name = entry.name.clone();
-                                    move || chosen.as_deref() == Some(name.as_str())
-                                })
-                                .on_press(move || choose(model, name.clone())),
-                        ),
+                        view()
+                            .flex_1()
+                            .min_w(px(160.0))
+                            .gap_0p5()
+                            .child(
+                                text(acp_ui_core::presentation::sanitize(&name, 64))
+                                    .font_weight(FontWeight::SEMIBOLD),
+                            )
+                            .child(
+                                text(acp_ui_core::presentation::sanitize(&entry.root, 512))
+                                    .font_family("monospace")
+                                    .text_size(px(scale::text::CAPTION))
+                                    .text_color(move || palette(model).muted),
+                            ),
                     )
                     .child(
                         badge(
@@ -250,62 +237,67 @@ fn rows(model: Signal<Model>) -> impl IntoElement {
                                     Msg::ShareProject
                                 },
                             ))
-                            .spoken({
-                                let name = entry.name.clone();
-                                move || {
-                                    let m = model.get();
-                                    format!(
-                                        "{} {name}",
-                                        m.word(if shared {
-                                            Msg::StopSharing
-                                        } else {
-                                            Msg::ShareProject
-                                        })
-                                    )
-                                    .into()
-                                }
+                            .spoken(move || {
+                                let m = model.get();
+                                format!(
+                                    "{} {spoken_name}",
+                                    m.word(if shared {
+                                        Msg::StopSharing
+                                    } else {
+                                        Msg::ShareProject
+                                    })
+                                )
+                                .into()
                             })
                             .size(ButtonSize::Small)
                             .disabled(move || model.get().agents.busy)
                             .on_press(move || set_shared(model, toggle_name.clone(), !shared)),
-                    )
-            }))
+                    ),
+            )
             .into_element()
     })
 }
 
-fn choice(
-    model: Signal<Model>,
-    key: Msg,
-    selected: impl Fn(&Model) -> bool + 'static,
-    pick: impl Fn(&mut Model) + 'static,
-) -> impl IntoElement {
-    button(model, "")
-        .label_fn(word(model, key))
-        .size(ButtonSize::Small)
-        .selected(move || selected(&model.get()))
-        .on_press(move || {
-            model.update(|m| {
-                pick(m);
-                m.agents.copied = false;
-            })
-        })
-}
-
 fn configure(model: Signal<Model>) -> impl IntoElement {
-    let clients = Client::ALL.map(|client| {
+    let mut client_tabs = tabs(model);
+    for client in Client::ALL {
         let key = match client {
             Client::ClaudeCode => Msg::ClientClaude,
             Client::Codex => Msg::ClientCodex,
             Client::Json => Msg::ClientJson,
         };
-        choice(
-            model,
-            key,
-            move |m| m.agents.client == client,
-            move |m| m.agents.client = client,
+        client_tabs = client_tabs.add_fn(
+            word(model, key),
+            move || model.get().agents.client == client,
+            move || {
+                model.update(|m| {
+                    m.agents.client = client;
+                    m.agents.copied = false;
+                })
+            },
+        );
+    }
+    let host_tabs = tabs(model)
+        .add_fn(
+            word(model, Msg::ClientOnWindows),
+            move || !model.get().agents.inside_wsl,
+            move || {
+                model.update(|m| {
+                    m.agents.inside_wsl = false;
+                    m.agents.copied = false;
+                })
+            },
         )
-    });
+        .add_fn(
+            word(model, Msg::ClientInWsl),
+            move || model.get().agents.inside_wsl,
+            move || {
+                model.update(|m| {
+                    m.agents.inside_wsl = true;
+                    m.agents.copied = false;
+                })
+            },
+        );
     surface(model)
         .title_fn(move || {
             let m = model.get();
@@ -315,28 +307,14 @@ fn configure(model: Signal<Model>) -> impl IntoElement {
         .child(
             view()
                 .gap_3()
-                .child(view().flex_row().flex_wrap().gap_2().children(clients))
+                .child(client_tabs)
                 .child(
                     view()
-                        .flex_row()
-                        .flex_wrap()
-                        .gap_2()
                         .style_when(
                             move || model.get().connection.target != Target::Wsl,
                             |s| s.hidden(),
                         )
-                        .child(choice(
-                            model,
-                            Msg::ClientOnWindows,
-                            |m| !m.agents.inside_wsl,
-                            |m| m.agents.inside_wsl = false,
-                        ))
-                        .child(choice(
-                            model,
-                            Msg::ClientInWsl,
-                            |m| m.agents.inside_wsl,
-                            |m| m.agents.inside_wsl = true,
-                        )),
+                        .child(host_tabs),
                 )
                 .child(caption(model, |m| {
                     Some(match m.agents.client {
@@ -529,21 +507,59 @@ fn activity(model: Signal<Model>) -> impl IntoElement {
 
 /// The Agents page (mounted by the shell outside the per-change page rebuild).
 pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
+    let empty_state = dynamic(move || {
+        let m = model.get();
+        if !m.live {
+            return surface(model)
+                .child(
+                    ui::empty(model, m.word(Msg::AgentsOfflineTitle))
+                        .icon(icons::AGENTS)
+                        .description(m.word(Msg::AgentsOfflineBody))
+                        .action(
+                            button(model, "")
+                                .label_fn(word(model, Msg::GoToRuntimeChecks))
+                                .variant(ButtonVariant::Primary)
+                                .on_press(move || {
+                                    shell::go_setup(model, acp_ui_core::SetupTab::Connection)
+                                }),
+                        ),
+                )
+                .into_element();
+        }
+        if directory(&m).is_empty() {
+            return surface(model)
+                .child(
+                    ui::empty(model, m.word(Msg::AgentsNeedsProject))
+                        .icon(icons::AGENTS)
+                        .action(
+                            button(model, "")
+                                .label_fn(word(model, Msg::GoToWorkspaces))
+                                .variant(ButtonVariant::Primary)
+                                .on_press(move || {
+                                    shell::go_setup(model, acp_ui_core::SetupTab::Workspaces)
+                                }),
+                        ),
+                )
+                .into_element();
+        }
+        view().into_element()
+    });
     view()
         .gap_6()
         .max_w(px(scale::layout::FORM))
-        .child(rows(model))
+        .child(empty_state)
         .child(
             view()
+                .gap_6()
                 .style_when(
                     move || {
                         let m = model.get();
-                        m.agents.project.is_none() || directory(&m).is_empty()
+                        !m.live || active_entry(&m).is_none()
                     },
                     |s| s.hidden(),
                 )
+                .child(project_access(model))
                 .child(configure(model))
-                .child(view().h(px(24.0)))
                 .child(activity(model)),
         )
 }

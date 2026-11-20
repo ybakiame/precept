@@ -2,11 +2,67 @@
 //! the resume context of the looked-up task, and the way into review. Facts are
 //! label / value rows (`ui::properties`), never colon-joined strings.
 use crate::*;
-use acp_ui_core::i18n::Msg;
 use acp_ui_core::presentation::sanitize;
+use acp_ui_core::{SetupTab, i18n::Msg};
 use shell::target_words;
 use tokens::{compact, palette};
-use ui::{ButtonSize, button, properties, scale, surface};
+use ui::{BadgeVariant, ButtonSize, ButtonVariant, badge, button, properties, scale, surface};
+
+/// Guided onboarding card shown on Dashboard when setup is not complete yet.
+pub(crate) fn onboarding(model: Signal<Model>) -> impl IntoElement {
+    let m = model.get();
+    let conn_ok = super::setup::step_done(&m, SetupTab::Connection);
+    let profile_ok = super::setup::step_done(&m, SetupTab::Profile);
+    let ws_ok = super::setup::step_done(&m, SetupTab::Workspaces);
+    let next_tab = if !conn_ok {
+        SetupTab::Connection
+    } else if !profile_ok {
+        SetupTab::Profile
+    } else {
+        SetupTab::Workspaces
+    };
+    let step_row = |label: Msg, done: bool| {
+        view()
+            .flex_row()
+            .items_center()
+            .gap_3()
+            .child(text(m.word(label)).flex_1())
+            .child(
+                badge(
+                    model,
+                    m.word(if done {
+                        Msg::SetupStepComplete
+                    } else {
+                        Msg::SetupStepPending
+                    }),
+                )
+                .variant(if done {
+                    BadgeVariant::Success
+                } else {
+                    BadgeVariant::Neutral
+                }),
+            )
+    };
+    surface(model)
+        .title(m.word(Msg::DashboardOnboardingTitle))
+        .child(note(model, m.word(Msg::WorkspaceSetupIncomplete)))
+        .child(
+            view()
+                .gap_2()
+                .child(step_row(Msg::Connection, conn_ok))
+                .child(step_row(Msg::ProfileSection, profile_ok))
+                .child(step_row(Msg::Projects, ws_ok)),
+        )
+        .child(
+            view().items_start().child(
+                button(model, "")
+                    .label_fn(move || model.get().word(Msg::GoToRuntimeChecks).into())
+                    .variant(ButtonVariant::Primary)
+                    .size(ButtonSize::Small)
+                    .on_press(move || shell::go_setup(model, next_tab)),
+            ),
+        )
+}
 
 fn note(model: Signal<Model>, value: impl Into<SharedString>) -> impl IntoElement {
     text(value.into())
@@ -87,6 +143,14 @@ pub(crate) fn dashboard(model: Signal<Model>) -> impl IntoElement {
     for warning in p.context.warnings.iter().take(8) {
         context = context.child(note(model, sanitize(warning, 512)));
     }
+    context = context.child(
+        view().items_start().child(
+            button(model, "")
+                .label_fn(move || model.get().word(Msg::OpenPreferences).into())
+                .size(ButtonSize::Small)
+                .on_press(move || shell::go(model, shell::Destination::Preferences)),
+        ),
+    );
 
     let mut resume = surface(model).title(m.word(Msg::ResumeSummary));
     if let Some(h) = p.handoff.as_ref().filter(|h| h.task_id == m.queried_task) {
@@ -112,25 +176,51 @@ pub(crate) fn dashboard(model: Signal<Model>) -> impl IntoElement {
             ),
         ));
     }
-    resume = resume.child(note(model, m.word(Msg::EarlierNotCurrent)));
+    resume = resume
+        .child(note(model, m.word(Msg::EarlierNotCurrent)))
+        .child(
+            view().items_start().child(
+                button(model, "")
+                    .label_fn(move || model.get().word(Msg::OpenHandoff).into())
+                    .size(ButtonSize::Small)
+                    .on_press(move || shell::go(model, shell::Destination::Handoff)),
+            ),
+        );
 
     let agent = surface(model)
         .title(m.word(Msg::ClientAccess))
         .child(text(m.word(Msg::Tools)))
         .child(text(m.word(Msg::ClientPresence)))
-        .child(note(model, m.word(Msg::ClientHelp)));
-
-    let review = surface(model)
-        .title(m.word(Msg::ReviewSuggestions))
-        .child(note(model, m.word(Msg::ReviewHelp)))
+        .child(note(model, m.word(Msg::ClientHelp)))
         .child(
             view().items_start().child(
                 button(model, "")
-                    .label_fn(move || model.get().word(Msg::OpenReview).into())
+                    .label_fn(move || model.get().word(Msg::OpenAgentsPage).into())
                     .size(ButtonSize::Small)
-                    .on_press(move || shell::go(model, shell::Destination::Review)),
+                    .on_press(move || shell::go(model, shell::Destination::Agents)),
             ),
         );
+
+    let mut review = surface(model).title(m.word(Msg::ReviewSuggestions));
+    if let Some(n) = m.review_count.filter(|n| *n > 0) {
+        review = review.child(
+            view().items_start().child(
+                badge(
+                    model,
+                    m.word(Msg::ReviewWaiting).replace("{n}", &n.to_string()),
+                )
+                .variant(BadgeVariant::Info),
+            ),
+        );
+    }
+    let review = review.child(note(model, m.word(Msg::ReviewHelp))).child(
+        view().items_start().child(
+            button(model, "")
+                .label_fn(move || model.get().word(Msg::OpenReview).into())
+                .size(ButtonSize::Small)
+                .on_press(move || shell::go(model, shell::Destination::Review)),
+        ),
+    );
 
     let top = if compact() {
         view().gap_4().child(daemon(model)).child(agent)

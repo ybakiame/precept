@@ -1,11 +1,10 @@
-//! The window shell: a sidebar of destinations beside one page with its header
-//! and the only scroll region (see docs/product-ui.md). Also the shared
-//! action helpers the feature pages use.
+//! The window shell: a task-oriented sidebar with one persistent workspace
+//! switcher beside one page with its header and primary scroll region (see
+//! docs/product-ui.md). Also the shared action helpers the feature pages use.
 use crate::*;
 pub(crate) mod chrome;
-use acp_ui_core::Section;
-use acp_ui_core::i18n::Msg;
-use features::{agents, connection, page, profile, projects, review, sessions, settings};
+use acp_ui_core::{Section, SetupTab, i18n::Msg, operator::ReviewMode};
+use features::{agents, connection, page, profile, projects, review, sessions, settings, setup};
 use tokens::{compact, palette};
 
 pub(crate) fn action(
@@ -58,15 +57,6 @@ pub(crate) fn control(
 ) -> impl IntoElement {
     word_action(model, key, || true, callback)
 }
-pub(crate) fn section_key(section: Section) -> Msg {
-    match section {
-        Section::Dashboard => Msg::Dashboard,
-        Section::Projects => Msg::Projects,
-        Section::Preferences => Msg::Preferences,
-        Section::Handoff => Msg::Handoff,
-        Section::Diagnostics => Msg::Diagnostics,
-    }
-}
 pub(crate) fn card(
     model: Signal<Model>,
     title: &'static str,
@@ -74,99 +64,120 @@ pub(crate) fn card(
 ) -> impl IntoElement {
     ui::card(model, title, lines)
 }
-/// Where the window is: one of the sections, or a workspace destination.
+
+/// Every top-level sidebar destination: flat, unambiguous, mutually exclusive.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Destination {
-    Section(Section),
-    Review,
-    Sessions,
-    Connection,
-    Profile,
+    Dashboard,
+    Preferences,
     Agents,
-    PersonalPreferences,
+    Handoff,
+    Sessions,
+    Review,
+    RuntimeChecks,
+    Diagnostics,
     Settings,
 }
+
 pub(crate) fn current(m: &Model) -> Destination {
     if m.operator.open {
-        // The workspace's entry decides where the window is.
-        match m.operator.mode {
-            acp_ui_core::operator::ReviewMode::Inbox => Destination::Review,
-            acp_ui_core::operator::ReviewMode::Personal => Destination::PersonalPreferences,
-            acp_ui_core::operator::ReviewMode::Project => {
-                Destination::Section(acp_ui_core::Section::Preferences)
-            }
-        }
+        Destination::Review
+    } else if m.setup_open {
+        Destination::RuntimeChecks
+    } else if m.agents_page {
+        Destination::Agents
     } else if m.sessions {
         Destination::Sessions
     } else if m.settings {
         Destination::Settings
-    } else if m.connection_editor {
-        Destination::Connection
-    } else if m.profile_page {
-        Destination::Profile
-    } else if m.agents_page {
-        Destination::Agents
     } else {
-        Destination::Section(m.section)
+        match m.section {
+            Section::Dashboard => Destination::Dashboard,
+            Section::Projects => Destination::RuntimeChecks,
+            Section::Preferences => Destination::Preferences,
+            Section::Handoff => Destination::Handoff,
+            Section::Diagnostics => Destination::Diagnostics,
+        }
     }
 }
+
 fn leave_workspaces(m: &mut Model) {
     m.operator.open = false;
     m.operator.review = None;
     m.sessions = false;
     m.session.confirm_start = false;
     m.settings = false;
-    m.connection_editor = false;
-    m.profile_page = false;
+    m.setup_open = false;
     m.agents_page = false;
 }
+
+/// Opens Runtime checks directly on `tab` (Connection, Profile, or Workspaces).
+pub(crate) fn go_setup(model: Signal<Model>, tab: SetupTab) {
+    model.update(|m| {
+        leave_workspaces(m);
+        m.setup_open = true;
+        m.setup_tab = tab;
+    });
+    if tab == SetupTab::Connection {
+        connection::opened(model);
+    }
+}
+
+/// Opens the unified Review & preferences workspace directly on `mode`.
+pub(crate) fn go_review(model: Signal<Model>, mode: ReviewMode) {
+    review::open_mode(model, mode);
+}
+
 /// Goes to `destination` (each opener keeps its own reads and guards).
 pub(crate) fn go(model: Signal<Model>, destination: Destination) {
     match destination {
         Destination::Review => review::open(model),
-        Destination::PersonalPreferences => {
-            review::open_mode(model, acp_ui_core::operator::ReviewMode::Personal)
-        }
         Destination::Sessions => sessions::open(model),
-        Destination::Connection => {
-            model.update(|m| {
-                leave_workspaces(m);
-                m.connection_editor = true;
-            });
-            connection::opened(model);
+        Destination::RuntimeChecks => {
+            let tab = model.get().setup_tab;
+            go_setup(model, tab);
         }
         Destination::Settings => model.update(|m| {
             leave_workspaces(m);
             m.settings = true;
         }),
-        Destination::Profile => model.update(|m| {
-            leave_workspaces(m);
-            m.profile_page = true;
-        }),
         Destination::Agents => model.update(|m| {
             leave_workspaces(m);
             m.agents_page = true;
         }),
-        Destination::Section(section) => {
-            model.update(|m| {
-                leave_workspaces(m);
-                m.set_section(section)
-            });
-        }
+        Destination::Dashboard => model.update(|m| {
+            leave_workspaces(m);
+            m.set_section(Section::Dashboard);
+        }),
+        Destination::Preferences => model.update(|m| {
+            leave_workspaces(m);
+            m.set_section(Section::Preferences);
+        }),
+        Destination::Handoff => model.update(|m| {
+            leave_workspaces(m);
+            m.set_section(Section::Handoff);
+        }),
+        Destination::Diagnostics => model.update(|m| {
+            leave_workspaces(m);
+            m.set_section(Section::Diagnostics);
+        }),
     }
 }
+
 fn title_key(destination: Destination) -> Msg {
     match destination {
-        Destination::Section(section) => section_key(section),
-        Destination::Review => Msg::ProfileReview,
-        Destination::Sessions => Msg::Sessions,
-        Destination::Connection => Msg::Connection,
-        Destination::Profile => Msg::ProfileSection,
+        Destination::Dashboard => Msg::Dashboard,
+        Destination::Preferences => Msg::Preferences,
         Destination::Agents => Msg::AgentsDestination,
-        Destination::PersonalPreferences => Msg::PersonalPreferences,
+        Destination::Handoff => Msg::Handoff,
+        Destination::Sessions => Msg::Sessions,
+        Destination::Review => Msg::ReviewHub,
+        Destination::RuntimeChecks => Msg::RuntimeChecks,
+        Destination::Diagnostics => Msg::Diagnostics,
         Destination::Settings => Msg::Settings,
     }
 }
+
 /// The page's longer explanation, shown behind the header's info button.
 fn page_help(m: &Model) -> Option<String> {
     let words = |keys: &[Msg]| {
@@ -176,64 +187,22 @@ fn page_help(m: &Model) -> Option<String> {
             .join(" ")
     };
     Some(match current(m) {
-        Destination::Profile => words(&[Msg::ProfileIntro]),
-        Destination::Agents => words(&[Msg::AgentsIntro]),
-        Destination::Review | Destination::PersonalPreferences => words(&[
-            Msg::OperatorHelp,
-            Msg::ReviewProvenanceNote,
-            Msg::OperatorCliGate,
-        ]),
-        Destination::Section(acp_ui_core::Section::Preferences) if m.operator.open => words(&[
-            Msg::OperatorHelp,
-            Msg::ReviewProvenanceNote,
-            Msg::OperatorCliGate,
-        ]),
-        Destination::Section(acp_ui_core::Section::Preferences) => {
-            words(&[Msg::PreferencesSources])
-        }
-        _ => return None,
-    })
-}
-/// Whether a set-up step is complete, from the last daemon read.
-fn step_done(m: &Model, destination: Destination) -> Option<bool> {
-    let data = m.data.as_ref();
-    Some(match destination {
-        Destination::Connection => m.live && data.is_some(),
-        Destination::Profile => data.is_some_and(|d| d.health.schema != "Unselected"),
-        Destination::Section(acp_ui_core::Section::Projects) => {
-            data.is_some_and(|d| !d.projects.is_empty())
-        }
-        Destination::Agents => {
-            data.is_some_and(|d| d.directory.iter().any(|p| p.agents && p.state == "ready"))
-        }
-        _ => return None,
-    })
-}
-/// A set-up step: its number, its name and, once complete, a check mark.
-fn step(
-    model: Signal<Model>,
-    number: u8,
-    item: Destination,
-    path: &'static str,
-) -> impl IntoElement {
-    ui::step_item(
-        model,
-        path,
-        move || model.get().word(title_key(item)).into(),
-        move || {
-            let m = model.get();
-            format!(
-                "{} {number}: {}",
-                m.word(Msg::StepWord),
-                m.word(title_key(item))
-            )
-            .into()
+        Destination::RuntimeChecks => match m.setup_tab {
+            SetupTab::Connection => words(&[Msg::RuntimeChecksIntro, Msg::ConnectionHelp]),
+            SetupTab::Profile => words(&[Msg::ProfileIntro]),
+            SetupTab::Workspaces => words(&[Msg::WorkspacesIntro]),
         },
-        move || current(&model.get()) == item,
-        move || step_done(&model.get(), item) == Some(true),
-        move || go(model, item),
-    )
+        Destination::Agents => words(&[Msg::AgentsIntro]),
+        Destination::Review => words(&[
+            Msg::OperatorHelp,
+            Msg::ReviewProvenanceNote,
+            Msg::OperatorCliGate,
+        ]),
+        Destination::Preferences => words(&[Msg::PreferencesSources]),
+        _ => return None,
+    })
 }
+
 /// The daemon's state in one short word, and the dot that reinforces it.
 fn status_of(m: &Model) -> (ui::Status, Msg) {
     use ui::Status;
@@ -249,8 +218,9 @@ fn status_of(m: &Model) -> (ui::Status, Msg) {
         Phase::Unavailable => (Status::Down, Msg::StatusUnreachable),
     }
 }
+
 /// The sidebar's foot: the daemon's state and target, always visible; it
-/// opens Connection.
+/// opens Runtime checks on the Connection tab.
 fn status_row(model: Signal<Model>) -> impl IntoElement {
     let state = computed(move || status_of(&model.get()).0);
     ui::button(model, "")
@@ -272,60 +242,47 @@ fn status_row(model: Signal<Model>) -> impl IntoElement {
         .size(ui::ButtonSize::Small)
         .full_width()
         .leading(ui::status_dot(model, move || state.get()))
-        .selected(move || current(&model.get()) == Destination::Connection)
-        .on_press(move || go(model, Destination::Connection))
+        .selected(move || {
+            let m = model.get();
+            current(&m) == Destination::RuntimeChecks && m.setup_tab == SetupTab::Connection
+        })
+        .on_press(move || go_setup(model, SetupTab::Connection))
 }
-/// Whether a destination shows one project's data (its header carries the
-/// project switcher).
-pub(crate) fn project_scoped(d: Destination) -> bool {
+
+/// Whether a destination displays one workspace's data.
+pub(crate) fn workspace_scoped(d: Destination) -> bool {
     matches!(
         d,
-        Destination::Section(Section::Dashboard | Section::Preferences | Section::Handoff)
-            | Destination::Sessions
+        Destination::Dashboard
+            | Destination::Preferences
             | Destination::Agents
+            | Destination::Handoff
+            | Destination::Sessions
     )
 }
-/// The sidebar's project group heading: which project its pages show. The
-/// switcher itself is in those pages' headers, beside what it changes.
-fn project_label(model: Signal<Model>) -> impl IntoElement {
-    text(move || {
+
+/// Calm scope badge shown beside the page title on workspace-scoped pages.
+fn header_scope_badge(model: Signal<Model>) -> impl IntoElement {
+    let state = computed(move || {
         let m = model.get();
-        match m.selected_project.as_deref() {
-            Some(name) => format!(
-                "{} · {}",
-                m.word(Msg::ProjectGroup),
-                acp_ui_core::presentation::sanitize(name, 64)
-            ),
-            None => m.word(Msg::ProjectGroup).into(),
+        if workspace_scoped(current(&m)) {
+            m.selected_project
+                .clone()
+                .or_else(|| m.project().map(|p| p.name.clone()))
+        } else {
+            None
         }
+    });
+    dynamic(move || {
+        let Some(name) = state.get() else {
+            return view().into_element();
+        };
+        ui::badge(model, acp_ui_core::presentation::sanitize(&name, 48))
+            .variant(ui::BadgeVariant::Neutral)
+            .into_element()
     })
-    .font_weight(FontWeight::SEMIBOLD)
-    .text_size(px(ui::scale::text::CAPTION))
-    .text_color(move || palette(model).muted)
-    .px_2()
-    .style_when(compact, |s| s.hidden())
 }
-/// The header's project switcher on project pages: a caption and the menu.
-fn header_project(model: Signal<Model>) -> impl IntoElement {
-    view()
-        .flex_row()
-        .items_center()
-        .gap_2()
-        .ml_3()
-        .style_when(
-            move || {
-                let m = model.get();
-                !project_scoped(current(&m)) || m.project_names.is_empty()
-            },
-            |s| s.hidden(),
-        )
-        .child(
-            text(move || model.get().word(Msg::ProjectGroup))
-                .text_size(px(ui::scale::text::CAPTION))
-                .text_color(move || palette(model).muted),
-        )
-        .child(view().w(px(220.0)).child(projects(model)))
-}
+
 fn group_label(model: Signal<Model>, key: Msg) -> impl IntoElement {
     text(move || model.get().word(key))
         .font_weight(FontWeight::SEMIBOLD)
@@ -334,6 +291,7 @@ fn group_label(model: Signal<Model>, key: Msg) -> impl IntoElement {
         .px_2()
         .style_when(compact, |s| s.hidden())
 }
+
 fn destination(model: Signal<Model>, item: Destination, path: &'static str) -> AnyElement {
     if item == Destination::Review {
         // Work waiting: an exact count from the daemon, or nothing.
@@ -360,6 +318,40 @@ fn destination(model: Signal<Model>, item: Destination, path: &'static str) -> A
         )
         .into_element();
     }
+    if item == Destination::RuntimeChecks {
+        let done = computed(move || setup::completed_count(&model.get()));
+        let trailing = dynamic(move || {
+            let n = done.get();
+            if n == 3 {
+                if ui::terminal() {
+                    return text("✓")
+                        .text_color(move || palette(model).success)
+                        .into_element();
+                }
+                let pop = ui::motion::pop();
+                return view()
+                    .text_color(move || palette(model).success)
+                    .bind_motion(&pop)
+                    .child(ui::icon::glyph(icons::CHECK, ui::scale::icon::SM))
+                    .into_element();
+            }
+            text(format!("{n}/3"))
+                .tabular_nums()
+                .text_size(px(ui::scale::text::CAPTION))
+                .text_color(move || palette(model).muted)
+                .into_element()
+        });
+        return ui::button(model, "")
+            .label_fn(move || model.get().word(title_key(item)).into())
+            .variant(ui::ButtonVariant::Ghost)
+            .icon(path)
+            .full_width()
+            .selected(move || current(&model.get()) == item)
+            .quiet_selection(move || !compact())
+            .trailing(trailing)
+            .on_press(move || go(model, item))
+            .into_element();
+    }
     ui::nav_item(
         model,
         path,
@@ -369,15 +361,22 @@ fn destination(model: Signal<Model>, item: Destination, path: &'static str) -> A
     )
     .into_element()
 }
-/// The project menu: the daemon's ready projects, the current one checked.
-fn projects(model: Signal<Model>) -> impl IntoElement {
+
+/// The ONE workspace switcher in the app: lists the daemon's ready workspaces
+/// with the active one checked, or guides the user straight to Runtime checks
+/// → Workspaces when none exist yet.
+fn workspace_switcher(model: Signal<Model>) -> impl IntoElement {
     let names = computed(move || model.get().project_names.clone());
     dynamic(move || {
         let names = names.get();
         if names.is_empty() {
-            return text(move || model.get().word(Msg::ChooseProject))
-                .text_size(px(ui::scale::text::CAPTION))
-                .text_color(move || palette(model).muted)
+            return ui::button(model, "")
+                .label_fn(move || model.get().word(Msg::AddWorkspaceCta).into())
+                .icon(icons::PLUS)
+                .variant(ui::ButtonVariant::Default)
+                .size(ui::ButtonSize::Small)
+                .full_width()
+                .on_press(move || go_setup(model, SetupTab::Workspaces))
                 .into_element();
         }
         names
@@ -396,6 +395,7 @@ fn projects(model: Signal<Model>) -> impl IntoElement {
             .into_element()
     })
 }
+
 fn current_project(model: Signal<Model>) -> String {
     let m = model.get();
     m.selected_project
@@ -403,6 +403,7 @@ fn current_project(model: Signal<Model>) -> String {
         .or_else(|| m.project().map(|p| p.name.clone()))
         .unwrap_or_else(|| m.word(Msg::ChooseProject).into())
 }
+
 /// Where the data comes from, in words: the target and, for WSL, the distribution.
 pub(crate) fn target_words(m: &Model) -> String {
     match m.connection.target {
@@ -412,30 +413,23 @@ pub(crate) fn target_words(m: &Model) -> String {
         _ => m.target_label().into(),
     }
 }
+
 fn sidebar(model: Signal<Model>) -> impl IntoElement {
     use Destination::*;
-    use acp_ui_core::Section as S;
-    // Set up: the guided path, in order. Project: the current project's work.
-    let setup = [
-        (Connection, icons::CONNECTION),
-        (Profile, icons::PROFILE),
-        (Section(S::Projects), icons::section_path(S::Projects)),
-        (Agents, icons::AGENTS),
-    ];
+    // Workspace: every page scoped to the active project chosen above.
     let work = [
-        (Section(S::Dashboard), icons::section_path(S::Dashboard)),
-        (Section(S::Preferences), icons::section_path(S::Preferences)),
-        (Section(S::Handoff), icons::section_path(S::Handoff)),
+        (Dashboard, icons::section_path(Section::Dashboard)),
+        (Preferences, icons::section_path(Section::Preferences)),
+        (Agents, icons::AGENTS),
+        (Handoff, icons::section_path(Section::Handoff)),
         (Sessions, icons::SESSIONS),
     ];
-    // Personal: yours across projects — global preferences and the decisions
-    // agents' suggestions wait for.
-    let personal = [
-        (PersonalPreferences, icons::PERSON),
-        (Review, icons::REVIEW),
-    ];
+    // Review: merged pending queue + personal preferences + project preferences.
+    let review_items = [(Review, icons::REVIEW)];
+    // Set up: one guided Runtime checks surface (Connection, Profile, Workspaces).
+    let setup_items = [(RuntimeChecks, icons::CONNECTION)];
     let foot = [
-        (Section(S::Diagnostics), icons::section_path(S::Diagnostics)),
+        (Diagnostics, icons::section_path(Section::Diagnostics)),
         (Settings, icons::SETTINGS),
     ];
     let row = || {
@@ -446,18 +440,17 @@ fn sidebar(model: Signal<Model>) -> impl IntoElement {
     // One selection slides between every destination row, across groups.
     let slide = ui::Slide::<Destination>::default();
     let rows = &slide;
-    let setup_group = row().children(
-        setup
-            .into_iter()
-            .zip(1u8..)
-            .map(move |((d, path), n)| rows.row(d, step(model, n, d, path))),
-    );
     let work_group = row().children(
         work.into_iter()
             .map(move |(d, path)| rows.row(d, destination(model, d, path))),
     );
-    let personal_group = row().children(
-        personal
+    let review_group = row().children(
+        review_items
+            .into_iter()
+            .map(move |(d, path)| rows.row(d, destination(model, d, path))),
+    );
+    let setup_group = row().children(
+        setup_items
             .into_iter()
             .map(move |(d, path)| rows.row(d, destination(model, d, path))),
     );
@@ -505,18 +498,30 @@ fn sidebar(model: Signal<Model>) -> impl IntoElement {
         .child(
             slide.group(
                 view()
-                    .gap_1()
-                    .child(group_label(model, Msg::SetupGroup))
-                    .child(setup_group),
+                    .gap_1p5()
+                    .child(group_label(model, Msg::WorkspaceGroup))
+                    .child(
+                        view()
+                            .style_when(compact, |s| s.w(px(180.0)))
+                            .child(workspace_switcher(model)),
+                    )
+                    .child(work_group),
             ),
         )
-        .child(slide.group(view().gap_1().child(project_label(model)).child(work_group)))
         .child(
             slide.group(
                 view()
                     .gap_1()
-                    .child(group_label(model, Msg::PersonalGroup))
-                    .child(personal_group),
+                    .child(group_label(model, Msg::ReviewGroup))
+                    .child(review_group),
+            ),
+        )
+        .child(
+            slide.group(
+                view()
+                    .gap_1()
+                    .child(group_label(model, Msg::SetupGroup))
+                    .child(setup_group),
             ),
         )
         .child(view().flex_1().style_when(compact, |s| s.hidden()))
@@ -539,8 +544,20 @@ fn sidebar(model: Signal<Model>) -> impl IntoElement {
                 ),
         )
 }
-/// The page header: the destination's title, one human status line and the
-/// page-wide actions.
+
+/// Whether the current destination has a copyable read-only snapshot page.
+fn copyable_destination(d: Destination) -> bool {
+    matches!(
+        d,
+        Destination::Dashboard
+            | Destination::Preferences
+            | Destination::Handoff
+            | Destination::Diagnostics
+    )
+}
+
+/// The page header: the destination's title, calm workspace scope indicator,
+/// one human status line and the page-wide actions.
 fn header(model: Signal<Model>) -> impl IntoElement {
     view()
         .flex_row()
@@ -554,8 +571,9 @@ fn header(model: Signal<Model>) -> impl IntoElement {
                 .child(
                     view()
                         .flex_row()
+                        .flex_wrap()
                         .items_center()
-                        .gap_1()
+                        .gap_2()
                         .child({
                             // The title arrives with each destination (a short
                             // fade and rise), so a page change reads as one.
@@ -571,6 +589,7 @@ fn header(model: Signal<Model>) -> impl IntoElement {
                                     .into_element()
                             })
                         })
+                        .child(header_scope_badge(model))
                         // A page's longer explanation, behind an info button.
                         .child(
                             view()
@@ -583,8 +602,7 @@ fn header(model: Signal<Model>) -> impl IntoElement {
                                     move || model.get().word(Msg::AboutThisPage).into(),
                                     move || page_help(&model.get()).unwrap_or_default().into(),
                                 )),
-                        )
-                        .child(header_project(model)),
+                        ),
                 )
                 .child(
                     view()
@@ -654,32 +672,34 @@ fn header(model: Signal<Model>) -> impl IntoElement {
                         .on_press(move || reconnect(model)),
                 )
                 .child(
-                    ui::copy_button(
-                        model,
-                        move || model.get().word(Msg::CopyPage).into(),
-                        move || model.get().word(Msg::CopiedShort).into(),
-                        move || copy_page(model),
-                    )
-                    .variant(ui::ButtonVariant::Ghost)
-                    .size(ui::ButtonSize::Small)
-                    .disabled(move || {
-                        let m = model.get();
-                        m.phase != Phase::Ready || !matches!(current(&m), Destination::Section(_))
-                    }),
+                    view()
+                        .style_when(
+                            move || !copyable_destination(current(&model.get())),
+                            |s| s.hidden(),
+                        )
+                        .child(
+                            ui::copy_button(
+                                model,
+                                move || model.get().word(Msg::CopyPage).into(),
+                                move || model.get().word(Msg::CopiedShort).into(),
+                                move || copy_page(model),
+                            )
+                            .variant(ui::ButtonVariant::Ghost)
+                            .size(ui::ButtonSize::Small)
+                            .disabled(move || {
+                                let m = model.get();
+                                m.phase != Phase::Ready || !copyable_destination(current(&m))
+                            }),
+                        ),
                 ),
         )
 }
+
 fn task_input(model: Signal<Model>, task_ref: ElementRef) -> impl IntoElement {
     view()
         .gap_1()
         .style_when(
-            move || {
-                model.get().settings
-                    || model.get().sessions
-                    || model.get().operator.open
-                    || model.get().connection_editor
-                    || model.get().section != Section::Handoff
-            },
+            move || current(&model.get()) != Destination::Handoff,
             |s| s.hidden(),
         )
         .child(
@@ -707,17 +727,12 @@ fn task_input(model: Signal<Model>, task_ref: ElementRef) -> impl IntoElement {
                 .child(control(model, Msg::Lookup, move || reconnect(model))),
         )
 }
+
 fn preference_input(model: Signal<Model>, filter_ref: ElementRef) -> impl IntoElement {
     view()
         .gap_1()
         .style_when(
-            move || {
-                model.get().settings
-                    || model.get().sessions
-                    || model.get().operator.open
-                    || model.get().connection_editor
-                    || model.get().section != Section::Preferences
-            },
+            move || current(&model.get()) != Destination::Preferences,
             |s| s.hidden(),
         )
         .gap_2()
@@ -734,6 +749,7 @@ fn preference_input(model: Signal<Model>, filter_ref: ElementRef) -> impl IntoEl
                 .on_change(move |v| model.update(|m| m.set_filter(v))),
         )
 }
+
 pub(crate) fn shell(
     model: Signal<Model>,
     task_ref: ElementRef,
@@ -742,7 +758,7 @@ pub(crate) fn shell(
     profile::watch(model);
     profile::watch_count(model);
     agents::watch(model);
-    let on = move |d: fn(&Model) -> bool| move || !d(&model.get());
+    let on = move |d: Destination| move || current(&model.get()) != d;
     // Sibling pages cross-fade: the page's content fades in (`fast`) each
     // time the destination changes; nothing remounts, so inputs keep state.
     let page_fade = animated_value(1.0);
@@ -807,71 +823,35 @@ pub(crate) fn shell(
                                         .flex_shrink_0()
                                         .child(
                                             view()
-                                                .style_when(on(|m| m.settings), |s| s.hidden())
+                                                .style_when(on(Destination::Settings), |s| {
+                                                    s.hidden()
+                                                })
                                                 .child(settings::appearance(model)),
                                         )
                                         .child(
                                             view()
-                                                .style_when(on(|m| m.connection_editor), |s| {
+                                                .style_when(on(Destination::RuntimeChecks), |s| {
                                                     s.hidden()
                                                 })
-                                                .child(connection::connection(model)),
+                                                .child(setup::page(model)),
                                         )
                                         .child(
                                             view()
-                                                .gap_4()
-                                                .max_w(px(ui::scale::layout::FORM))
-                                                .style_when(on(|m| m.profile_page), |s| s.hidden())
-                                                .child(profile::section(model)),
-                                        )
-                                        .child(
-                                            view()
-                                                .style_when(on(|m| m.agents_page), |s| s.hidden())
+                                                .style_when(on(Destination::Agents), |s| s.hidden())
                                                 .child(agents::page(model)),
                                         )
                                         .child(
                                             view()
-                                                .style_when(on(|m| m.sessions), |s| s.hidden())
+                                                .style_when(on(Destination::Sessions), |s| {
+                                                    s.hidden()
+                                                })
                                                 .child(sessions::panel(model)),
                                         )
                                         .child(
-                                            // First-run Profile setup where it is needed.
                                             view()
                                                 .style_when(
                                                     move || {
-                                                        !matches!(
-                                                            current(&model.get()),
-                                                            Destination::Section(
-                                                                Section::Dashboard
-                                                                    | Section::Projects
-                                                            )
-                                                        )
-                                                    },
-                                                    |s| s.hidden(),
-                                                )
-                                                .child(profile::setup_when_needed(model)),
-                                        )
-                                        .child(
-                                            view()
-                                                .style_when(
-                                                    move || {
-                                                        current(&model.get())
-                                                            != Destination::Section(
-                                                                Section::Projects,
-                                                            )
-                                                    },
-                                                    |s| s.hidden(),
-                                                )
-                                                .child(projects::page(model)),
-                                        )
-                                        .child(
-                                            view()
-                                                .style_when(
-                                                    move || {
-                                                        !matches!(
-                                                            current(&model.get()),
-                                                            Destination::Section(_)
-                                                        )
+                                                        !copyable_destination(current(&model.get()))
                                                     },
                                                     |s| s.hidden(),
                                                 )

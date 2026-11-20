@@ -201,16 +201,17 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     cfg.viewport = Size::new(px(1080.0), px(1000.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
     app.wait_for("Daemon status").unwrap();
-    app.press("Personal preferences").unwrap();
+    app.press("Review & preferences").unwrap();
+    app.press("Personal").unwrap();
     writes_on(&mut app);
-    // A daemon read finishing afterwards keeps the chosen entry (it once
-    // reopened the workspace as To review, with the scope switch).
+    // A daemon read finishing afterwards keeps the chosen tab (it must not
+    // revert Personal back to To review).
     app.press("Reconnect").unwrap();
     writes_on(&mut app);
-    app.wait_for("Personal preferences").unwrap();
-    // The scope is fixed to personal (global): no switch is offered here.
+    app.wait_for("Add preference").unwrap();
+    // The scope is fixed to personal (global): no inbox scope switch here.
     assert!(!app.screen().texts().contains(&"Global scope"));
-    // No Profile summary here: Profile and writes live in Set up.
+    // No Profile summary here: Profile and writes live in Runtime checks.
     assert!(!app.screen().shows("Inspect Profile"));
     // Step one: Add preference saves a suggestion (prepared, then applied).
     app.press("Add preference").unwrap();

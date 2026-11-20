@@ -169,12 +169,16 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     let mut cfg = EngineConfig::new(Root::of::<acp_ui::App>());
     cfg.viewport = Size::new(px(1080.0), px(900.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
-    // A fresh daemon has no usable project yet: the first read says so, and
-    // the Workspace page must still be reachable to add one.
+    // A fresh daemon has no usable project yet: Dashboard shows onboarding and
+    // Daemon status, and Workspaces is reachable under Runtime checks (alt+2).
     app.wait_for("Daemon status").unwrap();
     app.press_key("alt+2").unwrap();
-    // The Profile is set up where it is needed, from the daemon's suggestion.
-    app.wait_for("Set up your Profile").unwrap();
+    app.wait_for("Registered workspaces").unwrap();
+    // No legacy bottom summary card on Workspaces.
+    assert!(
+        !app.screen()
+            .shows("Only the daemon's projects; switching clears the task lookup.")
+    );
     app.wait_for("Add project…").unwrap();
     app.press("Add project…").unwrap();
     // A folder that is not a repository root is refused by the daemon.
@@ -191,7 +195,10 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     app.press("Check").unwrap();
     contains(&mut app, "This folder can be added.");
     assert_eq!(app.screen().input_text("Name").unwrap(), Some("gamma"));
-    contains(&mut app, "Set up your Profile above first");
+    contains(&mut app, "Set up your Profile first");
+    // Profile setup lives cleanly in the Profile tab of Runtime checks.
+    app.press("Go to Profile").unwrap();
+    app.wait_for("Set up your Profile").unwrap();
     app.press("Create Profile").unwrap();
     let start = Instant::now();
     while f.info()["selected"] != true {
@@ -208,6 +215,7 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         false,
         "creating never enables writes"
     );
+    app.press("Workspaces").unwrap();
     // With writes off, the one explicit click enables them for this run and adds.
     app.wait_for("Enable writes and add").unwrap();
     app.press("Enable writes and add").unwrap();
@@ -238,8 +246,8 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         listed["ok"], false,
         "gamma is now a project: it overlaps itself"
     );
-    // Step 4, Agents: the launch line for gamma, per client; sharing per project.
-    app.press("Step 4: Agents").unwrap();
+    // Agents (under Workspace): the launch line for gamma, per client; sharing per project.
+    app.press("Agents").unwrap();
     app.wait_for("Configure · acp-gamma").unwrap();
     contains(&mut app, "claude mcp add --scope user acp-gamma -- ");
     contains(&mut app, "--project gamma --capability-file ");
@@ -318,8 +326,8 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         "Read context: 0 preferences, 0 contracts, 1 documents",
     );
     contains(&mut app, "Started acp-mcp");
-    // A second project, then a switch from the sidebar's project menu: the
-    // read it starts must finish after the menu closes (never stuck Reading).
+    // A second project, then switch from the ONE sidebar workspace switcher:
+    // the read it starts must finish after the menu closes (never stuck Reading).
     let delta = f.root.path().join("delta");
     std::fs::create_dir_all(delta.join(".git")).unwrap();
     app.press_key("alt+2").unwrap();
@@ -332,6 +340,8 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     contains(&mut app, "This folder can be added.");
     app.press("Add").unwrap();
     contains(&mut app, "delta");
+    // Workspace list rows are not clickable project-switch buttons.
+    assert_eq!(app.screen().count("role:button[delta]").unwrap(), 0);
     let settled = |app: &mut nsh_testing::Headless| {
         app.wait_until("read settled", Duration::from_secs(10), |s| {
             s.texts().iter().any(|t| t.starts_with("Connected · "))
@@ -339,9 +349,9 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         .unwrap();
     };
     settled(&mut app);
-    // The switcher lives in project pages' headers, not on Workspaces.
+    // The single sidebar switcher updates Dashboard and Agents cleanly.
     app.press("Dashboard").unwrap();
-    contains(&mut app, "Project · gamma");
+    app.wait_for("Project: gamma").unwrap();
     for (from, to) in [("gamma", "delta"), ("delta", "gamma")] {
         app.press(from).unwrap();
         app.press(to).unwrap();
@@ -354,9 +364,9 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
                 .count(),
             0
         );
-        contains(&mut app, &format!("Project · {to}"));
+        app.wait_for(&format!("Project: {to}")).unwrap();
     }
-    // The Agents page shows the current project, and its header switches it.
+    // The Agents page follows the same sidebar workspace switcher.
     app.press("Agents").unwrap();
     app.wait_for("Configure · acp-gamma").unwrap();
     app.press("gamma").unwrap();

@@ -78,9 +78,8 @@ pub fn nav_item_counted(
         .on_press(on_press)
 }
 
-/// A numbered set-up step: the visible label is the step's name, with a
-/// success check in the trailing lane once it is done (`✓` in a terminal,
-/// where icons are hidden); `spoken` stays one stable name ("Step 2: Profile").
+/// A setup step tab: its icon, visible label, and a success check in the
+/// trailing lane once complete (`✓` in a terminal, where icons are hidden).
 /// The check grows in when the step completes.
 pub fn step_item(
     model: Signal<Model>,
@@ -115,7 +114,6 @@ pub fn step_item(
         .icon(icon_path)
         .full_width()
         .selected(selected)
-        .quiet_selection(move || !compact())
         .trailing(check)
         .on_press(on_press)
 }

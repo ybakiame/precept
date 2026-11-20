@@ -62,18 +62,25 @@ and restore focus, and pointer-only approval is forbidden.
 
 ## Navigation and scope
 
-Organize navigation around the operator's task:
+Organize navigation around three clear operational paths plus utilities:
 
-- **Set up:** Connection, Profile, Workspaces and Agents. Numbered setup steps use
-  stable accessible names and reflect fresh daemon observations.
-- **Project:** Dashboard, Preferences, Handoff and Sessions for the current
-  project, which the group heading names. The project switcher sits in the header
-  of every page that shows one project's data (these and Agents), beside what it
-  changes. There is one current project: the Agents page follows it, and choosing
-  a served project there makes it current.
-- **Personal:** personal preferences across projects and the review workspace for
-  suggestions in either scope.
-- **Foot:** Diagnostics and Settings.
+- **Workspace:** one persistent workspace switcher at the top of the group (or an
+  explicit `Add workspace…` shortcut to Runtime checks when none exist), followed
+  by **Dashboard**, **Preferences** (effective confirmed rows), **Agents** (MCP
+  access and recent activity), **Handoff** and **Sessions** for that active
+  project. There is one workspace switcher in the app; workspace-scoped headers
+  display a calm read-only scope badge rather than a second switcher.
+- **Review:** one unified **Review & preferences** hub combining the pending
+  review queue (`To review`, with personal vs current-project scope toggle),
+  **Personal** preferences (global scope) and **Project** preferences (active
+  project scope). Its sidebar item carries the live count pill of waiting
+  suggestions.
+- **Set up:** **Runtime checks**, uniting **Connection**, **Profile** and
+  **Workspaces** as three step tabs with live completion indicators (`✓` or
+  `n/3`). Workspaces strictly manages registration and removal; clicking a
+  workspace row never switches the active project.
+- **Foot:** **Diagnostics**, **Settings**, the persistent daemon status button
+  (opens Runtime checks → Connection) and the keyboard shortcuts button.
 
 A persistent scope indicator identifies the applied daemon target and selected
 project/worktree, plus task/session generation when relevant. Personal scope is

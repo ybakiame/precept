@@ -221,9 +221,10 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     cfg.viewport = Size::new(px(1080.0), px(760.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
     app.wait_for("No Profile selected").unwrap();
-    // Profile setup is set-up step 2: the daemon suggests a path
-    // in its private state folder; nothing exists until the operator's click.
-    app.press("Step 2: Profile").unwrap();
+    // Profile setup lives in Runtime checks -> Profile: the daemon suggests a
+    // path in its private state folder; nothing exists until the operator's click.
+    app.press("Runtime checks").unwrap();
+    app.press("Profile").unwrap();
     app.wait_for("Set up your Profile").unwrap();
     let suggested = app
         .screen()
@@ -376,10 +377,10 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     f.child.wait().unwrap();
 }
 
-/// Project → Preferences → Manage project preferences, read and writable.
+/// Workspace → Preferences → Manage & add preferences, read and writable.
 fn manage_project(app: &mut nsh_testing::Headless) {
     app.press_key("alt+3").unwrap();
-    app.press("Manage project preferences").unwrap();
+    app.press("Manage & add preferences").unwrap();
     writes_on(app);
 }
 /// Add preference: saved as a suggestion (prepared; Apply commits it).
@@ -461,8 +462,9 @@ fn terminal_channel_and_revoked_delete(f: &Fixture) {
     assert_eq!(f.inspect(3, 3)["record"]["status"], "deprecated");
     app.press_key("alt+shift+r").unwrap();
     app.wait_for("Writes are off for this daemon run").unwrap();
-    // A new grant from the Profile page, then back to the records.
-    app.press("Step 2: Profile").unwrap();
+    // A new grant from Runtime checks -> Profile, then back to the records.
+    app.press("Runtime checks").unwrap();
+    app.press("Profile").unwrap();
     app.press("Enable writes").unwrap();
     app.wait_for("Writes on for this daemon run").unwrap();
     manage_project(&mut app);

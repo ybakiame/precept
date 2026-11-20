@@ -11,8 +11,7 @@ pub(crate) fn open(model: Signal<Model>) {
         m.operator.review = None;
         m.sessions = true;
         m.settings = false;
-        m.connection_editor = false;
-        m.profile_page = false;
+        m.setup_open = false;
         m.agents_page = false;
         m.session.confirm_start = false;
     });
@@ -391,7 +390,7 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
         Box::new(move || decide_permission(model, true)),
     );
     effect(move || {
-        if !model.get().sessions || model.get().settings || model.get().connection_editor {
+        if !model.get().sessions || model.get().settings || model.get().setup_open {
             prompt_ref.blur();
         }
     });

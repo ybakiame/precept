@@ -17,8 +17,9 @@ use tokens::{mix, palette};
 pub(crate) fn open(model: Signal<Model>) {
     open_mode(model, ReviewMode::Inbox);
 }
-/// Opens the workspace from one entry: To review (both scopes), Personal
-/// preferences (global only) or a project's preferences (that project only).
+/// Opens the unified Review & preferences workspace on one of its three tabs:
+/// To review (pending suggestions), Personal (global records) or Project
+/// (records for the currently selected workspace).
 pub(crate) fn open_mode(model: Signal<Model>, mode: ReviewMode) {
     model.update(|m| {
         let global = match mode {
@@ -28,6 +29,7 @@ pub(crate) fn open_mode(model: Signal<Model>, mode: ReviewMode) {
             ReviewMode::Project => false,
         };
         if global != m.operator.global
+            || mode != m.operator.mode
             || (mode != ReviewMode::Inbox && m.operator.pane != Pane::Preferences)
         {
             m.operator.invalidate();
@@ -38,8 +40,8 @@ pub(crate) fn open_mode(model: Signal<Model>, mode: ReviewMode) {
             m.operator.pane = Pane::Preferences;
         }
         // Entering the workspace re-reads the Profile (writes may have changed
-        // in Profile while it was closed). Cleared here, before that read is
-        // built: clearing it later would make the read's reply stale.
+        // in Runtime checks while it was closed). Cleared here, before that read
+        // is built: clearing it later would make the read's reply stale.
         if !m.operator.open {
             m.operator.info = None;
         }
@@ -47,8 +49,7 @@ pub(crate) fn open_mode(model: Signal<Model>, mode: ReviewMode) {
         m.operator.open = true;
         m.sessions = false;
         m.settings = false;
-        m.connection_editor = false;
-        m.profile_page = false;
+        m.setup_open = false;
         m.agents_page = false;
         m.operator.review = None;
         m.operator.delete_arm = None;
@@ -1099,16 +1100,34 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
     // Display-none removes layout; visibility also removes native Win32 focus
     // stops. A concealed pane must not leave its retained fields/actions tabbable.
     let add_open = signal(false);
-    let content = view()
-        .on_layout(move |_: &Bounds<Points>| {
-            #[cfg(not(target_arch = "wasm32"))]
-            if model.get().operator.open && std::env::var_os("ACP_UI_PROBE").is_some() {
-                eprintln!("ACP_NSH_LAYOUT_READY elapsed={:.6}", probe_elapsed());
-            }
-        })
+    let offline_view = dynamic(move || {
+        let m = model.get();
+        if matches!(m.connection.target, Target::Local | Target::Wsl) {
+            return view().into_element();
+        }
+        ui::surface(model)
+            .child(
+                ui::empty(model, m.word(Msg::ReviewOfflineTitle))
+                    .icon(icons::REVIEW)
+                    .description(m.word(Msg::ReviewOfflineBody))
+                    .action(
+                        ui::button(model, "")
+                            .label_fn(move || model.get().word(Msg::GoToRuntimeChecks).into())
+                            .variant(ui::ButtonVariant::Primary)
+                            .on_press(move || {
+                                shell::go_setup(model, acp_ui_core::SetupTab::Connection)
+                            }),
+                    ),
+            )
+            .into_element()
+    });
+    let live_body = view()
         .gap_4()
-        .flex_shrink_0()
-        .max_w(px(ui::scale::layout::FORM + 160.0))
+        .style_when(
+            move || !matches!(model.get().connection.target, Target::Local | Target::Wsl),
+            |s| s.hidden().invisible(),
+        )
+        .child(mode_tabs(model))
         .child(writes_notice(model))
         .child(page_toolbar(model, add_open))
         .child(
@@ -1118,7 +1137,30 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
                     |s| s.hidden().invisible(),
                 )
                 .child(dynamic(move || {
-                    let mode = model.get().operator.mode;
+                    let m = model.get();
+                    let mode = m.operator.mode;
+                    if mode == ReviewMode::Project && m.selected_project.is_none() {
+                        return ui::surface(model)
+                            .child(
+                                ui::empty(model, m.word(Msg::ReviewNeedsProjectTitle))
+                                    .icon(icons::section_path(acp_ui_core::Section::Projects))
+                                    .description(m.word(Msg::ReviewNeedsProjectBody))
+                                    .action(
+                                        ui::button(model, "")
+                                            .label_fn(move || {
+                                                model.get().word(Msg::GoToWorkspaces).into()
+                                            })
+                                            .variant(ui::ButtonVariant::Primary)
+                                            .on_press(move || {
+                                                shell::go_setup(
+                                                    model,
+                                                    acp_ui_core::SetupTab::Workspaces,
+                                                )
+                                            }),
+                                    ),
+                            )
+                            .into_element();
+                    }
                     if mode == ReviewMode::Inbox {
                         queue_tab(model, delete_open)
                     } else {
@@ -1186,6 +1228,18 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
                 })),
         )
         .child(unknown_banner(model));
+    let content = view()
+        .on_layout(move |_: &Bounds<Points>| {
+            #[cfg(not(target_arch = "wasm32"))]
+            if model.get().operator.open && std::env::var_os("ACP_UI_PROBE").is_some() {
+                eprintln!("ACP_NSH_LAYOUT_READY elapsed={:.6}", probe_elapsed());
+            }
+        })
+        .gap_4()
+        .flex_shrink_0()
+        .max_w(px(ui::scale::layout::FORM + 160.0))
+        .child(offline_view)
+        .child(live_body);
     // Toasts report what happened (applied receipts, refusals); the page shows
     // the resulting state itself.
     let feedback = computed(move || {
@@ -1320,8 +1374,37 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
         .child(delete_dialog(model, delete_open, retype_ref))
 }
 
-/// Writes and Profile live in Set up; here only a short notice when changes
-/// cannot be applied, with the way there.
+/// The unified hub tabs: pending review queue, personal preferences, and
+/// current project's preferences.
+fn mode_tabs(model: Signal<Model>) -> impl IntoElement {
+    ui::tabs(model)
+        .add_fn(
+            move || model.get().word(Msg::ProfileReview).into(),
+            move || model.get().operator.mode == ReviewMode::Inbox,
+            move || open_mode(model, ReviewMode::Inbox),
+        )
+        .add_fn(
+            move || model.get().word(Msg::ReviewTabPersonal).into(),
+            move || model.get().operator.mode == ReviewMode::Personal,
+            move || open_mode(model, ReviewMode::Personal),
+        )
+        .add_fn(
+            move || {
+                let m = model.get();
+                match m.selected_project.as_deref() {
+                    Some(name) => {
+                        format!("{} · {}", m.word(Msg::ReviewTabProject), sanitize(name, 32)).into()
+                    }
+                    None => m.word(Msg::ReviewTabProject).into(),
+                }
+            },
+            move || model.get().operator.mode == ReviewMode::Project,
+            move || open_mode(model, ReviewMode::Project),
+        )
+}
+
+/// Writes and Profile live in Runtime checks; here only a short notice when
+/// changes cannot be applied, with the one-click path there.
 fn writes_notice(model: Signal<Model>) -> impl IntoElement {
     let state = computed(move || {
         let m = model.get();
@@ -1351,18 +1434,31 @@ fn writes_notice(model: Signal<Model>) -> impl IntoElement {
                 ui::button(model, "")
                     .label_fn(move || model.get().word(Msg::OpenProfileStep).into())
                     .size(ui::ButtonSize::Small)
-                    .on_press(move || shell::go(model, shell::Destination::Profile)),
+                    .on_press(move || shell::go_setup(model, acp_ui_core::SetupTab::Profile)),
             )
             .into_element()
     })
 }
 
-/// The page's commands: the scope switch (To review), Add preference (the
-/// scoped pages), Refresh, and the page's explanation behind an info button.
+/// The page's commands: the scope switch (To review), Add preference (Personal
+/// and Project tabs), and Refresh.
 fn page_toolbar(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElement {
-    let scope = |key: Msg, global: bool| {
+    let scope = |global: bool| {
         ui::button(model, "")
-            .label_fn(move || model.get().word(key).into())
+            .label_fn(move || {
+                let m = model.get();
+                if global {
+                    m.word(Msg::ScopePersonal).into()
+                } else {
+                    match m.selected_project.as_deref() {
+                        Some(name) => {
+                            format!("{} · {}", m.word(Msg::ScopeThisProject), sanitize(name, 32))
+                                .into()
+                        }
+                        None => m.word(Msg::ScopeThisProject).into(),
+                    }
+                }
+            })
             .size(ui::ButtonSize::Small)
             .selected(move || model.get().operator.global == global)
             .disabled(move || {
@@ -1392,8 +1488,8 @@ fn page_toolbar(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElemen
                     move || model.get().operator.mode != ReviewMode::Inbox,
                     |s| s.hidden(),
                 )
-                .child(scope(Msg::ScopePersonal, true))
-                .child(scope(Msg::ScopeThisProject, false)),
+                .child(scope(true))
+                .child(scope(false)),
         )
         .child(
             view()
@@ -1404,7 +1500,15 @@ fn page_toolbar(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElemen
                 .child(
                     ui::button(model, "")
                         .label_fn(move || model.get().word(Msg::AddPreference).into())
-                        .disabled(move || !available(model) || !write_grant(model))
+                        .icon(icons::PLUS)
+                        .variant(ui::ButtonVariant::Primary)
+                        .disabled(move || {
+                            let m = model.get();
+                            !available(model)
+                                || !write_grant(model)
+                                || (m.operator.mode == ReviewMode::Project
+                                    && m.selected_project.is_none())
+                        })
                         .on_press(move || {
                             model.update(|m| m.operator.start_draft());
                             add_open.set(true);
@@ -1417,6 +1521,7 @@ fn page_toolbar(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElemen
                 .label_fn(move || model.get().word(Msg::RefreshList).into())
                 .size(ui::ButtonSize::Small)
                 .variant(ui::ButtonVariant::Ghost)
+                .icon(icons::REFRESH)
                 .disabled(move || !available(model))
                 .on_press(move || {
                     model.update(|m| {

@@ -197,7 +197,8 @@ fn toggle_theme(model: Signal<Model>) {
 fn copy_page(model: Signal<Model>) -> bool {
     if model.get().phase == Phase::Ready
         && !model.get().settings
-        && !model.get().connection_editor
+        && !model.get().setup_open
+        && !model.get().agents_page
         && !model.get().sessions
         && !model.get().operator.open
     {
@@ -263,9 +264,16 @@ pub fn App() -> impl IntoElement {
         initial.sessions = inputs.sessions;
         initial.operator.open = inputs.operator;
         initial.settings = inputs.settings;
-        initial.connection_editor = inputs.connection_settings;
+        if inputs.connection_settings {
+            initial.setup_open = true;
+            initial.setup_tab = acp_ui_core::SetupTab::Connection;
+        }
         initial.section = match inputs.section.as_str() {
-            "projects" => acp_ui_core::Section::Projects,
+            "projects" => {
+                initial.setup_open = true;
+                initial.setup_tab = acp_ui_core::SetupTab::Workspaces;
+                acp_ui_core::Section::Dashboard
+            }
             "preferences" => acp_ui_core::Section::Preferences,
             "handoff" => acp_ui_core::Section::Handoff,
             "diagnostics" => acp_ui_core::Section::Diagnostics,
@@ -275,8 +283,8 @@ pub fn App() -> impl IntoElement {
         initial.connection_draft = initial.connection.clone();
         initial.live = inputs.is_live();
         // Explicit launch arguments win; otherwise the saved connection, and on a
-        // first desktop launch the connection page. Never in unit tests, which
-        // must not read or write the developer's settings.
+        // first desktop launch Runtime checks (Connection tab). Never in unit
+        // tests, which must not read or write the developer's settings.
         #[cfg(not(test))]
         if !inputs.is_live() && inputs.synthetic_rows.is_none() {
             match acp_ui_client::settings::load() {
@@ -286,7 +294,8 @@ pub fn App() -> impl IntoElement {
                     initial.connection_draft = saved;
                 }
                 None if !TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed) => {
-                    initial.connection_editor = true;
+                    initial.setup_open = true;
+                    initial.setup_tab = acp_ui_core::SetupTab::Connection;
                     // The primary workflow: a daemon inside WSL2.
                     if cfg!(target_os = "windows") {
                         initial.connection_draft.target = acp_ui_core::connection::Target::Wsl;
@@ -320,7 +329,9 @@ pub fn App() -> impl IntoElement {
             let _ = acp_ui_client::settings::save_settings(&settings);
         });
     }
-    if model.get_untracked().connection_editor {
+    if model.get_untracked().setup_open
+        && model.get_untracked().setup_tab == acp_ui_core::SetupTab::Connection
+    {
         features::connection::opened(model);
     }
     load(model);
@@ -377,14 +388,17 @@ fn console(model: Signal<Model>) -> impl IntoElement {
     };
     // Leaves every workspace for a section (and focuses nothing).
     let to_section = move |section: acp_ui_core::Section| {
+        if section == acp_ui_core::Section::Projects {
+            shell::go_setup(model, acp_ui_core::SetupTab::Workspaces);
+            return;
+        }
         model.update(|m| {
             m.operator.open = false;
             m.operator.review = None;
             m.settings = false;
             m.sessions = false;
             m.session.confirm_start = false;
-            m.connection_editor = false;
-            m.profile_page = false;
+            m.setup_open = false;
             m.agents_page = false;
             m.set_section(section)
         });
@@ -450,8 +464,7 @@ fn console(model: Signal<Model>) -> impl IntoElement {
                 m.sessions = false;
                 m.session.confirm_start = false;
                 m.settings = !m.settings;
-                m.connection_editor = false;
-                m.profile_page = false;
+                m.setup_open = false;
                 m.agents_page = false;
             })
         }),
@@ -489,8 +502,7 @@ fn console(model: Signal<Model>) -> impl IntoElement {
                 m.settings = false;
                 m.sessions = false;
                 m.session.confirm_start = false;
-                m.connection_editor = false;
-                m.profile_page = false;
+                m.setup_open = false;
                 m.agents_page = false;
             });
         });
@@ -670,17 +682,19 @@ mod tests {
         app.wait_for("Empty — no confirmed preferences match")
             .unwrap();
         app.press_key("alt+2").unwrap();
-        app.wait_for("Only the daemon's projects; switching clears the task lookup.")
-            .unwrap();
+        app.wait_for("Registered workspaces").unwrap();
+        // Workspaces manages registrations only: no legacy summary card and no
+        // click-to-switch button on workspace rows.
+        assert!(
+            !app.screen()
+                .shows("Only the daemon's projects; switching clears the task lookup.")
+        );
         app.press_key("mod+f").unwrap();
         app.press_key("mod+d").unwrap();
         app.press_key("mod+shift+h").unwrap();
         app.press_key("Escape").unwrap();
         for (key, label) in [
-            (
-                "alt+2",
-                "Only the daemon's projects; switching clears the task lookup.",
-            ),
+            ("alt+2", "Registered workspaces"),
             ("alt+3", "Confirmed preferences"),
             (
                 "alt+4",
@@ -703,7 +717,9 @@ mod tests {
     fn real_console_edits_connection_without_implicit_reads_and_localizes() {
         let mut app = nsh_testing::Headless::start(EngineConfig::new(Root::of::<App>())).unwrap();
         app.wait_for("Project: alpha").unwrap();
-        app.press("Step 1: Connection").unwrap();
+        app.press("Runtime checks").unwrap();
+        // Connection has no bottom explanatory clutter text.
+        assert!(!app.screen().shows("Checks only read status."));
         // Choosing this computer runs the read-only check; nothing connects yet.
         app.press("This computer").unwrap();
         if cfg!(unix) {
@@ -817,12 +833,45 @@ mod tests {
         app.clear("Filter preferences").unwrap();
         app.type_text("Filter preferences", "event").unwrap();
         app.wait_for("10000 confirmed").unwrap();
-        app.press("Step 3: Workspaces").unwrap();
+        // Switch projects through the single sidebar workspace switcher.
+        app.press("alpha").unwrap();
         app.press("beta").unwrap();
+        app.press_key("alt+1").unwrap();
         app.wait_for("Project: beta").unwrap();
         println!(
             "RENDERED_WORKLOAD: 10000 rows in one virtual list, <400 text nodes, {:?}",
             started.elapsed()
         );
+    }
+
+    #[test]
+    fn runtime_checks_tabs_and_merged_review_hub_provide_clear_offline_guidance() {
+        let mut app = nsh_testing::Headless::start(EngineConfig::new(Root::of::<App>())).unwrap();
+        app.wait_for("Project: alpha").unwrap();
+        // Runtime checks unifies Connection, Profile and Workspaces in one destination.
+        app.press("Runtime checks").unwrap();
+        app.wait_for("Connection").unwrap();
+        app.wait_for("Profile").unwrap();
+        app.wait_for("Workspaces").unwrap();
+        assert!(!app.screen().shows("Checks only read status."));
+        // Profile tab shows a designed offline empty state guiding back to Connection.
+        app.press("Profile").unwrap();
+        app.wait_for("Connect to a daemon first").unwrap();
+        app.press("Go to Connection").unwrap();
+        app.wait_for("Use demo data").unwrap();
+        // Workspaces tab manages workspaces only: no bottom card, no click-to-switch.
+        app.press("Workspaces").unwrap();
+        app.wait_for("Registered workspaces").unwrap();
+        assert!(
+            !app.screen()
+                .shows("Only the daemon's projects; switching clears the task lookup.")
+        );
+        assert_eq!(app.screen().count("role:button[beta]").unwrap(), 0);
+        // Merged Review & preferences hub shows offline guidance on Demo data.
+        app.press("Review & preferences").unwrap();
+        app.wait_for("Live daemon required").unwrap();
+        // Agents page lives under Workspace and shows offline guidance on Demo data.
+        app.press("Agents").unwrap();
+        app.wait_for("Connect to a daemon first").unwrap();
     }
 }

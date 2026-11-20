@@ -179,9 +179,10 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     cfg.viewport = Size::new(px(1080.0), px(760.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
     app.wait_for("No Profile selected").unwrap();
-    // Profile setup is set-up step 2: the daemon suggests a path
-    // in its private state folder; nothing exists until the operator's click.
-    app.press("Step 2: Profile").unwrap();
+    // Profile setup lives in Runtime checks -> Profile: the daemon suggests a
+    // path in its private state folder; nothing exists until the operator's click.
+    app.press("Runtime checks").unwrap();
+    app.press("Profile").unwrap();
     app.wait_for("Set up your Profile").unwrap();
     let suggested = app
         .screen()
@@ -215,10 +216,10 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     // The newly registered project becomes the current one.
     app.wait_for("Project · alpha").unwrap();
     writes_on(&mut app);
-    // Project → Preferences → Manage project preferences: the workspace
-    // fixed to alpha's records; Add preference saves a suggestion.
+    // Workspace → Preferences → Manage & add preferences opens the unified
+    // Review hub on alpha's project tab; Add preference saves a suggestion.
     app.press_key("alt+3").unwrap();
-    app.press("Manage project preferences").unwrap();
+    app.press("Manage & add preferences").unwrap();
     writes_on(&mut app);
     let add = |app: &mut nsh_testing::Headless| {
         app.press("Add preference").unwrap();
@@ -253,7 +254,7 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
         })
         .unwrap();
     };
-    waiting(&mut app, "To review, 1 waiting");
+    waiting(&mut app, "Review & preferences, 1 waiting");
     // The saved suggestion opens as the exact record; confirming it is the
     // second explicit step.
     app.wait_for("Show full digest").unwrap();
@@ -264,7 +265,7 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 3");
     // Confirmed: nothing waits, and the count leaves rather than showing 0.
-    waiting(&mut app, "To review");
+    waiting(&mut app, "Review & preferences");
     add(&mut app);
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 4");
@@ -325,8 +326,9 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
             .iter()
             .any(|t| t.contains("Saved synthetic history"))
     );
-    // Writes are turned off where the Profile lives (step 2).
-    app.press("Step 2: Profile").unwrap();
+    // Writes are turned off in Runtime checks -> Profile.
+    app.press("Runtime checks").unwrap();
+    app.press("Profile").unwrap();
     assert_eq!(f.info()["write_enabled"], true);
     app.press("Disable writes").unwrap();
     app.wait_for("Writes off").unwrap();

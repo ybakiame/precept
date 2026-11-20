@@ -57,11 +57,11 @@ Tasks, by how often they happen:
 | Rank | Task | Where | Must be one step from |
 | --- | --- | --- | --- |
 | 1 | See whether the daemon answers and what it last read | Sidebar status row, page header | Every page |
-| 2 | Review a suggestion and confirm or reject the exact record | To review, Preferences | The sidebar, the toast after saving |
-| 3 | Add a preference (saved as a suggestion) | Preferences, Personal preferences | Page toolbar |
-| 4 | Resume a task through Handoff | Handoff | Sidebar |
-| 5 | Share a project with an agent (copy its MCP line) | Agents | Set-up step 4 |
-| 6 | First-time setup: connection, Profile, workspaces, agents | Set up group | Dashboard empty state |
+| 2 | Review a suggestion and confirm or reject the exact record | Review & preferences (`To review`) | The sidebar, Dashboard, toast |
+| 3 | Add a preference (saved as a suggestion) | Review & preferences (`Personal` / `Project`) | Page toolbar, Preferences |
+| 4 | Resume a task through Handoff | Handoff | Sidebar, Dashboard |
+| 5 | Share a project with an agent (copy its MCP line) | Agents (under Workspace) | Sidebar, Dashboard |
+| 6 | First-time setup: connection, Profile, workspaces | Runtime checks (`Connection` / `Profile` / `Workspaces`) | Sidebar, Dashboard onboarding |
 
 ## 3. The shell
 
@@ -70,20 +70,21 @@ Tasks, by how often they happen:
 | Region | Size | Surface | Contents |
 | --- | --- | --- | --- |
 | Title bar | 36 high | `sidebar` above the sidebar, `background` above the page | Drag region, window caption buttons; the close button washes `danger` on hover |
-| Sidebar | 232 wide, the window's full height (a wrapped row below 900) | `sidebar`, trailing hairline | Brand mark and name; **Set up**, **Project · name** (the current project; its switcher is in the page header of project pages), **Personal** groups; foot destinations; the status row and the keyboard button |
+| Sidebar | 232 wide, the window's full height (a wrapped row below 900) | `sidebar`, trailing hairline | Brand mark and name; **Workspace** (with the app's single workspace switcher above Dashboard, Preferences, Agents, Handoff, Sessions), **Review** (`Review & preferences` with waiting count pill), **Set up** (`Runtime checks` with `✓` or `n/3` progress); foot destinations; the status row and the keyboard button |
 | Page | the rest, inset 24 (8 when compact) | `background` | Header, page toolbar, one scroll region |
 | Overlay layer | the window | — | Toasts (bottom-right, 16 from the edges), menus, popovers, dialogs, sheets |
 
 **Sidebar rows.** 32 high, icon 16 in a fixed lane, label, and a trailing lane
-for state: a success check once a set-up step is done (`✓` in a terminal), and on
-**To review** a `primary` count pill: the daemon's exact count of suggested records
-(`profile.review.count`, personal scope plus the selected project), read again when
-the target, project or a decision changes. Unknown or refused hides the pill; zero
-hides it too, and nothing ever shows "0" for "not counted". Its spoken name carries
-the count ("To review, 3 waiting"). One `inset` indicator behind the rows marks the
-current destination and slides to it; hover is a lighter wash. No leading bars. Group labels are
-`CAPTION` semibold `muted`, never uppercased. Set-up steps keep stable spoken names
-("Step 2: Profile") while their visible labels are just the step's name.
+for state: on **Runtime checks**, a success check once all three steps
+(Connection, Profile, Workspaces) are ready (`✓` in a terminal) or a tabular
+`n/3` count while incomplete; on **Review & preferences**, a `primary` count
+pill showing the daemon's exact count of suggested records (`profile.review.count`,
+personal scope plus the selected project), read again when the target, project or
+a decision changes. Unknown or refused hides the pill; zero hides it too, and
+nothing ever shows "0" for "not counted". Its spoken name carries the count
+("Review & preferences, 3 waiting"). One `inset` indicator behind the rows marks
+the current destination and slides to it; hover is a lighter wash. No leading
+bars. Group labels are `CAPTION` semibold `muted`, never uppercased.
 
 **Resize grip.** A small grip in the window's bottom-right corner, drawn over the
 page; it takes no row, so the sidebar reaches the bottom edge.
@@ -91,7 +92,7 @@ page; it takes no row, so the sidebar reaches the bottom edge.
 **Status row.** Pinned to the sidebar foot, beside a square keyboard button that
 opens the Shortcuts panel: an 8 pt dot and a short state word, then
 the target (`Connected · WSL archlinux`). It is the persistent scope indicator for
-the daemon target, and it is a button that opens **Connection**.
+the daemon target, and it is a button that opens **Runtime checks → Connection**.
 
 ![Status dot states](design/live-pulse.svg)
 
@@ -104,12 +105,13 @@ the daemon target, and it is a button that opens **Connection**.
 | Refused | hollow `error` | Access refused / 访问被拒 | none |
 | Task error | hollow `warning` | Needs attention / 需要处理 | none |
 
-**Page header.** Title (20 pt semibold, a header role), an information button when
-the page has a longer explanation and, on pages that show one project (Dashboard,
-Preferences, Handoff, Sessions, Agents), a **Project** caption with the project
-menu (220 wide), then one muted status line with the target and last read. Page-wide actions sit at the trailing edge as small ghost buttons with
-icons (Reconnect, Copy visible page). A page's own primary command (Add
-preference…) lives in its toolbar, not in the header.
+**Page header.** Title (20 pt semibold, a header role), a calm read-only scope
+badge naming the active project on workspace-scoped pages (Dashboard, Preferences,
+Agents, Handoff, Sessions), an information button when the page has a longer
+explanation, then one muted status line with the target and last read. Page-wide
+actions sit at the trailing edge as small ghost buttons with icons (Reconnect,
+and Copy visible page on copyable snapshot sections). A page's own primary command
+(Add preference…) lives in its toolbar, not in the header.
 
 **Compact (< 900 wide).** The sidebar becomes a wrapped destination row above the
 page, group labels and the brand hide, the status row stays, and dialogs keep a

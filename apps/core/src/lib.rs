@@ -168,6 +168,15 @@ impl Section {
         }
     }
 }
+/// The three runtime-setup tabs inside Runtime checks (Set up).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SetupTab {
+    #[default]
+    Connection,
+    Profile,
+    Workspaces,
+}
+
 /// Connection discovery on the connection page. Each check carries the epoch
 /// it was started with; a result for an older selection is dropped.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -190,10 +199,10 @@ pub struct Model {
     pub connection_draft: connection::Connection,
     pub connection_invalid: bool,
     pub settings: bool,
-    pub connection_editor: bool,
-    /// The Profile page (set-up step 2).
-    pub profile_page: bool,
-    /// The Agents page (set-up step 4).
+    /// The Runtime checks page (Connection, Profile, Workspaces).
+    pub setup_open: bool,
+    pub setup_tab: SetupTab,
+    /// The project-scoped Agents (MCP) page.
     pub agents_page: bool,
     pub agents: mcp::AgentsPage,
     /// Registered WSL distributions (`None` until listed on this page).
@@ -273,8 +282,8 @@ impl Model {
             connection_draft: Default::default(),
             connection_invalid: false,
             settings: false,
-            connection_editor: false,
-            profile_page: false,
+            setup_open: false,
+            setup_tab: SetupTab::Connection,
             agents_page: false,
             agents: Default::default(),
             distributions: None,

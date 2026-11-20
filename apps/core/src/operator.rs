@@ -37,15 +37,15 @@ impl std::fmt::Debug for DeleteArm {
         f.write_str("DeleteArm(redacted)")
     }
 }
-/// Which entry opened the review workspace: it fixes the scope shown.
+/// Which tab is active in the unified Review & preferences workspace.
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub enum ReviewMode {
-    /// Personal → To review: both scopes, the scope switch shown.
+    /// To review: pending suggestions across personal or current-project scope.
     #[default]
     Inbox,
-    /// Personal → Personal preferences: global scope only.
+    /// Personal preferences: global scope records across all projects.
     Personal,
-    /// Project → Preferences → Manage: the selected project only.
+    /// Project preferences: records scoped to the currently selected project.
     Project,
 }
 #[derive(Clone, Default, PartialEq, Eq)]

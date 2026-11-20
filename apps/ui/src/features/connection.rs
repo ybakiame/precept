@@ -195,11 +195,57 @@ pub(crate) fn connection(model: Signal<Model>) -> impl IntoElement {
         .child(
             view()
                 .gap_1()
-                .child(caption(model, |m| {
-                    m.connection_invalid.then_some(Msg::ConnectionInvalid)
-                }))
-                .child(caption(model, |m| m.save_failure.map(|_| Msg::SaveFailed)))
-                .child(caption(model, |_| Some(Msg::ConnectionHelp))),
+                .style_when(
+                    move || {
+                        let m = model.get();
+                        !m.connection_invalid && m.save_failure.is_none()
+                    },
+                    |s| s.hidden(),
+                )
+                .child(
+                    text(move || {
+                        let m = model.get();
+                        if m.connection_invalid {
+                            m.word(Msg::ConnectionInvalid)
+                        } else {
+                            ""
+                        }
+                    })
+                    .style_when(move || !model.get().connection_invalid, |s| s.hidden())
+                    .text_size(px(scale::text::CAPTION))
+                    .text_color(move || palette(model).error),
+                )
+                .child(
+                    text(move || {
+                        let m = model.get();
+                        if m.save_failure.is_some() {
+                            m.word(Msg::SaveFailed)
+                        } else {
+                            ""
+                        }
+                    })
+                    .style_when(move || model.get().save_failure.is_none(), |s| s.hidden())
+                    .text_size(px(scale::text::CAPTION))
+                    .text_color(move || palette(model).error),
+                ),
+        )
+        .child(
+            view()
+                .items_start()
+                .style_when(
+                    move || {
+                        let m = model.get();
+                        !(super::setup::step_done(&m, acp_ui_core::SetupTab::Connection)
+                            && !super::setup::step_done(&m, acp_ui_core::SetupTab::Profile))
+                    },
+                    |s| s.hidden(),
+                )
+                .child(
+                    button(model, "")
+                        .label_fn(word(model, Msg::NextStepProfile))
+                        .size(ButtonSize::Small)
+                        .on_press(move || shell::go_setup(model, acp_ui_core::SetupTab::Profile)),
+                ),
         )
 }
 
@@ -441,7 +487,13 @@ fn found(model: Signal<Model>, d: &Discovery) -> AnyElement {
             Msg::StateUnselected,
             Neutral,
             Some(Msg::HintProfile),
-            None,
+            Some(
+                button(model, "")
+                    .label_fn(word(model, Msg::GoToProfile))
+                    .size(ButtonSize::Small)
+                    .on_press(move || shell::go_setup(model, acp_ui_core::SetupTab::Profile))
+                    .into_element(),
+            ),
         ),
         // Without a daemon answer the Profile is not observed, not "none".
         _ => row(
