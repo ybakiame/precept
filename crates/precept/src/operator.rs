@@ -235,6 +235,18 @@ pub enum Project {
     Unshare { name: String },
     /// How an MCP client starts precept-mcp for this project (paths, no token).
     Mcp { name: String },
+    /// The project's AGENTS.md pointer: its status and the exact block, or with
+    /// --add / --remove a write guarded by the digest the status reported.
+    Pointer {
+        name: String,
+        #[arg(long, conflicts_with = "remove")]
+        add: bool,
+        #[arg(long)]
+        remove: bool,
+        /// `sha256` from the status (omit when the file does not exist).
+        #[arg(long)]
+        expected_sha256: Option<String>,
+    },
 }
 pub async fn project(location: &Location, command: Project) -> Result<Value> {
     match command {
@@ -266,6 +278,27 @@ pub async fn project(location: &Location, command: Project) -> Result<Value> {
                 location,
                 "project.agents",
                 json!({"name":name,"enabled":false}),
+            )
+            .await
+        }
+        Project::Pointer {
+            name,
+            add,
+            remove,
+            expected_sha256,
+        } => {
+            if !add && !remove {
+                return precept_ipc::operator::control(
+                    location,
+                    "integration.pointer",
+                    json!({"project":name}),
+                )
+                .await;
+            }
+            precept_ipc::operator::control(
+                location,
+                "integration.pointer.apply",
+                json!({"project":name,"enabled":add,"expected_sha256":expected_sha256}),
             )
             .await
         }

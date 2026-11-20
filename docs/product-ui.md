@@ -106,6 +106,11 @@ Agent sharing is a separate per-project operator switch. Configuration text can 
 copied, but Precept never writes another tool's configuration automatically. Credentials
 are never displayed.
 
+The Agents page also shows, for Claude Code and Codex, the optional session-start
+hook to paste, and the project's **AGENTS.md pointer**: its state (not added,
+added, out of date) and Add, Update or Remove behind a dialog that previews the
+exact text Precept will write.
+
 The Agents page lists the selected project's recent agent activity from the daemon's
 in-memory log: when an MCP client started `precept-mcp`, what it read (by count), who
 asked (the client's self-reported name, or how it arrived) and each outcome,

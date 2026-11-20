@@ -12,6 +12,9 @@ pub struct Launch {
     pub shared: bool,
     pub executable: Option<String>,
     pub args: Vec<String>,
+    /// The session-start hook beside `precept-mcp`, when installed.
+    #[serde(default)]
+    pub hook: Option<String>,
 }
 
 /// Which client the snippet is for.
@@ -109,6 +112,52 @@ pub fn snippet(client: Client, launch: &Launch, host: &Host) -> Option<String> {
     })
 }
 
+/// The session-start hook configuration for `client` (Claude Code and Codex
+/// read the same shape), or `None` when the daemon reported no hook or the
+/// client has no session-start hook (other clients read the AGENTS.md pointer).
+pub fn hook_snippet(client: Client, launch: &Launch, host: &Host) -> Option<String> {
+    let (vendor, file) = match client {
+        Client::ClaudeCode => ("claude", "~/.claude/settings.json"),
+        Client::Codex => ("codex", "~/.codex/hooks.json"),
+        Client::Json => return None,
+    };
+    let hook = Launch {
+        executable: launch.hook.clone(),
+        args: std::iter::once("--vendor".to_owned())
+            .chain(std::iter::once(vendor.to_owned()))
+            .chain(launch.args.iter().cloned())
+            .collect(),
+        ..launch.clone()
+    };
+    let (cmd, args) = command(&hook, host)?;
+    let line = std::iter::once(cmd.as_str())
+        .chain(args.iter().map(String::as_str))
+        .map(word)
+        .collect::<Vec<_>>()
+        .join(" ");
+    let json = serde_json::to_string_pretty(&serde_json::json!({
+        "hooks": { "SessionStart": [ { "hooks": [ { "type": "command", "command": line } ] } ] }
+    }))
+    .unwrap_or_default();
+    Some(format!("// {file}: merge into its \"hooks\"\n{json}"))
+}
+
+/// The AGENTS.md pointer of a project as the daemon reports it
+/// (`integration.pointer`): its state, the file digest the operator previews,
+/// and the exact block Precept would write.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+pub struct Pointer {
+    pub path: String,
+    pub exists: bool,
+    pub sha256: Option<String>,
+    /// `absent`, `current` or `outdated`; `None` with `malformed`.
+    pub state: Option<String>,
+    pub malformed: bool,
+    pub block: String,
+    #[serde(default)]
+    pub action: Option<String>,
+}
+
 /// The Agents page state.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct AgentsPage {
@@ -123,6 +172,12 @@ pub struct AgentsPage {
     pub error: Option<String>,
     /// Which snippet was copied last (feedback only).
     pub copied: bool,
+    /// The project's AGENTS.md pointer (`integration.pointer`).
+    pub pointer: Option<Pointer>,
+    /// The pointer dialog: `Some(true)` add/update, `Some(false)` remove.
+    pub pointer_dialog: Option<bool>,
+    pub pointer_busy: bool,
+    pub pointer_error: Option<String>,
     /// Recent agent activity for `project` (`activity.list`).
     pub activity: crate::activity::Activity,
 }
@@ -147,7 +202,34 @@ mod tests {
             ]
             .map(String::from)
             .to_vec(),
+            hook: Some("/usr/bin/precept-hook".into()),
         }
+    }
+    #[test]
+    fn hooks_name_the_vendor_wrap_wsl_and_skip_other_clients() {
+        let same = hook_snippet(Client::ClaudeCode, &launch(), &Host::Same).unwrap();
+        assert!(same.starts_with("// ~/.claude/settings.json"));
+        let json: serde_json::Value =
+            serde_json::from_str(same.split_once('\n').unwrap().1).unwrap();
+        let cmd = json["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap();
+        assert!(cmd.starts_with("/usr/bin/precept-hook --vendor claude --runtime-dir "));
+        assert!(cmd.ends_with("agent-alpha.cap"));
+        let host = Host::WindowsToWsl {
+            distribution: "archlinux".into(),
+            user: "u".into(),
+        };
+        let win = hook_snippet(Client::Codex, &launch(), &host).unwrap();
+        assert!(
+            win.contains("wsl.exe -d archlinux -u u --exec /usr/bin/precept-hook --vendor codex")
+        );
+        assert!(hook_snippet(Client::Json, &launch(), &Host::Same).is_none());
+        let none = Launch {
+            hook: None,
+            ..launch()
+        };
+        assert!(hook_snippet(Client::ClaudeCode, &none, &Host::Same).is_none());
     }
     #[test]
     fn claude_code_gets_one_command_and_windows_wraps_wsl_exe() {

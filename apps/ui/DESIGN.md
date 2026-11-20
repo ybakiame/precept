@@ -422,6 +422,8 @@ work is called done. "RM" is what reduced motion does.
 | Configuration copied | As every copy button: glyph swap and "Copied" in place, no toast | Swap without scale |
 | Agent activity refreshing | The Refresh button shows its turning spinner; rows stay until the reply replaces them | Spinner rests |
 | Agent activity empty | The empty state arrives (fade, rising 4, `BASE`) | Appears |
+| AGENTS.md pointer Add / Update / Remove | The confirmation dialog opens as every dialog (scale and fade from 0.96, `BASE`), previewing the exact block | Appears |
+| Pointer written or removed | The state badge swaps in place; the Add/Remove button shows its spinner while the daemon writes | Swap without fade |
 
 Sound: none. Precept is a quiet developer tool.
 

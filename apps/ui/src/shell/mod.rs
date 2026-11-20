@@ -787,6 +787,7 @@ pub(crate) fn shell(
                         .child(preference_input(model, filter_ref))
                         .child(review::panel(model))
                         .child(projects::remove_dialog(model))
+                        .child(agents::pointer_dialog(model))
                         .child(
                             scroll()
                                 .flex_1()

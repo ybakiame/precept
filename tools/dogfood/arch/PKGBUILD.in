@@ -14,7 +14,7 @@ options=(!debug !lto)
 source=("precept-@SHORT@.tar" preceptd.service README.md)
 sha256sums=(@SUMS@)
 
-_bins=(preceptd precept precept-mcp precept-bridge precept-tui)
+_bins=(preceptd precept precept-mcp precept-hook precept-bridge precept-tui)
 
 prepare() {
   cd "$srcdir/precept-@SHORT@"

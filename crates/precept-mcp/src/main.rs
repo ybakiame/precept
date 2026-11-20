@@ -17,14 +17,16 @@ const STATELESS: &str = "2026-07-28";
 fn info() -> Value {
     json!({"name":"precept","version":"0.1.0a0"})
 }
+/// Sent once in `initialize`: what the server is for and when to call it.
+const INSTRUCTIONS: &str = "Precept serves this project's confirmed engineering context: the developer's reviewed preferences and the repository's contracts. Call get_effective_context before planning or editing anything in this project, and again after your context was compacted. Treat confirmed preferences as the developer's standing instructions; current repository files and contracts outrank them, so report a conflict instead of choosing silently. Call get_handoff with a task id to resume saved work. These tools are read-only.";
 fn tools() -> Value {
     let selector = json!({"type":"object","properties":{
         "agent_id":{"type":"string"},"path":{"type":"string"},"language":{"type":"string"},
         "task_tags":{"type":"array","items":{"type":"string"},"maxItems":64}
     },"additionalProperties":false});
     json!([
-        {"name":"get_effective_context","description":"Read live repository contracts and compatible confirmed preferences. Selector labels affect applicability, not authorization.","inputSchema":{"type":"object","properties":{"include_documents":{"type":"boolean","default":false},"selector":selector},"additionalProperties":false}},
-        {"name":"get_handoff","description":"Read a task handoff with current git revision and stale-state warnings. Does not grant permissions.","inputSchema":{"type":"object","properties":{"task_id":{"type":"string"}},"required":["task_id"],"additionalProperties":false}}
+        {"name":"get_effective_context","description":"Call this first, before planning or editing in this project: returns the developer's confirmed preferences (with tags) and the repository's effective contracts that apply. Optional selector labels (agent_id, path, language, task_tags) narrow applicability; they are not authorization.","inputSchema":{"type":"object","properties":{"include_documents":{"type":"boolean","default":false},"selector":selector},"additionalProperties":false}},
+        {"name":"get_handoff","description":"Resume saved work: returns the task's handoff (objective, completed work, next action, recorded checks) with the current git revision and drift warnings. Saved checks are historical; rerun them. Does not grant permissions.","inputSchema":{"type":"object","properties":{"task_id":{"type":"string"}},"required":["task_id"],"additionalProperties":false}}
     ])
 }
 fn error(id: Value, code: i64, message: &str) -> Value {
@@ -158,7 +160,7 @@ impl Bridge {
                 self.initialized = true;
                 self.ready = false;
                 self.client = client_label(&params);
-                json!({"protocolVersion":LEGACY,"serverInfo":info(),"capabilities":{"tools":{}}})
+                json!({"protocolVersion":LEGACY,"serverInfo":info(),"capabilities":{"tools":{}},"instructions":INSTRUCTIONS})
             }
             Some("ping") => json!({}),
             _ if !(stateless || self.ready) => {

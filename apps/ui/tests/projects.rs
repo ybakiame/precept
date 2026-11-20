@@ -373,4 +373,28 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     app.press("delta").unwrap();
     settled(&mut app);
     app.wait_for("Configure · precept-delta").unwrap();
+    // Session-start hook for Claude Code, beside the MCP line.
+    app.press("Claude Code").unwrap();
+    contains(&mut app, "precept-hook --vendor claude --runtime-dir");
+    // The AGENTS.md pointer: previewed, written between markers, removed.
+    let agents_md = f.root.path().join("delta/AGENTS.md");
+    assert!(!agents_md.exists());
+    app.wait_for("Not added").unwrap();
+    app.press("Add to AGENTS.md…").unwrap();
+    app.wait_for("Add the Precept section to AGENTS.md?")
+        .unwrap();
+    contains(
+        &mut app,
+        "call `get_effective_context` on the `precept-delta` MCP server",
+    );
+    app.press("Write to AGENTS.md").unwrap();
+    app.wait_for("Added").unwrap();
+    let written = std::fs::read_to_string(&agents_md).unwrap();
+    assert!(written.starts_with("<!-- precept:begin v1 -->"));
+    app.press("Remove from AGENTS.md…").unwrap();
+    app.wait_for("Remove the Precept section from AGENTS.md?")
+        .unwrap();
+    app.press("Remove").unwrap();
+    app.wait_for("Not added").unwrap();
+    assert!(!agents_md.exists(), "a block-only file is deleted");
 }

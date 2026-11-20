@@ -21,6 +21,19 @@ rewritten. `origin` is exactly `operator` or `agent`. Both are part of the propo
 digest. `precept preference-suggest` normalizes `--tag` (repeatable, required) and
 defaults `--origin operator`.
 
+### AGENTS.md pointer
+
+Operator-only `integration.pointer {project}` reports the served project's
+`AGENTS.md`: `exists`, its `sha256`, `state` (`absent`, `current`, `outdated`) or
+`malformed` (unbalanced markers), and the exact `block`. `integration.pointer.apply
+{project, enabled, expected_sha256}` adds or updates (`enabled: true`) or removes
+the block only if the file still has the previewed digest (`null` for absent),
+otherwise `Conflict`. The block is fixed text between `<!-- precept:begin v1 -->`
+and `<!-- precept:end -->`; everything outside the markers is kept byte for byte,
+a block-only file is deleted on removal, and writes are atomic and keep the file
+mode. Links, non-regular and oversized (> 1 MiB) files are refused. The daemon never
+commits or writes any other file. `precept project pointer` exposes both.
+
 ### Profile export and import
 
 `precept profile export --out FILE` writes every preference of the selected Profile
@@ -39,6 +52,19 @@ This is how preferences move between Profile schemas: there is no migration.
 The Rust `precept-mcp` binary uses newline-delimited UTF-8 JSON-RPC; stdout contains only
 protocol output and failures are sanitized. It uses an explicit protected native
 credential and endpoint, with one bound project. Tool arguments cannot change scope.
+
+`initialize` returns `instructions` telling the agent to call
+`get_effective_context` before planning or editing and again after compaction,
+and that repository files and contracts outrank preferences.
+
+`precept-hook --vendor claude|codex|cursor` (same location, project and capability
+arguments as `precept-mcp`) is the read-only session-start hook. It reads the
+harness's hook input (only `source`; `compact` adds a resume note), calls agent
+`context.get` with the client label `<vendor> hook`, and prints a bounded (12 KiB)
+Markdown briefing of the effective contracts and confirmed preferences in the
+harness's shape: `hookSpecificOutput.additionalContext` for Claude Code and Codex,
+`additional_context` for Cursor. Any refusal or a 4 s timeout prints nothing on
+stdout, exits 0 and writes one sanitized line to stderr (fail-open).
 
 | Tool | Inputs | Outputs | Side effects |
 | --- | --- | --- | --- |

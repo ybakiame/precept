@@ -14,6 +14,7 @@ use std::{
 };
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 mod activity;
+mod integration;
 #[cfg(test)]
 mod ownership_tests;
 #[cfg(test)]
@@ -157,6 +158,46 @@ impl Service {
             }
             return Ok(self.activity.list(p.project.as_deref(), p.before));
         }
+        // The AGENTS.md pointer of a served project: status, and an explicit
+        // add/remove guarded by the previewed file digest.
+        if matches!(
+            request.method.as_str(),
+            "integration.pointer" | "integration.pointer.apply"
+        ) {
+            if access != Access::Operator {
+                return Err(Error::Unauthorized);
+            }
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Pointer {
+                project: String,
+                #[serde(default)]
+                enabled: Option<bool>,
+                #[serde(default)]
+                expected_sha256: Option<String>,
+            }
+            let p: Pointer = decode(params)?;
+            if !self.profiles.allowed(&p.project) {
+                return Err(Error::NotFound);
+            }
+            let (_, roots) = self.profiles.read()?;
+            let root = roots.get(&p.project).ok_or(Error::NotFound)?;
+            return match (request.method.as_str(), p.enabled) {
+                ("integration.pointer", None) if p.expected_sha256.is_none() => {
+                    integration::status(root, &p.project)
+                }
+                ("integration.pointer.apply", Some(enabled)) => {
+                    if p.expected_sha256
+                        .as_ref()
+                        .is_some_and(|d| d.len() != 64 || !d.bytes().all(|b| b.is_ascii_hexdigit()))
+                    {
+                        return Err(Error::InvalidRequest);
+                    }
+                    integration::apply(root, &p.project, enabled, p.expected_sha256.as_deref())
+                }
+                _ => Err(Error::InvalidRequest),
+            };
+        }
         // The daemon's own project set needs no Profile: an operator connecting
         // before creating or selecting one must still get a successful read.
         if request.method == "project.list" {
@@ -258,11 +299,17 @@ impl Service {
                 .with_file_name(format!("precept-mcp{}", std::env::consts::EXE_SUFFIX));
             beside.is_file().then_some(beside)
         });
+        // The session-start hook ships beside precept-mcp.
+        let hook = executable.as_ref().and_then(|mcp| {
+            let hook = mcp.with_file_name(format!("precept-hook{}", std::env::consts::EXE_SUFFIX));
+            hook.is_file().then_some(hook)
+        });
         let shared = self.profiles.shared_names().contains(&p.name);
         Ok(serde_json::json!({
             "name": p.name,
             "shared": shared,
             "executable": executable,
+            "hook": hook,
             "args": [
                 "--runtime-dir", location.runtime_dir,
                 "--endpoint", location.endpoint,

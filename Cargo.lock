@@ -453,6 +453,7 @@ name = "preceptd"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "getrandom",
  "libc",
  "precept-core",
  "precept-ipc",

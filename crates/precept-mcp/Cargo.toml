@@ -17,3 +17,11 @@ clap = { version = "4", features = ["derive"] }
 tempfile = "3"
 precept-store = { path = "../precept-store" }
 rusqlite = { version = "=0.41.1", features = ["bundled"] }
+
+[[bin]]
+name = "precept-mcp"
+path = "src/main.rs"
+
+[[bin]]
+name = "precept-hook"
+path = "src/hook.rs"

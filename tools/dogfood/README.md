@@ -11,7 +11,7 @@ support, signing or clean-machine claim.
 | Windows | `tools/portable/windows-package.ps1` (portable ZIP, unchanged recipe) | `windows-deploy.ps1` into `%LOCALAPPDATA%\Programs\Precept` (portable; no installer, PATH, registry or Start menu) |
 | WSL2 Arch | `arch-package.sh` (pacman package from one clean commit) | explicit `sudo pacman -U`, then the systemd **user** unit `preceptd.service` |
 
-The Arch package ships `preceptd`, `precept`, `precept-mcp`, `precept-bridge` and
+The Arch package ships `preceptd`, `precept`, `precept-mcp`, `precept-hook`, `precept-bridge` and
 `precept-tui` in `/usr/bin`, the unit in `/usr/lib/systemd/user/`, and this file
 in `/usr/share/doc/precept/`. There is no
 daemon configuration file: projects and the startup Profile are chosen in the
@@ -82,6 +82,12 @@ installed manifest, and keeps unknown files.
    (a `claude mcp add` command, a Codex `config.toml` table, or MCP JSON; on
    Windows it runs `precept-mcp` through `wsl.exe`). There is no port: the client
    starts `precept-mcp` over stdio. Or `precept ... project mcp|share|unshare NAME`.
+   For Claude Code and Codex, the same page shows an optional session-start hook
+   (`precept-hook`) that hands each new or compacted session the confirmed rules
+   without waiting for the agent to ask; and **AGENTS.md pointer** adds a short
+   Precept section to the repository's `AGENTS.md` (previewed, written only between
+   Precept's markers, removable; you commit it). Or `precept ... project pointer NAME
+   [--add|--remove --expected-sha256 DIGEST]`.
 
 Status and logs: `systemctl --user status preceptd`, `journalctl --user -u preceptd`.
 Agent activity (did a configured MCP client start `precept-mcp` and read?): Agents →

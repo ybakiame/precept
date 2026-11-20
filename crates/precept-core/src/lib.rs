@@ -4,9 +4,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, path::PathBuf};
 
+pub mod briefing;
 pub mod contracts;
 pub mod documents;
 pub mod fingerprint;
+pub mod pointer;
 pub mod typed_context;
 
 pub type Result<T> = std::result::Result<T, Error>;
