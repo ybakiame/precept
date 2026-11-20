@@ -71,14 +71,15 @@ impl Request {
                 scope,
                 key,
                 value,
-                source,
+                tags,
                 expected,
                 // origin is a closed serde enum; no additional domain check.
                 ..
             } => {
+                // Tags arrive canonical; the writer never rewrites a proposal.
                 if !text(key, 120, true)
                     || !text(value, 4096, true)
-                    || !text(source, 512, true)
+                    || !acp_core::operator::tags_canonical(tags)
                     || *expected != Expected::Absent
                 {
                     return Err(Error::InvalidCommand);

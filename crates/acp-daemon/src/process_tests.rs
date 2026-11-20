@@ -134,7 +134,7 @@ fn s3_independent_daemon_admission_checkpoint() {
             ),
             (
                 "suggest",
-                json!({"command":"suggest_preference","scope":scope,"key":"synthetic","value":"synthetic","source":"synthetic","origin":"agent_reported","expected":{"kind":"absent"}}),
+                json!({"command":"suggest_preference","scope":scope,"key":"synthetic","value":"synthetic","tags":["synthetic"],"origin":"agent","expected":{"kind":"absent"}}),
             ),
         ] {
             daemon.call(&daemon.credential("operator-write.cap"), "profile.mutate", json!({"version":2,"binding":binding,"operation_id":operation,"command":command})).unwrap();
@@ -248,7 +248,7 @@ fn n_independent_daemon_contract_source_changes_refuse_publication() {
             ),
             (
                 "suggest",
-                json!({"command":"suggest_preference","scope":{"kind":"global"},"key":"formatter","value":"personal","source":"PRIVATE_RACE_SOURCE","origin":"agent_reported","expected":{"kind":"absent"}}),
+                json!({"command":"suggest_preference","scope":{"kind":"global"},"key":"formatter","value":"personal","tags":["race"],"origin":"agent","expected":{"kind":"absent"}}),
             ),
         ] {
             daemon.call(&credential,"profile.mutate",json!({"version":2,"binding":binding,"operation_id":operation,"command":command})).unwrap();

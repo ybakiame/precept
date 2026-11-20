@@ -56,7 +56,7 @@ fn fixture() -> (tempfile::TempDir, Memory, Value) {
             serde_json::from_value(
                 json!({"id":i+1,"scope":if p["scope"]=="global" {"global"} else {"project"},
             "project":if p["scope"]=="global" {Value::Null} else {p["scope"].clone()},
-            "key":p["key"],"value":p["value"],"status":p["status"],"source":"fixture"}),
+            "key":p["key"],"value":p["value"],"status":p["status"],"tags":["fixture"]}),
             )
             .unwrap()
         })
@@ -104,7 +104,7 @@ fn shared_v1_preferences_documents_and_forbidden_markers() {
 }
 
 #[test]
-fn effective_context_omits_private_sources_for_project_and_global_fallbacks() {
+fn effective_context_carries_tags_for_project_and_global_fallbacks() {
     let (_temp, mut mem, _) = fixture();
     mem.prefs = [
         (1, Scope::Global, None, "global", "shared-global"),
@@ -125,7 +125,7 @@ fn effective_context_omits_private_sources_for_project_and_global_fallbacks() {
         key: key.into(),
         value: value.into(),
         status: Status::Confirmed,
-        source: format!("PRIVATE_REVIEW_SOURCE_{id}"),
+        tags: vec![format!("tag-{id}")],
     })
     .collect();
     for project in ["alpha", "beta"] {
@@ -149,11 +149,23 @@ fn effective_context_omits_private_sources_for_project_and_global_fallbacks() {
                     "global-fallback"
                 }
             );
+            // Tags travel with each effective row and never change which wins.
+            let tags: BTreeMap<_, _> = rows
+                .iter()
+                .map(|row| (row["key"].as_str().unwrap(), row["tags"].clone()))
+                .collect();
+            assert_eq!(tags["global"], json!(["tag-1"]));
+            assert_eq!(
+                tags["override"],
+                if project == "alpha" {
+                    json!(["tag-3"])
+                } else {
+                    json!(["tag-2"])
+                }
+            );
             assert!(rows.iter().all(|row| row.get("source").is_none()));
-            assert!(!context.to_string().contains("PRIVATE_REVIEW_SOURCE"));
         }
     }
-    assert_eq!(mem.prefs[0].source, "PRIVATE_REVIEW_SOURCE_1");
 }
 #[test]
 fn shared_v1_denials_and_malformed_arguments() {

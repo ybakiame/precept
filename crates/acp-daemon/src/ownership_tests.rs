@@ -84,7 +84,7 @@ async fn revoke_closes_admissions_drains_and_preserves_admitted_committed_respon
         reached.send(()).unwrap();
         barrier.wait();
     }));
-    let mutation = json!({"version":2,"binding":enabled["binding"],"operation_id":"admitted","command":{"command":"suggest_preference","scope":{"kind":"global"},"key":"synthetic","value":"synthetic","source":"synthetic","origin":"agent_reported","expected":{"kind":"absent"}}});
+    let mutation = json!({"version":2,"binding":enabled["binding"],"operation_id":"admitted","command":{"command":"suggest_preference","scope":{"kind":"global"},"key":"synthetic","value":"synthetic","tags":["synthetic"],"origin":"agent","expected":{"kind":"absent"}}});
     send(&mut writer, "write", "profile.mutate", mutation.clone()).await;
     tokio::task::spawn_blocking(move || observed.recv_timeout(Duration::from_secs(2)).unwrap())
         .await
@@ -209,7 +209,7 @@ async fn s3_root_drift_between_initial_check_and_final_admission_refuses_review(
             (
                 "suggest",
                 json!({"command":"suggest_preference","scope":scope,"key":"synthetic",
-                    "value":"synthetic","source":"synthetic","origin":"agent_reported",
+                    "value":"synthetic","tags":["synthetic"],"origin":"agent",
                     "expected":{"kind":"absent"}}),
             ),
         ] {

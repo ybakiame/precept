@@ -150,6 +150,17 @@ mode, contrast and language are saved on this computer in `settings.toml`
 | `error` | Failed, refused, unreachable | Destructive commitments |
 | `danger` / `on_danger` | Destructive commitments (Delete, Remove) and the window close hover | Error text |
 
+### Data colors: tags
+
+A tag's color is the operator's data, not a role. It is CSS text kept per tag in
+`settings.toml` (`[tag_colors]`); a tag without one shows `oklch(68% 0.13 h)`, the
+hue a hash of its name, and a tag a suggestion first brings keeps that generated
+color. The operator changes it in the Tag colors sheet with the color picker, which
+writes `oklch()`. A tag color only ever draws a dot and a light tint behind `text`
+(`mix(inset, color, 0.16)`, edge `mix(hairline, color, 0.45)`), so every theme keeps
+its contrast and the name carries the meaning. A terminal writes `#name` in the
+color.
+
 Rules:
 
 - **Accent budget.** On one screen: one primary button, the focus ring, and at most
@@ -234,7 +245,9 @@ icons are hidden and labels (and `✓`) carry the meaning.
 | `INFO` (circle-i) | More explanation | Page information button, info toasts |
 | `CLOSE` (x) | Dismiss | Toasts |
 | `KEYBOARD` | Keyboard shortcuts | Sidebar foot, Settings, empty filter result |
-| `RESET` | Back to the default | A custom shortcut, Reset all |
+| `RESET` | Back to the default | A custom shortcut, Reset all, a tag's generated color |
+| `TAG` | A preference's tags | Tag colors button |
+| `AGENT` (robot head) | Came from an agent's suggestion | A record's origin (with `PERSON` for the operator) |
 | `TRASH` | Destructive removal | Delete preference, Remove project dialogs |
 | `LOCK` / `UNLOCK` / `SEARCH` | Writes off / on, filter | Reserved for Profile writes and filters |
 
@@ -277,6 +290,10 @@ Compact layouts tighten padding, never height.
 | `sheet` | Trailing, 440 (360 compact) | `raised`; header, scrolling body, pinned footer |
 | `toast` | Success, Info, Error | See below |
 | `badge` | Neutral, Info, Success, Warning, Danger | Tinted fill, 12 / 600 |
+| `tag`, `tag_list` | — | A tag chip: its color's dot and tint, `CAPTION` in `text`, `SMALL` radius; rows wrap |
+| `tag_toggle` | Selected | A small ghost button `#name · count` led by the tag's dot, which turns into a check that pops in while selected; a filter |
+| `tag_editor` | Disabled; invalid draft, at the limit | Chosen tags as chips with a remove button each (they pop in), an input that adds on Enter or a comma, the rule and `n of 5` in its help line (in `danger` when the draft is invalid or the limit is reached), and suggestion buttons (`#name`, in use here first, then a starter set) |
+| `color_picker` | — | The base ColorPicker styled: a 140-high saturation and brightness area, an OKLCH hue slider, a preview swatch beside a field that reads any CSS color and writes `oklch()`, and ten preset swatches; it previews while dragging and commits once per finished change |
 | `status_dot` | Live, Busy, Idle, Down, Attention | Filled or hollow + color + motion, always with its word beside it; hidden from screen readers |
 | `empty` | Optional icon and action | Icon in a 48 tinted disc; title 16 / 600; one action |
 | `surface`, `card` | Optional title | `panel`, hairline, `CONTAINER`, padding 16 |
@@ -290,7 +307,9 @@ Compact layouts tighten padding, never height.
   for a short form or an Apply decision, **L 640** for a form with a rich value
   (Add preference). The panel is `w-full` with `max-w = size`, inside a 16 pt window
   margin, so it also fits a narrow window. On a short window the rich-value editor
-  yields height (down to 96) instead of the dialog overflowing.
+  yields height (down to 96), and the panel is never taller than the window less
+  48: its content scrolls between the fixed header and the actions, which always
+  stay reachable.
 - Content always fills the panel's content width (`w-full`). A fixed-width child
   inside a dialog is a defect: it is how fields once reached past the panel's edge.
 - Anatomy: optional 28 icon disc (`PLUS`/`CHECK` in the accent tone, `TRASH`/`ALERT`
@@ -356,7 +375,10 @@ work is called done. "RM" is what reduced motion does.
 
 | Change | Motion | RM |
 | --- | --- | --- |
-| Records list built | Rows arrive as a wave: rise 8 and fade, `SLOWER`, 50 ms apart, capped at the first 12 | Appear |
+| Records list built | Rows arrive as a wave: rise 8 and fade, `SLOWER`, 50 ms apart; each loaded batch of 12 waves on its own | Appear |
+| List nears its end | The next batch is read and appended (no pages); the footer reads Load more, then "Everything is loaded" | — |
+| Tag filter toggled | The list narrows at once; the toggle's dot turns into a check that pops in, `BASE` | Check appears |
+| Tag added or removed in the editor | A new chip pops in, `BASE`; a removed one leaves at once | Appears |
 | Add preference… opens | Scrim fades in `FAST`; the panel grows from 0.97 and rises 8, `SLOW`, ease-out | Appears |
 | Field focus | Edge to `primary` and the ring in, `INSTANT`, ease-out | Instant |
 | Editor toolbar toggle | The toggle's fill follows the caret, `FAST` | Instant |
@@ -372,6 +394,15 @@ work is called done. "RM" is what reduced motion does.
 | Panel opens / closes | The NSH sheet's presentation from the trailing edge, over a fading scrim | Appears |
 | Recording starts / ends | Change takes its selected fill and the keys lane becomes the recorder, `FAST` | Instant |
 | A keystroke is taken | The new keycaps replace the recorder; the `Custom` badge appears | — |
+
+**Tag colors sheet**
+
+| Change | Motion | RM |
+| --- | --- | --- |
+| Sheet opens / closes | The NSH sheet's presentation from the trailing edge, over a fading scrim | Appears |
+| Change color | The picker arrives under the row: rise 8 and fade, `SLOWER`; Change becomes a selected Done | Appears |
+| Dragging the area or hue | The row's dot follows the drag frame by frame; chips elsewhere follow when the change ends (saved once) | Same, no animation |
+| A preset or the field commits | Every chip of the tag cross-fades to the new color, `FAST` | Instant |
 
 **Settings**
 

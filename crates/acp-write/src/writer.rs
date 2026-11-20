@@ -53,14 +53,6 @@ fn scope(scope: &Scope) -> (&str, Option<&str>) {
         Scope::Project { name } => ("project", Some(name)),
     }
 }
-fn origin_name(origin: acp_core::operator::Origin) -> &'static str {
-    match origin {
-        acp_core::operator::Origin::AgentReported => "agent_reported",
-        acp_core::operator::Origin::DaemonObserved => "daemon_observed",
-        acp_core::operator::Origin::IndependentlyVerified => "independently_verified",
-        acp_core::operator::Origin::LegacyUnknown => "legacy_unknown",
-    }
-}
 fn channel_name(channel: acp_core::operator::Channel) -> &'static str {
     match channel {
         acp_core::operator::Channel::Cli => "cli",
@@ -253,7 +245,7 @@ fn mutate(
             scope: requested,
             key,
             value,
-            source,
+            tags,
             origin,
             ..
         } => {
@@ -262,20 +254,19 @@ fn mutate(
                 check_project(db, p)?
             }
             let next = next_revision(allocated)?;
-            let digest = acp_core::operator::proposal_digest(
-                requested, project, key, value, *origin, source,
-            );
+            let digest =
+                acp_core::operator::proposal_digest(requested, project, key, value, *origin, tags);
             db.execute(
-                "INSERT INTO preferences(id,scope,project,pref_key,value,status,source,revision,created_at,updated_at,origin,proposal_digest) VALUES(?1,?2,?3,?4,?5,'suggested',?6,1,?7,?7,?8,?9)",
+                "INSERT INTO preferences(id,scope,project,pref_key,value,status,tags,revision,created_at,updated_at,origin,proposal_digest) VALUES(?1,?2,?3,?4,?5,'suggested',?6,1,?7,?7,?8,?9)",
                 params![
                     allocated,
                     scope,
                     project,
                     key,
                     value,
-                    source,
+                    acp_core::operator::tags_json(tags),
                     now,
-                    origin_name(*origin),
+                    origin.as_str(),
                     digest.to_vec()
                 ],
             )

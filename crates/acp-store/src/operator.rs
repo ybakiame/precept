@@ -5,7 +5,7 @@ use rusqlite::OptionalExtension;
 
 /// One column list for every exact preference read, including review provenance.
 const PREFERENCE_COLUMNS: &str =
-    "id,project,pref_key,value,source,status,revision,origin,proposal_digest,created_at,updated_at";
+    "id,project,pref_key,value,tags,status,revision,origin,proposal_digest,created_at,updated_at";
 
 fn malformed(index: usize, column: &str) -> rusqlite::Error {
     rusqlite::Error::InvalidColumnType(index, column.to_owned(), rusqlite::types::Type::Text)
@@ -18,16 +18,16 @@ fn hex_digest(row: &rusqlite::Row<'_>, index: usize, column: &str) -> rusqlite::
 fn preference(row: &rusqlite::Row<'_>) -> rusqlite::Result<PreferenceRecord> {
     let project: Option<String> = row.get(1)?;
     let origin: String = row.get(7)?;
+    let tags: String = row.get(4)?;
     Ok(PreferenceRecord {
         id: row.get(0)?,
         scope: project.map_or(Scope::Global, |name| Scope::Project { name }),
         key: row.get(2)?,
         value: row.get(3)?,
-        source: row.get(4)?,
+        tags: crate::profile::stored_tags(&tags).ok_or_else(|| malformed(4, "tags"))?,
         status: row.get(5)?,
         revision: row.get(6)?,
-        origin: serde_json::from_value(serde_json::Value::String(origin))
-            .map_err(|_| malformed(7, "origin"))?,
+        origin: Origin::parse(&origin).ok_or_else(|| malformed(7, "origin"))?,
         proposal_digest: hex_digest(row, 8, "proposal_digest")?,
         created_at: row.get(9)?,
         updated_at: row.get(10)?,

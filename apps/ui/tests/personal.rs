@@ -218,6 +218,14 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     app.type_text("Preference key", "personal-editor").unwrap();
     app.type_text("id:preference-value", "Prefer **small** commits.")
         .unwrap();
+    // Saving needs a tag; an invalid one is refused in the help line first.
+    assert!(app.screen().shows("Save as suggestion"));
+    app.type_text("Tags", "a/b").unwrap();
+    app.wait_for("Letters, digits and hyphens only, up to 32 characters.")
+        .unwrap();
+    app.clear("Tags").unwrap();
+    app.type_text("Tags", "git\n").unwrap();
+    app.press("An agent suggested it").unwrap();
     app.press("Save as suggestion").unwrap();
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();

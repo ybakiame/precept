@@ -387,6 +387,7 @@ fn add(app: &mut nsh_testing::Headless, key: &str, value: &str) {
     app.press("Add preference").unwrap();
     app.type_text("Preference key", key).unwrap();
     app.type_text("id:preference-value", value).unwrap();
+    app.type_text("Tags", "review\n").unwrap();
     app.press("Save as suggestion").unwrap();
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();

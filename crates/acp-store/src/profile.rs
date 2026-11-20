@@ -34,18 +34,24 @@ pub const PREFERENCES: &str = r#"CREATE TABLE preferences (
     value TEXT NOT NULL CHECK (length(value) BETWEEN 1 AND 4096),
     status TEXT NOT NULL DEFAULT 'suggested'
       CHECK (status IN ('suggested', 'confirmed', 'rejected', 'deprecated')),
-    source TEXT NOT NULL CHECK (length(source) BETWEEN 1 AND 512),
+    tags TEXT NOT NULL CHECK (length(tags) BETWEEN 4 AND 1024),
     revision INTEGER NOT NULL CHECK (revision > 0),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     origin TEXT NOT NULL
-      CHECK (origin IN ('agent_reported', 'daemon_observed', 'independently_verified', 'legacy_unknown')),
+      CHECK (origin IN ('operator', 'agent')),
     proposal_digest BLOB NOT NULL CHECK (length(proposal_digest) = 32),
     CHECK (
       (scope = 'global' AND project IS NULL) OR
       (scope = 'project' AND project IS NOT NULL)
     )
 )"#;
+/// A stored tag list: exactly the canonical JSON the writer produces.
+pub(crate) fn stored_tags(raw: &str) -> Option<Vec<String>> {
+    let tags: Vec<String> = serde_json::from_str(raw).ok()?;
+    (acp_core::operator::tags_canonical(&tags) && acp_core::operator::tags_json(&tags) == raw)
+        .then_some(tags)
+}
 pub const PREFS_LOOKUP: &str = r#"CREATE INDEX prefs_lookup
     ON preferences(scope, project, status, pref_key)"#;
 pub const HANDOFFS: &str = r#"CREATE TABLE handoffs (
@@ -401,7 +407,7 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
     let mut pref_statuses: BTreeMap<i64, String> = BTreeMap::new();
     for r in rows(
         db,
-        "SELECT id,scope,project,pref_key,value,status,source,revision,created_at,updated_at,origin,proposal_digest FROM preferences",
+        "SELECT id,scope,project,pref_key,value,status,tags,revision,created_at,updated_at,origin,proposal_digest FROM preferences",
     )? {
         let id = positive(&r[0])?;
         max_id = max_id.max(id);
@@ -412,19 +418,11 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
         )?;
         str_valid(&r[3], 120, true)?;
         str_valid(&r[4], 4096, true)?;
-        str_valid(&r[6], 512, true)?;
+        let tags = stored_tags(str_valid(&r[6], 1024, true)?).ok_or(Error::InvalidRecord)?;
         valid(["suggested", "confirmed", "rejected", "deprecated"].contains(&string(&r[5])?))?;
         valid(timestamp_valid(string(&r[8])?) && timestamp_valid(string(&r[9])?))?;
-        let origin = string(&r[10])?;
-        valid(
-            [
-                "agent_reported",
-                "daemon_observed",
-                "independently_verified",
-                "legacy_unknown",
-            ]
-            .contains(&origin),
-        )?;
+        let origin_enum =
+            acp_core::operator::Origin::parse(string(&r[10])?).ok_or(Error::InvalidRecord)?;
         let digest = match &r[11] {
             Value::Blob(b) if b.len() == 32 => b.clone(),
             _ => return Err(Error::InvalidRecord),
@@ -436,9 +434,6 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
                 name: string(&r[2])?.to_owned(),
             }
         };
-        let origin_enum: acp_core::operator::Origin =
-            serde_json::from_value(serde_json::Value::String(origin.to_owned()))
-                .map_err(|_| Error::InvalidRecord)?;
         let expected = acp_core::operator::proposal_digest(
             &scope_enum,
             if scope == "project" {
@@ -449,7 +444,7 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
             string(&r[3])?,
             string(&r[4])?,
             origin_enum,
-            string(&r[6])?,
+            &tags,
         );
         valid(digest == expected)?;
         pref_digests.insert(id, digest);

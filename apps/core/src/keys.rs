@@ -92,7 +92,7 @@ shortcuts! {
     "review.handoff", Review, KeyReadHandoff, ["alt+shift+h"];
     "review.field.key", Review, KeyFieldKey, ["alt+k"];
     "review.field.value", Review, KeyFieldValue, ["alt+w"];
-    "review.field.source", Review, KeyFieldSource, ["alt+f"];
+    "review.field.tags", Review, KeyFieldTags, ["alt+f"];
     "review.field.task", Review, KeyFieldTask, ["alt+t"];
     "sessions.prompt", Sessions, KeyPrompt, ["alt+j"];
     "sessions.send", Sessions, KeySend, ["mod+Enter", "alt+9"];

@@ -55,8 +55,8 @@ fn preference(
                 scope: scope.clone(),
                 key: key.into(),
                 value: value.into(),
-                source: "PRIVATE_SOURCE_65".into(),
-                origin: Origin::AgentReported,
+                tags: vec!["test".into()],
+                origin: Origin::Agent,
                 expected: Expected::Absent,
             },
         )

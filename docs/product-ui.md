@@ -100,26 +100,43 @@ are never displayed.
 ### Preferences and review
 
 Adding a preference is two explicit steps: save it as suggested, then inspect and
-confirm the exact new record. Queue absence means not inspected, not an empty queue. The
+confirm the exact new record. A preference carries one to five tags (lowercase
+letters of any script, digits and inner hyphens, up to 32 characters) and an origin
+that is exactly `operator` (typed by the operator) or `agent` (an agent's suggestion
+the operator records). Tags and origin belong to the reviewed proposal: changing
+either is a new suggestion. Origin is the operator's claim, not verified authorship.
+
+The Preferences page is one virtualized list of the confirmed effective rows, with
+no pages. Tag filters above it narrow to rows carrying every selected tag; the filter
+text matches key, value, scope or tag, and a leading `#` matches tags only. Review
+lists (the queue and a scope's records) load further batches as the list nears its
+end, with a visible Load more control for keyboard and terminal use.
+
+Each tag has one color wherever it appears, kept per tag in the private
+`settings.toml` (never in the Profile, never sent to agents). A tag without a
+chosen color shows a color generated from its name as CSS `oklch()`; a tag first
+used by a suggestion keeps that generated color. The operator changes a color in the
+Tag colors sheet with the color picker. A color is a dot and a light tint behind
+theme text; the tag's name carries its meaning. Queue absence means not inspected, not an empty queue. The
 sidebar's count of suggestions waiting is the daemon's exact count for the personal
 scope and the selected project; an unknown or refused count is hidden, never shown
 as zero.
 Pages expose their observed watermark and do not pretend to share one snapshot.
 
 The records list selects; Detail is the immutable-content inspector and owns the
-confirm/reject/deprecate/delete actions. Show exact value, scope, project, source,
-revision, proposal digest and peer effects before a decision. Stale or missing
+confirm/reject/deprecate/delete actions. Show exact value, scope, project, tags,
+origin, revision, proposal digest and peer effects before a decision. Stale or missing
 inspection only triggers a fresh read, never an automatic mutation.
 
 Delete requires a separate destructive tier and retyping the exact preference ID.
 Escape cancels consent. Profile, grant, target, project, task, scope, selection,
-source or watermark drift invalidates prepared work and delayed replies. The daemon
+record content or watermark drift invalidates prepared work and delayed replies. The daemon
 independently rechecks authority at mutation admission.
 
 An uncertain commit retains only the exact same-epoch request for deliberate replay.
 Changing its bytes, authority or scope discards replay authority. Receipts prove
-transactions, not reviewer identity; channel/source labels are not authentication
-or independent verification.
+transactions, not reviewer identity; channel and origin labels are not
+authentication or independent verification.
 
 ### Sessions, Handoff and evidence
 

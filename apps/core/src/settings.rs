@@ -1,6 +1,6 @@
 //! The operator's settings kept between launches, as `settings.toml` in the
-//! private state directory beside the saved connection: appearance, language
-//! and shortcut overrides. Presentation only: never data, a path, a
+//! private state directory beside the saved connection: appearance, language,
+//! shortcut overrides and tag colors. Presentation only: never data, a path, a
 //! credential or authority. Unknown fields refuse the whole file (the app
 //! then starts from defaults); unknown values within a known field are
 //! dropped one by one.
@@ -22,6 +22,9 @@ pub struct Settings {
     /// Action id → keystroke, only where the operator changed it.
     #[serde(default)]
     pub shortcuts: BTreeMap<String, String>,
+    /// Tag name → color, only for tags whose color was chosen or pinned.
+    #[serde(default)]
+    pub tag_colors: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,6 +68,7 @@ impl Settings {
                 ),
             },
             shortcuts: m.keymap.overrides().clone(),
+            tag_colors: m.tag_colors.clone(),
         }
     }
 
@@ -94,6 +98,7 @@ impl Settings {
             m.locale = locale;
         }
         m.keymap = Keymap::from_overrides(self.shortcuts.clone());
+        m.tag_colors = crate::tag_colors::sanitize(self.tag_colors.clone());
     }
 }
 
@@ -109,6 +114,7 @@ mod tests {
         m.high_contrast = true;
         m.locale = Locale::ZhCn;
         m.keymap.set("reconnect", "mod+e");
+        m.set_tag_color("git", "oklch(60% 0.2 30)");
         let saved = Settings::of(&m);
 
         let mut fresh = Model::loading();
@@ -118,6 +124,7 @@ mod tests {
         assert!(fresh.high_contrast);
         assert_eq!(fresh.locale, Locale::ZhCn);
         assert_eq!(fresh.keymap.primary("reconnect").as_deref(), Some("mod+e"));
+        assert_eq!(fresh.tag_color("git"), "oklch(60% 0.2 30)");
 
         let mut flagged = Model::loading();
         let theme = flagged.theme;

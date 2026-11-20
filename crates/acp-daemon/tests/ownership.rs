@@ -1219,10 +1219,10 @@ fn native_cli_lifecycle_seven_commands_preview_cas_and_exact_retry() {
             "editor",
             "--value",
             "synthetic",
-            "--source",
+            "--tag",
             "operator",
             "--origin",
-            "agent_reported",
+            "agent",
         ],
     );
     assert!(result.0);
@@ -1242,10 +1242,10 @@ fn native_cli_lifecycle_seven_commands_preview_cas_and_exact_retry() {
             "editor",
             "--value",
             "synthetic",
-            "--source",
+            "--tag",
             "operator",
             "--origin",
-            "agent_reported",
+            "agent",
         ],
     );
     assert_eq!(result, replay);
@@ -1265,10 +1265,10 @@ fn native_cli_lifecycle_seven_commands_preview_cas_and_exact_retry() {
                 "editor",
                 "--value",
                 "changed",
-                "--source",
+                "--tag",
                 "operator",
                 "--origin",
-                "agent_reported"
+                "agent"
             ]
         )
         .1["error"],
@@ -1290,7 +1290,7 @@ fn native_cli_lifecycle_seven_commands_preview_cas_and_exact_retry() {
     assert!(preview.0);
     assert_eq!(preview.1["record"]["revision"], 1);
     assert_eq!(preview.1["record"]["status"], "suggested");
-    assert_eq!(preview.1["record"]["origin"], "agent_reported");
+    assert_eq!(preview.1["record"]["origin"], "agent");
     let digest = preview.1["record"]["proposal_digest"].as_str().unwrap();
     assert_eq!(digest.len(), 64);
     // The operator review reads are reachable from the same bounded CLI.
@@ -1480,16 +1480,16 @@ fn native_cli_lifecycle_seven_commands_preview_cas_and_exact_retry() {
             "editor",
             "--value",
             "synthetic",
-            "--source",
+            "--tag",
             "operator",
             "--origin",
-            "daemon_observed",
+            "operator",
         ],
     );
     assert!(result.0);
     let id = result.1["affected"][0]["record_id"].as_str().unwrap();
     let global_preview = cli(&f, &["preferences", "get", id, "--scope", "global"]).1;
-    assert_eq!(global_preview["record"]["origin"], "daemon_observed");
+    assert_eq!(global_preview["record"]["origin"], "operator");
     let global_digest = global_preview["record"]["proposal_digest"]
         .as_str()
         .unwrap();
@@ -1556,10 +1556,10 @@ fn native_cli_lifecycle_seven_commands_preview_cas_and_exact_retry() {
                 "a",
                 "--value",
                 "b",
-                "--source",
+                "--tag",
                 "c",
                 "--origin",
-                "legacy_unknown"
+                "operator"
             ]
         )
         .0
@@ -1587,8 +1587,8 @@ fn operator_preview_exact_scope_bounds_roles_and_malformed_state_preservation() 
                 },
                 key: "k".into(),
                 value: "synthetic-other-scope".into(),
-                source: "test".into(),
-                origin: acp_core::operator::Origin::AgentReported,
+                tags: vec!["test".into()],
+                origin: acp_core::operator::Origin::Agent,
                 expected: Expected::Absent,
             },
         )
@@ -1685,8 +1685,8 @@ fn review_queue_inspect_and_digest_binding_are_exact_and_operator_only() {
                 },
                 key: "k".into(),
                 value: "synthetic-other-scope".into(),
-                source: "test".into(),
-                origin: acp_core::operator::Origin::AgentReported,
+                tags: vec!["test".into()],
+                origin: acp_core::operator::Origin::Agent,
                 expected: Expected::Absent,
             },
         )
@@ -1702,7 +1702,7 @@ fn review_queue_inspect_and_digest_binding_are_exact_and_operator_only() {
     assert!(queue["records"].as_array().unwrap().iter().all(|r| {
         r["status"] == "suggested"
             && r["scope"]["kind"] == "global"
-            && r["origin"] == "agent_reported"
+            && r["origin"] == "agent"
             && r["proposal_digest"].as_str().unwrap().len() == 64
     }));
     let next = f

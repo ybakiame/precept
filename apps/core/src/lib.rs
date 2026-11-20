@@ -2,7 +2,7 @@
 //! transport; native IPC and the WSL bridge live in `acp-ui-client`.
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 pub mod appearance;
 pub mod connection;
@@ -15,8 +15,13 @@ pub mod profile;
 pub mod projects;
 pub mod session;
 pub mod settings;
+pub mod tag_colors;
 
 pub const PAGE_SIZE: usize = 12;
+/// Tags offered before any are in use: common kinds of working preference.
+pub const STARTER_TAGS: &[&str] = &[
+    "style", "testing", "git", "tooling", "docs", "security", "language", "review",
+];
 pub const MAX_ROWS: usize = 10_000;
 pub fn valid_task(task: &str) -> bool {
     !task.trim().is_empty() && task.chars().count() <= 120 && !task.chars().any(char::is_control)
@@ -34,10 +39,10 @@ pub struct Preference {
     pub key: String,
     pub value: String,
     pub scope: String,
-    /// Absent from live effective context: the daemon keeps a preference's
-    /// source private (b9775e9). Present only in local fixtures.
+    /// Canonical tags of the effective record (a short classification the
+    /// operator gave it; agents receive them too).
     #[serde(default)]
-    pub source: String,
+    pub tags: Vec<String>,
     pub status: String,
 }
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -236,6 +241,13 @@ pub struct Model {
     pub dark: bool,
     pub detail_focus: bool,
     pub filter: String,
+    /// Tags the Preferences page narrows to; a row must carry all of them.
+    pub tag_filter: Vec<String>,
+    /// Tag name → chosen color (see [`tag_colors`]), saved in `settings.toml`.
+    pub tag_colors: BTreeMap<String, String>,
+    /// The tag-colors panel is open, and the tag whose picker is showing.
+    pub tag_colors_open: bool,
+    pub tag_editing: Option<String>,
     pub live: bool,
     pub task_id: String,
     pub page: usize,
@@ -296,6 +308,10 @@ impl Model {
             dark: false,
             detail_focus: false,
             filter: String::new(),
+            tag_filter: Vec::new(),
+            tag_colors: BTreeMap::new(),
+            tag_colors_open: false,
+            tag_editing: None,
             live: false,
             task_id: String::new(),
             page: 0,
@@ -535,22 +551,86 @@ impl Model {
             self.select((self.selected + 1) % self.project_names.len());
         }
     }
+    /// The confirmed rows the Preferences page shows: every selected tag
+    /// carried, and the filter text in the key, value, scope or a tag (a
+    /// leading `#` matches tags only).
     pub fn rows(&self) -> Vec<&Preference> {
-        let needle = self.filter.to_lowercase();
+        let needle = self.filter.trim().to_lowercase();
+        let (needle, tags_only) = match needle.strip_prefix('#') {
+            Some(rest) => (rest.to_owned(), true),
+            None => (needle, false),
+        };
         self.project()
             .map(|p| {
                 p.context
                     .preferences
                     .iter()
+                    .filter(|r| self.tag_filter.iter().all(|t| r.tags.contains(t)))
                     .filter(|r| {
-                        self.filter.is_empty()
-                            || [&r.key, &r.value, &r.scope, &r.source]
-                                .iter()
-                                .any(|v| v.to_lowercase().contains(&needle))
+                        needle.is_empty()
+                            || r.tags.iter().any(|t| t.contains(&needle))
+                            || (!tags_only
+                                && [&r.key, &r.value, &r.scope]
+                                    .iter()
+                                    .any(|v| v.to_lowercase().contains(&needle)))
                     })
                     .collect()
             })
             .unwrap_or_default()
+    }
+    /// Every tag on the project's confirmed rows with how many carry it, most
+    /// used first (ties by name): the Preferences page's tag filters.
+    pub fn tag_counts(&self) -> Vec<(String, usize)> {
+        let mut counts = BTreeMap::<String, usize>::new();
+        for r in self.project().map_or(&[][..], |p| &p.context.preferences) {
+            for t in &r.tags {
+                *counts.entry(t.clone()).or_default() += 1;
+            }
+        }
+        let mut counts: Vec<_> = counts.into_iter().collect();
+        counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        counts
+    }
+    /// Narrows the Preferences page to `tag` too, or stops narrowing to it.
+    pub fn toggle_tag(&mut self, tag: &str) {
+        if let Some(at) = self.tag_filter.iter().position(|t| t == tag) {
+            self.tag_filter.remove(at);
+        } else {
+            self.tag_filter.push(tag.to_owned());
+            self.tag_filter.sort();
+        }
+        self.page = 0;
+        self.selected_preference = None;
+        self.detail_page = 0;
+    }
+    pub fn clear_tags(&mut self) {
+        self.tag_filter.clear();
+        self.page = 0;
+        self.selected_preference = None;
+        self.detail_page = 0;
+    }
+    /// Tags offered while a preference's tags are edited: the ones already in
+    /// use here (most used first), then the starter set, without those chosen
+    /// and narrowed to what `draft` starts with.
+    pub fn tag_suggestions(&self, chosen: &[String], draft: &str) -> Vec<String> {
+        let draft = acp_core::operator::normalize_tag(draft).unwrap_or_default();
+        let mut seen = std::collections::BTreeSet::new();
+        let operator = self
+            .operator
+            .page
+            .iter()
+            .flat_map(|p| &p.records)
+            .chain(self.operator.queue.iter().flat_map(|q| &q.records))
+            .flat_map(|r| r.tags.iter().cloned());
+        self.tag_counts()
+            .into_iter()
+            .map(|(t, _)| t)
+            .chain(operator)
+            .chain(STARTER_TAGS.iter().map(|t| (*t).to_owned()))
+            .filter(|t| !chosen.contains(t) && t.starts_with(&draft))
+            .filter(|t| seen.insert(t.clone()))
+            .take(8)
+            .collect()
     }
     pub fn status(&self) -> String {
         if self.locale == i18n::Locale::ZhCn {
@@ -709,17 +789,21 @@ impl Model {
 mod tests {
     use super::*;
     #[test]
-    fn live_context_without_a_preference_source_still_reads() {
-        // The daemon's effective context omits the private source and adds an id.
+    fn live_context_reads_tags_and_tolerates_rows_without_them() {
+        // The daemon's effective context carries tags and adds an id.
         let context: Context = serde_json::from_value(serde_json::json!({
             "project":"alpha",
-            "preferences":[{"id":1,"key":"editor","value":"v","scope":"project","status":"confirmed"}],
+            "preferences":[
+                {"id":1,"key":"editor","value":"v","scope":"project","status":"confirmed","tags":["style"]},
+                {"id":2,"key":"shell","value":"v","scope":"project","status":"confirmed"}
+            ],
             "repository":{},
             "documents":[],
             "warnings":[]
         }))
         .unwrap();
-        assert_eq!(context.preferences[0].source, "");
+        assert_eq!(context.preferences[0].tags, ["style"]);
+        assert!(context.preferences[1].tags.is_empty());
     }
     #[test]
     fn cancel_invalidates_pending_results_and_detail_follows_visible_scope() {

@@ -27,8 +27,8 @@ fn suggest(scope: Scope) -> Command {
         scope,
         key: "formatter".into(),
         value: "synthetic".into(),
-        source: "fixture".into(),
-        origin: acp_core::operator::Origin::AgentReported,
+        tags: vec!["fixture".into()],
+        origin: acp_core::operator::Origin::Agent,
         expected: Expected::Absent,
     }
 }
@@ -42,8 +42,8 @@ fn proposal(scope: &Scope) -> String {
         },
         "formatter",
         "synthetic",
-        acp_core::operator::Origin::AgentReported,
-        "fixture",
+        acp_core::operator::Origin::Agent,
+        &["fixture".to_owned()],
     ))
 }
 fn project_scope(name: &str) -> Scope {

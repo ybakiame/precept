@@ -241,7 +241,7 @@ impl Model {
                                 sanitize(&r.key, 64),
                                 sanitize(&r.value, 160),
                                 sanitize(&r.scope, 64),
-                                sanitize(&r.source, 80)
+                                hashtags(&r.tags)
                             )
                         }),
                 );
@@ -296,7 +296,7 @@ impl Model {
     fn preference_lines(&self) -> Vec<String> {
         let rows = self.rows();
         let mut lines = vec![
-            "Confirmed effective preferences · key / value / scope / source".into(),
+            "Confirmed effective preferences · key / value / scope / tags".into(),
             self.page_label(),
         ];
         if rows.is_empty() {
@@ -312,7 +312,7 @@ impl Model {
                         sanitize(&r.key, 64),
                         sanitize(&r.value, 160),
                         sanitize(&r.scope, 64),
-                        sanitize(&r.source, 80)
+                        hashtags(&r.tags)
                     )
                 }),
         );
@@ -391,4 +391,12 @@ impl Model {
         self.expanded = false;
         self.evidence_page = 0;
     }
+}
+
+/// A row's tags as terminal and clipboard text: `#style #git`.
+pub fn hashtags(tags: &[String]) -> String {
+    tags.iter()
+        .map(|t| format!("#{}", sanitize(t, 32)))
+        .collect::<Vec<_>>()
+        .join(" ")
 }

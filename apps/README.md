@@ -34,7 +34,7 @@ independently rechecks authority before every mutation.
 An uncertain commit retains only the exact same-epoch request for deliberate
 Alt+Shift+Z replay. Changing its authority or scope discards replay authority.
 Receipts prove transactions, not reviewer identity; history channel labels and
-source/origin claims are not authentication or independent verification.
+origin claims are not authentication or independent verification.
 
 ## Platform boundaries
 

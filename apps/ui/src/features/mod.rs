@@ -10,6 +10,7 @@ pub(crate) mod projects;
 pub(crate) mod review;
 pub(crate) mod sessions;
 pub(crate) mod settings;
+pub(crate) mod tags;
 
 use crate::*;
 use acp_ui_core::Section;

@@ -122,10 +122,12 @@ pub struct Suggest {
     pub key: String,
     #[arg(long)]
     pub value: String,
-    #[arg(long)]
-    pub source: String,
-    /// Asserted provenance label only; it verifies nothing by itself.
-    #[arg(long, value_parser = ["agent_reported","daemon_observed","independently_verified","legacy_unknown"])]
+    /// One to five tags (repeat the flag); normalized to lowercase.
+    #[arg(long = "tag", required = true)]
+    pub tags: Vec<String>,
+    /// Who the proposal comes from: the operator, or an agent's suggestion the
+    /// operator records. An asserted label; it verifies nothing by itself.
+    #[arg(long, default_value = "operator", value_parser = ["operator", "agent"])]
     pub origin: String,
 }
 #[derive(Args)]
@@ -293,8 +295,8 @@ pub async fn register(location: &Location, p: Register) -> Result<Value> {
 }
 pub async fn suggest(location: &Location, p: Suggest) -> Result<Value> {
     let scope = p.scope.scope()?;
-    let origin: Origin =
-        serde_json::from_value(Value::String(p.origin)).map_err(|_| Error::InvalidRequest)?;
+    let origin = Origin::parse(&p.origin).ok_or(Error::InvalidRequest)?;
+    let tags = acp_ipc::operator::canonical_tags(&p.tags).ok_or(Error::InvalidRequest)?;
     submit(
         location,
         p.authority,
@@ -302,7 +304,7 @@ pub async fn suggest(location: &Location, p: Suggest) -> Result<Value> {
             scope,
             key: p.key,
             value: p.value,
-            source: p.source,
+            tags,
             origin,
             expected: Expected::Absent,
         },

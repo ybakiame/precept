@@ -285,8 +285,8 @@ fn suggest(b: &Binding, op: &str, key: &str) -> Mutation {
             },
             key: key.into(),
             value: "synthetic".into(),
-            source: "s1b-bridge-test".into(),
-            origin: Origin::AgentReported,
+            tags: vec!["bridge".into()],
+            origin: Origin::Agent,
             expected: Expected::Absent,
         },
     }

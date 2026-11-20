@@ -225,6 +225,10 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
         app.type_text("Preference key", "editor").unwrap();
         app.type_text("id:preference-value", "synthetic-value")
             .unwrap();
+        // Tags are required: one suggestion button, one typed with a comma.
+        app.press("Add tag style").unwrap();
+        app.type_text("Tags", "Tooling,").unwrap();
+        app.wait_for("One to five short labels, such as style or git. Press Enter or a comma to add one. · 2 of 5").unwrap();
         app.press("Save as suggestion").unwrap();
         app.wait_for("Prepared operation; no write sent yet")
             .unwrap();
@@ -333,8 +337,7 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     app.wait_for("本次 daemon 运行未开启写入").unwrap();
     app.press_key("Escape").unwrap();
     app.press_key("alt+3").unwrap();
-    app.wait_for("已生效的确认偏好 · 键 / 值 / 范围 / 来源")
-        .unwrap();
+    app.wait_for("已确认偏好").unwrap();
     f.child.kill().unwrap();
     f.child.wait().unwrap();
     app.press_key("alt+o").unwrap();

@@ -6,8 +6,8 @@ use acp_ui_core::{
     connection::Target,
     i18n::{Locale, Msg, tr},
     operator::{
-        Channel, Command, DecisionAction, DeleteArm, Origin, Pane, Review, ReviewMode, ReviewTab,
-        Scope,
+        Channel, Command, DecisionAction, DeleteArm, Origin, Pane, PreferenceRecord, Review,
+        ReviewMode, ReviewTab, Scope,
     },
     presentation::sanitize,
 };
@@ -262,11 +262,31 @@ fn project_name(scope: &Scope) -> String {
         Scope::Project { name } => sanitize(name, 120),
     }
 }
-fn origin_label(origin: Origin) -> String {
-    serde_json::to_value(origin)
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_owned))
-        .unwrap_or_default()
+/// Who a record comes from, in the operator's words.
+fn origin_label(locale: Locale, origin: Origin) -> &'static str {
+    tr(
+        locale,
+        match origin {
+            Origin::Operator => Msg::OriginOperatorShort,
+            Origin::Agent => Msg::OriginAgentShort,
+        },
+    )
+}
+/// A record's origin as a small badge: who, with its glyph.
+fn origin_badge(model: Signal<Model>, origin: Origin) -> AnyElement {
+    let m = model.get();
+    let glyph = match origin {
+        Origin::Operator => icons::PERSON,
+        Origin::Agent => icons::AGENT,
+    };
+    view()
+        .flex_row()
+        .items_center()
+        .gap_0p5()
+        .text_color(move || palette(model).muted)
+        .child(ui::icon::glyph(glyph, ui::scale::icon::SM))
+        .child(text(origin_label(m.locale, origin)).text_size(px(ui::scale::text::CAPTION)))
+        .into_element()
 }
 fn decision_word(locale: Locale, action: DecisionAction) -> &'static str {
     match action {
@@ -284,24 +304,10 @@ fn channel_word(locale: Locale, channel: Channel) -> &'static str {
         Channel::Tui => tr(locale, Msg::ChannelTui),
     }
 }
-fn field(
-    model: Signal<Model>,
-    key: Msg,
-    get: fn(&acp_ui_core::operator::Operator) -> &str,
-    set: fn(&mut acp_ui_core::operator::Operator, String),
-    max: usize,
-) -> impl IntoElement {
-    let reference = element_ref();
-    let shortcut = match key {
-        Msg::OperatorKey => "review.field.key",
-        Msg::OperatorValue => "review.field.value",
-        Msg::OperatorSource => "review.field.source",
-        _ => "review.field.task",
-    };
-    let pane = match key {
-        Msg::OperatorTask => Pane::Handoff,
-        _ => Pane::Preferences,
-    };
+/// Binds `shortcut` to focus `reference` in `pane` of the open workspace, and
+/// lets the field go when the workspace closes.
+fn focus_shortcut(model: Signal<Model>, shortcut: &'static str, pane: Pane, reference: ElementRef) {
+    let target = reference;
     crate::shortcuts::bind(
         model,
         shortcut,
@@ -317,6 +323,7 @@ fn field(
                     m.operator.delete_arm = None;
                 });
                 // Native Windows cannot focus a field before its pane is shown.
+                let target = target;
                 nsh_core::element::request_animation_frame(move |_| {
                     if model.with(|m| {
                         m.operator.open
@@ -324,7 +331,7 @@ fn field(
                             && !m.operator.busy
                             && !m.operator.outcome_unknown
                     }) {
-                        reference.focus();
+                        target.focus();
                     }
                 });
             }
@@ -335,6 +342,25 @@ fn field(
             reference.blur();
         }
     });
+}
+fn field(
+    model: Signal<Model>,
+    key: Msg,
+    get: fn(&acp_ui_core::operator::Operator) -> &str,
+    set: fn(&mut acp_ui_core::operator::Operator, String),
+    max: usize,
+) -> impl IntoElement {
+    let reference = element_ref();
+    let shortcut = match key {
+        Msg::OperatorKey => "review.field.key",
+        Msg::OperatorValue => "review.field.value",
+        _ => "review.field.task",
+    };
+    let pane = match key {
+        Msg::OperatorTask => Pane::Handoff,
+        _ => Pane::Preferences,
+    };
+    focus_shortcut(model, shortcut, pane, reference);
     ui::field(
         model,
         move || model.get().word(key).into(),
@@ -392,62 +418,20 @@ fn literal(s: &str) -> Vec<String> {
 fn queue_tab(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
     let m = model.get();
     let mut body = view().gap_2().flex_shrink_0();
-    body = body.child(
-        view()
-            .flex_row()
-            .flex_wrap()
-            .gap_2()
-            .child(word_action(
-                model,
-                Msg::ReviewQueueLoad,
-                move || {
-                    available(model)
-                        && model
-                            .get()
-                            .operator
-                            .info
-                            .as_ref()
-                            .is_some_and(|i| i.selected)
-                },
-                move || refresh(model, "profile.review.queue"),
-            ))
-            .child(word_action(
-                model,
-                Msg::ReviewQueueFirst,
-                move || available(model) && model.get().operator.queue_after_id > 0,
-                move || {
-                    disarm(model, delete_open);
-                    model.update(|m| {
-                        m.operator.queue_after_id = 0;
-                        m.operator.review = None;
-                    });
-                    refresh(model, "profile.review.queue");
-                },
-            ))
-            .child(word_action(
-                model,
-                Msg::ReviewQueueNext,
-                move || {
-                    available(model)
-                        && model
-                            .get()
-                            .operator
-                            .queue
-                            .as_ref()
-                            .is_some_and(|q| q.next_after_id.is_some())
-                },
-                move || {
-                    disarm(model, delete_open);
-                    model.update(|m| {
-                        if let Some(id) = m.operator.queue.as_ref().and_then(|q| q.next_after_id) {
-                            m.operator.queue_after_id = id;
-                        }
-                        m.operator.review = None;
-                    });
-                    refresh(model, "profile.review.queue");
-                },
-            )),
-    );
+    body = body.child(view().flex_row().flex_wrap().gap_2().child(word_action(
+        model,
+        Msg::ReviewQueueLoad,
+        move || {
+            available(model)
+                && model
+                    .get()
+                    .operator
+                    .info
+                    .as_ref()
+                    .is_some_and(|i| i.selected)
+        },
+        move || refresh(model, "profile.review.queue"),
+    )));
     let Some(queue) = &m.operator.queue else {
         return body
             .child(ui::empty(model, m.word(Msg::ReviewQueueUnobserved)))
@@ -480,58 +464,174 @@ fn queue_tab(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
             )
             .into_element();
     }
-    for (index, r) in queue.records.iter().enumerate() {
-        let id = r.id;
-        let selected = m.operator.selected_id == Some(id);
-        let label = format!("#{} · {} · r{}", id, sanitize(&r.key, 120), r.revision);
-        let status = r.status.clone();
-        // The page arrives as a wave: a capped index stagger, instant when reduced.
-        let arrive = ui::motion::arrive((index.min(11) as f32) * 50.0);
-        let row = view()
-            .flex_row()
-            .items_center()
-            .gap_2()
-            .p_2()
-            .rounded(px(ui::scale::radius::CONTROL))
-            .transition_colors()
-            .duration(ui::motion::ms(ui::motion::FAST))
-            .ease_out()
-            .bg(move || {
-                if selected {
-                    mix(palette(model).inset, palette(model).primary, 0.10)
-                } else {
-                    palette(model).panel
+    let records = std::rc::Rc::new(queue.records.clone());
+    let selected_id = m.operator.selected_id;
+    let more = queue.next_after_id.is_some();
+    let list = loaded_list(
+        model,
+        records.iter().map(|r| r.id).collect(),
+        {
+            let records = records.clone();
+            move |index| queue_row(model, delete_open, &records[index], index, selected_id)
+        },
+        more,
+        move || {
+            disarm(model, delete_open);
+            let mut go = false;
+            model.update(|m| {
+                if let Some(id) = m.operator.queue.as_ref().and_then(|q| q.next_after_id) {
+                    m.operator.queue_after_id = id;
+                    go = true;
                 }
-            })
-            .child(view().flex_1().child(action(
-                model,
-                label,
-                move || available(model),
-                move || {
-                    disarm(model, delete_open);
-                    model.update(|m| {
-                        m.operator.selected_id = Some(id);
-                        m.operator.inspect = None;
-                        m.operator.inspect_revision = 0;
-                        m.operator.digest_expanded = false;
-                        m.operator.review_tab = ReviewTab::Detail;
-                        m.operator.review = None;
-                        m.operator.serial += 1;
-                    });
-                    refresh(model, "profile.review.inspect");
-                },
-            )))
-            .child(ui::badge(model, status).variant(ui::BadgeVariant::Warning))
-            .child(if selected {
-                ui::badge(model, m.word(Msg::Selected))
-                    .variant(ui::BadgeVariant::Info)
-                    .into_element()
+            });
+            if go {
+                refresh(model, "profile.review.queue");
+            }
+        },
+    );
+    body.child(list).into_element()
+}
+/// One pending suggestion: its id, key and revision (pressing it inspects the
+/// exact record), its tags and origin below, and its state.
+fn queue_row(
+    model: Signal<Model>,
+    delete_open: Signal<bool>,
+    r: &PreferenceRecord,
+    index: usize,
+    selected_id: Option<i64>,
+) -> AnyElement {
+    let m = model.get();
+    let id = r.id;
+    let selected = selected_id == Some(id);
+    let label = format!("#{} · {} · r{}", id, sanitize(&r.key, 120), r.revision);
+    let status = r.status.clone();
+    // A batch arrives as a wave: a capped index stagger, instant when reduced.
+    let arrive = ui::motion::arrive(((index % 12) as f32) * 50.0);
+    view()
+        .gap_1()
+        .p_2()
+        .rounded(px(ui::scale::radius::CONTROL))
+        .transition_colors()
+        .duration(ui::motion::ms(ui::motion::FAST))
+        .ease_out()
+        .bg(move || {
+            if selected {
+                mix(palette(model).inset, palette(model).primary, 0.10)
+            } else {
+                palette(model).panel
+            }
+        })
+        .child(
+            view()
+                .flex_row()
+                .items_center()
+                .gap_2()
+                .child(view().flex_1().min_w_0().child(action(
+                    model,
+                    label,
+                    move || available(model),
+                    move || {
+                        disarm(model, delete_open);
+                        model.update(|m| {
+                            m.operator.selected_id = Some(id);
+                            m.operator.inspect = None;
+                            m.operator.inspect_revision = 0;
+                            m.operator.digest_expanded = false;
+                            m.operator.review_tab = ReviewTab::Detail;
+                            m.operator.review = None;
+                            m.operator.serial += 1;
+                        });
+                        refresh(model, "profile.review.inspect");
+                    },
+                )))
+                .child(ui::badge(model, status).variant(ui::BadgeVariant::Warning))
+                .child(if selected {
+                    ui::badge(model, m.word(Msg::Selected))
+                        .variant(ui::BadgeVariant::Info)
+                        .into_element()
+                } else {
+                    view().into_element()
+                }),
+        )
+        .child(record_meta(model, r))
+        .bind_motion(&arrive)
+        .into_element()
+}
+/// A record's tags and origin on one wrapping line.
+fn record_meta(model: Signal<Model>, r: &PreferenceRecord) -> AnyElement {
+    view()
+        .flex_row()
+        .flex_wrap()
+        .items_center()
+        .gap_2()
+        .child(origin_badge(model, r.origin))
+        .child(ui::tag_list(model, &r.tags))
+        .into_element()
+}
+/// Rows loaded in batches: a virtualized list in the page's scroll that asks
+/// for the next batch as it nears the end, and a footer that says whether more
+/// exist (with the same load as a button, for keyboard and terminal).
+fn loaded_list(
+    model: Signal<Model>,
+    ids: Vec<i64>,
+    row: impl Fn(usize) -> AnyElement + 'static,
+    more: bool,
+    load: impl Fn() + 'static,
+) -> AnyElement {
+    let load = std::rc::Rc::new(load);
+    let count = ids.len();
+    let footer = if more {
+        let load = load.clone();
+        ui::button(model, "")
+            .label_fn(move || model.get().word(Msg::LoadMore).into())
+            .size(ui::ButtonSize::Small)
+            .variant(ui::ButtonVariant::Ghost)
+            .icon(icons::REFRESH)
+            .disabled(move || !available(model) || model.get().operator.busy)
+            .loading(move || model.get().operator.busy)
+            .on_press(move || load())
+            .into_element()
+    } else {
+        text(model.get().word(Msg::AllLoaded))
+            .text_size(px(ui::scale::text::CAPTION))
+            .text_color(move || palette(model).muted)
+            .into_element()
+    };
+    let body = view().gap_2().flex_shrink_0();
+    // A terminal does not draw a list in its parent's scroll: the loaded rows
+    // as they are, with Load more as the way on.
+    if ui::terminal() {
+        let mut plain = view().gap_1();
+        for index in 0..count {
+            plain = plain.child(row(index));
+        }
+        return body
+            .child(plain)
+            .child(view().items_center().child(footer))
+            .into_element();
+    }
+    let row = std::rc::Rc::new(row);
+    let mut list = virtual_list(count, move |at: Position| {
+        let row = row.clone();
+        dynamic(move || {
+            let index = at.index();
+            if index < count {
+                row(index)
             } else {
                 view().into_element()
-            });
-        body = body.child(row.bind_motion(&arrive));
+            }
+        })
+    })
+    .keys(move || ids.clone())
+    .viewport(ListViewport::Parent)
+    .estimated_item_size(px(64.0))
+    .separator(|| view().h(px(4.0)));
+    if more {
+        list = list.on_load_more(move || load());
     }
-    body.into_element()
+    body.child(list)
+        .child(view().items_center().child(footer))
+        .into_element()
 }
 /// The Detail tab: the exact inspected record, digest prefix with explicit
 /// expand, peer-demotion disclosure and the decision / destructive actions.
@@ -584,12 +684,15 @@ fn detail_tab(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
     lines.extend(literal(&r.key));
     lines.push(format!("{}:", m.word(Msg::OperatorValue)));
     lines.extend(literal(&r.value));
-    lines.push(format!("{}:", m.word(Msg::OperatorSource)));
-    lines.extend(literal(&r.source));
+    lines.push(format!(
+        "{}: {}",
+        m.word(Msg::OperatorTags),
+        acp_ui_core::presentation::hashtags(&r.tags)
+    ));
     lines.push(format!(
         "{}: {}",
         m.word(Msg::ReviewOrigin),
-        origin_label(r.origin)
+        origin_label(m.locale, r.origin)
     ));
     lines.push(format!("{}: {}", m.word(Msg::ReviewRevision), r.revision));
     lines.push(format!("{}: {}", m.word(Msg::ReviewDigest), digest));
@@ -1303,11 +1406,7 @@ fn page_toolbar(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElemen
                         .label_fn(move || model.get().word(Msg::AddPreference).into())
                         .disabled(move || !available(model) || !write_grant(model))
                         .on_press(move || {
-                            model.update(|m| {
-                                m.operator.key.clear();
-                                m.operator.value.clear();
-                                m.operator.source = "operator".into();
-                            });
+                            model.update(|m| m.operator.start_draft());
                             add_open.set(true);
                         }),
                 ),
@@ -1334,7 +1433,7 @@ fn page_toolbar(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElemen
 /// opens the record's sheet (and reads the exact record for it).
 fn records_list(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
     let m = model.get();
-    let mut body = view().gap_1().flex_shrink_0();
+    let body = view().gap_1().flex_shrink_0();
     let Some(page) = &m.operator.page else {
         return body
             .child(ui::empty(model, m.word(Msg::RecordsLoading)))
@@ -1348,29 +1447,65 @@ fn records_list(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
             )
             .into_element();
     }
-    for (index, r) in page.records.iter().enumerate() {
-        let id = r.id;
-        let arrive = ui::motion::arrive((index.min(11) as f32) * 50.0);
-        let variant = match r.status.as_str() {
-            "confirmed" => ui::BadgeVariant::Success,
-            "suggested" => ui::BadgeVariant::Warning,
-            _ => ui::BadgeVariant::Neutral,
-        };
-        let value: String = r
-            .value
-            .lines()
-            .next()
-            .unwrap_or_default()
-            .chars()
-            .take(80)
-            .collect();
-        body = body.child(
+    let records = std::rc::Rc::new(page.records.clone());
+    let list = loaded_list(
+        model,
+        records.iter().map(|r| r.id).collect(),
+        {
+            let records = records.clone();
+            move |index| record_row(model, delete_open, &records[index], index)
+        },
+        page.next_after_id.is_some(),
+        move || {
+            let mut go = false;
+            model.update(|m| {
+                if let Some(id) = m.operator.page.as_ref().and_then(|p| p.next_after_id) {
+                    m.operator.after_id = id;
+                    go = true;
+                }
+                m.operator.review = None;
+            });
+            if go {
+                refresh(model, "profile.preferences.list");
+            }
+        },
+    );
+    body.child(list).into_element()
+}
+/// One record of the scope: id, key, state and revision (pressing it opens the
+/// exact record), the first line of its value, its tags and origin.
+fn record_row(
+    model: Signal<Model>,
+    delete_open: Signal<bool>,
+    r: &PreferenceRecord,
+    index: usize,
+) -> AnyElement {
+    let m = model.get();
+    let id = r.id;
+    let arrive = ui::motion::arrive(((index % 12) as f32) * 50.0);
+    let variant = match r.status.as_str() {
+        "confirmed" => ui::BadgeVariant::Success,
+        "suggested" => ui::BadgeVariant::Warning,
+        _ => ui::BadgeVariant::Neutral,
+    };
+    let value: String = r
+        .value
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .chars()
+        .take(80)
+        .collect();
+    view()
+        .gap_1()
+        .py_1()
+        .bind_motion(&arrive)
+        .child(
             view()
                 .flex_row()
                 .items_center()
                 .gap_3()
                 .min_h(px(ui::scale::control::LG))
-                .bind_motion(&arrive)
                 .child(view().flex_1().min_w_0().child(action(
                     model,
                     format!(
@@ -1391,49 +1526,9 @@ fn records_list(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
                         .text_color(move || palette(model).muted),
                 )
                 .child(ui::badge(model, status_word(&m, &r.status)).variant(variant)),
-        );
-    }
-    body = body.child(
-        view()
-            .flex_row()
-            .gap_2()
-            .child(word_action(
-                model,
-                Msg::OperatorFirst,
-                move || available(model) && model.get().operator.after_id > 0,
-                move || {
-                    model.update(|m| {
-                        m.operator.after_id = 0;
-                        m.operator.review = None;
-                        m.operator.serial += 1;
-                    });
-                    refresh(model, "profile.preferences.list");
-                },
-            ))
-            .child(word_action(
-                model,
-                Msg::OperatorNext,
-                move || {
-                    available(model)
-                        && model
-                            .get()
-                            .operator
-                            .page
-                            .as_ref()
-                            .is_some_and(|p| p.next_after_id.is_some())
-                },
-                move || {
-                    model.update(|m| {
-                        if let Some(id) = m.operator.page.as_ref().and_then(|p| p.next_after_id) {
-                            m.operator.after_id = id;
-                        }
-                        m.operator.review = None;
-                    });
-                    refresh(model, "profile.preferences.list");
-                },
-            )),
-    );
-    body.into_element()
+        )
+        .child(record_meta(model, r))
+        .into_element()
 }
 fn status_word(m: &Model, status: &str) -> String {
     match status {
@@ -1612,14 +1707,18 @@ fn apply_dialog(model: Signal<Model>, destructive: bool) -> impl IntoElement {
         })
 }
 
-/// Add preference: key, a Markdown value and its source. Saving prepares a
-/// suggestion (never a confirmation); Apply commits it, then the new exact
-/// record opens to confirm.
+/// Add preference: key, a Markdown value, its tags and where it comes from.
+/// Saving prepares a suggestion (never a confirmation); Apply commits it, then
+/// the new exact record opens to confirm.
 fn add_dialog(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElement {
     let ready = move || {
         let o = model.get().operator;
-        !o.key.trim().is_empty() && !o.value.trim().is_empty() && !o.source.trim().is_empty()
+        !o.key.trim().is_empty()
+            && !o.value.trim().is_empty()
+            && acp_ui_core::operator::canonical_tags(&o.tags).is_some()
     };
+    let tags_ref = element_ref();
+    focus_shortcut(model, "review.field.tags", Pane::Preferences, tags_ref);
     ui::dialog(model, "")
         .size(ui::DialogSize::Large)
         .icon(icons::PLUS, ui::DialogTone::Accent)
@@ -1655,12 +1754,55 @@ fn add_dialog(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElement 
                         move |v| model.update(|m| m.operator.value = v),
                     ),
                 ))
-                .child(field(
+                .child(
+                    ui::tag_editor(
+                        model,
+                        move || model.get().operator.tags,
+                        move || model.get().operator.tag_draft,
+                    )
+                    .element_ref(&tags_ref)
+                    .suggestions(move || {
+                        let m = model.get();
+                        m.tag_suggestions(&m.operator.tags, &m.operator.tag_draft)
+                    })
+                    .on_draft(move |v| {
+                        let v: String = v.chars().take(64).collect();
+                        model.update(|m| m.operator.tag_draft = v)
+                    })
+                    .on_add(move |v| {
+                        let mut taken = false;
+                        model.update(|m| {
+                            taken = m.operator.add_tag(v);
+                            m.operator.review = None;
+                            m.operator.serial += 1;
+                        });
+                        taken
+                    })
+                    .on_remove(move |v| {
+                        model.update(|m| {
+                            m.operator.remove_tag(v);
+                            m.operator.review = None;
+                            m.operator.serial += 1;
+                        })
+                    })
+                    .disabled(move || {
+                        model.get().operator.busy || model.get().operator.outcome_unknown
+                    }),
+                )
+                .child(ui::field(
                     model,
-                    Msg::OperatorSource,
-                    |o| &o.source,
-                    |o, v| o.source = v,
-                    512,
+                    move || model.get().word(Msg::OriginQuestion).into(),
+                    ui::radio_group(model, move || model.get().word(Msg::OriginQuestion).into())
+                        .option(
+                            model.get().word(Msg::OriginOperator),
+                            move || model.get().operator.origin == Origin::Operator,
+                            move || model.update(|m| m.operator.origin = Origin::Operator),
+                        )
+                        .option(
+                            model.get().word(Msg::OriginAgent),
+                            move || model.get().operator.origin == Origin::Agent,
+                            move || model.update(|m| m.operator.origin = Origin::Agent),
+                        ),
                 ))
                 .into_element()
         })
@@ -1751,17 +1893,17 @@ mod tests {
             scope: Scope::Global,
             key: key.clone(),
             value: "synthetic-value".into(),
-            source: "synthetic-source".into(),
+            tags: vec!["synthetic".into()],
             status: status.into(),
             revision,
-            origin: Origin::AgentReported,
+            origin: Origin::Agent,
             proposal_digest: digest_hex(&proposal_digest(
                 &Scope::Global,
                 None,
                 &key,
                 "synthetic-value",
-                Origin::AgentReported,
-                "synthetic-source",
+                Origin::Agent,
+                &["synthetic".to_owned()],
             )),
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-01T00:00:00Z".into(),
@@ -1915,7 +2057,7 @@ mod tests {
     #[component]
     fn LiteralSourceConsole() -> impl IntoElement {
         let mut m = peer_model();
-        m.operator.inspect.as_mut().unwrap().record.source =
+        m.operator.inspect.as_mut().unwrap().record.value =
             format!("{}\n\u{202e}source-tail", "s".repeat(490));
         crate::console(signal(m))
     }
@@ -2112,8 +2254,10 @@ mod tests {
         app.wait_for("Queue watermark: commit 8").unwrap();
         app.wait_for("Queue changed since page loaded · +3")
             .unwrap();
-        app.wait_for("Pages are separate reads, not a shared snapshot.")
-            .unwrap();
+        app.wait_for(
+            "More loads as you scroll. Each batch is a separate read, not a shared snapshot.",
+        )
+        .unwrap();
         app.press_key("mod+l").unwrap();
         app.wait_for("队列水位：提交 8").unwrap();
         app.wait_for("页面加载后队列已变化 · +3").unwrap();
@@ -2130,7 +2274,7 @@ mod tests {
     }
 
     #[test]
-    fn exact_detail_preserves_source_characters_and_explains_authority() {
+    fn exact_detail_preserves_value_characters_and_explains_authority() {
         let mut app = start::<LiteralSourceConsole>();
         app.wait_for("Show full digest").unwrap();
         app.wait_until("escaped source tail", Duration::from_secs(5), |s| {
@@ -2139,10 +2283,12 @@ mod tests {
                 .any(|t| t.contains("\\n\\u{202e}source-tail"))
         })
         .unwrap();
-        app.wait_for("Source and origin are unverified claims; the digest proves byte equality, not authorship.").unwrap();
+        app.wait_for("Origin is the operator's claim, not verified authorship; the digest proves byte equality only.").unwrap();
+        app.wait_for("Tags: #synthetic").unwrap();
+        app.wait_for("Origin: Agent").unwrap();
         app.wait_for("Repository ProjectContracts outrank personal preferences. Confirming a preference does not approve a ProjectContract.").unwrap();
         app.press_key("mod+l").unwrap();
-        app.wait_for("来源类别: agent_reported").unwrap();
+        app.wait_for("来源: Agent").unwrap();
         app.wait_for("修订: 1").unwrap();
     }
 

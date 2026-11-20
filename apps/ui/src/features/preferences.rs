@@ -1,30 +1,157 @@
-//! Preferences: confirmed effective preferences with filter and paging.
+//! Preferences: the project's confirmed effective preferences, narrowed by
+//! tag filters and the filter text above them. On Desktop one virtualized
+//! list in the page's scroll (no pages); in a terminal, whose surface does
+//! not draw a list in its parent's scroll, pages of rows with Previous and
+//! Next (keyboard-first, whole cells).
 use crate::*;
 use acp_ui_core::i18n::Msg;
-use acp_ui_core::{PAGE_SIZE, presentation::sanitize};
+use acp_ui_core::presentation::sanitize;
+use acp_ui_core::{Model, Preference};
 use shell::*;
+use std::rc::Rc;
 use tokens::palette;
 
-/// Where an effective preference comes from, in the operator's words; the
-/// private source is not part of live context, so only scope is shown.
-fn origin(m: &Model, scope: &str, source: &str) -> String {
-    let scope = match scope {
+/// Where an effective preference applies, in the operator's words.
+fn scope_word(m: &Model, scope: &str) -> String {
+    match scope {
         "global" => m.word(Msg::ScopePersonal).to_owned(),
         "project" => m.word(Msg::ScopeThisProject).to_owned(),
         other => sanitize(other, 64),
-    };
-    if source.is_empty() {
-        scope
-    } else {
-        format!("{scope} / {}", sanitize(source, 80))
     }
 }
+
+/// The tag filters: All, then every tag in use with its count. Several
+/// selected tags narrow to the rows carrying all of them.
+fn tag_filters(model: Signal<Model>, current: &Model) -> AnyElement {
+    let counts = current.tag_counts();
+    let colors = ui::button(model, "")
+        .label_fn(move || model.get().word(Msg::TagColorsOpen).into())
+        .size(ui::ButtonSize::Small)
+        .variant(ui::ButtonVariant::Ghost)
+        .icon(ui::icons::TAG)
+        .on_press(move || features::tags::open(model));
+    if counts.is_empty() {
+        return view().flex_row().child(colors).into_element();
+    }
+    let mut row = view().flex_row().flex_wrap().items_center().gap_1().child(
+        ui::button(model, "")
+            .label_fn(move || model.get().word(Msg::TagsAll).into())
+            .size(ui::ButtonSize::Small)
+            .variant(ui::ButtonVariant::Ghost)
+            .selected(move || model.get().tag_filter.is_empty())
+            .on_press(move || model.update(|m| m.clear_tags())),
+    );
+    for (name, count) in counts {
+        let (is, toggle) = (name.clone(), name.clone());
+        row = row.child(ui::tag_toggle(
+            model,
+            &name,
+            count,
+            move || model.get().tag_filter.contains(&is),
+            move || model.update(|m| m.toggle_tag(&toggle)),
+        ));
+    }
+    let several = current.tag_filter.len() > 1;
+    view()
+        .gap_1()
+        .child(
+            view()
+                .flex_row()
+                .items_center()
+                .gap_2()
+                .child(
+                    text(current.word(Msg::TagFilter))
+                        .flex_1()
+                        .text_size(px(ui::scale::text::CAPTION))
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(move || palette(model).muted),
+                )
+                .child(colors),
+        )
+        .child(row)
+        .child(if several {
+            text(current.word(Msg::TagFilterHelp))
+                .text_size(px(ui::scale::text::CAPTION))
+                .text_color(move || palette(model).muted)
+                .into_element()
+        } else {
+            view().into_element()
+        })
+        .into_element()
+}
+
+/// One confirmed row: key and Details, the value's first line, then where it
+/// applies and its tags.
+fn row(model: Signal<Model>, r: &Preference, index: usize) -> AnyElement {
+    let m = model.get();
+    let key = sanitize(&r.key, 64);
+    let spoken = format!("{} · {key}", m.word(Msg::Details));
+    view()
+        .p_3()
+        .gap_1()
+        .rounded(px(ui::scale::radius::CONTAINER))
+        .bg(move || palette(model).panel)
+        .border_1()
+        .border_color(move || palette(model).hairline)
+        .child(
+            view()
+                .flex_row()
+                .items_center()
+                .gap_2()
+                .child(
+                    text(key)
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .flex_1()
+                        .min_w_0(),
+                )
+                .child(
+                    ui::button(model, "")
+                        .label_fn(move || model.get().word(Msg::Details).into())
+                        .spoken(move || spoken.clone().into())
+                        .size(ui::ButtonSize::Small)
+                        .variant(ui::ButtonVariant::Ghost)
+                        .on_press(move || model.update(|m| m.select_preference(index))),
+                ),
+        )
+        .child(text(sanitize(&r.value, 160)))
+        .child(
+            view()
+                .flex_row()
+                .flex_wrap()
+                .items_center()
+                .gap_2()
+                .child(
+                    text(scope_word(&m, &r.scope))
+                        .text_size(px(ui::scale::text::CAPTION))
+                        .text_color(move || palette(model).muted),
+                )
+                .child(ui::tag_list(model, &r.tags)),
+        )
+        .into_element()
+}
+
 pub(crate) fn preferences(model: Signal<Model>) -> impl IntoElement {
     let current = model.get();
-    let rows = current.rows();
-    let page = current.page;
-    let mut body = view().gap_2().child(
-        text(move || model.get().word(Msg::PreferencesHeading)).font_weight(FontWeight::SEMIBOLD),
+    let rows: Rc<Vec<Preference>> = Rc::new(current.rows().into_iter().cloned().collect());
+    let mut body = view().gap_3().child(
+        view()
+            .flex_row()
+            .items_center()
+            .gap_2()
+            .child(
+                text(move || model.get().word(Msg::PreferencesHeading))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .flex_1(),
+            )
+            .child(
+                text(
+                    current
+                        .word(Msg::ConfirmedCount)
+                        .replace("{count}", &rows.len().to_string()),
+                )
+                .text_size(px(ui::scale::text::CAPTION))
+                .text_color(move || palette(model).muted),
+            ),
     );
     // Managing records is the review workspace, fixed to one scope.
     if current.live {
@@ -47,6 +174,7 @@ pub(crate) fn preferences(model: Signal<Model>) -> impl IntoElement {
                 )),
         );
     }
+    body = body.child(tag_filters(model, &current));
     if rows.is_empty() {
         return body.child(card(
             model,
@@ -57,20 +185,21 @@ pub(crate) fn preferences(model: Signal<Model>) -> impl IntoElement {
             ],
         ));
     }
-    if let Some(row) = current.preference_detail() {
+    if let Some(selected) = current.preference_detail() {
         body = body
             .child(card(
                 model,
                 current.word(Msg::SelectedPreference),
                 vec![
-                    sanitize(&row.key, 120),
+                    sanitize(&selected.key, 120),
                     current.detail_chunk(),
                     format!(
-                        "{} {}/{} · {}",
+                        "{} {}/{} · {} · {}",
                         current.word(Msg::ValueDetail),
                         current.detail_page + 1,
                         current.detail_pages(),
-                        origin(&current, &row.scope, &row.source)
+                        scope_word(&current, &selected.scope),
+                        acp_ui_core::presentation::hashtags(&selected.tags)
                     ),
                 ],
             ))
@@ -106,44 +235,54 @@ pub(crate) fn preferences(model: Signal<Model>) -> impl IntoElement {
                     })),
             );
     }
-    for (offset, row) in rows
-        .iter()
-        .skip(page * PAGE_SIZE)
-        .take(PAGE_SIZE)
-        .enumerate()
-    {
-        let index = page * PAGE_SIZE + offset;
-        body = body.child(
+    if ui::terminal() {
+        let page = current.page;
+        let mut list = view().gap_2();
+        for (offset, r) in rows
+            .iter()
+            .enumerate()
+            .skip(page * acp_ui_core::PAGE_SIZE)
+            .take(acp_ui_core::PAGE_SIZE)
+        {
+            list = list.child(row(model, r, offset));
+        }
+        return body.child(list).child(
             view()
-                .p_3()
-                .gap_1()
-                .rounded(px(ui::scale::radius::CONTAINER))
-                .bg(move || palette(model).panel)
-                .border_1()
-                .border_color(move || palette(model).hairline)
-                .child(
-                    view()
-                        .flex_row()
-                        .gap_2()
-                        .child(
-                            text(sanitize(&row.key, 64))
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .flex_1(),
-                        )
-                        .child(action(
-                            model,
-                            format!("{} {}", current.word(Msg::Details), offset + 1),
-                            || true,
-                            move || model.update(|m| m.select_preference(index)),
-                        )),
-                )
-                .child(text(sanitize(&row.value, 160)))
-                .child(
-                    text(origin(&current, &row.scope, &row.source))
-                        .text_size(px(ui::scale::text::CAPTION))
-                        .text_color(move || palette(model).muted),
-                ),
+                .flex_row()
+                .flex_wrap()
+                .items_center()
+                .gap_2()
+                .child(word_action(
+                    model,
+                    Msg::PreviousPage,
+                    move || model.get().page > 0,
+                    move || model.update(|m| m.page_by(-1)),
+                ))
+                .child(word_action(
+                    model,
+                    Msg::NextPage,
+                    move || {
+                        (model.get().page + 1) * acp_ui_core::PAGE_SIZE < model.get().rows().len()
+                    },
+                    move || model.update(|m| m.page_by(1)),
+                ))
+                .child(text(current.page_label())),
         );
     }
-    body
+    let count = rows.len();
+    body.child(
+        virtual_list(count, move |at: Position| {
+            let rows = rows.clone();
+            dynamic(move || {
+                let index = at.index();
+                match rows.get(index) {
+                    Some(r) => row(model, r, index),
+                    None => view().into_element(),
+                }
+            })
+        })
+        .viewport(ListViewport::Parent)
+        .estimated_item_size(px(104.0))
+        .separator(|| view().h(px(8.0))),
+    )
 }

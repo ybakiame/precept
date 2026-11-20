@@ -14,6 +14,13 @@ Preview methods `profile.preferences.list`, `profile.preferences.get` and
 `profile.handoff.get` are Operator-only, bounded and exact-scope/revision. They are
 not exposed to agents, sessions, OperatorWrite peers or MCP.
 
+`suggest_preference` carries `key`, `value`, `tags` and `origin`. `tags` is one to
+five canonical tags, sorted with no repeats: lowercase letters (any script), digits
+and inner hyphens, 1–32 characters each. A non-canonical list is refused, never
+rewritten. `origin` is exactly `operator` or `agent`. Both are part of the proposal
+digest. `acp-query preference-suggest` normalizes `--tag` (repeatable, required) and
+defaults `--origin operator`.
+
 ## Read-only MCP stdio
 
 The Rust `acp-mcp` binary uses newline-delimited UTF-8 JSON-RPC; stdout contains only
@@ -38,8 +45,10 @@ specifies the optional exact `ACP.contracts.md` source. It is enforced even when
 `partial`, `not_configured`, `invalid_source`, `source_unavailable`, `source_changed`.
 Whole-source refusal returns empty `preferences` and `effective_contracts`; partial
 resolution suppresses affected unresolved keys only. Absence does not mean ordinary
-AGENTS/ADRs have no authority. Agent projections omit private preference source,
-review history, losing values and raw typed explanations. No repository files are
+AGENTS/ADRs have no authority. Each projected preference carries its `tags`, so an
+agent can find the ones relevant to a task; tags never remove a confirmed preference
+from the context. Agent projections omit origin, review history, losing values and
+raw typed explanations. No repository files are
 created or modified by this read path.
 
 Implemented protocol subsets include initialize/initialized, ping, tools/list and

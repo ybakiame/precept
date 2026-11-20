@@ -1,6 +1,77 @@
 //! Data-only Profile operator DTOs. No authorization, storage or writer implementation.
-pub use crate::typed_context::Origin;
 use serde::{Deserialize, Serialize};
+
+/// Who entered a preference proposal: the operator typed it, or the operator
+/// recorded an agent's suggestion. A claim the operator makes, not attestation.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Origin {
+    #[default]
+    Operator,
+    Agent,
+}
+impl Origin {
+    pub const ALL: [Self; 2] = [Self::Operator, Self::Agent];
+    /// The stored and wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Operator => "operator",
+            Self::Agent => "agent",
+        }
+    }
+    pub fn parse(raw: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|o| o.as_str() == raw)
+    }
+}
+
+/// The most tags one preference carries, and the longest tag in characters.
+pub const MAX_TAGS: usize = 5;
+pub const MAX_TAG_CHARS: usize = 32;
+
+/// One tag in its canonical form: lowercase, a leading `#` dropped, spaces and
+/// underscores as `-`, letters (any script), digits and inner `-` only.
+pub fn normalize_tag(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    let raw = raw.strip_prefix('#').unwrap_or(raw);
+    let mut out = String::new();
+    for c in raw.chars().flat_map(char::to_lowercase) {
+        let c = if c.is_whitespace() || c == '_' {
+            '-'
+        } else {
+            c
+        };
+        if c == '-' && (out.is_empty() || out.ends_with('-')) {
+            continue;
+        }
+        if c != '-' && !c.is_alphanumeric() {
+            return None;
+        }
+        out.push(c);
+    }
+    while out.ends_with('-') {
+        out.pop();
+    }
+    (!out.is_empty() && out.chars().count() <= MAX_TAG_CHARS).then_some(out)
+}
+/// A preference's tags in canonical order: each normalized, no repeats, sorted,
+/// one to [`MAX_TAGS`]. `None` if any tag is invalid or the count is out of range.
+pub fn canonical_tags<S: AsRef<str>>(raw: &[S]) -> Option<Vec<String>> {
+    let mut tags = raw
+        .iter()
+        .map(|t| normalize_tag(t.as_ref()))
+        .collect::<Option<Vec<_>>>()?;
+    tags.sort();
+    tags.dedup();
+    (1..=MAX_TAGS).contains(&tags.len()).then_some(tags)
+}
+/// Whether `tags` is already canonical (what the writer and verifier require).
+pub fn tags_canonical(tags: &[String]) -> bool {
+    canonical_tags(tags).as_deref() == Some(tags)
+}
+/// The stored form: a compact JSON array.
+pub fn tags_json(tags: &[String]) -> String {
+    serde_json::to_string(tags).expect("tags serialize")
+}
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Binding {
@@ -96,7 +167,7 @@ pub enum Command {
         scope: Scope,
         key: String,
         value: String,
-        source: String,
+        tags: Vec<String>,
         origin: Origin,
         expected: Expected,
     },
@@ -148,7 +219,7 @@ pub struct PreferenceRecord {
     pub scope: Scope,
     pub key: String,
     pub value: String,
-    pub source: String,
+    pub tags: Vec<String>,
     pub status: String,
     pub revision: i64,
     pub origin: Origin,
@@ -290,7 +361,8 @@ pub struct ReviewInspect {
     pub peer_demotion_total: i64,
 }
 
-/// SHA-256 over canonical compact JSON of the six immutable proposal fields.
+/// SHA-256 over canonical compact JSON of the six immutable proposal fields
+/// (tags in canonical order).
 /// Key order is sorted; no whitespace variance. Byte comparison only, not attestation.
 pub fn proposal_digest(
     scope: &Scope,
@@ -298,16 +370,13 @@ pub fn proposal_digest(
     key: &str,
     value: &str,
     origin: Origin,
-    source: &str,
+    tags: &[String],
 ) -> [u8; 32] {
     use sha2::{Digest, Sha256};
     let scope_val = serde_json::to_value(scope).expect("scope serializes");
     let mut map = std::collections::BTreeMap::new();
     map.insert("key", serde_json::Value::String(key.to_owned()));
-    map.insert(
-        "origin",
-        serde_json::to_value(origin).expect("origin serializes"),
-    );
+    map.insert("origin", serde_json::Value::String(origin.as_str().into()));
     map.insert(
         "project",
         match project {
@@ -316,7 +385,7 @@ pub fn proposal_digest(
         },
     );
     map.insert("scope", scope_val);
-    map.insert("source", serde_json::Value::String(source.to_owned()));
+    map.insert("tags", serde_json::to_value(tags).expect("tags serialize"));
     map.insert("value", serde_json::Value::String(value.to_owned()));
     let bytes = serde_json::to_vec(&map).expect("canonical map serializes");
     Sha256::digest(&bytes).into()
@@ -367,30 +436,17 @@ mod tests {
 
     #[test]
     fn canonical_digest_is_deterministic_and_field_sensitive() {
-        let d1 = proposal_digest(
-            &Scope::Global,
-            None,
-            "editor",
-            "vim",
-            Origin::AgentReported,
-            "test",
-        );
-        let d2 = proposal_digest(
-            &Scope::Global,
-            None,
-            "editor",
-            "vim",
-            Origin::AgentReported,
-            "test",
-        );
+        let tags = vec!["style".to_owned()];
+        let d1 = proposal_digest(&Scope::Global, None, "editor", "vim", Origin::Agent, &tags);
+        let d2 = proposal_digest(&Scope::Global, None, "editor", "vim", Origin::Agent, &tags);
         assert_eq!(d1, d2);
         let d3 = proposal_digest(
             &Scope::Global,
             None,
             "editor",
             "emacs",
-            Origin::AgentReported,
-            "test",
+            Origin::Agent,
+            &tags,
         );
         assert_ne!(d1, d3);
         let d4 = proposal_digest(
@@ -398,8 +454,8 @@ mod tests {
             None,
             "editor",
             "vim",
-            Origin::DaemonObserved,
-            "test",
+            Origin::Operator,
+            &tags,
         );
         assert_ne!(d1, d4);
         let d5 = proposal_digest(
@@ -409,15 +465,31 @@ mod tests {
             Some("alpha"),
             "editor",
             "vim",
-            Origin::AgentReported,
-            "test",
+            Origin::Agent,
+            &tags,
         );
         assert_ne!(d1, d5);
+        let d6 = proposal_digest(
+            &Scope::Global,
+            None,
+            "editor",
+            "vim",
+            Origin::Agent,
+            &["git".to_owned()],
+        );
+        assert_ne!(d1, d6);
     }
 
     #[test]
     fn digest_hex_roundtrip() {
-        let d = proposal_digest(&Scope::Global, None, "k", "v", Origin::LegacyUnknown, "s");
+        let d = proposal_digest(
+            &Scope::Global,
+            None,
+            "k",
+            "v",
+            Origin::Operator,
+            &["t".into()],
+        );
         let hex = digest_hex(&d);
         assert_eq!(hex.len(), 64);
         assert_eq!(digest_from_hex(&hex), Some(d));
@@ -438,8 +510,41 @@ mod tests {
     }
 
     #[test]
-    fn origin_default_is_agent_reported() {
-        assert_eq!(Origin::default(), Origin::AgentReported);
+    fn origin_is_a_closed_pair_defaulting_to_operator() {
+        assert_eq!(Origin::default(), Origin::Operator);
+        for o in Origin::ALL {
+            assert_eq!(Origin::parse(o.as_str()), Some(o));
+            let wire = serde_json::to_string(&o).unwrap();
+            assert_eq!(wire, format!("\"{}\"", o.as_str()));
+        }
+        assert!(serde_json::from_str::<Origin>("\"agent_reported\"").is_err());
+        assert_eq!(Origin::parse("legacy_unknown"), None);
+    }
+
+    #[test]
+    fn tags_normalize_dedupe_sort_and_bound() {
+        assert_eq!(
+            normalize_tag(" #Code Style ").as_deref(),
+            Some("code-style")
+        );
+        assert_eq!(
+            normalize_tag("snake_case__x").as_deref(),
+            Some("snake-case-x")
+        );
+        assert_eq!(normalize_tag("测试").as_deref(), Some("测试"));
+        assert_eq!(normalize_tag("--"), None);
+        assert_eq!(normalize_tag("a/b"), None);
+        assert_eq!(normalize_tag(&"x".repeat(33)), None);
+        assert_eq!(
+            canonical_tags(&["Git", "style", "git"]),
+            Some(vec!["git".to_owned(), "style".to_owned()])
+        );
+        assert_eq!(canonical_tags::<&str>(&[]), None);
+        assert_eq!(canonical_tags(&["a", "b", "c", "d", "e", "f"]), None);
+        assert!(tags_canonical(&["a".into(), "b".into()]));
+        assert!(!tags_canonical(&["b".into(), "a".into()]));
+        assert!(!tags_canonical(&["A".into()]));
+        assert_eq!(tags_json(&["a".into(), "b".into()]), r#"["a","b"]"#);
     }
 
     #[test]

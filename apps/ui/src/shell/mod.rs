@@ -3,8 +3,8 @@
 //! action helpers the feature pages use.
 use crate::*;
 pub(crate) mod chrome;
+use acp_ui_core::Section;
 use acp_ui_core::i18n::Msg;
-use acp_ui_core::{PAGE_SIZE, Section};
 use features::{agents, connection, page, profile, projects, review, sessions, settings};
 use tokens::{compact, palette};
 
@@ -689,30 +689,6 @@ fn preference_input(model: Signal<Model>, filter_ref: ElementRef) -> impl IntoEl
                 .value(move || model.get().filter)
                 .on_change(move |v| model.update(|m| m.set_filter(v))),
         )
-        .child(
-            view()
-                .flex_row()
-                .flex_wrap()
-                .items_center()
-                .gap_2()
-                .child(word_action(
-                    model,
-                    Msg::PreviousPage,
-                    move || model.get().page > 0,
-                    move || model.update(|m| m.page_by(-1)),
-                ))
-                .child(word_action(
-                    model,
-                    Msg::NextPage,
-                    move || (model.get().page + 1) * PAGE_SIZE < model.get().rows().len(),
-                    move || model.update(|m| m.page_by(1)),
-                ))
-                .child(
-                    text(move || model.get().page_label())
-                        .text_size(px(ui::scale::text::CAPTION))
-                        .text_color(move || palette(model).muted),
-                ),
-        )
 }
 pub(crate) fn shell(
     model: Signal<Model>,
@@ -875,6 +851,7 @@ pub(crate) fn shell(
                 .child(chrome::grip(model)),
         )
         .child(crate::shortcuts::panel(model))
+        .child(crate::features::tags::panel(model))
         // Last, so toasts float above the page; they never take its space.
         .child(ui::toaster(model))
 }

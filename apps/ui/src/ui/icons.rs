@@ -25,6 +25,11 @@ pub(crate) const PROFILE: &str =
 /// A plug: agents connecting.
 pub(crate) const AGENTS: &str = "M9 3V8M15 3V8M6 8H18V12A6 6 0 0 1 6 12ZM12 18V21";
 pub(crate) const SETTINGS: &str = "M4 7H14M18 7H20M4 17H8M12 17H20M16 5V9M10 15V19";
+/// A tag: a preference's classification label.
+pub(crate) const TAG: &str = "M3 4V11L13 21L21 13L11 3H4ZM7.5 7.5H7.51";
+/// An agent: a small robot head.
+pub(crate) const AGENT: &str =
+    "M6 8H18V18H6ZM12 4V8M9.5 12.5H9.51M14.5 12.5H14.51M10 15.5H14M3 12V14M21 12V14";
 /// Re-read.
 pub(crate) const REFRESH: &str = "M20 12A8 8 0 1 1 12 4M20 4V8H16";
 /// The ACP mark: three stacked planes; context travels down to the agent.

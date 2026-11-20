@@ -440,10 +440,10 @@ fn s3_contained_4096_fixture_process_capacity_conflict_and_exact_replay() {
             "synthetic",
             "--value",
             "synthetic",
-            "--source",
+            "--tag",
             "synthetic",
             "--origin",
-            "agent_reported",
+            "agent",
         ],
     )
     .finish();
@@ -632,7 +632,7 @@ impl Drop for Mcp {
     }
 }
 
-fn assert_projected_context(context: &Value, project: &str, private_sources: &[String]) {
+fn assert_projected_context(context: &Value, project: &str, private_markers: &[String]) {
     assert_eq!(context["project"], project);
     let rows = context["preferences"].as_array().unwrap();
     let actual: BTreeMap<_, _> = rows
@@ -648,26 +648,30 @@ fn assert_projected_context(context: &Value, project: &str, private_sources: &[S
             ] {
                 assert!(row.get(private).is_none(), "private operator field leaked");
             }
-            (row["key"].as_str().unwrap(), row["value"].as_str().unwrap())
+            (
+                row["key"].as_str().unwrap(),
+                (row["value"].as_str().unwrap(), row["tags"].clone()),
+            )
         })
         .collect();
     // Independent expected values, not equality to a second projection path.
+    // Tags travel with the winning row, so agents can find relevant rules.
     let expected = if project == "alpha" {
-        BTreeMap::from([("fallback", "global-fallback"), ("shared", "alpha-choice")])
+        BTreeMap::from([
+            ("fallback", ("global-fallback", json!(["s3-tag-3"]))),
+            ("shared", ("alpha-choice", json!(["s3-tag-1"]))),
+        ])
     } else {
         BTreeMap::from([
-            ("fallback", "global-fallback"),
-            ("foreign", "S3_BETA_PRIVATE_VALUE"),
-            ("shared", "global-choice"),
+            ("fallback", ("global-fallback", json!(["s3-tag-3"]))),
+            ("foreign", ("S3_BETA_PRIVATE_VALUE", json!(["s3-tag-2"]))),
+            ("shared", ("global-choice", json!(["s3-tag-0"]))),
         ])
     };
     assert_eq!(actual, expected);
     let serialized = context.to_string();
-    for private in private_sources {
-        assert!(
-            !serialized.contains(private),
-            "private source marker leaked"
-        );
+    for private in private_markers {
+        assert!(!serialized.contains(private), "operator-only marker leaked");
     }
     for private in [
         "S3_PENDING_VALUE",
@@ -675,7 +679,9 @@ fn assert_projected_context(context: &Value, project: &str, private_sources: &[S
         "S3_DEPRECATED_VALUE",
         "proposal_digest",
         "receipt_commit_sequence",
-        "agent_reported",
+        "s3-tag-4",
+        "s3-tag-5",
+        "s3-tag-6",
     ] {
         assert!(
             !serialized.contains(private),
@@ -690,12 +696,12 @@ fn assert_projected_context(context: &Value, project: &str, private_sources: &[S
 }
 
 #[test]
-fn s3_confirmed_private_sources_never_leak_through_real_ipc_or_mcp() {
+fn s3_only_confirmed_rows_and_their_tags_reach_real_ipc_or_mcp() {
     let f = Fixture::created(false);
     let binding = f.daemon.enable();
     f.register(&binding, "alpha");
     f.register(&binding, "beta");
-    let mut private_sources = Vec::new();
+    let mut private_markers = Vec::new();
     for (index, (project, key, value, status)) in [
         (None, "shared", "global-choice", "confirmed"),
         (Some("alpha"), "shared", "alpha-choice", "confirmed"),
@@ -714,7 +720,7 @@ fn s3_confirmed_private_sources_never_leak_through_real_ipc_or_mcp() {
     .enumerate()
     {
         let scope = project.map_or(Scope::Global, |name| Scope::Project { name: name.into() });
-        let source = format!("S3_PRIVATE_SOURCE_{index}_NEVER_AGENT_VISIBLE");
+        let tags = vec![format!("s3-tag-{index}")];
         let receipt = f
             .daemon
             .mutate(
@@ -724,8 +730,8 @@ fn s3_confirmed_private_sources_never_leak_through_real_ipc_or_mcp() {
                     scope: scope.clone(),
                     key: key.into(),
                     value: value.into(),
-                    source: source.clone(),
-                    origin: Origin::AgentReported,
+                    tags: tags.clone(),
+                    origin: Origin::Agent,
                     expected: Expected::Absent,
                 },
             )
@@ -739,7 +745,7 @@ fn s3_confirmed_private_sources_never_leak_through_real_ipc_or_mcp() {
             .daemon
             .control("profile.preferences.get", json!({"scope":scope,"id":id}))
             .unwrap();
-        assert_eq!(preview["record"]["source"], source);
+        assert_eq!(preview["record"]["tags"], json!(tags));
         let digest = preview["record"]["proposal_digest"].as_str().unwrap();
         if status != "suggested" {
             let command = if status == "rejected" {
@@ -778,7 +784,7 @@ fn s3_confirmed_private_sources_never_leak_through_real_ipc_or_mcp() {
                 )
                 .unwrap();
         }
-        // Exact Operator review retains source and provenance for all statuses.
+        // Exact Operator review retains tags and provenance for all statuses.
         let revision = match status {
             "suggested" => 1,
             "deprecated" => 3,
@@ -791,12 +797,11 @@ fn s3_confirmed_private_sources_never_leak_through_real_ipc_or_mcp() {
                 json!({"scope":scope,"id":id,"revision":revision}),
             )
             .unwrap();
-        assert_eq!(exact["record"]["source"], source);
-        assert_eq!(exact["record"]["origin"], "agent_reported");
+        assert_eq!(exact["record"]["tags"], json!(tags));
+        assert_eq!(exact["record"]["origin"], "agent");
         assert_eq!(exact["record"]["proposal_digest"], digest);
         assert!(exact["decisions"].as_array().unwrap().len() <= 2);
-        private_sources.push(source);
-        private_sources.push(digest.into());
+        private_markers.push(digest.into());
     }
     let before = logical(&f.db);
     for project in ["alpha", "beta"] {
@@ -808,14 +813,14 @@ fn s3_confirmed_private_sources_never_leak_through_real_ipc_or_mcp() {
                 json!({}),
             )
             .unwrap();
-        assert_projected_context(&direct, project, &private_sources);
+        assert_projected_context(&direct, project, &private_markers);
         let operator = f
             .daemon
             .control("context.get", json!({"project":project}))
             .unwrap();
-        assert_projected_context(&operator, project, &private_sources);
+        assert_projected_context(&operator, project, &private_markers);
         let mut mcp = Mcp::start(&f, project);
-        assert_projected_context(&mcp.context(), project, &private_sources);
+        assert_projected_context(&mcp.context(), project, &private_markers);
     }
     assert_eq!(logical(&f.db), before);
 }

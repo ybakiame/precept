@@ -25,7 +25,7 @@
             "id": 8,
             "key": "commit.style",
             "scope": "project",
-            "source": "fixture-new",
+            "tags": ["git", "style"],
             "status": "confirmed",
             "value": "newest"
           },
@@ -33,7 +33,7 @@
             "id": 1,
             "key": "interaction.language",
             "scope": "global",
-            "source": "fixture",
+            "tags": ["language"],
             "status": "confirmed",
             "value": "zh-CN"
           }
@@ -169,7 +169,7 @@
             "id": 2,
             "key": "commit.style",
             "scope": "global",
-            "source": "fixture",
+            "tags": ["git"],
             "status": "confirmed",
             "value": "conventional"
           },
@@ -177,7 +177,7 @@
             "id": 1,
             "key": "interaction.language",
             "scope": "global",
-            "source": "fixture",
+            "tags": ["language"],
             "status": "confirmed",
             "value": "zh-CN"
           },
@@ -185,7 +185,7 @@
             "id": 4,
             "key": "project.private.marker",
             "scope": "project",
-            "source": "fixture",
+            "tags": ["security"],
             "status": "confirmed",
             "value": "BETA_PRIVATE_PREFERENCE"
           }

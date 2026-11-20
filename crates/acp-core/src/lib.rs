@@ -56,7 +56,9 @@ pub struct Preference {
     pub key: String,
     pub value: String,
     pub status: Status,
-    pub source: String,
+    /// Canonical tags (see [`operator::canonical_tags`]); agents may use them
+    /// to find relevant preferences, never to drop confirmed ones.
+    pub tags: Vec<String>,
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Worktree {
@@ -246,7 +248,7 @@ impl<'a> ContextResolver<'a> {
             .into_iter()
             .map(|p| {
                 json!({
-                    "id":p.id,"key":p.key,"value":p.value,"scope":p.scope,"status":p.status
+                    "id":p.id,"key":p.key,"value":p.value,"scope":p.scope,"status":p.status,"tags":p.tags
                 })
             })
             .collect();

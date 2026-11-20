@@ -634,8 +634,7 @@ mod tests {
         assert!(app.screen().clipboard().is_none());
         app.press_key("Escape").unwrap();
         app.press_key("alt+3").unwrap();
-        app.wait_for("Confirmed effective preferences · key / value / scope / source")
-            .unwrap();
+        app.wait_for("Confirmed preferences").unwrap();
     }
     #[test]
     fn component_inputs_selection_empty_scope_and_explicit_copy() {
@@ -675,10 +674,7 @@ mod tests {
                 "alt+2",
                 "Only the daemon's projects; switching clears the task lookup.",
             ),
-            (
-                "alt+3",
-                "Confirmed effective preferences · key / value / scope / source",
-            ),
+            ("alt+3", "Confirmed preferences"),
             (
                 "alt+4",
                 "Empty — no handoff for task missing in this project",
@@ -746,8 +742,19 @@ mod tests {
         app.press("简体中文").unwrap();
         app.wait_for("主题集").unwrap();
         app.press_key("alt+3").unwrap();
-        app.wait_for("已生效的确认偏好 · 键 / 值 / 范围 / 来源")
+        app.wait_for("已确认偏好").unwrap();
+        app.wait_for("2 条已确认").unwrap();
+        // Tags filter the list; several narrow to rows carrying all of them.
+        app.press("#language · 1").unwrap();
+        app.wait_for("1 条已确认").unwrap();
+        assert!(app.screen().shows("zh-CN"));
+        assert!(!app.screen().shows("newest"));
+        app.press("#git · 1").unwrap();
+        app.wait_for("0 条已确认").unwrap();
+        app.wait_for("选择多个标签时，只显示同时带有这些标签的偏好。")
             .unwrap();
+        app.press("全部").unwrap();
+        app.wait_for("2 条已确认").unwrap();
         assert!(app.screen().clipboard().is_none());
     }
     #[component]
@@ -766,39 +773,48 @@ mod tests {
         console(signal(model))
     }
     #[test]
-    fn ten_thousand_rows_mount_every_page_then_filter_and_select() {
+    fn ten_thousand_rows_stay_virtual_while_scrolled_filtered_and_tagged() {
         let mut app =
             nsh_testing::Headless::start(EngineConfig::new(Root::of::<Workload>())).unwrap();
-        app.wait_for("10000 confirmed rows · page 1/834").unwrap();
+        app.wait_for("10000 confirmed").unwrap();
         let started = std::time::Instant::now();
-        for page in 0..834 {
-            for row in
-                (page * acp_ui_core::PAGE_SIZE)..((page + 1) * acp_ui_core::PAGE_SIZE).min(10_000)
-            {
-                let key = format!("event-{row:05}");
-                assert!(app.screen().texts().iter().any(|t| t.contains(&key)));
-            }
-            assert!(
-                app.screen().texts().len() < 100,
-                "screen tree grew with dataset"
-            );
-            if page < 833 {
-                app.press("Next page").unwrap();
-            }
-        }
-        app.type_text("Filter preferences", "event-09999").unwrap();
-        app.wait_for("1 confirmed rows · page 1/1").unwrap();
+        let shown = |app: &nsh_testing::Headless, key: &str| {
+            app.screen().texts().iter().any(|t| t.contains(key))
+        };
+        assert!(shown(&app, "event-00000"));
+        assert!(!shown(&app, "event-09999"));
         assert!(
-            app.screen()
-                .texts()
-                .iter()
-                .any(|t| t.contains("event-09999"))
+            app.screen().texts().len() < 400,
+            "screen tree grew with dataset"
         );
+        // One continuous list: scrolling reveals later rows and keeps the tree bounded.
+        app.scroll("event-00000", px(4000.0)).unwrap();
+        app.wait_until("later rows", std::time::Duration::from_secs(5), |s| {
+            s.texts()
+                .iter()
+                .any(|t| t.starts_with("event-000") && *t != "event-00000")
+                && !s.texts().contains(&"event-00000")
+        })
+        .unwrap();
+        assert!(app.screen().texts().len() < 400);
+        app.type_text("Filter preferences", "event-09999").unwrap();
+        app.wait_for("1 confirmed").unwrap();
+        assert!(shown(&app, "event-09999"));
+        // A tag the rows carry narrows nothing away; `#` matches tags only.
+        app.clear("Filter preferences").unwrap();
+        app.type_text("Filter preferences", "#git").unwrap();
+        app.wait_for("10000 confirmed").unwrap();
+        app.clear("Filter preferences").unwrap();
+        app.type_text("Filter preferences", "#event").unwrap();
+        app.wait_for("0 confirmed").unwrap();
+        app.clear("Filter preferences").unwrap();
+        app.type_text("Filter preferences", "event").unwrap();
+        app.wait_for("10000 confirmed").unwrap();
         app.press("Step 3: Workspaces").unwrap();
         app.press("beta").unwrap();
         app.wait_for("Project: beta").unwrap();
         println!(
-            "RENDERED_WORKLOAD: 10000 rows, 834 mounted pages, <100 text nodes, {:?}",
+            "RENDERED_WORKLOAD: 10000 rows in one virtual list, <400 text nodes, {:?}",
             started.elapsed()
         );
     }

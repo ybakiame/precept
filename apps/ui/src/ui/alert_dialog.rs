@@ -214,6 +214,10 @@ impl IntoElement for AlertDialog {
                     .test_id("dialog-panel")
                     .w_full()
                     .max_w(px(width))
+                    // Never taller than the window: 48 points of the page show
+                    // above and below, and the content scrolls between the
+                    // fixed header and actions.
+                    .max_h(move || px((window().height.0 - 48.0).max(240.0)))
                     .p_6()
                     .gap_4()
                     .rounded(px(scale::radius::OVERLAY))
@@ -271,7 +275,13 @@ impl IntoElement for AlertDialog {
                 panel = panel.child(header.child(heading));
                 if let Some(content) = content.clone() {
                     // Content always fills the panel's content width.
-                    panel = panel.child(view().w_full().child(content()));
+                    panel = panel.child(
+                        scroll()
+                            .w_full()
+                            .flex_shrink(1.0)
+                            .min_h_0()
+                            .child(view().w_full().pb_1().child(content())),
+                    );
                 }
                 let cancel_button = super::button::button(model, "")
                     .label_fn(move || cancel_text())

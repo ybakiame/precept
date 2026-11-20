@@ -174,7 +174,7 @@ impl SqliteStore {
     pub fn read_preferences(&self, project: &str) -> Result<Vec<Preference>> {
         self.snapshot(|_| {
         project_record(&self.db, project)?;
-        let mut stmt = self.db.prepare("SELECT id,scope,project,pref_key,value,status,source FROM preferences WHERE (scope='global' AND project IS NULL) OR (scope='project' AND project=?1) ORDER BY pref_key,CASE scope WHEN 'project' THEN 0 ELSE 1 END,id DESC")
+        let mut stmt = self.db.prepare("SELECT id,scope,project,pref_key,value,status,tags FROM preferences WHERE (scope='global' AND project IS NULL) OR (scope='project' AND project=?1) ORDER BY pref_key,CASE scope WHEN 'project' THEN 0 ELSE 1 END,id DESC")
             .map_err(|_| Error::ReadFailed)?;
         let rows = stmt
             .query_map([project], |r| {
@@ -191,8 +191,9 @@ impl SqliteStore {
             .map_err(|_| Error::ReadFailed)?;
         let mut result = Vec::new();
         for row in rows {
-            let (id, scope, project, key, value, status, source) =
+            let (id, scope, project, key, value, status, tags) =
                 row.map_err(|_| Error::InvalidRecord)?;
+            let tags = profile::stored_tags(&tags).ok_or(Error::InvalidRecord)?;
             let scope = match scope.as_str() {
                 "global" => Scope::Global,
                 "project" => Scope::Project,
@@ -213,7 +214,7 @@ impl SqliteStore {
                 key,
                 value,
                 status,
-                source,
+                tags,
             });
         }
         Ok(result)

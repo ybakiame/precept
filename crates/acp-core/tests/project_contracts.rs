@@ -23,7 +23,7 @@ fn pref(id: u64, key: &str, value: &str, project: Option<&str>) -> Preference {
         },
         project: project.map(str::to_owned),
         status: Status::Confirmed,
-        source: "PRIVATE_SOURCE_SENTINEL".into(),
+        tags: vec!["style".into()],
     }
 }
 fn resolve(rules: Vec<Value>, prefs: Vec<Preference>, query: SelectorQuery) -> Projection {

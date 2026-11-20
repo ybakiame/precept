@@ -180,11 +180,18 @@ mod tests {
                 language: Some("zh-CN".into()),
             },
             shortcuts: [("reconnect".to_owned(), "mod+e".to_owned())].into(),
+            tag_colors: [
+                ("git".to_owned(), "oklch(68% 0.13 36)".to_owned()),
+                ("测试".to_owned(), "#336699".to_owned()),
+            ]
+            .into(),
         };
         save_settings_to(&dir, &settings).unwrap();
         let text = std::fs::read_to_string(dir.join(SETTINGS_FILE)).unwrap();
         assert!(
-            text.contains("[appearance]") && text.contains("[shortcuts]"),
+            text.contains("[appearance]")
+                && text.contains("[shortcuts]")
+                && text.contains("[tag_colors]"),
             "{text}"
         );
         let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;

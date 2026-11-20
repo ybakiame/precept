@@ -302,8 +302,8 @@ pub fn suggest() -> Command {
         scope: Scope::Global,
         key: "synthetic-key".into(),
         value: "synthetic-value".into(),
-        source: "synthetic-test".into(),
-        origin: acp_core::operator::Origin::AgentReported,
+        tags: vec!["test".into()],
+        origin: acp_core::operator::Origin::Agent,
         expected: Expected::Absent,
     }
 }

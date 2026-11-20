@@ -72,7 +72,11 @@ pub struct Operator {
     pub remember: bool,
     pub key: String,
     pub value: String,
-    pub source: String,
+    /// The draft's tags (canonical, one to five) and the tag being typed.
+    pub tags: Vec<String>,
+    pub tag_draft: String,
+    /// Who the draft comes from: the operator, or an agent's suggestion.
+    pub origin: Origin,
     pub task: String,
     pub error: Option<String>,
     pub receipt: Option<Receipt>,
@@ -154,6 +158,33 @@ impl Operator {
                 .find(|r| r.id == id)
                 .map(|r| (r, &q.binding))
         })
+    }
+    /// Adds `raw` to the draft's tags. False (nothing changes) when it is not
+    /// a valid tag or the draft already has [`MAX_TAGS`]; a repeat is a no-op.
+    pub fn add_tag(&mut self, raw: &str) -> bool {
+        let Some(tag) = normalize_tag(raw) else {
+            return false;
+        };
+        if self.tags.contains(&tag) {
+            return true;
+        }
+        if self.tags.len() >= MAX_TAGS {
+            return false;
+        }
+        self.tags.push(tag);
+        self.tags.sort();
+        true
+    }
+    pub fn remove_tag(&mut self, tag: &str) {
+        self.tags.retain(|t| t != tag);
+    }
+    /// A fresh draft for the add dialog.
+    pub fn start_draft(&mut self) {
+        self.key.clear();
+        self.value.clear();
+        self.tags.clear();
+        self.tag_draft.clear();
+        self.origin = Origin::Operator;
     }
     pub fn record(&self) -> Option<&PreferenceRecord> {
         self.selected().map(|(r, _)| r)
@@ -337,18 +368,21 @@ impl Model {
                     return false;
                 };
                 let command = if action == "suggest" {
-                    if self.operator.key.trim().is_empty()
-                        || self.operator.value.trim().is_empty()
-                        || self.operator.source.trim().is_empty()
+                    let Some(tags) = canonical_tags(&self.operator.tags) else {
+                        return false;
+                    };
+                    if self.operator.key.trim().is_empty() || self.operator.value.trim().is_empty()
                     {
                         return false;
                     }
+                    // A suggestion's new tags keep a generated oklch() color.
+                    self.pin_tag_colors(&tags);
                     Command::SuggestPreference {
                         scope,
                         key: self.operator.key.clone(),
                         value: self.operator.value.clone(),
-                        source: self.operator.source.clone(),
-                        origin: Origin::AgentReported,
+                        tags,
+                        origin: self.operator.origin,
                         expected: Expected::Absent,
                     }
                 } else {
@@ -517,6 +551,20 @@ impl Model {
                     {
                         return Err("StaleGeneration");
                     }
+                    // Loading more appends to the rows shown when it continues
+                    // exactly where they end; any other read replaces them.
+                    // (A copy: the selection below is checked against the old rows.)
+                    let page = append_page(
+                        self.operator.page.clone(),
+                        page,
+                        request.guard.after_id,
+                        |p| (&p.binding, p.next_after_id),
+                        |old, new| {
+                            old.records.extend(new.records);
+                            old.next_after_id = new.next_after_id;
+                        },
+                    );
+                    self.operator.after_id = 0;
                     // A refresh keeps the selection (and its exact inspection)
                     // only while the page still holds that exact record: same
                     // id, revision and digest. Anything else is cleared.
@@ -585,6 +633,18 @@ impl Model {
                     if after_id == 0 {
                         self.operator.queue_watermark = queue.commit_sequence;
                     }
+                    let queue = append_page(
+                        self.operator.queue.take(),
+                        queue,
+                        after_id,
+                        |q| (&q.binding, q.next_after_id),
+                        |old, new| {
+                            old.records.extend(new.records);
+                            old.next_after_id = new.next_after_id;
+                            old.commit_sequence = new.commit_sequence;
+                        },
+                    );
+                    self.operator.queue_after_id = 0;
                     // A queue refresh replaces the source of review. An older
                     // exact inspect may not hide a moved or removed candidate.
                     self.operator.inspect = None;
@@ -812,6 +872,29 @@ impl Model {
     }
 }
 
+/// `new` appended to `old` when it was read from exactly where `old` ends
+/// (same binding, `after_id` its next cursor); otherwise `new` alone.
+fn append_page<P>(
+    old: Option<P>,
+    new: P,
+    after_id: i64,
+    cursor: impl Fn(&P) -> (&Binding, Option<i64>),
+    extend: impl FnOnce(&mut P, P),
+) -> P {
+    match old {
+        Some(mut old)
+            if after_id > 0 && {
+                let (binding, next) = cursor(&old);
+                binding == cursor(&new).0 && next == Some(after_id)
+            } =>
+        {
+            extend(&mut old, new);
+            old
+        }
+        _ => new,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -841,17 +924,17 @@ mod tests {
                 scope: Scope::Global,
                 key: "synthetic-key".into(),
                 value: "synthetic-value".into(),
-                source: "test".into(),
+                tags: vec!["test".into()],
                 status: "suggested".into(),
                 revision: 1,
-                origin: Origin::AgentReported,
+                origin: Origin::Agent,
                 proposal_digest: digest_hex(&proposal_digest(
                     &Scope::Global,
                     None,
                     "synthetic-key",
                     "synthetic-value",
-                    Origin::AgentReported,
-                    "test",
+                    Origin::Agent,
+                    &["test".to_owned()],
                 )),
                 created_at: "2026-01-01T00:00:00Z".into(),
                 updated_at: "2026-01-01T00:00:00Z".into(),
@@ -1061,17 +1144,17 @@ mod tests {
             scope: scope.clone(),
             key: key.clone(),
             value: "synthetic-value".into(),
-            source: "test".into(),
+            tags: vec!["test".into()],
             status: status.into(),
             revision,
-            origin: Origin::AgentReported,
+            origin: Origin::Agent,
             proposal_digest: digest_hex(&proposal_digest(
                 scope,
                 project,
                 &key,
                 "synthetic-value",
-                Origin::AgentReported,
-                "test",
+                Origin::Agent,
+                &["test".to_owned()],
             )),
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-01T00:00:00Z".into(),
@@ -1692,8 +1775,15 @@ mod tests {
         let mut m = model();
         m.operator.key = "editor".into();
         m.operator.value = "synthetic".into();
-        m.operator.source = "operator".into();
+        m.operator.tags = vec!["style".into()];
+        m.operator.origin = Origin::Agent;
         assert!(m.operator_review("suggest", "s-op"));
+        // The suggestion carries its tags and origin; a new tag keeps an oklch() color.
+        assert!(matches!(
+            &m.operator.review.as_ref().unwrap().mutation.as_ref().unwrap().command,
+            Command::SuggestPreference { tags, origin: Origin::Agent, .. } if tags == &["style"]
+        ));
+        assert_eq!(m.tag_colors["style"], crate::tag_colors::generated("style"));
         let request = m.operator_confirm().unwrap();
         let affected = json!([{"kind":"preference","project":"","record_id":"9","revision":1,"deleted":false}]);
         assert!(m.complete_operator(&request, Ok(receipt_json("s-op", 4, affected))));
@@ -1938,7 +2028,7 @@ mod tests {
         assert!(m.operator.review.is_none());
         assert!(m.operator.delete_arm.is_none());
         let mut record = synthetic_record(7, &Scope::Global, "suggested", 2);
-        record.source = "new source claim".into();
+        record.tags = vec!["changed".into()];
         record.value = "new proposal".into();
         record.proposal_digest = "d".repeat(64);
         assert!(m.complete_operator(
@@ -1954,7 +2044,7 @@ mod tests {
         assert!(m.operator.selected_id.is_none());
     }
     #[test]
-    fn changed_immutable_content_or_source_claim_refuses_prepared_decision() {
+    fn changed_immutable_content_tags_or_origin_refuses_prepared_decision() {
         for change in 0..5 {
             let mut m = armed_delete_model();
             assert!(m.operator_review("confirm", "exact-content"));
@@ -1962,8 +2052,8 @@ mod tests {
             match change {
                 0 => record.key = "different-key".into(),
                 1 => record.value = "different-value".into(),
-                2 => record.source = "different-source".into(),
-                3 => record.origin = Origin::LegacyUnknown,
+                2 => record.tags = vec!["different".into()],
+                3 => record.origin = Origin::Operator,
                 _ => record.status = "rejected".into(),
             }
             assert!(m.operator_confirm().is_none(), "content change {change}");
