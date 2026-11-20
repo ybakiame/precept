@@ -618,6 +618,7 @@ fn s3_only_confirmed_rows_and_their_tags_reach_real_ipc_or_mcp() {
                 &binding,
                 &format!("privacy-suggest-{index}"),
                 Command::SuggestPreference {
+                    rule: Default::default(),
                     scope: scope.clone(),
                     key: key.into(),
                     value: value.into(),

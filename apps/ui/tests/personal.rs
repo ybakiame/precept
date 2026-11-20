@@ -227,6 +227,10 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     app.clear("Tags").unwrap();
     app.type_text("Tags", "git\n").unwrap();
     app.press("An agent suggested it").unwrap();
+    // Rule options: only for Rust, priority 5, declared hard.
+    app.type_text("Languages", "Rust").unwrap();
+    app.type_text("Priority (-100 to 100)", "5").unwrap();
+    app.press("Hard").unwrap();
     app.press("Save as suggestion").unwrap();
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();
@@ -241,6 +245,12 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
         "suggested",
         "saving never confirms"
     );
+    assert_eq!(
+        global(&f)[0]["rule"]["applies_to"]["languages"],
+        json!(["rust"])
+    );
+    assert_eq!(global(&f)[0]["rule"]["priority"], 5);
+    assert_eq!(global(&f)[0]["rule"]["enforcement"], "hard");
     // The value is stored as Markdown, as written.
     assert_eq!(global(&f)[0]["value"], "Prefer **small** commits.");
     // Step two is offered at once: the exact record, inspected, in Detail.
@@ -263,4 +273,21 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
         assert!(start.elapsed() < Duration::from_secs(10));
         std::thread::sleep(Duration::from_millis(20));
     }
+    // The confirmed rule shows its options, and its switch takes it out of
+    // what agents receive without a new review.
+    contains(&mut app, "Applies to languages rust");
+    contains(&mut app, "priority 5");
+    app.press("#1 · personal-editor · confirmed · r2").unwrap();
+    app.wait_until("switch ready", Duration::from_secs(10), |s| {
+        s.texts().contains(&"Delivered to agents")
+    })
+    .unwrap();
+    let start = Instant::now();
+    while global(&f)[0]["enabled"] != false {
+        let _ = app.press("Delivered to agents");
+        assert!(start.elapsed() < Duration::from_secs(10), "switched off");
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    assert_eq!(global(&f)[0]["status"], "confirmed");
+    contains(&mut app, "Off");
 }

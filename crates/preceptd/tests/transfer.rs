@@ -31,6 +31,19 @@ fn suggest(f: &Fixture, b: &Binding, op: &str, scope: Scope, key: &str) -> (i64,
             b,
             op,
             Command::SuggestPreference {
+                // The confirmed record carries rule options; they must survive.
+                rule: if key == "confirmed-key" {
+                    precept_core::operator::RuleOptions {
+                        applies_to: precept_core::operator::AppliesTo {
+                            languages: vec!["rust".into()],
+                            ..Default::default()
+                        },
+                        priority: 7,
+                        enforcement: precept_core::operator::Enforcement::Verify,
+                    }
+                } else {
+                    Default::default()
+                },
                 scope: scope.clone(),
                 key: key.into(),
                 value: format!("{key}-value\nsecond line"),
@@ -213,6 +226,31 @@ fn export_then_import_moves_preferences_as_suggestions_and_replays() {
     assert!(ok, "{out}");
     assert_eq!(out["suggested"], 0);
     assert_eq!(records(&dst, Scope::Global).len(), 1);
+    assert_eq!(
+        global[0]["rule"]["applies_to"]["languages"],
+        json!(["rust"])
+    );
+    assert_eq!(global[0]["rule"]["priority"], 7);
+    assert_eq!(global[0]["rule"]["enforcement"], "verify");
+    // A version 1 export (before rule options) still imports, with defaults.
+    let v1 = dst.temp.path().join("v1.json");
+    std::fs::write(
+        &v1,
+        r#"{"format":"precept-profile-export","version":1,"preferences":[{"scope":{"kind":"global"},"key":"old-key","value":"old value","tags":["legacy"],"origin":"operator","status":"confirmed"}]}"#,
+    )
+    .unwrap();
+    let (ok, out) = cli(
+        &dst,
+        &[
+            "profile",
+            "import",
+            v1.to_str().unwrap(),
+            "--operation-prefix",
+            "v1",
+        ],
+    );
+    assert!(ok, "{out}");
+    assert_eq!(out["suggested"], 1);
     // Malformed files and prefixes are refused.
     std::fs::write(dst.temp.path().join("bad.json"), "{}").unwrap();
     let bad = dst.temp.path().join("bad.json");

@@ -29,6 +29,29 @@ pub enum Moment {
     Compact,
 }
 
+/// Where a rule applies, in words (`None` for everywhere).
+fn applies(p: &Value) -> Option<String> {
+    let a = p.get("applies_to")?;
+    let parts: Vec<String> = [
+        ("agents", "agents"),
+        ("languages", "languages"),
+        ("paths", "paths"),
+        ("task_tags", "tasks tagged"),
+    ]
+    .iter()
+    .filter_map(|(field, word)| {
+        let v: Vec<&str> = a
+            .get(*field)?
+            .as_array()?
+            .iter()
+            .filter_map(Value::as_str)
+            .collect();
+        (!v.is_empty()).then(|| format!("{word} {}", v.join(", ")))
+    })
+    .collect();
+    (!parts.is_empty()).then(|| parts.join("; "))
+}
+
 /// Renders `context` (the `context.get` projection) for `project`.
 pub fn render(project: &str, context: &Value, moment: Moment) -> String {
     let mut out = String::new();
@@ -63,11 +86,13 @@ pub fn render(project: &str, context: &Value, moment: Moment) -> String {
             out.push_str(&format!("- **{key}**: {}\n", allowed.join(" | ")));
         }
     }
-    let preferences = context
+    let (environment, preferences): (Vec<Value>, Vec<Value>) = context
         .get("preferences")
         .and_then(Value::as_array)
         .cloned()
-        .unwrap_or_default();
+        .unwrap_or_default()
+        .into_iter()
+        .partition(|p| p.get("scope").and_then(Value::as_str) == Some("environment"));
     out.push_str("\n## Preferences\n");
     if preferences.is_empty() {
         out.push_str("\nNo confirmed preferences apply.\n");
@@ -95,7 +120,13 @@ pub fn render(project: &str, context: &Value, moment: Moment) -> String {
         if !tags.is_empty() {
             entry.push_str(&format!(" · {}", tags.join(" ")));
         }
+        if let Some(e) = p.get("enforcement").and_then(Value::as_str) {
+            entry.push_str(&format!(" · {e}"));
+        }
         entry.push_str("_\n\n");
+        if let Some(where_) = applies(p) {
+            entry.push_str(&format!("Applies to {where_} only.\n\n"));
+        }
         entry.push_str(value);
         if cut_value {
             entry.push_str(" …");
@@ -106,6 +137,22 @@ pub fn render(project: &str, context: &Value, moment: Moment) -> String {
             break;
         }
         out.push_str(&entry);
+    }
+    if !environment.is_empty() && !truncated {
+        out.push_str("\n## Work environment (this machine)\n\n");
+        for e in &environment {
+            let key = e.get("key").and_then(Value::as_str).unwrap_or("?");
+            let (value, _) = cut(
+                e.get("value").and_then(Value::as_str).unwrap_or("").trim(),
+                MAX_VALUE,
+            );
+            let line = format!("- **{key}**: {value}\n");
+            if out.len() + line.len() > MAX_BYTES - 200 {
+                truncated = true;
+                break;
+            }
+            out.push_str(&line);
+        }
     }
     if let Some(status) = context
         .pointer("/contract_resolution/status")
@@ -155,5 +202,17 @@ mod tests {
         assert!(b.len() <= MAX_BYTES);
         assert!(b.contains("Briefing cut"));
         assert!(render("alpha", &json!({}), Moment::Start).contains("No confirmed preferences"));
+        let scoped = json!({"preferences":[
+            {"key":"fmt","scope":"global","tags":[],"value":"rustfmt","enforcement":"hard",
+             "applies_to":{"agents":[],"languages":["rust"],"paths":["apps/"],"task_tags":[]}},
+            {"key":"shell","scope":"environment","tags":[],"value":"Agents run inside WSL."}
+        ]});
+        let b = render("alpha", &scoped, Moment::Start);
+        assert!(b.contains("_personal · hard_"));
+        assert!(b.contains("Applies to languages rust; paths apps/ only."));
+        assert!(
+            b.contains("## Work environment (this machine)\n\n- **shell**: Agents run inside WSL.")
+        );
+        assert!(!b.contains("### shell"));
     }
 }

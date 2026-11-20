@@ -52,6 +52,7 @@ fn preference(
             b,
             &op,
             Command::SuggestPreference {
+                rule: Default::default(),
                 scope: scope.clone(),
                 key: key.into(),
                 value: value.into(),

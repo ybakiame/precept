@@ -8,7 +8,9 @@ use serde_json::{Value, json};
 use std::{io::Write, path::Path};
 
 pub const FORMAT: &str = "precept-profile-export";
-pub const VERSION: u32 = 1;
+/// The version written. Version 1 files (no rule options) still import, with
+/// the defaults (everywhere, priority 0, advisory).
+pub const VERSION: u32 = 2;
 /// The most preferences one export or import carries.
 pub const MAX_RECORDS: usize = 10_000;
 /// The largest export file read back.
@@ -24,6 +26,15 @@ pub struct Exported {
     pub origin: Origin,
     /// The status in the source Profile (`confirmed`, `suggested`, ...).
     pub status: String,
+    /// Where it applies, priority, declared enforcement (v2).
+    #[serde(default)]
+    pub rule: RuleOptions,
+    /// Whether it was switched on in the source Profile (v2; informative).
+    #[serde(default = "on")]
+    pub enabled: bool,
+}
+fn on() -> bool {
+    true
 }
 
 #[derive(PartialEq, Eq, Serialize, Deserialize)]
@@ -72,6 +83,8 @@ pub async fn collect(location: &Location) -> Result<Export> {
                     tags: r.tags,
                     origin: r.origin,
                     status: r.status,
+                    rule: r.rule,
+                    enabled: r.enabled,
                 });
             }
             match page.next_after_id {
@@ -111,7 +124,7 @@ pub fn read(path: &Path) -> Result<Export> {
     let raw = std::fs::read(path).map_err(|_| Error::Unavailable)?;
     let export: Export = serde_json::from_slice(&raw).map_err(|_| Error::InvalidRequest)?;
     if export.format != FORMAT
-        || export.version != VERSION
+        || !(1..=VERSION).contains(&export.version)
         || export.preferences.len() > MAX_RECORDS
     {
         return Err(Error::Version);
@@ -176,6 +189,7 @@ pub async fn import(location: &Location, export: &Export, prefix: &str) -> Resul
                 binding: binding.clone(),
                 operation_id: format!("{prefix}-{index}"),
                 command: Command::SuggestPreference {
+                    rule: p.rule.clone(),
                     scope: p.scope.clone(),
                     key: p.key.clone(),
                     value: p.value.clone(),
@@ -214,6 +228,8 @@ mod tests {
                 tags: vec!["style".into()],
                 origin: Origin::Operator,
                 status: "confirmed".into(),
+                rule: Default::default(),
+                enabled: true,
             }],
         };
         write_new(&path, &export).unwrap();

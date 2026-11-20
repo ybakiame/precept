@@ -24,6 +24,7 @@ fn request(p: &Profile, id: &str, command: Command) -> Request {
 }
 fn suggest(scope: Scope) -> Command {
     Command::SuggestPreference {
+        rule: Default::default(),
         scope,
         key: "formatter".into(),
         value: "synthetic".into(),
@@ -37,13 +38,14 @@ fn proposal(scope: &Scope) -> String {
     precept_core::operator::digest_hex(&precept_core::operator::proposal_digest(
         scope,
         match scope {
-            Scope::Project { name } => Some(name.as_str()),
+            Scope::Project { name } | Scope::Environment { name } => Some(name.as_str()),
             Scope::Global => None,
         },
         "formatter",
         "synthetic",
         precept_core::operator::Origin::Agent,
         &["fixture".to_owned()],
+        &Default::default(),
     ))
 }
 fn project_scope(name: &str) -> Scope {

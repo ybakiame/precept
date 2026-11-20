@@ -72,6 +72,7 @@ impl Request {
                 key,
                 value,
                 tags,
+                rule,
                 expected,
                 // origin is a closed serde enum; no additional domain check.
                 ..
@@ -80,8 +81,20 @@ impl Request {
                 if !text(key, 120, true)
                     || !text(value, 4096, true)
                     || !precept_core::operator::tags_canonical(tags)
+                    || !rule.valid_for(scope)
                     || *expected != Expected::Absent
                 {
+                    return Err(Error::InvalidCommand);
+                }
+                (expected, Some(scope))
+            }
+            Command::SetPreferenceEnabled {
+                id,
+                scope,
+                expected,
+                ..
+            } => {
+                if *id <= 0 || !matches!(expected, Expected::Revision(n) if *n>0) {
                     return Err(Error::InvalidCommand);
                 }
                 (expected, Some(scope))
@@ -150,7 +163,7 @@ impl Request {
             }
         };
         if matches!(expected, Expected::Revision(n) if *n<=0)
-            || matches!(scope, Some(Scope::Project{name}) if !name_valid(name))
+            || matches!(scope, Some(Scope::Project{name} | Scope::Environment{name}) if !name_valid(name))
         {
             return Err(Error::InvalidCommand);
         }

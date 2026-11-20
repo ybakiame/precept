@@ -33,6 +33,7 @@ fn mcp_starts_reads_and_refusals_are_logged_by_count_for_the_operator_only() {
             &b,
             "activity-suggest",
             Command::SuggestPreference {
+                rule: Default::default(),
                 scope: Scope::Global,
                 key: "style".into(),
                 value: SECRET.into(),

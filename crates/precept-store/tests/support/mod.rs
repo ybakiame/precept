@@ -105,31 +105,42 @@ pub fn fixture(base: &Path) -> PathBuf {
     // decision per status transition. A `suggested` row keeps revision 1 and no
     // decision; confirmed/rejected reach revision 2; deprecated reaches revision 3
     // via confirm then deprecate. No row is marked final at revision 1.
-    let mut build =
-        |scope: &str, project: Option<&str>, key: &str, value: &str, status: &str, tag: &str| {
-            id += 1;
-            let pref_id = id;
-            let origin = precept_ipc::operator::Origin::Agent;
-            let tags = vec![tag.to_owned()];
-            let typed = match project {
-                Some(name) => precept_ipc::operator::Scope::Project { name: name.into() },
-                None => precept_ipc::operator::Scope::Global,
-            };
-            let digest =
-                precept_ipc::operator::proposal_digest(&typed, project, key, value, origin, &tags);
-            let digest_bytes = digest.to_vec();
-            // Suggestion: revision 1, status suggested, identity-only receipt.
-            push_receipt(
-                &db,
-                &mut sequence,
-                generation,
-                "preference",
-                "",
-                &pref_id.to_string(),
-                1,
-            );
-            db.execute(
-                "INSERT INTO preferences VALUES(?1,?2,?3,?4,?5,'suggested',?6,1,?7,?7,'agent',?8)",
+    let mut build = |scope: &str,
+                     project: Option<&str>,
+                     key: &str,
+                     value: &str,
+                     status: &str,
+                     tag: &str| {
+        id += 1;
+        let pref_id = id;
+        let origin = precept_ipc::operator::Origin::Agent;
+        let tags = vec![tag.to_owned()];
+        let typed = match project {
+            Some(name) => precept_ipc::operator::Scope::Project { name: name.into() },
+            None => precept_ipc::operator::Scope::Global,
+        };
+        let digest = precept_ipc::operator::proposal_digest(
+            &typed,
+            project,
+            key,
+            value,
+            origin,
+            &tags,
+            &Default::default(),
+        );
+        let digest_bytes = digest.to_vec();
+        // Suggestion: revision 1, status suggested, identity-only receipt.
+        push_receipt(
+            &db,
+            &mut sequence,
+            generation,
+            "preference",
+            "",
+            &pref_id.to_string(),
+            1,
+        );
+        db.execute(
+                "INSERT INTO preferences VALUES(?1,?2,?3,?4,?5,'suggested',?6,1,?7,?7,'agent',?8,'{\"agents\":[],\"languages\":[],\"paths\":[],\"task_tags\":[]}',0,'advisory',1)",
                 params![
                     pref_id,
                     scope,
@@ -142,51 +153,51 @@ pub fn fixture(base: &Path) -> PathBuf {
                 ],
             )
             .unwrap();
-            let mut revision = 1i64;
-            let mut current = "suggested";
-            // Replay the writer's transition chain to reach the requested status.
-            let transitions: &[(&str, &str)] = match status {
-                "suggested" => &[],
-                "confirmed" => &[("confirm", "confirmed")],
-                "rejected" => &[("reject", "rejected")],
-                "deprecated" => &[("confirm", "confirmed"), ("deprecate", "deprecated")],
-                other => panic!("unsupported fixture status {other}"),
-            };
-            for (action, next) in transitions {
-                let from = revision;
-                revision += 1;
-                let seq = push_receipt(
-                    &db,
-                    &mut sequence,
-                    generation,
-                    "preference",
-                    "",
-                    &pref_id.to_string(),
-                    revision,
-                );
-                push_decision(
-                    &db,
-                    &mut review_id,
-                    pref_id,
-                    scope,
-                    project,
-                    action,
-                    from,
-                    revision,
-                    &digest_bytes,
-                    seq,
-                    time,
-                );
-                current = next;
-            }
-            if revision != 1 || current != "suggested" {
-                db.execute(
-                    "UPDATE preferences SET status=?1,revision=?2 WHERE id=?3",
-                    params![current, revision, pref_id],
-                )
-                .unwrap();
-            }
+        let mut revision = 1i64;
+        let mut current = "suggested";
+        // Replay the writer's transition chain to reach the requested status.
+        let transitions: &[(&str, &str)] = match status {
+            "suggested" => &[],
+            "confirmed" => &[("confirm", "confirmed")],
+            "rejected" => &[("reject", "rejected")],
+            "deprecated" => &[("confirm", "confirmed"), ("deprecate", "deprecated")],
+            other => panic!("unsupported fixture status {other}"),
         };
+        for (action, next) in transitions {
+            let from = revision;
+            revision += 1;
+            let seq = push_receipt(
+                &db,
+                &mut sequence,
+                generation,
+                "preference",
+                "",
+                &pref_id.to_string(),
+                revision,
+            );
+            push_decision(
+                &db,
+                &mut review_id,
+                pref_id,
+                scope,
+                project,
+                action,
+                from,
+                revision,
+                &digest_bytes,
+                seq,
+                time,
+            );
+            current = next;
+        }
+        if revision != 1 || current != "suggested" {
+            db.execute(
+                "UPDATE preferences SET status=?1,revision=?2 WHERE id=?3",
+                params![current, revision, pref_id],
+            )
+            .unwrap();
+        }
+    };
     for p in data["preferences"].as_array().unwrap() {
         let scope = if p["scope"] == "global" {
             "global"

@@ -54,6 +54,7 @@ fn session_start_briefing_reaches_each_harness_shape_and_fails_open() {
             &b,
             "hook-suggest",
             Command::SuggestPreference {
+                rule: Default::default(),
                 scope: Scope::Global,
                 key: "commit-style".into(),
                 value: "Conventional commits, imperative mood.".into(),

@@ -47,6 +47,9 @@ pub enum ReviewMode {
     Personal,
     /// Project preferences: records scoped to the currently selected project.
     Project,
+    /// Environment notes of the selected project: this machine's facts,
+    /// never committed, never competing, always advisory.
+    Environment,
 }
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct Operator {
@@ -77,6 +80,14 @@ pub struct Operator {
     pub tag_draft: String,
     /// Who the draft comes from: the operator, or an agent's suggestion.
     pub origin: Origin,
+    /// Where the draft applies (comma-separated, empty = everywhere).
+    pub applies_agents: String,
+    pub applies_languages: String,
+    pub applies_paths: String,
+    pub applies_tags: String,
+    /// The draft's priority as typed (empty = 0).
+    pub priority: String,
+    pub enforcement: precept_core::operator::Enforcement,
     pub task: String,
     pub error: Option<String>,
     pub receipt: Option<Receipt>,
@@ -185,6 +196,42 @@ impl Operator {
         self.tags.clear();
         self.tag_draft.clear();
         self.origin = Origin::Operator;
+        self.applies_agents.clear();
+        self.applies_languages.clear();
+        self.applies_paths.clear();
+        self.applies_tags.clear();
+        self.priority.clear();
+        self.enforcement = Default::default();
+    }
+    /// The draft's rule options, or `None` when a value is invalid.
+    pub fn draft_rule(&self, scope: &Scope) -> Option<precept_core::operator::RuleOptions> {
+        let split = |s: &str| -> Vec<String> {
+            s.split(',')
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+                .map(str::to_owned)
+                .collect()
+        };
+        let priority = match self.priority.trim() {
+            "" => 0,
+            p => p.replace('−', "-").parse().ok()?,
+        };
+        let rule = precept_core::operator::RuleOptions {
+            applies_to: precept_core::operator::AppliesTo {
+                agents: split(&self.applies_agents),
+                languages: split(&self.applies_languages),
+                paths: split(&self.applies_paths),
+                task_tags: split(&self.applies_tags),
+            }
+            .canonical()?,
+            priority,
+            enforcement: if matches!(scope, Scope::Environment { .. }) {
+                Default::default()
+            } else {
+                self.enforcement
+            },
+        };
+        rule.valid_for(scope).then_some(rule)
     }
     pub fn record(&self) -> Option<&PreferenceRecord> {
         self.selected().map(|(r, _)| r)
@@ -230,6 +277,10 @@ impl Model {
     pub fn operator_scope(&self) -> Option<Scope> {
         if self.operator.global {
             Some(Scope::Global)
+        } else if self.operator.mode == ReviewMode::Environment {
+            Some(Scope::Environment {
+                name: self.selected_project.clone()?,
+            })
         } else {
             Some(Scope::Project {
                 name: self.selected_project.clone()?,
@@ -360,7 +411,10 @@ impl Model {
                 )
             }
             "disable" if info.write_enabled => ("profile.write.disable", json!({}), None),
-            "suggest" | "confirm" | "reject" | "deprecate" | "delete" if info.write_enabled => {
+            "suggest" | "confirm" | "reject" | "deprecate" | "delete" | "switch_on"
+            | "switch_off"
+                if info.write_enabled =>
+            {
                 let Some(binding) = info.binding.clone() else {
                     return false;
                 };
@@ -375,6 +429,10 @@ impl Model {
                     {
                         return false;
                     }
+                    let Some(rule) = self.operator.draft_rule(&scope) else {
+                        self.operator.error = Some("InvalidRule".into());
+                        return false;
+                    };
                     // A suggestion's new tags keep a generated oklch() color.
                     self.pin_tag_colors(&tags);
                     Command::SuggestPreference {
@@ -383,6 +441,7 @@ impl Model {
                         value: self.operator.value.clone(),
                         tags,
                         origin: self.operator.origin,
+                        rule,
                         expected: Expected::Absent,
                     }
                 } else {
@@ -410,6 +469,9 @@ impl Model {
                     match action {
                         "confirm" | "reject" if r.status != "suggested" => return false,
                         "deprecate" if r.status != "confirmed" => return false,
+                        "switch_on" | "switch_off" if r.status != "confirmed" => return false,
+                        "switch_on" if r.enabled => return false,
+                        "switch_off" if !r.enabled => return false,
                         "delete" if !self.operator.delete_armed_for(r) => return false,
                         _ => {}
                     }
@@ -418,6 +480,13 @@ impl Model {
                     let channel = self.operator.channel;
                     let expected = Expected::Revision(r.revision);
                     match action {
+                        "switch_on" | "switch_off" => Command::SetPreferenceEnabled {
+                            id,
+                            scope,
+                            enabled: action == "switch_on",
+                            channel,
+                            expected,
+                        },
                         "confirm" => Command::ConfirmPreference {
                             id,
                             scope,
@@ -458,7 +527,10 @@ impl Model {
             }
             _ => return false,
         };
-        let record = if matches!(action, "confirm" | "reject" | "deprecate" | "delete") {
+        let record = if matches!(
+            action,
+            "confirm" | "reject" | "deprecate" | "delete" | "switch_on" | "switch_off"
+        ) {
             self.operator.record().cloned()
         } else {
             None
@@ -920,6 +992,8 @@ mod tests {
         m.operator.page = Some(PreferencePage {
             binding,
             records: vec![PreferenceRecord {
+                rule: Default::default(),
+                enabled: true,
                 id: 1,
                 scope: Scope::Global,
                 key: "synthetic-key".into(),
@@ -935,6 +1009,7 @@ mod tests {
                     "synthetic-value",
                     Origin::Agent,
                     &["test".to_owned()],
+                    &Default::default(),
                 )),
                 created_at: "2026-01-01T00:00:00Z".into(),
                 updated_at: "2026-01-01T00:00:00Z".into(),
@@ -1135,11 +1210,10 @@ mod tests {
     }
     fn synthetic_record(id: i64, scope: &Scope, status: &str, revision: i64) -> PreferenceRecord {
         let key = format!("synthetic-key-{id}");
-        let project = match scope {
-            Scope::Project { name } => Some(name.as_str()),
-            Scope::Global => None,
-        };
+        let project = scope.project();
         PreferenceRecord {
+            rule: Default::default(),
+            enabled: true,
             id,
             scope: scope.clone(),
             key: key.clone(),
@@ -1155,6 +1229,7 @@ mod tests {
                 "synthetic-value",
                 Origin::Agent,
                 &["test".to_owned()],
+                &Default::default(),
             )),
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-01T00:00:00Z".into(),

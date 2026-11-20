@@ -16,6 +16,7 @@ fn scope_word(m: &Model, scope: &str) -> String {
     match scope {
         "global" => m.word(Msg::ScopePersonal).to_owned(),
         "project" => m.word(Msg::ScopeThisProject).to_owned(),
+        "environment" => m.word(Msg::ReviewTabEnvironment).to_owned(),
         other => sanitize(other, 64),
     }
 }
@@ -125,7 +126,30 @@ fn row(model: Signal<Model>, r: &Preference, index: usize) -> AnyElement {
                         .text_size(px(ui::scale::text::CAPTION))
                         .text_color(move || palette(model).muted),
                 )
-                .child(ui::tag_list(model, &r.tags)),
+                .child(ui::tag_list(model, &r.tags))
+                .child(match r.enforcement.as_deref() {
+                    Some(e @ ("verify" | "hard")) => ui::badge(
+                        model,
+                        m.word(if e == "hard" {
+                            Msg::EnforcementHard
+                        } else {
+                            Msg::EnforcementVerify
+                        }),
+                    )
+                    .variant(ui::BadgeVariant::Info)
+                    .into_element(),
+                    _ => view().into_element(),
+                })
+                .child(
+                    text(
+                        r.applies_to
+                            .as_ref()
+                            .and_then(|a| precept_ui_core::presentation::applies_words(&m, a))
+                            .unwrap_or_default(),
+                    )
+                    .text_size(px(ui::scale::text::CAPTION))
+                    .text_color(move || palette(model).muted),
+                ),
         )
         .into_element()
 }

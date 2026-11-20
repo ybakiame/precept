@@ -277,6 +277,7 @@ impl Fixture {
 }
 pub fn suggest() -> Command {
     Command::SuggestPreference {
+        rule: Default::default(),
         scope: Scope::Global,
         key: "synthetic-key".into(),
         value: "synthetic-value".into(),

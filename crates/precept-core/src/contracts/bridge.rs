@@ -1,6 +1,7 @@
 use super::{SOURCE, Snapshot, binding, source};
 use crate::{
-    Preference, Result, Scope, confirmed_preferences, legacy_preferences, typed_context as typed,
+    Preference, Result, Scope, applicable, confirmed_preferences, legacy_preferences,
+    typed_context as typed,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -65,12 +66,17 @@ pub fn project(
     query: &SelectorQuery,
 ) -> Result<Projection> {
     query.validate()?;
-    let candidates = confirmed_preferences(project, preferences);
+    // Environment notes never compete with preferences or contracts: they are
+    // listed after the effective preferences, whatever the contract outcome.
+    let (environment, candidates): (Vec<_>, Vec<_>) = confirmed_preferences(project, preferences)
+        .into_iter()
+        .filter(|p| applicable(p, query))
+        .partition(|p| p.scope == Scope::Environment);
     let mut legacy = legacy_preferences(candidates.clone());
     let Some((contracts, digest)) = snapshot.contracts() else {
         return Ok(if snapshot.status() == "not_configured" {
             Projection {
-                preferences: legacy,
+                preferences: legacy.into_iter().chain(environment).collect(),
                 contract_resolution: json!({"status":"not_configured"}),
                 effective_contracts: vec![],
             }
@@ -104,7 +110,7 @@ pub fn project(
             kind: typed::RuleKind::Preference,
             scope: match p.scope {
                 Scope::Global => typed::Scope::Global,
-                Scope::Project => typed::Scope::Project {
+                Scope::Project | Scope::Environment => typed::Scope::Project {
                     binding: binding(project),
                 },
             },
@@ -141,7 +147,7 @@ pub fn project(
         Some(json!({"key":e.key,"allowed_values":e.allowed_values,"rule_ids":ids,"source":{"path":SOURCE,"sha256":digest}}))
     }).collect();
     Ok(Projection {
-        preferences: legacy,
+        preferences: legacy.into_iter().chain(environment).collect(),
         contract_resolution: json!({"status":if unresolved.is_empty() { "ready" } else { "partial" }, "unresolved_keys":unresolved}),
         effective_contracts,
     })

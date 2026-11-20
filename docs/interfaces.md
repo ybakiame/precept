@@ -21,6 +21,27 @@ rewritten. `origin` is exactly `operator` or `agent`. Both are part of the propo
 digest. `precept preference-suggest` normalizes `--tag` (repeatable, required) and
 defaults `--origin operator`.
 
+Every preference is a rule. `suggest_preference` also carries `rule`: `applies_to`
+(`agents`, `languages`, `paths`, `task_tags`; each canonical — sorted, no repeats,
+at most 16, labels lowercase without spaces, paths relative without `..`, `*`, `:`
+or `\\`, a trailing `/` covering a folder; empty lists apply everywhere),
+`priority` (−100..100, higher wins among one key's rules of one scope) and
+`enforcement` (`advisory`, `verify`, `hard`; a declaration, never an achieved
+level). All three are part of the proposal digest. Scope `environment` (with a
+project) holds this machine's notes for that project: advisory only, never
+competing with preferences or contracts, listed after them. `set_preference_enabled
+{id, scope, enabled, channel, expected}` switches a confirmed rule off or on
+without a new review; it records an `enable`/`disable` decision, and an off rule is
+never delivered. The CLI exposes `--scope environment`, `--agent`, `--language`,
+`--path`, `--task-tag` (repeatable), `--priority`, `--enforcement` and
+`preference-enable` / `preference-disable`.
+
+Effective context keeps a confirmed, enabled rule unless the request's selector
+definitely mismatches its `applies_to` (a dimension the request does not name
+keeps it); each projected preference carries `applies_to`, `priority` and
+`enforcement` when they are not the defaults. The session-start briefing says where
+a rule applies and lists environment notes under "Work environment".
+
 ### AGENTS.md pointer
 
 Operator-only `integration.pointer {project}` reports the served project's
@@ -55,13 +76,15 @@ approve a new hook once.
 
 `precept profile export --out FILE` writes every preference of the selected Profile
 (personal scope and each served project) to a new owner-only file (never
-overwritten): versioned JSON `precept-profile-export` v1 with scope, key, value,
+overwritten): versioned JSON `precept-profile-export` v2 with scope, key, value,
+rule options, enabled state,
 tags, origin and source status per record. Handoffs are not carried. `precept
 profile import FILE --operation-prefix P` needs writes on and only ever creates
 suggestions through the ordinary reviewed write path (`<P>-<index>` operation
 ids, so an uncertain write can be retried exactly). It skips other statuses, records
 the Profile already holds (same scope, key, value and tags) and project records
 whose project is not served; the operator confirms imported suggestions again.
+Version 1 files (before rule options) still import, with the defaults.
 This is how preferences move between Profile schemas: there is no migration.
 
 ## Read-only MCP stdio

@@ -4,8 +4,7 @@ use precept_core::operator::*;
 use rusqlite::OptionalExtension;
 
 /// One column list for every exact preference read, including review provenance.
-const PREFERENCE_COLUMNS: &str =
-    "id,project,pref_key,value,tags,status,revision,origin,proposal_digest,created_at,updated_at";
+const PREFERENCE_COLUMNS: &str = "id,project,pref_key,value,tags,status,revision,origin,proposal_digest,created_at,updated_at,scope,applies_to,priority,enforcement,enabled";
 
 fn malformed(index: usize, column: &str) -> rusqlite::Error {
     rusqlite::Error::InvalidColumnType(index, column.to_owned(), rusqlite::types::Type::Text)
@@ -19,9 +18,23 @@ fn preference(row: &rusqlite::Row<'_>) -> rusqlite::Result<PreferenceRecord> {
     let project: Option<String> = row.get(1)?;
     let origin: String = row.get(7)?;
     let tags: String = row.get(4)?;
+    let kind: String = row.get(11)?;
+    let scope = match (kind.as_str(), project) {
+        ("global", None) => Scope::Global,
+        ("project", Some(name)) => Scope::Project { name },
+        ("environment", Some(name)) => Scope::Environment { name },
+        _ => return Err(malformed(11, "scope")),
+    };
+    let applies: String = row.get(12)?;
+    let enforcement: String = row.get(14)?;
+    let rule = crate::profile::stored_rule(&applies, row.get(13)?, &enforcement)
+        .ok_or_else(|| malformed(12, "applies_to"))?;
+    let enabled: i64 = row.get(15)?;
     Ok(PreferenceRecord {
         id: row.get(0)?,
-        scope: project.map_or(Scope::Global, |name| Scope::Project { name }),
+        scope,
+        rule,
+        enabled: enabled == 1,
         key: row.get(2)?,
         value: row.get(3)?,
         tags: crate::profile::stored_tags(&tags).ok_or_else(|| malformed(4, "tags"))?,
@@ -53,9 +66,11 @@ fn decision(row: &rusqlite::Row<'_>) -> rusqlite::Result<ReviewDecisionRecord> {
 fn scoped<'a>(store: &SqliteStore, scope: &'a Scope) -> Result<(&'static str, Option<&'a str>)> {
     match scope {
         Scope::Global => Ok(("global", None)),
-        Scope::Project { name } if crate::profile::name_valid(name) => {
+        Scope::Project { name } | Scope::Environment { name }
+            if crate::profile::name_valid(name) =>
+        {
             super::project_record(&store.db, name)?;
-            Ok(("project", Some(name.as_str())))
+            Ok((scope.kind(), Some(name.as_str())))
         }
         _ => Err(Error::InvalidRecord),
     }

@@ -49,6 +49,8 @@ pub enum Status {
 pub enum Scope {
     Global,
     Project,
+    /// Machine notes for one project: listed apart, never competing.
+    Environment,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Preference {
@@ -61,6 +63,15 @@ pub struct Preference {
     /// Canonical tags (see [`operator::canonical_tags`]); agents may use them
     /// to find relevant preferences, never to drop confirmed ones.
     pub tags: Vec<String>,
+    /// Where it applies, priority, declared enforcement.
+    #[serde(default)]
+    pub rule: operator::RuleOptions,
+    /// Off rules are never delivered.
+    #[serde(default = "on")]
+    pub enabled: bool,
+}
+fn on() -> bool {
+    true
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Worktree {
@@ -220,10 +231,12 @@ impl<'a> ContextResolver<'a> {
     }
     pub fn resolve_preferences(&self) -> Result<Vec<Preference>> {
         self.bound_project()?;
-        Ok(legacy_preferences(confirmed_preferences(
-            &self.project,
-            self.preferences.preferences(&self.project)?,
-        )))
+        Ok(legacy_preferences(
+            confirmed_preferences(&self.project, self.preferences.preferences(&self.project)?)
+                .into_iter()
+                .filter(|p| p.scope != Scope::Environment)
+                .collect(),
+        ))
     }
     pub fn context(&self, include_documents: bool) -> Result<Value> {
         self.prepare_context(include_documents, &contracts::SelectorQuery::default())?
@@ -249,9 +262,19 @@ impl<'a> ContextResolver<'a> {
             .preferences
             .into_iter()
             .map(|p| {
-                json!({
+                let mut v = json!({
                     "id":p.id,"key":p.key,"value":p.value,"scope":p.scope,"status":p.status,"tags":p.tags
-                })
+                });
+                if !p.rule.applies_to.is_empty() {
+                    v["applies_to"] = json!(p.rule.applies_to);
+                }
+                if p.rule.priority != 0 {
+                    v["priority"] = json!(p.rule.priority);
+                }
+                if p.rule.enforcement != operator::Enforcement::Advisory {
+                    v["enforcement"] = json!(p.rule.enforcement);
+                }
+                v
             })
             .collect();
         let mut repository = serde_json::to_value(self.worktree.inspect(&project, false)?)
@@ -353,23 +376,53 @@ impl PreparedContext {
         Ok(self.response)
     }
 }
+/// Confirmed, enabled rules of this project's scopes (personal, project and
+/// environment notes).
 fn confirmed_preferences(project: &str, preferences: Vec<Preference>) -> Vec<Preference> {
     preferences
         .into_iter()
         .filter(|p| {
             p.status == Status::Confirmed
+                && p.enabled
                 && match p.scope {
                     Scope::Global => p.project.is_none(),
-                    Scope::Project => p.project.as_deref() == Some(project),
+                    Scope::Project | Scope::Environment => p.project.as_deref() == Some(project),
                 }
         })
         .collect()
 }
+/// Whether a rule may apply to `query`: only a definite mismatch excludes it.
+/// A dimension the request does not name keeps the rule (it is projected with
+/// its `applies_to`, so the agent can judge).
+fn applicable(p: &Preference, query: &contracts::SelectorQuery) -> bool {
+    let a = &p.rule.applies_to;
+    let one = |wanted: &[String], actual: &Option<String>| match actual {
+        Some(v) if !wanted.is_empty() => wanted.contains(&v.to_lowercase()),
+        _ => true,
+    };
+    let path = match &query.path {
+        Some(q) if !a.paths.is_empty() => a.paths.iter().any(|e| match e.strip_suffix('/') {
+            Some(dir) => q == dir || q.starts_with(e.as_str()),
+            None => q == e || q.starts_with(&format!("{e}/")),
+        }),
+        _ => true,
+    };
+    let tags = match &query.task_tags {
+        Some(t) if !a.task_tags.is_empty() && !t.is_empty() => t
+            .iter()
+            .any(|tag| a.task_tags.contains(&tag.to_lowercase())),
+        _ => true,
+    };
+    one(&a.agents, &query.agent_id) && one(&a.languages, &query.language) && path && tags
+}
+/// One effective rule per key among personal and project preferences:
+/// project before personal, then higher priority, then the newest.
 fn legacy_preferences(mut candidates: Vec<Preference>) -> Vec<Preference> {
     candidates.sort_by(|a, b| {
         a.key
             .cmp(&b.key)
             .then_with(|| (a.scope == Scope::Global).cmp(&(b.scope == Scope::Global)))
+            .then_with(|| b.rule.priority.cmp(&a.rule.priority))
             .then_with(|| b.id.cmp(&a.id))
     });
     let mut effective = BTreeMap::new();

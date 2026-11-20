@@ -26,7 +26,7 @@ pub(crate) fn open_mode(model: Signal<Model>, mode: ReviewMode) {
             // The inbox keeps its scope, but a project scope needs a project.
             ReviewMode::Inbox => m.operator.global || m.selected_project.is_none(),
             ReviewMode::Personal => true,
-            ReviewMode::Project => false,
+            ReviewMode::Project | ReviewMode::Environment => false,
         };
         if global != m.operator.global
             || mode != m.operator.mode
@@ -145,7 +145,11 @@ fn review(model: Signal<Model>, action: &str) {
     if !available(model) {
         return;
     }
-    if matches!(action, "confirm" | "reject" | "deprecate" | "delete") && !ensure_inspected(model) {
+    if matches!(
+        action,
+        "confirm" | "reject" | "deprecate" | "delete" | "switch_on" | "switch_off"
+    ) && !ensure_inspected(model)
+    {
         return;
     }
     #[cfg(feature = "ipc")]
@@ -247,6 +251,7 @@ fn error_msg(code: &str, wsl: bool) -> Msg {
         "Capacity" => Msg::ReviewErrorCapacity,
         "Unavailable" => Msg::ReviewErrorUnavailable,
         "OutcomeUnknown" => Msg::OperatorUnknown,
+        "InvalidRule" => Msg::RuleInvalid,
         _ => Msg::ReviewErrorGeneric,
     }
 }
@@ -254,12 +259,15 @@ fn scope_label(locale: Locale, scope: &Scope) -> String {
     match scope {
         Scope::Global => tr(locale, Msg::ReviewScopeGlobal).into(),
         Scope::Project { name } => tr(locale, Msg::ReviewScopeProject).replace("{name}", name),
+        Scope::Environment { name } => {
+            tr(locale, Msg::ReviewScopeEnvironment).replace("{name}", name)
+        }
     }
 }
 fn project_name(scope: &Scope) -> String {
     match scope {
         Scope::Global => "—".into(),
-        Scope::Project { name } => sanitize(name, 120),
+        Scope::Project { name } | Scope::Environment { name } => sanitize(name, 120),
     }
 }
 /// Who a record comes from, in the operator's words.
@@ -295,6 +303,8 @@ fn decision_word(locale: Locale, action: DecisionAction) -> &'static str {
         DecisionAction::Deprecate => tr(locale, Msg::DecisionDeprecate),
         DecisionAction::Demote => tr(locale, Msg::DecisionDemote),
         DecisionAction::Delete => tr(locale, Msg::DecisionDelete),
+        DecisionAction::Enable => tr(locale, Msg::DecisionEnable),
+        DecisionAction::Disable => tr(locale, Msg::DecisionDisable),
     }
 }
 fn channel_word(locale: Locale, channel: Channel) -> &'static str {
@@ -559,14 +569,49 @@ fn queue_row(
 }
 /// A record's tags and origin on one wrapping line.
 fn record_meta(model: Signal<Model>, r: &PreferenceRecord) -> AnyElement {
-    view()
+    let m = model.get();
+    let mut row = view()
         .flex_row()
         .flex_wrap()
         .items_center()
         .gap_2()
         .child(origin_badge(model, r.origin))
-        .child(ui::tag_list(model, &r.tags))
-        .into_element()
+        .child(ui::tag_list(model, &r.tags));
+    if r.status == "confirmed" && !r.enabled {
+        row = row.child(ui::badge(model, m.word(Msg::RuleOff)).variant(ui::BadgeVariant::Warning));
+    }
+    if r.rule.enforcement != precept_ui_core::operator::Enforcement::Advisory {
+        row = row.child(
+            ui::badge(model, enforcement_word(&m, r.rule.enforcement))
+                .variant(ui::BadgeVariant::Info),
+        );
+    }
+    if r.rule.priority != 0 {
+        row = row.child(
+            text(
+                m.word(Msg::PriorityShort)
+                    .replace("{n}", &r.rule.priority.to_string()),
+            )
+            .text_size(px(ui::scale::text::CAPTION))
+            .text_color(move || palette(model).muted),
+        );
+    }
+    if let Some(what) = precept_ui_core::presentation::applies_words(&m, &r.rule.applies_to) {
+        row = row.child(
+            text(what)
+                .text_size(px(ui::scale::text::CAPTION))
+                .text_color(move || palette(model).muted),
+        );
+    }
+    row.into_element()
+}
+fn enforcement_word(m: &Model, e: precept_ui_core::operator::Enforcement) -> String {
+    m.word(match e {
+        precept_ui_core::operator::Enforcement::Advisory => Msg::EnforcementAdvisory,
+        precept_ui_core::operator::Enforcement::Verify => Msg::EnforcementVerify,
+        precept_ui_core::operator::Enforcement::Hard => Msg::EnforcementHard,
+    })
+    .into()
 }
 /// Rows loaded in batches: a virtualized list in the page's scroll that asks
 /// for the next batch as it nears the end, and a footer that says whether more
@@ -1400,6 +1445,11 @@ fn mode_tabs(model: Signal<Model>) -> impl IntoElement {
             move || model.get().operator.mode == ReviewMode::Project,
             move || open_mode(model, ReviewMode::Project),
         )
+        .add_fn(
+            move || model.get().word(Msg::ReviewTabEnvironment).into(),
+            move || model.get().operator.mode == ReviewMode::Environment,
+            move || open_mode(model, ReviewMode::Environment),
+        )
 }
 
 /// Writes and Profile live in Runtime checks; here only a short notice when
@@ -1659,6 +1709,49 @@ fn open_record(model: Signal<Model>, delete_open: Signal<bool>, id: i64) {
 
 /// The selected record beside the list: its exact detail and decision history,
 /// and its decisions (each prepares, then the Apply dialog commits it).
+/// A confirmed rule's switch: off keeps the reviewed record but agents stop
+/// receiving it. Applied at once (revision-checked), no new review.
+fn delivered_switch(model: Signal<Model>) -> impl IntoElement {
+    let record = move || model.get().operator.record().cloned();
+    view()
+        .flex_row()
+        .items_center()
+        .gap_3()
+        .p_3()
+        .rounded(px(ui::scale::radius::CONTAINER))
+        .bg(move || palette(model).inset)
+        .style_when(
+            move || record().is_none_or(|r| r.status != "confirmed"),
+            |s| s.hidden(),
+        )
+        .child(
+            view()
+                .flex_1()
+                .gap_0p5()
+                .child(
+                    text(move || model.get().word(Msg::DeliveredSwitch))
+                        .font_weight(FontWeight::MEDIUM),
+                )
+                .child(
+                    text(move || model.get().word(Msg::DeliveredHelp))
+                        .text_size(px(ui::scale::text::CAPTION))
+                        .text_color(move || palette(model).muted),
+                ),
+        )
+        .child(ui::switch(
+            model,
+            move || model.get().word(Msg::DeliveredSwitch).into(),
+            move || record().is_some_and(|r| r.enabled),
+            move || {
+                let m = model.get();
+                m.operator.busy || !m.operator_inspected() || !write_grant(model)
+            },
+            move |on| {
+                review(model, if on { "switch_on" } else { "switch_off" });
+                submit(model);
+            },
+        ))
+}
 fn record_sheet(model: Signal<Model>, delete_open: Signal<bool>) -> impl IntoElement {
     ui::sheet(model)
         .title_fn(move || {
@@ -1686,6 +1779,7 @@ fn record_sheet(model: Signal<Model>, delete_open: Signal<bool>) -> impl IntoEle
         .body(move || {
             view()
                 .gap_4()
+                .child(delivered_switch(model))
                 .child(dynamic(move || detail_tab(model, delete_open)))
                 .child(dynamic(move || history_tab(model)))
                 .into_element()
@@ -1814,6 +1908,125 @@ fn apply_dialog(model: Signal<Model>, destructive: bool) -> impl IntoElement {
 /// Add preference: key, a Markdown value, its tags and where it comes from.
 /// Saving prepares a suggestion (never a confirmation); Apply commits it, then
 /// the new exact record opens to confirm.
+/// One comma-separated `applies_to` field of the draft.
+fn applies_field(
+    model: Signal<Model>,
+    label: Msg,
+    get: fn(&precept_ui_core::operator::Operator) -> &String,
+    set: fn(&mut precept_ui_core::operator::Operator, String),
+) -> AnyElement {
+    ui::field(
+        model,
+        move || model.get().word(label).into(),
+        ui::input(model, "")
+            .label_fn(move || model.get().word(label).into())
+            .value(move || get(&model.get().operator).clone())
+            .disabled(move || model.get().operator.busy || model.get().operator.outcome_unknown)
+            .on_change(move |v: &str| {
+                let v: String = v.chars().take(512).collect();
+                model.update(|m| {
+                    set(&mut m.operator, v);
+                    m.operator.review = None;
+                    m.operator.serial += 1;
+                })
+            }),
+    )
+    .into_element()
+}
+/// The draft's rule options: where it applies, its priority and (not for
+/// environment notes) its declared enforcement.
+fn rule_options(model: Signal<Model>) -> AnyElement {
+    let environment = move || model.get().operator.mode == ReviewMode::Environment;
+    let pick = |e: precept_ui_core::operator::Enforcement| {
+        move || model.update(|m| m.operator.enforcement = e)
+    };
+    let is =
+        |e: precept_ui_core::operator::Enforcement| move || model.get().operator.enforcement == e;
+    view()
+        .gap_3()
+        .child(text(move || model.get().word(Msg::AppliesTitle)).font_weight(FontWeight::MEDIUM))
+        .child(
+            text(move || model.get().word(Msg::AppliesHelp))
+                .text_size(px(ui::scale::text::CAPTION))
+                .text_color(move || palette(model).muted),
+        )
+        .child(
+            view()
+                .flex_row()
+                .flex_wrap()
+                .gap_3()
+                .child(view().flex_1().min_w(px(200.0)).child(applies_field(
+                    model,
+                    Msg::AppliesLanguages,
+                    |o| &o.applies_languages,
+                    |o, v| o.applies_languages = v,
+                )))
+                .child(view().flex_1().min_w(px(200.0)).child(applies_field(
+                    model,
+                    Msg::AppliesPaths,
+                    |o| &o.applies_paths,
+                    |o, v| o.applies_paths = v,
+                )))
+                .child(view().flex_1().min_w(px(200.0)).child(applies_field(
+                    model,
+                    Msg::AppliesAgents,
+                    |o| &o.applies_agents,
+                    |o, v| o.applies_agents = v,
+                )))
+                .child(view().flex_1().min_w(px(200.0)).child(applies_field(
+                    model,
+                    Msg::AppliesTaskTags,
+                    |o| &o.applies_tags,
+                    |o, v| o.applies_tags = v,
+                ))),
+        )
+        .child(
+            view()
+                .flex_row()
+                .flex_wrap()
+                .gap_3()
+                .child(view().w(px(200.0)).child(applies_field(
+                    model,
+                    Msg::PriorityLabel,
+                    |o| &o.priority,
+                    |o, v| o.priority = v,
+                )))
+                .child(
+                    view()
+                        .flex_1()
+                        .style_when(environment, |s| s.hidden())
+                        .child(ui::field(
+                            model,
+                            move || model.get().word(Msg::EnforcementLabel).into(),
+                            ui::radio_group(model, move || {
+                                model.get().word(Msg::EnforcementLabel).into()
+                            })
+                            .option(
+                                model.get().word(Msg::EnforcementAdvisory),
+                                is(precept_ui_core::operator::Enforcement::Advisory),
+                                pick(precept_ui_core::operator::Enforcement::Advisory),
+                            )
+                            .option(
+                                model.get().word(Msg::EnforcementVerify),
+                                is(precept_ui_core::operator::Enforcement::Verify),
+                                pick(precept_ui_core::operator::Enforcement::Verify),
+                            )
+                            .option(
+                                model.get().word(Msg::EnforcementHard),
+                                is(precept_ui_core::operator::Enforcement::Hard),
+                                pick(precept_ui_core::operator::Enforcement::Hard),
+                            ),
+                        )),
+                ),
+        )
+        .child(
+            text(move || model.get().word(Msg::EnforcementHelp))
+                .style_when(environment, |s| s.hidden())
+                .text_size(px(ui::scale::text::CAPTION))
+                .text_color(move || palette(model).muted),
+        )
+        .into_element()
+}
 fn add_dialog(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElement {
     let ready = move || {
         let o = model.get().operator;
@@ -1830,6 +2043,8 @@ fn add_dialog(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElement 
             let m = model.get();
             m.word(if m.operator.global {
                 Msg::AddPersonalPreference
+            } else if m.operator.mode == ReviewMode::Environment {
+                Msg::AddEnvironmentNote
             } else {
                 Msg::AddProjectPreference
             })
@@ -1908,6 +2123,7 @@ fn add_dialog(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElement 
                             move || model.update(|m| m.operator.origin = Origin::Agent),
                         ),
                 ))
+                .child(rule_options(model))
                 .into_element()
         })
         .cancel_fn(move || model.get().word(Msg::Cancel).into())
@@ -1993,6 +2209,8 @@ mod tests {
     fn record(id: i64, status: &str, revision: i64) -> PreferenceRecord {
         let key = format!("synthetic-key-{id}");
         PreferenceRecord {
+            rule: Default::default(),
+            enabled: true,
             id,
             scope: Scope::Global,
             key: key.clone(),
@@ -2008,6 +2226,7 @@ mod tests {
                 "synthetic-value",
                 Origin::Agent,
                 &["synthetic".to_owned()],
+                &Default::default(),
             )),
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-01T00:00:00Z".into(),

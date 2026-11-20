@@ -13,6 +13,8 @@ fn markdown(rules: Vec<Value>) -> String {
 }
 fn pref(id: u64, key: &str, value: &str, project: Option<&str>) -> Preference {
     Preference {
+        rule: Default::default(),
+        enabled: true,
         id,
         key: key.into(),
         value: value.into(),

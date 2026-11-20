@@ -1463,6 +1463,7 @@ fn operator_preview_exact_scope_bounds_roles_and_malformed_state_preservation() 
             &b,
             "project-secret",
             Command::SuggestPreference {
+                rule: Default::default(),
                 scope: Scope::Project {
                     name: "beta".into(),
                 },
@@ -1561,6 +1562,7 @@ fn review_queue_inspect_and_digest_binding_are_exact_and_operator_only() {
             &b,
             "review-project",
             Command::SuggestPreference {
+                rule: Default::default(),
                 scope: Scope::Project {
                     name: "beta".into(),
                 },

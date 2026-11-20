@@ -69,7 +69,8 @@ Organize navigation around three clear operational paths plus utilities:
   by **Dashboard**, **Preferences** (effective confirmed rows), **Agents** (MCP
   access and recent activity) and **Handoff** for that active project. There is one workspace switcher in the app; workspace-scoped headers
   display a calm read-only scope badge rather than a second switcher.
-- **Review:** one unified **Review & preferences** hub combining the pending
+- **Review:** one unified **Review & preferences** hub (To review, Personal,
+  Project and **Environment** — the selected project's notes about this machine) combining the pending
   review queue (`To review`, with personal vs current-project scope toggle),
   **Personal** preferences (global scope) and **Project** preferences (active
   project scope). Its sidebar item carries the live count pill of waiting
@@ -123,7 +124,11 @@ log is emptied when the daemon restarts.
 ### Preferences and review
 
 Adding a preference is two explicit steps: save it as suggested, then inspect and
-confirm the exact new record. A preference carries one to five tags (lowercase
+confirm the exact new record. The add dialog also takes the rule's options: where it
+applies (languages, paths, agents, task tags; optional), its priority and, except for
+environment notes, its declared enforcement. Record rows show them; a confirmed
+rule's sheet has a **Delivered to agents** switch that takes it out of what agents
+receive without a new review. A preference carries one to five tags (lowercase
 letters of any script, digits and inner hyphens, up to 32 characters) and an origin
 that is exactly `operator` (typed by the operator) or `agent` (an agent's suggestion
 the operator records). Tags and origin belong to the reviewed proposal: changing

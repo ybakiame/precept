@@ -626,12 +626,13 @@ impl Profiles {
                 }
                 Command::PutHandoff { project, .. } => Some(project),
                 Command::SuggestPreference { scope, .. }
+                | Command::SetPreferenceEnabled { scope, .. }
                 | Command::ConfirmPreference { scope, .. }
                 | Command::RejectPreference { scope, .. }
                 | Command::DeprecatePreference { scope, .. }
                 | Command::DeletePreference { scope, .. } => match scope {
                     Scope::Global => None,
-                    Scope::Project { name } => Some(name),
+                    Scope::Project { name } | Scope::Environment { name } => Some(name),
                 },
             };
             if name.is_some_and(|name| !s.projects.contains_key(name)) {

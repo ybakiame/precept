@@ -9,6 +9,8 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 type Key = (String, String, String);
 /// Stored scope/project/key/status/revision/digest read inside a decision.
+/// scope, project, status, revision, proposal digest, enabled.
+type SwitchRow = (String, Option<String>, String, i64, Vec<u8>, i64);
 type ProposalRow = (String, Option<String>, String, String, i64, Vec<u8>);
 pub struct Writer<'a> {
     pub(crate) db: Connection,
@@ -51,6 +53,7 @@ fn scope(scope: &Scope) -> (&str, Option<&str>) {
     match scope {
         Scope::Global => ("global", None),
         Scope::Project { name } => ("project", Some(name)),
+        Scope::Environment { name } => ("environment", Some(name)),
     }
 }
 fn channel_name(channel: precept_core::operator::Channel) -> &'static str {
@@ -247,6 +250,7 @@ fn mutate(
             value,
             tags,
             origin,
+            rule,
             ..
         } => {
             let (scope, project) = scope(requested);
@@ -255,10 +259,10 @@ fn mutate(
             }
             let next = next_revision(allocated)?;
             let digest = precept_core::operator::proposal_digest(
-                requested, project, key, value, *origin, tags,
+                requested, project, key, value, *origin, tags, rule,
             );
             db.execute(
-                "INSERT INTO preferences(id,scope,project,pref_key,value,status,tags,revision,created_at,updated_at,origin,proposal_digest) VALUES(?1,?2,?3,?4,?5,'suggested',?6,1,?7,?7,?8,?9)",
+                "INSERT INTO preferences(id,scope,project,pref_key,value,status,tags,revision,created_at,updated_at,origin,proposal_digest,applies_to,priority,enforcement,enabled) VALUES(?1,?2,?3,?4,?5,'suggested',?6,1,?7,?7,?8,?9,?10,?11,?12,1)",
                 params![
                     allocated,
                     scope,
@@ -268,7 +272,10 @@ fn mutate(
                     precept_core::operator::tags_json(tags),
                     now,
                     origin.as_str(),
-                    digest.to_vec()
+                    digest.to_vec(),
+                    rule.applies_to.json(),
+                    rule.priority,
+                    rule.enforcement.as_str()
                 ],
             )
             .map_err(crate::sql_error)?;
@@ -278,6 +285,61 @@ fn mutate(
             )
             .map_err(crate::sql_error)?;
             versions.insert(pref_key(allocated), (1, false));
+        }
+        Command::SetPreferenceEnabled {
+            id,
+            scope: requested,
+            enabled,
+            channel,
+            expected,
+        } => {
+            let row: Option<SwitchRow> = db
+                .query_row(
+                    "SELECT scope,project,status,revision,proposal_digest,enabled FROM preferences WHERE id=?1",
+                    [id],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+                )
+                .optional()
+                .map_err(crate::sql_error)?;
+            cas(row.as_ref().map(|r| r.3), expected)?;
+            let (stored_scope, project, status, previous, digest, current) =
+                row.ok_or(Error::Conflict)?;
+            let (want_scope, want_project) = scope(requested);
+            if stored_scope != want_scope || project.as_deref() != want_project {
+                return Err(Error::ScopeMismatch);
+            }
+            if status != "confirmed" || (current == 1) == *enabled {
+                return Err(Error::InvalidTransition);
+            }
+            let revision = next_revision(previous)?;
+            db.execute(
+                "UPDATE preferences SET enabled=?1,revision=?2,updated_at=?3 WHERE id=?4",
+                (i64::from(*enabled), revision, now, id),
+            )
+            .map_err(crate::sql_error)?;
+            db.execute(
+                "INSERT INTO acp_review_decisions(id,scope,project,preference_id,action,from_revision,to_revision,proposal_digest,receipt_commit_sequence,channel,decided_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+                params![
+                    next_review_id,
+                    want_scope,
+                    want_project,
+                    id,
+                    if *enabled { "enable" } else { "disable" },
+                    previous,
+                    revision,
+                    digest,
+                    sequence,
+                    channel_name(*channel),
+                    now
+                ],
+            )
+            .map_err(crate::sql_error)?;
+            db.execute(
+                "UPDATE acp_profile SET next_review_id=?1 WHERE singleton=1",
+                [next_review_id.checked_add(1).ok_or(Error::Capacity)?],
+            )
+            .map_err(crate::sql_error)?;
+            versions.insert(pref_key(*id), (revision, false));
         }
         Command::ConfirmPreference {
             id,

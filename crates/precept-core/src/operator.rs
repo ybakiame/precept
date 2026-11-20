@@ -130,7 +130,31 @@ pub enum Expected {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Scope {
     Global,
-    Project { name: String },
+    Project {
+        name: String,
+    },
+    /// Descriptive notes about this machine for one project (never committed,
+    /// never competing with preferences or contracts, always advisory).
+    Environment {
+        name: String,
+    },
+}
+impl Scope {
+    /// The project a scoped record belongs to.
+    pub fn project(&self) -> Option<&str> {
+        match self {
+            Scope::Global => None,
+            Scope::Project { name } | Scope::Environment { name } => Some(name),
+        }
+    }
+    /// The stored scope word.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Scope::Global => "global",
+            Scope::Project { .. } => "project",
+            Scope::Environment { .. } => "environment",
+        }
+    }
 }
 // Struct variants enforce unknown-field refusal, including explicit null fields.
 impl<'de> Deserialize<'de> for Scope {
@@ -140,13 +164,140 @@ impl<'de> Deserialize<'de> for Scope {
         enum Wire {
             Global {},
             Project { name: String },
+            Environment { name: String },
         }
         Ok(match Wire::deserialize(deserializer)? {
             Wire::Global {} => Self::Global,
             Wire::Project { name } => Self::Project { name },
+            Wire::Environment { name } => Self::Environment { name },
         })
     }
 }
+/// Where a rule applies. An empty list applies everywhere; a populated one
+/// narrows the rule to sessions whose request names a matching value (a
+/// request that names nothing for that dimension still receives the rule,
+/// labelled with where it applies). Canonical: lists sorted, no repeats,
+/// labels lowercase.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AppliesTo {
+    #[serde(default)]
+    pub agents: Vec<String>,
+    #[serde(default)]
+    pub languages: Vec<String>,
+    /// Repository-relative paths; one ending in `/` covers everything under it.
+    #[serde(default)]
+    pub paths: Vec<String>,
+    #[serde(default)]
+    pub task_tags: Vec<String>,
+}
+/// The most entries in one `applies_to` list.
+pub const MAX_APPLIES: usize = 16;
+fn applies_label(s: &str) -> bool {
+    !s.is_empty() && s.len() <= 120 && !s.chars().any(|c| c.is_control() || c.is_whitespace())
+}
+fn applies_path(s: &str) -> bool {
+    let body = s.strip_suffix('/').unwrap_or(s);
+    !body.is_empty()
+        && s.len() <= 256
+        && !s.contains(['\\', ':', '*', '?', '[', ']', '{', '}'])
+        && !s.chars().any(char::is_control)
+        && body.split('/').all(|p| !matches!(p, "" | "." | ".."))
+}
+impl AppliesTo {
+    pub fn is_empty(&self) -> bool {
+        self.agents.is_empty()
+            && self.languages.is_empty()
+            && self.paths.is_empty()
+            && self.task_tags.is_empty()
+    }
+    /// The canonical form, or `None` when an entry is invalid or a list too long.
+    pub fn canonical(&self) -> Option<Self> {
+        fn list(v: &[String], lower: bool, ok: fn(&str) -> bool) -> Option<Vec<String>> {
+            let mut out: Vec<String> = v
+                .iter()
+                .map(|s| {
+                    let s = s.trim();
+                    if lower {
+                        s.to_lowercase()
+                    } else {
+                        s.to_owned()
+                    }
+                })
+                .collect();
+            if !out.iter().all(|s| ok(s)) {
+                return None;
+            }
+            out.sort();
+            out.dedup();
+            (out.len() <= MAX_APPLIES).then_some(out)
+        }
+        Some(Self {
+            agents: list(&self.agents, true, applies_label)?,
+            languages: list(&self.languages, true, applies_label)?,
+            paths: list(&self.paths, false, applies_path)?,
+            task_tags: list(&self.task_tags, true, applies_label)?,
+        })
+    }
+    pub fn is_canonical(&self) -> bool {
+        self.canonical().as_ref() == Some(self)
+    }
+    /// Compact JSON (the stored form; field order is fixed).
+    pub fn json(&self) -> String {
+        serde_json::to_string(self).expect("applies_to serializes")
+    }
+}
+
+/// What a rule declares about checking it: `advisory` (delivered only),
+/// `verify` (checkable against the repository), `hard` (a pre-tool gate may
+/// deny calls that break it). A declaration, never an achieved level.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Enforcement {
+    #[default]
+    Advisory,
+    Verify,
+    Hard,
+}
+impl Enforcement {
+    pub const ALL: [Self; 3] = [Self::Advisory, Self::Verify, Self::Hard];
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Advisory => "advisory",
+            Self::Verify => "verify",
+            Self::Hard => "hard",
+        }
+    }
+    pub fn parse(raw: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|e| e.as_str() == raw)
+    }
+}
+
+/// Priority bounds: a higher priority wins among rules of one key and scope.
+pub const PRIORITY_MIN: i64 = -100;
+pub const PRIORITY_MAX: i64 = 100;
+
+/// The reviewed rule options of a proposal beside its key and value.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuleOptions {
+    #[serde(default)]
+    pub applies_to: AppliesTo,
+    #[serde(default)]
+    pub priority: i64,
+    #[serde(default)]
+    pub enforcement: Enforcement,
+}
+impl RuleOptions {
+    /// Canonical and in bounds; environment notes are always advisory.
+    pub fn valid_for(&self, scope: &Scope) -> bool {
+        self.applies_to.is_canonical()
+            && (PRIORITY_MIN..=PRIORITY_MAX).contains(&self.priority)
+            && (!matches!(scope, Scope::Environment { .. })
+                || self.enforcement == Enforcement::Advisory)
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Snapshot {
@@ -169,6 +320,17 @@ pub enum Command {
         value: String,
         tags: Vec<String>,
         origin: Origin,
+        /// Where it applies, its priority and its declared enforcement.
+        #[serde(default)]
+        rule: RuleOptions,
+        expected: Expected,
+    },
+    /// Turns a confirmed rule on or off without a new review (operator only).
+    SetPreferenceEnabled {
+        id: i64,
+        scope: Scope,
+        enabled: bool,
+        channel: Channel,
         expected: Expected,
     },
     ConfirmPreference {
@@ -223,9 +385,18 @@ pub struct PreferenceRecord {
     pub status: String,
     pub revision: i64,
     pub origin: Origin,
+    /// Where it applies, its priority and declared enforcement (reviewed).
+    #[serde(default)]
+    pub rule: RuleOptions,
+    /// Whether a confirmed rule is delivered (the operator's switch).
+    #[serde(default = "enabled_default")]
+    pub enabled: bool,
     pub proposal_digest: String,
     pub created_at: String,
     pub updated_at: String,
+}
+fn enabled_default() -> bool {
+    true
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -309,6 +480,9 @@ pub enum DecisionAction {
     Deprecate,
     Demote,
     Delete,
+    /// The operator switched a confirmed rule on or off (no new review).
+    Enable,
+    Disable,
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -361,8 +535,8 @@ pub struct ReviewInspect {
     pub peer_demotion_total: i64,
 }
 
-/// SHA-256 over canonical compact JSON of the six immutable proposal fields
-/// (tags in canonical order).
+/// SHA-256 over canonical compact JSON of the immutable proposal fields
+/// (tags in canonical order; rule options canonical).
 /// Key order is sorted; no whitespace variance. Byte comparison only, not attestation.
 pub fn proposal_digest(
     scope: &Scope,
@@ -371,11 +545,21 @@ pub fn proposal_digest(
     value: &str,
     origin: Origin,
     tags: &[String],
+    rule: &RuleOptions,
 ) -> [u8; 32] {
     use sha2::{Digest, Sha256};
     let scope_val = serde_json::to_value(scope).expect("scope serializes");
     let mut map = std::collections::BTreeMap::new();
     map.insert("key", serde_json::Value::String(key.to_owned()));
+    map.insert(
+        "applies_to",
+        serde_json::to_value(&rule.applies_to).expect("applies_to serializes"),
+    );
+    map.insert(
+        "enforcement",
+        serde_json::Value::String(rule.enforcement.as_str().into()),
+    );
+    map.insert("priority", serde_json::Value::from(rule.priority));
     map.insert("origin", serde_json::Value::String(origin.as_str().into()));
     map.insert(
         "project",
@@ -435,10 +619,119 @@ mod tests {
     }
 
     #[test]
+    fn rule_options_are_canonical_bounded_and_digested() {
+        let raw = AppliesTo {
+            agents: vec!["Claude-Code".into(), "claude-code".into()],
+            languages: vec![" Rust ".into()],
+            paths: vec!["apps/ui/".into(), "Cargo.toml".into()],
+            task_tags: vec![],
+        };
+        let c = raw.canonical().unwrap();
+        assert_eq!(c.agents, ["claude-code"]);
+        assert_eq!(c.languages, ["rust"]);
+        assert_eq!(c.paths, ["Cargo.toml", "apps/ui/"]);
+        assert!(c.is_canonical() && !raw.is_canonical());
+        assert_eq!(
+            c.json(),
+            r#"{"agents":["claude-code"],"languages":["rust"],"paths":["Cargo.toml","apps/ui/"],"task_tags":[]}"#
+        );
+        for bad in ["../x", "/abs", "a//b", "c:\\x", "src/*.rs", ""] {
+            let a = AppliesTo {
+                paths: vec![bad.into()],
+                ..Default::default()
+            };
+            assert!(a.canonical().is_none(), "{bad}");
+        }
+        let many = AppliesTo {
+            agents: (0..17).map(|i| format!("a{i}")).collect(),
+            ..Default::default()
+        };
+        assert!(many.canonical().is_none());
+        let env = Scope::Environment {
+            name: "alpha".into(),
+        };
+        let hard = RuleOptions {
+            enforcement: Enforcement::Hard,
+            ..Default::default()
+        };
+        assert!(hard.valid_for(&Scope::Global) && !hard.valid_for(&env));
+        assert!(
+            !RuleOptions {
+                priority: 101,
+                ..Default::default()
+            }
+            .valid_for(&Scope::Global)
+        );
+        let tags = vec!["style".to_owned()];
+        let base = proposal_digest(
+            &Scope::Global,
+            None,
+            "k",
+            "v",
+            Origin::Operator,
+            &tags,
+            &RuleOptions::default(),
+        );
+        let scoped = RuleOptions {
+            applies_to: c,
+            ..Default::default()
+        };
+        for rule in [
+            scoped,
+            RuleOptions {
+                priority: 5,
+                ..Default::default()
+            },
+            hard,
+        ] {
+            assert_ne!(
+                base,
+                proposal_digest(
+                    &Scope::Global,
+                    None,
+                    "k",
+                    "v",
+                    Origin::Operator,
+                    &tags,
+                    &rule
+                )
+            );
+        }
+        assert_ne!(
+            base,
+            proposal_digest(
+                &env,
+                Some("alpha"),
+                "k",
+                "v",
+                Origin::Operator,
+                &tags,
+                &RuleOptions::default()
+            )
+        );
+    }
+
+    #[test]
     fn canonical_digest_is_deterministic_and_field_sensitive() {
         let tags = vec!["style".to_owned()];
-        let d1 = proposal_digest(&Scope::Global, None, "editor", "vim", Origin::Agent, &tags);
-        let d2 = proposal_digest(&Scope::Global, None, "editor", "vim", Origin::Agent, &tags);
+        let d1 = proposal_digest(
+            &Scope::Global,
+            None,
+            "editor",
+            "vim",
+            Origin::Agent,
+            &tags,
+            &RuleOptions::default(),
+        );
+        let d2 = proposal_digest(
+            &Scope::Global,
+            None,
+            "editor",
+            "vim",
+            Origin::Agent,
+            &tags,
+            &RuleOptions::default(),
+        );
         assert_eq!(d1, d2);
         let d3 = proposal_digest(
             &Scope::Global,
@@ -447,6 +740,7 @@ mod tests {
             "emacs",
             Origin::Agent,
             &tags,
+            &RuleOptions::default(),
         );
         assert_ne!(d1, d3);
         let d4 = proposal_digest(
@@ -456,6 +750,7 @@ mod tests {
             "vim",
             Origin::Operator,
             &tags,
+            &RuleOptions::default(),
         );
         assert_ne!(d1, d4);
         let d5 = proposal_digest(
@@ -467,6 +762,7 @@ mod tests {
             "vim",
             Origin::Agent,
             &tags,
+            &RuleOptions::default(),
         );
         assert_ne!(d1, d5);
         let d6 = proposal_digest(
@@ -476,6 +772,7 @@ mod tests {
             "vim",
             Origin::Agent,
             &["git".to_owned()],
+            &RuleOptions::default(),
         );
         assert_ne!(d1, d6);
     }
@@ -489,6 +786,7 @@ mod tests {
             "v",
             Origin::Operator,
             &["t".into()],
+            &RuleOptions::default(),
         );
         let hex = digest_hex(&d);
         assert_eq!(hex.len(), 64);

@@ -392,6 +392,27 @@ impl Model {
 }
 
 /// A row's tags as terminal and clipboard text: `#style #git`.
+/// Where a rule applies, in the operator's words (`None` for everywhere).
+pub fn applies_words(m: &crate::Model, a: &precept_core::operator::AppliesTo) -> Option<String> {
+    use crate::i18n::Msg;
+    let parts: Vec<String> = [
+        (Msg::AppliesLanguages, &a.languages),
+        (Msg::AppliesPaths, &a.paths),
+        (Msg::AppliesAgents, &a.agents),
+        (Msg::AppliesTaskTags, &a.task_tags),
+    ]
+    .iter()
+    .filter(|(_, v)| !v.is_empty())
+    .map(|(label, v)| {
+        let v: Vec<String> = v.iter().map(|s| sanitize(s, 64)).collect();
+        format!("{} {}", m.word(*label).to_lowercase(), v.join(", "))
+    })
+    .collect();
+    (!parts.is_empty()).then(|| {
+        m.word(Msg::AppliesSummary)
+            .replace("{what}", &parts.join("; "))
+    })
+}
 pub fn hashtags(tags: &[String]) -> String {
     tags.iter()
         .map(|t| format!("#{}", sanitize(t, 32)))

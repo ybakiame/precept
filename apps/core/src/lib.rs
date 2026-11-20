@@ -44,6 +44,14 @@ pub struct Preference {
     #[serde(default)]
     pub tags: Vec<String>,
     pub status: String,
+    /// Where it applies (absent = everywhere).
+    #[serde(default)]
+    pub applies_to: Option<precept_core::operator::AppliesTo>,
+    #[serde(default)]
+    pub priority: Option<i64>,
+    /// `verify` or `hard` (absent = advisory).
+    #[serde(default)]
+    pub enforcement: Option<String>,
 }
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Repository {

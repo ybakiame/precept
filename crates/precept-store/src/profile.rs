@@ -28,7 +28,7 @@ pub const PROJECTS: &str = r#"CREATE TABLE projects (
 )"#;
 pub const PREFERENCES: &str = r#"CREATE TABLE preferences (
     id INTEGER PRIMARY KEY CHECK (id > 0),
-    scope TEXT NOT NULL CHECK (scope IN ('global', 'project')),
+    scope TEXT NOT NULL CHECK (scope IN ('global', 'project', 'environment')),
     project TEXT REFERENCES projects(name) ON DELETE RESTRICT,
     pref_key TEXT NOT NULL CHECK (length(pref_key) BETWEEN 1 AND 120),
     value TEXT NOT NULL CHECK (length(value) BETWEEN 1 AND 4096),
@@ -41,11 +41,35 @@ pub const PREFERENCES: &str = r#"CREATE TABLE preferences (
     origin TEXT NOT NULL
       CHECK (origin IN ('operator', 'agent')),
     proposal_digest BLOB NOT NULL CHECK (length(proposal_digest) = 32),
+    applies_to TEXT NOT NULL CHECK (length(applies_to) BETWEEN 2 AND 16384),
+    priority INTEGER NOT NULL CHECK (priority BETWEEN -100 AND 100),
+    enforcement TEXT NOT NULL CHECK (enforcement IN ('advisory', 'verify', 'hard')),
+    enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
     CHECK (
       (scope = 'global' AND project IS NULL) OR
-      (scope = 'project' AND project IS NOT NULL)
-    )
+      (scope IN ('project', 'environment') AND project IS NOT NULL)
+    ),
+    CHECK (scope <> 'environment' OR enforcement = 'advisory')
 )"#;
+/// Stored rule options: the canonical `applies_to` JSON the writer produces,
+/// a bounded priority and a known enforcement word.
+pub(crate) fn stored_rule(
+    applies_to: &str,
+    priority: i64,
+    enforcement: &str,
+) -> Option<precept_core::operator::RuleOptions> {
+    let applies: precept_core::operator::AppliesTo = serde_json::from_str(applies_to).ok()?;
+    let rule = precept_core::operator::RuleOptions {
+        priority,
+        enforcement: precept_core::operator::Enforcement::parse(enforcement)?,
+        applies_to: applies,
+    };
+    (rule.applies_to.is_canonical()
+        && rule.applies_to.json() == applies_to
+        && (precept_core::operator::PRIORITY_MIN..=precept_core::operator::PRIORITY_MAX)
+            .contains(&priority))
+    .then_some(rule)
+}
 /// A stored tag list: exactly the canonical JSON the writer produces.
 pub(crate) fn stored_tags(raw: &str) -> Option<Vec<String>> {
     let tags: Vec<String> = serde_json::from_str(raw).ok()?;
@@ -92,11 +116,11 @@ pub const DDL: [&str; 8] = [
 ];
 pub const REVIEW_DECISIONS: &str = r#"CREATE TABLE acp_review_decisions (
     id INTEGER PRIMARY KEY CHECK (id > 0),
-    scope TEXT NOT NULL CHECK (scope IN ('global', 'project')),
+    scope TEXT NOT NULL CHECK (scope IN ('global', 'project', 'environment')),
     project TEXT REFERENCES projects(name) ON DELETE RESTRICT,
     preference_id INTEGER NOT NULL CHECK (preference_id > 0),
     action TEXT NOT NULL
-      CHECK (action IN ('confirm', 'reject', 'deprecate', 'demote', 'delete')),
+      CHECK (action IN ('confirm', 'reject', 'deprecate', 'demote', 'delete', 'enable', 'disable')),
     from_revision INTEGER NOT NULL CHECK (from_revision > 0),
     to_revision INTEGER NOT NULL CHECK (to_revision > 0),
     proposal_digest BLOB NOT NULL CHECK (length(proposal_digest) = 32),
@@ -105,7 +129,7 @@ pub const REVIEW_DECISIONS: &str = r#"CREATE TABLE acp_review_decisions (
     decided_at TEXT NOT NULL,
     CHECK (
       (scope = 'global' AND project IS NULL) OR
-      (scope = 'project' AND project IS NOT NULL)
+      (scope IN ('project', 'environment') AND project IS NOT NULL)
     )
 )"#;
 pub const REVIEW_LOOKUP: &str = r#"CREATE INDEX review_lookup
@@ -406,16 +430,18 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
     let mut pref_revisions: BTreeMap<i64, i64> = BTreeMap::new();
     let mut pref_bindings: BTreeMap<i64, (String, Option<String>)> = BTreeMap::new();
     let mut pref_statuses: BTreeMap<i64, String> = BTreeMap::new();
+    let mut pref_enabled: BTreeMap<i64, bool> = BTreeMap::new();
+    let mut decision_enabled: BTreeMap<i64, bool> = BTreeMap::new();
     for r in rows(
         db,
-        "SELECT id,scope,project,pref_key,value,status,tags,revision,created_at,updated_at,origin,proposal_digest FROM preferences",
+        "SELECT id,scope,project,pref_key,value,status,tags,revision,created_at,updated_at,origin,proposal_digest,applies_to,priority,enforcement,enabled FROM preferences",
     )? {
         let id = positive(&r[0])?;
         max_id = max_id.max(id);
         let scope = string(&r[1])?;
         valid(
             (scope == "global" && r[2] == Value::Null)
-                || (scope == "project" && name_valid(string(&r[2])?)),
+                || ((scope == "project" || scope == "environment") && name_valid(string(&r[2])?)),
         )?;
         str_valid(&r[3], 120, true)?;
         str_valid(&r[4], 4096, true)?;
@@ -428,24 +454,32 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
             Value::Blob(b) if b.len() == 32 => b.clone(),
             _ => return Err(Error::InvalidRecord),
         };
-        let scope_enum = if scope == "global" {
-            precept_core::operator::Scope::Global
-        } else {
-            precept_core::operator::Scope::Project {
+        let scope_enum = match scope {
+            "global" => precept_core::operator::Scope::Global,
+            "project" => precept_core::operator::Scope::Project {
                 name: string(&r[2])?.to_owned(),
-            }
+            },
+            _ => precept_core::operator::Scope::Environment {
+                name: string(&r[2])?.to_owned(),
+            },
         };
+        let priority = match &r[13] {
+            Value::Integer(n) => *n,
+            _ => return Err(Error::InvalidRecord),
+        };
+        let rule = stored_rule(str_valid(&r[12], 16384, true)?, priority, string(&r[14])?)
+            .filter(|rule| rule.valid_for(&scope_enum))
+            .ok_or(Error::InvalidRecord)?;
+        valid(matches!(&r[15], Value::Integer(0 | 1)))?;
+        pref_enabled.insert(id, r[15] == Value::Integer(1));
         let expected = precept_core::operator::proposal_digest(
             &scope_enum,
-            if scope == "project" {
-                Some(string(&r[2])?)
-            } else {
-                None
-            },
+            scope_enum.project(),
             string(&r[3])?,
             string(&r[4])?,
             origin_enum,
             &tags,
+            &rule,
         );
         valid(digest == expected)?;
         pref_digests.insert(id, digest);
@@ -583,7 +617,8 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
         };
         valid(
             (scope == "global" && project.is_none())
-                || (scope == "project" && project.is_some_and(name_valid)),
+                || ((scope == "project" || scope == "environment")
+                    && project.is_some_and(name_valid)),
         )?;
         let pref_id = positive(&r[3])?;
         valid(pref_digests.contains_key(&pref_id))?;
@@ -592,7 +627,18 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
         let (pref_scope, pref_project) = &pref_bindings[&pref_id];
         valid(scope == pref_scope && project.map(str::to_owned) == *pref_project)?;
         let action = string(&r[4])?;
-        valid(["confirm", "reject", "deprecate", "demote", "delete"].contains(&action))?;
+        valid(
+            [
+                "confirm",
+                "reject",
+                "deprecate",
+                "demote",
+                "delete",
+                "enable",
+                "disable",
+            ]
+            .contains(&action),
+        )?;
         let from = positive(&r[5])?;
         let to = positive(&r[6])?;
         valid(to == from + 1)?;
@@ -621,8 +667,12 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
             "confirm" if entry.1 == "suggested" => "confirmed",
             "reject" if entry.1 == "suggested" => "rejected",
             "deprecate" | "demote" if entry.1 == "confirmed" => "deprecated",
+            "enable" | "disable" if entry.1 == "confirmed" => "confirmed",
             _ => return Err(Error::InvalidRecord),
         };
+        if matches!(action, "enable" | "disable") {
+            decision_enabled.insert(pref_id, action == "enable");
+        }
         entry.0 = to;
         entry.1 = next_status.to_owned();
     }
@@ -633,6 +683,8 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
             .unwrap_or((1, "suggested".to_owned()));
         valid(*revision == expected_rev)?;
         valid(pref_statuses[pref_id] == expected_status)?;
+        // On unless the last switch turned it off.
+        valid(pref_enabled[pref_id] == decision_enabled.get(pref_id).copied().unwrap_or(true))?;
     }
     valid(next_review > max_review_id && (seq != 0 || next_review == 1))?;
     Ok(Metadata {

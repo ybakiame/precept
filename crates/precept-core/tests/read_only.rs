@@ -119,6 +119,8 @@ fn effective_context_carries_tags_for_project_and_global_fallbacks() {
     ]
     .into_iter()
     .map(|(id, scope, project, key, value)| Preference {
+        rule: Default::default(),
+        enabled: true,
         id,
         scope,
         project: project.map(str::to_owned),

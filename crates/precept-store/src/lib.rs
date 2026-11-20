@@ -174,7 +174,7 @@ impl SqliteStore {
     pub fn read_preferences(&self, project: &str) -> Result<Vec<Preference>> {
         self.snapshot(|_| {
         project_record(&self.db, project)?;
-        let mut stmt = self.db.prepare("SELECT id,scope,project,pref_key,value,status,tags FROM preferences WHERE (scope='global' AND project IS NULL) OR (scope='project' AND project=?1) ORDER BY pref_key,CASE scope WHEN 'project' THEN 0 ELSE 1 END,id DESC")
+        let mut stmt = self.db.prepare("SELECT id,scope,project,pref_key,value,status,tags,applies_to,priority,enforcement,enabled FROM preferences WHERE (scope='global' AND project IS NULL) OR (scope IN ('project','environment') AND project=?1) ORDER BY pref_key,CASE scope WHEN 'project' THEN 0 ELSE 1 END,id DESC")
             .map_err(|_| Error::ReadFailed)?;
         let rows = stmt
             .query_map([project], |r| {
@@ -186,17 +186,24 @@ impl SqliteStore {
                     r.get::<_, String>(4)?,
                     r.get::<_, String>(5)?,
                     r.get::<_, String>(6)?,
+                    r.get::<_, String>(7)?,
+                    r.get::<_, i64>(8)?,
+                    r.get::<_, String>(9)?,
+                    r.get::<_, i64>(10)?,
                 ))
             })
             .map_err(|_| Error::ReadFailed)?;
         let mut result = Vec::new();
         for row in rows {
-            let (id, scope, project, key, value, status, tags) =
+            let (id, scope, project, key, value, status, tags, applies, priority, enforcement, enabled) =
                 row.map_err(|_| Error::InvalidRecord)?;
             let tags = profile::stored_tags(&tags).ok_or(Error::InvalidRecord)?;
+            let rule =
+                profile::stored_rule(&applies, priority, &enforcement).ok_or(Error::InvalidRecord)?;
             let scope = match scope.as_str() {
                 "global" => Scope::Global,
                 "project" => Scope::Project,
+                "environment" => Scope::Environment,
                 _ => return Err(Error::InvalidRecord),
             };
             let status = match status.as_str() {
@@ -215,6 +222,8 @@ impl SqliteStore {
                 value,
                 status,
                 tags,
+                rule,
+                enabled: enabled == 1,
             });
         }
         Ok(result)

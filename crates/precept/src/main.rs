@@ -38,6 +38,10 @@ enum Query {
     PreferenceReject(operator::Review),
     PreferenceDeprecate(operator::Review),
     PreferenceDelete(operator::Review),
+    /// Switch a confirmed rule back on.
+    PreferenceEnable(operator::Switch),
+    /// Switch a confirmed rule off: it stays reviewed but agents stop receiving it.
+    PreferenceDisable(operator::Switch),
     HandoffPut(operator::Put),
     Health,
     Projects,
@@ -86,6 +90,8 @@ async fn run(args: Args) -> precept_ipc::Result<serde_json::Value> {
             return operator::review(&args.location, p, "deprecate").await;
         }
         Query::PreferenceDelete(p) => return operator::review(&args.location, p, "delete").await,
+        Query::PreferenceEnable(p) => return operator::switch(&args.location, p, true).await,
+        Query::PreferenceDisable(p) => return operator::switch(&args.location, p, false).await,
         Query::HandoffPut(p) => return operator::put(&args.location, p).await,
         _ => (),
     }
@@ -131,6 +137,7 @@ async fn main() {
         | Query::PreferenceReject(p)
         | Query::PreferenceDeprecate(p)
         | Query::PreferenceDelete(p) => Some(&p.authority.operation_id),
+        Query::PreferenceEnable(p) | Query::PreferenceDisable(p) => Some(&p.authority.operation_id),
         Query::HandoffPut(p) => Some(&p.authority.operation_id),
         _ => None,
     }

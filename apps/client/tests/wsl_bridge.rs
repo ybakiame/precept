@@ -195,6 +195,7 @@ fn suggest(b: &Binding, op: &str, key: &str) -> Mutation {
         binding: b.clone(),
         operation_id: op.into(),
         command: Op2::SuggestPreference {
+            rule: Default::default(),
             scope: Scope::Project {
                 name: "alpha".into(),
             },

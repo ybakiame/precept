@@ -18,7 +18,7 @@ pub struct Authority {
 }
 #[derive(Args)]
 pub struct ScopeArgs {
-    #[arg(long, value_parser=["global","project"])]
+    #[arg(long, value_parser=["global","project","environment"])]
     pub scope: String,
     #[arg(long)]
     pub project: Option<String>,
@@ -29,6 +29,9 @@ impl ScopeArgs {
             ("global", None) => Ok(Scope::Global),
             ("project", Some(name)) if precept_ipc::valid_project(name) => {
                 Ok(Scope::Project { name: name.clone() })
+            }
+            ("environment", Some(name)) if precept_ipc::valid_project(name) => {
+                Ok(Scope::Environment { name: name.clone() })
             }
             _ => Err(Error::InvalidRequest),
         }
@@ -144,6 +147,34 @@ pub struct Suggest {
     /// operator records. An asserted label; it verifies nothing by itself.
     #[arg(long, default_value = "operator", value_parser = ["operator", "agent"])]
     pub origin: String,
+    /// Only for these agents (repeat); empty applies to every agent.
+    #[arg(long = "agent")]
+    pub agents: Vec<String>,
+    /// Only for these languages (repeat).
+    #[arg(long = "language")]
+    pub languages: Vec<String>,
+    /// Only for these repository paths (repeat; a trailing / covers a directory).
+    #[arg(long = "path")]
+    pub paths: Vec<String>,
+    /// Only for tasks tagged with one of these (repeat).
+    #[arg(long = "task-tag")]
+    pub task_tags: Vec<String>,
+    /// -100..100; higher wins among rules of one key and scope.
+    #[arg(long, default_value_t = 0, allow_negative_numbers = true)]
+    pub priority: i64,
+    #[arg(long, default_value = "advisory", value_parser = ["advisory", "verify", "hard"])]
+    pub enforcement: String,
+}
+/// Switch a confirmed rule on or off (no new review; revision-checked).
+#[derive(Args)]
+pub struct Switch {
+    pub id: i64,
+    #[command(flatten)]
+    pub scope: ScopeArgs,
+    #[command(flatten)]
+    pub authority: Authority,
+    #[arg(long)]
+    pub expected_revision: i64,
 }
 #[derive(Args)]
 pub struct Register {
@@ -360,10 +391,26 @@ pub async fn suggest(location: &Location, p: Suggest) -> Result<Value> {
     let scope = p.scope.scope()?;
     let origin = Origin::parse(&p.origin).ok_or(Error::InvalidRequest)?;
     let tags = precept_ipc::operator::canonical_tags(&p.tags).ok_or(Error::InvalidRequest)?;
+    let rule = RuleOptions {
+        applies_to: AppliesTo {
+            agents: p.agents,
+            languages: p.languages,
+            paths: p.paths,
+            task_tags: p.task_tags,
+        }
+        .canonical()
+        .ok_or(Error::InvalidRequest)?,
+        priority: p.priority,
+        enforcement: Enforcement::parse(&p.enforcement).ok_or(Error::InvalidRequest)?,
+    };
+    if !rule.valid_for(&scope) {
+        return Err(Error::InvalidRequest);
+    }
     submit(
         location,
         p.authority,
         Command::SuggestPreference {
+            rule,
             scope,
             key: p.key,
             value: p.value,
@@ -373,6 +420,19 @@ pub async fn suggest(location: &Location, p: Suggest) -> Result<Value> {
         },
     )
     .await
+}
+pub async fn switch(location: &Location, p: Switch, enabled: bool) -> Result<Value> {
+    if p.id <= 0 || p.expected_revision <= 0 {
+        return Err(Error::InvalidRequest);
+    }
+    let command = Command::SetPreferenceEnabled {
+        id: p.id,
+        scope: p.scope.scope()?,
+        enabled,
+        channel: Channel::Cli,
+        expected: Expected::Revision(p.expected_revision),
+    };
+    submit(location, p.authority, command).await
 }
 pub async fn review(location: &Location, p: Review, action: &str) -> Result<Value> {
     if !p.confirm || p.id <= 0 || p.expected_revision <= 0 {
