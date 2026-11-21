@@ -14,6 +14,7 @@ use std::{
 };
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 mod activity;
+mod importer;
 mod integration;
 mod mcp_config;
 mod ojson;
@@ -233,6 +234,46 @@ impl Service {
                 return Err(Error::Unauthorized);
             }
             return self.hooks(&request.method, params);
+        }
+        // What an import would suggest from the project's own files: a read
+        // of bounded files in the served root; nothing is written here.
+        if request.method == "import.scan" {
+            if access != Access::Operator {
+                return Err(Error::Unauthorized);
+            }
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct P {
+                project: String,
+            }
+            let p: P = decode(params)?;
+            if !self.profiles.allowed(&p.project) {
+                return Err(Error::NotFound);
+            }
+            let (store, roots) = self.profiles.read()?;
+            let root = roots.get(&p.project).ok_or(Error::NotFound)?;
+            let (candidates, skipped) = importer::scan(root);
+            let candidates: Vec<Value> = candidates
+                .into_iter()
+                .map(|c| {
+                    let scope = match c.target {
+                        precept_core::import::Target::Project => Scope::Project {
+                            name: p.project.clone(),
+                        },
+                        precept_core::import::Target::Personal => Scope::Global,
+                    };
+                    // Already in the Profile (suggested or confirmed) as is.
+                    let exists = store
+                        .agent_suggestion_state(&scope, &c.key, &c.value)
+                        .map(|(duplicate, _)| duplicate)
+                        .unwrap_or(false);
+                    let mut v = serde_json::to_value(&c).unwrap_or(Value::Null);
+                    v["scope"] = serde_json::to_value(&scope).unwrap_or(Value::Null);
+                    v["exists"] = json!(exists);
+                    v
+                })
+                .collect();
+            return Ok(json!({"candidates": candidates, "skipped": skipped}));
         }
         if matches!(
             request.method.as_str(),

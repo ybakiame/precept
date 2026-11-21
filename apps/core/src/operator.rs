@@ -94,6 +94,10 @@ pub struct Operator {
     pub revising: Option<i64>,
     /// Suggestions picked for one batch decision (ids, ascending).
     pub batch: Vec<i64>,
+    /// What an import scan found in the selected project's files.
+    pub import: Option<ImportScan>,
+    /// The scan's candidates picked to become suggestions (indices).
+    pub import_picked: Vec<usize>,
     pub task: String,
     pub error: Option<String>,
     pub receipt: Option<Receipt>,
@@ -116,6 +120,55 @@ pub struct Operator {
     /// Authority and live sources of the last completed exact inspection.
     inspection: Option<Guard>,
 }
+/// The most rules one import files (the writer's batch bound).
+pub const MAX_BATCH_UI: usize = precept_core::operator::MAX_BATCH;
+/// One rule an import scan found (`import.scan`).
+#[derive(Clone, PartialEq, Eq, serde::Deserialize)]
+pub struct ImportCandidate {
+    pub source: String,
+    pub title: String,
+    pub key: String,
+    pub value: String,
+    pub tags: Vec<String>,
+    pub rule: precept_core::operator::RuleOptions,
+    pub scope: Scope,
+    /// Already in the Profile, suggested or confirmed, exactly as found.
+    pub exists: bool,
+}
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
+pub struct ImportSkipped {
+    pub source: String,
+    pub title: String,
+    pub reason: String,
+}
+/// A scan of one project's files.
+#[derive(Clone, PartialEq, Eq, serde::Deserialize)]
+pub struct ImportScan {
+    #[serde(skip)]
+    pub project: String,
+    pub candidates: Vec<ImportCandidate>,
+    pub skipped: Vec<ImportSkipped>,
+}
+impl ImportScan {
+    /// Parses a daemon reply for `project`; new rules start picked.
+    pub fn parse(project: &str, v: serde_json::Value) -> Option<(Self, Vec<usize>)> {
+        let mut scan: Self = serde_json::from_value(v).ok()?;
+        if scan.candidates.len() > precept_core::import::MAX_CANDIDATES {
+            return None;
+        }
+        scan.project = project.to_owned();
+        let picked = scan
+            .candidates
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| !c.exists)
+            .map(|(i, _)| i)
+            .take(precept_core::operator::MAX_BATCH)
+            .collect();
+        Some((scan, picked))
+    }
+}
+
 impl std::fmt::Debug for Operator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("Operator(redacted)")
@@ -473,6 +526,42 @@ impl Model {
                 )
             }
             "disable" if info.write_enabled => ("profile.write.disable", json!({}), None),
+            "import" if info.write_enabled => {
+                let Some(binding) = info.binding.clone() else {
+                    return false;
+                };
+                let Some(scan) = &self.operator.import else {
+                    return false;
+                };
+                if self.selected_project.as_deref() != Some(scan.project.as_str()) {
+                    return false;
+                }
+                let items: Vec<precept_core::operator::SuggestItem> = self
+                    .operator
+                    .import_picked
+                    .iter()
+                    .filter_map(|i| scan.candidates.get(*i))
+                    .filter(|c| !c.exists)
+                    .map(|c| precept_core::operator::SuggestItem {
+                        scope: c.scope.clone(),
+                        key: c.key.clone(),
+                        value: c.value.clone(),
+                        tags: c.tags.clone(),
+                        origin: Origin::Operator,
+                        rule: c.rule.clone(),
+                    })
+                    .collect();
+                if items.is_empty() || items.len() > precept_core::operator::MAX_BATCH {
+                    return false;
+                }
+                let mutation = Mutation {
+                    version: 2,
+                    binding,
+                    operation_id: operation_id.into(),
+                    command: Command::SuggestBatch { items },
+                };
+                ("profile.mutate", json!({}), Some(mutation))
+            }
             "batch_confirm" | "batch_reject" if info.write_enabled => {
                 let Some(binding) = info.binding.clone() else {
                     return false;
@@ -1036,6 +1125,10 @@ impl Model {
                     self.operator.note.clear();
                     self.operator.revising = None;
                     self.operator.batch.clear();
+                    if matches!(&mutation.command, Command::SuggestBatch { .. }) {
+                        self.operator.import = None;
+                        self.operator.import_picked.clear();
+                    }
                     self.operator.pending = None;
                     self.operator.outcome_unknown = false;
                     self.operator.page = None;

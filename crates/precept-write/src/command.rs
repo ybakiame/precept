@@ -158,6 +158,21 @@ impl Request {
                 }
                 (expected, Some(scope))
             }
+            Command::SuggestBatch { items } => {
+                if items.is_empty()
+                    || items.len() > precept_core::operator::MAX_BATCH
+                    || items.iter().any(|i| {
+                        !text(&i.key, 120, true)
+                            || !text(&i.value, 4096, true)
+                            || !precept_core::operator::tags_canonical(&i.tags)
+                            || !i.rule.valid_for(&i.scope)
+                            || matches!(&i.scope, Scope::Project { name } | Scope::Environment { name } if !name_valid(name))
+                    })
+                {
+                    return Err(Error::InvalidCommand);
+                }
+                (&Expected::Absent, Some(&items[0].scope))
+            }
             Command::DecideBatch { items, .. } => {
                 let mut ids = std::collections::BTreeSet::new();
                 if items.is_empty()

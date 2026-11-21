@@ -602,6 +602,27 @@ fn mutate(
             .map_err(crate::sql_error)?;
             versions.insert(pref_key(*id), (revision, false));
         }
+        Command::SuggestBatch { items } => {
+            for item in items {
+                let next: i64 = db
+                    .query_row(
+                        "SELECT next_preference_id FROM acp_profile WHERE singleton=1",
+                        [],
+                        |r| r.get(0),
+                    )
+                    .map_err(crate::sql_error)?;
+                let single = Command::SuggestPreference {
+                    scope: item.scope.clone(),
+                    key: item.key.clone(),
+                    value: item.value.clone(),
+                    tags: item.tags.clone(),
+                    origin: item.origin,
+                    rule: item.rule.clone(),
+                    expected: Expected::Absent,
+                };
+                versions.extend(mutate(db, &single, now, next, sequence, next_review_id)?);
+            }
+        }
         Command::DecideBatch {
             decision,
             items,

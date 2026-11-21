@@ -808,10 +808,17 @@ impl Profiles {
                 Command::PutHandoff { project, .. } => Some(project),
                 // Every item's project must be served; the first is the one
                 // whose root is rechecked at admission.
-                Command::DecideBatch { items, .. } => {
-                    let names: Vec<&String> = items
-                        .iter()
-                        .filter_map(|i| match &i.scope {
+                Command::DecideBatch { .. } | Command::SuggestBatch { .. } => {
+                    let scopes: Vec<&Scope> = match &request.command {
+                        Command::DecideBatch { items, .. } => {
+                            items.iter().map(|i| &i.scope).collect()
+                        }
+                        Command::SuggestBatch { items } => items.iter().map(|i| &i.scope).collect(),
+                        _ => Vec::new(),
+                    };
+                    let names: Vec<&String> = scopes
+                        .into_iter()
+                        .filter_map(|scope| match scope {
                             Scope::Global => None,
                             Scope::Project { name } | Scope::Environment { name } => Some(name),
                         })

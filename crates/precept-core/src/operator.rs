@@ -380,6 +380,9 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         note: Option<String>,
     },
+    /// Files several suggestions in one write (an import the operator
+    /// picked): each is an ordinary `suggested` record, none is confirmed.
+    SuggestBatch { items: Vec<SuggestItem> },
     /// Confirms or rejects several exact suggestions in one write, each as
     /// its own decision: every item must still be the reviewed revision and
     /// proposal, or nothing is written.
@@ -424,6 +427,18 @@ pub struct BatchItem {
     pub scope: Scope,
     pub proposal_digest: String,
     pub expected: Expected,
+}
+/// One suggestion of a [`Command::SuggestBatch`].
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SuggestItem {
+    pub scope: Scope,
+    pub key: String,
+    pub value: String,
+    pub tags: Vec<String>,
+    pub origin: Origin,
+    #[serde(default)]
+    pub rule: RuleOptions,
 }
 /// The most suggestions one batch decides.
 pub const MAX_BATCH: usize = 50;

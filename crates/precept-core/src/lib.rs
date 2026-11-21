@@ -8,6 +8,7 @@ pub mod briefing;
 pub mod contracts;
 pub mod documents;
 pub mod fingerprint;
+pub mod import;
 pub mod pointer;
 pub mod typed_context;
 
