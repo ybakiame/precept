@@ -163,7 +163,7 @@ tab or scope clears the selection.
 
 **Import from files…** in Review reads the selected project's instruction files
 and rule folders and lists each rule found with a checkbox, its key, scope (this
-project, or personal for an Agent Control `global` rule), source and first line;
+project, or personal for a rule file with `scope: personal`), source and first line;
 new ones start picked, ones already in Precept are marked and cannot be picked,
 and parts that could not be imported say why. Saving prepares one write that
 files the picks as suggestions; they are confirmed like any other.

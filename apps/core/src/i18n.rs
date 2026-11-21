@@ -201,7 +201,7 @@ catalog! {
     BatchRejectLine => ("Reject {n} suggestions", "拒绝 {n} 条建议"),
     ImportOpen => ("Import from files…", "从文件导入…"),
     ImportTitle => ("Import rules from {name}'s files", "从 {name} 的文件导入规则"),
-    ImportHelp => ("Rules this repository already writes down for agents: sections of AGENTS.md, CLAUDE.md, GEMINI.md and .github/copilot-instructions.md, Cursor rules and Agent Control rules. Picked ones become suggestions; nothing is active until you confirm it.", "本仓库已为 Agent 写下的规则：AGENTS.md、CLAUDE.md、GEMINI.md、.github/copilot-instructions.md 的各节，以及 Cursor 规则和 Agent Control 规则。勾选的条目会成为建议；在你确认之前都不会生效。"),
+    ImportHelp => ("Rules this repository already writes down for agents: the sections of AGENTS.md and the rule files in .precept/rules. Picked ones become suggestions; nothing is active until you confirm it.", "本仓库已为 Agent 写下的规则：AGENTS.md 的各节，以及 .precept/rules 中的规则文件。勾选的条目会成为建议；在你确认之前都不会生效。"),
     ImportScanning => ("Reading the project's files…", "正在读取项目文件…"),
     ImportNone => ("No rules found in this project's instruction files.", "此项目的说明文件中没有找到规则。"),
     ImportExists => ("Already in Precept", "已在 Precept 中"),

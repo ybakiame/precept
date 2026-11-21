@@ -22,10 +22,10 @@ fn a_scan_suggests_and_the_operator_files_picks_as_suggestions() {
         "# Alpha\n\n## Commits\n\nUse conventional commits.\n\n## Testing\n\nRun the gates.\n",
     )
     .unwrap();
-    fs::create_dir_all(root.join(".agent-control/rules")).unwrap();
+    fs::create_dir_all(root.join(".precept/rules")).unwrap();
     fs::write(
-        root.join(".agent-control/rules/style.md"),
-        "---\nid: personal-style\ntitle: Short answers\nscope: global\npriority: 3\ntags:\n- tone\n---\nKeep answers short.\n",
+        root.join(".precept/rules/style.md"),
+        "---\nkey: personal-style\ntitle: Short answers\nscope: personal\npriority: 3\ntags:\n- tone\n---\nKeep answers short.\n",
     )
     .unwrap();
     let scan = || {

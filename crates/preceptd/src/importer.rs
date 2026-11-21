@@ -72,24 +72,26 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         fs::write(root.join("AGENTS.md"), "# A\n\n## Style\n\nShort lines.\n").unwrap();
-        fs::create_dir_all(root.join(".cursor/rules")).unwrap();
-        fs::write(root.join(".cursor/rules/b.mdc"), "Use tabs.\n").unwrap();
-        fs::write(root.join(".cursor/rules/a.mdc"), "Use spaces.\n").unwrap();
-        fs::write(root.join(".cursor/rules/notes.txt"), "ignored").unwrap();
-        fs::write(root.join("README.md"), "## Not read\n\nx\n").unwrap();
+        let rules = root.join(".precept/rules");
+        fs::create_dir_all(&rules).unwrap();
+        fs::write(rules.join("b.md"), "Use tabs.\n").unwrap();
+        fs::write(rules.join("a.md"), "Use spaces.\n").unwrap();
+        fs::write(rules.join("notes.txt"), "ignored").unwrap();
+        // Other agents' files are not read.
+        fs::write(root.join("CLAUDE.md"), "## Not read\n\nx\n").unwrap();
         #[cfg(unix)]
         {
             let outside = tempfile::tempdir().unwrap();
-            fs::write(outside.path().join("CLAUDE.md"), "## Secret\n\nx\n").unwrap();
-            std::os::unix::fs::symlink(outside.path().join("CLAUDE.md"), root.join("CLAUDE.md"))
-                .unwrap();
+            fs::write(outside.path().join("c.md"), "Secret.\n").unwrap();
+            std::os::unix::fs::symlink(outside.path().join("c.md"), rules.join("c.md")).unwrap();
         }
         let (c, s) = scan(root);
         let keys: Vec<&str> = c.iter().map(|c| c.key.as_str()).collect();
-        assert_eq!(keys, ["agents-style", "cursor-a", "cursor-b"]);
+        assert_eq!(keys, ["agents-style", "a", "b"]);
         #[cfg(unix)]
-        assert_eq!(s[0].source, "CLAUDE.md");
-        #[cfg(unix)]
-        assert_eq!(s[0].reason, "unreadable");
+        assert_eq!(
+            (s[0].source.as_str(), s[0].reason),
+            (".precept/rules/c.md", "unreadable")
+        );
     }
 }

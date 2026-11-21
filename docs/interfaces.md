@@ -54,12 +54,12 @@ Operator-only `import.scan {project}` reads the served project's own instruction
 files and rule folders and returns `candidates` (`source`, `title`, `key`, `value`,
 canonical `tags` with `imported` and the file's tag, `rule`, `scope` and `exists`:
 the Profile already holds that scope, key and value suggested or confirmed) and
-`skipped` parts (`too_long`, `empty`, `unreadable`). It reads `AGENTS.md`,
-`CLAUDE.md`, `GEMINI.md` and `.github/copilot-instructions.md` (one candidate per
-`##` section, or per `###` inside one, outside Precept's own block and code
-fences), `.cursor/rules/*.mdc` (one per file; globs kept as words) and
-`.agent-control/rules/*.md` (one per file, with its id, tags, priority,
-enforcement, `applies_to` and a `global` scope as personal). Only regular files
+`skipped` parts (`too_long`, `empty`, `unreadable`). It reads only `AGENTS.md`
+(one candidate per `##` section, or per `###` inside one, outside Precept's own
+block and code fences), the instruction file agents share, and
+Precept rule files `.precept/rules/*.md` (one per file: front matter `key` (or
+`id`, else the file name), `title`, `tags`, `priority`, `enforcement`,
+`applies_to` and `scope: project|personal`, then the rule's text). Only regular files
 (never links), at most 256 KiB each and 100 per folder; nothing is written.
 
 Effective context keeps a confirmed, enabled rule unless the request's selector

@@ -1,5 +1,6 @@
 //! Importers: rules an existing repository already writes down for agents
-//! (AGENTS.md and its relatives, Cursor rules, Agent Control rules), turned
+//! (AGENTS.md, the one instruction file agents share) and Precept's own
+//! rule files (`.precept/rules/*.md`), turned
 //! into candidate suggestions. Pure: the daemon reads the files; this only
 //! splits and maps their text. Nothing here decides anything: a candidate
 //! becomes a suggestion only when the operator picks it, and a rule only when
@@ -20,24 +21,14 @@ pub const MAX_CANDIDATES: usize = 200;
 pub enum Format {
     /// Markdown instructions for agents: one candidate per `##`/`###` section.
     Instructions,
-    /// A Cursor rule (`.mdc`): one candidate per file.
-    CursorRule,
-    /// An Agent Control rule (front matter + body): one candidate per file.
-    AgentControl,
+    /// A Precept rule file (front matter + body): one candidate per file.
+    RuleFile,
 }
 
 /// The files a scan reads, relative to the project root: exact files, then
 /// directories whose files of one extension are read.
-pub const FILES: [(&str, Format); 4] = [
-    ("AGENTS.md", Format::Instructions),
-    ("CLAUDE.md", Format::Instructions),
-    ("GEMINI.md", Format::Instructions),
-    (".github/copilot-instructions.md", Format::Instructions),
-];
-pub const DIRECTORIES: [(&str, &str, Format); 2] = [
-    (".cursor/rules", "mdc", Format::CursorRule),
-    (".agent-control/rules", "md", Format::AgentControl),
-];
+pub const FILES: [(&str, Format); 1] = [("AGENTS.md", Format::Instructions)];
+pub const DIRECTORIES: [(&str, &str, Format); 1] = [(".precept/rules", "md", Format::RuleFile)];
 
 /// Where an imported rule belongs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -45,7 +36,7 @@ pub const DIRECTORIES: [(&str, &str, Format); 2] = [
 pub enum Target {
     /// This project's conventions.
     Project,
-    /// The developer's personal preferences (an Agent Control `global` rule).
+    /// The developer's personal preferences (a rule file's `scope: personal`).
     Personal,
 }
 
@@ -92,11 +83,10 @@ fn slug(title: &str) -> String {
     out
 }
 
-/// The file's own tag: `agents-md`, `claude-md`, `cursor-rules`, ...
+/// The file's own tag: `agents-md` or `rule-file`.
 fn file_tag(source: &str, format: Format) -> String {
     match format {
-        Format::CursorRule => "cursor-rules".into(),
-        Format::AgentControl => "agent-control".into(),
+        Format::RuleFile => "rule-file".into(),
         Format::Instructions => {
             let name = source.rsplit('/').next().unwrap_or(source);
             normalize_tag(&name.replace('.', "-")).unwrap_or_else(|| "instructions".into())
@@ -269,7 +259,7 @@ fn scalar(raw: &str) -> String {
 }
 
 /// The top-level `key: value` pairs and `key:` lists of simple front matter
-/// (what Agent Control and Cursor write); nested maps keep their indented
+/// (what a rule file holds); nested maps keep their indented
 /// `child: [..]`/`- item` lines under `parent.child`.
 fn fields(head: &[&str]) -> Vec<(String, Vec<String>)> {
     let mut out: Vec<(String, Vec<String>)> = Vec::new();
@@ -332,9 +322,10 @@ fn tags(base: &str, own: &[String]) -> Vec<String> {
     out
 }
 
-/// An Agent Control rule: its id as key, title then body as value, and its
-/// tags, priority, enforcement, scope and `applies_to` where Precept has them.
-pub fn agent_control(source: &str, text: &str, out: &mut (Vec<Candidate>, Vec<Skipped>)) {
+/// A Precept rule file: front matter (`key` — or `id` —, `title`, `tags`,
+/// `priority`, `enforcement`, `applies_to`, `scope: project|personal`) and the
+/// rule's text as body. Key from `key`, else `id`, else the file name.
+pub fn rule_file(source: &str, text: &str, out: &mut (Vec<Candidate>, Vec<Skipped>)) {
     let (head, body) = front_matter(text);
     let f = fields(&head);
     let first = |name: &str| field(&f, name).first().cloned().unwrap_or_default();
@@ -344,11 +335,14 @@ pub fn agent_control(source: &str, text: &str, out: &mut (Vec<Candidate>, Vec<Sk
         .unwrap_or(source)
         .trim_end_matches(".md");
     let title = first("title");
-    let id = first("id");
+    let named = [first("key"), first("id")]
+        .into_iter()
+        .find(|k| !k.is_empty())
+        .unwrap_or_else(|| stem.to_owned());
     let key = {
-        let k = slug(if id.is_empty() { stem } else { &id });
+        let k = slug(&named);
         if k.is_empty() {
-            key_for("agent-control", &title, 0)
+            key_for("rule", &title, 0)
         } else {
             k
         }
@@ -377,7 +371,7 @@ pub fn agent_control(source: &str, text: &str, out: &mut (Vec<Candidate>, Vec<Sk
         .map(|p| p.clamp(PRIORITY_MIN, PRIORITY_MAX))
         .unwrap_or(0);
     let enforcement = Enforcement::parse(&first("enforcement")).unwrap_or_default();
-    let target = if first("scope") == "global" {
+    let target = if matches!(first("scope").as_str(), "personal" | "global") {
         Target::Personal
     } else {
         Target::Project
@@ -394,7 +388,7 @@ pub fn agent_control(source: &str, text: &str, out: &mut (Vec<Candidate>, Vec<Sk
             title,
             key,
             value,
-            tags: tags("agent-control", field(&f, "tags")),
+            tags: tags("rule-file", field(&f, "tags")),
             rule: RuleOptions {
                 applies_to,
                 priority,
@@ -405,50 +399,11 @@ pub fn agent_control(source: &str, text: &str, out: &mut (Vec<Candidate>, Vec<Sk
     );
 }
 
-/// A Cursor rule: its file name as key, `description` then body as value.
-/// Its `globs` are glob patterns Precept's paths do not take, so they are
-/// kept as words in the value instead of narrowing the rule.
-pub fn cursor_rule(source: &str, text: &str, out: &mut (Vec<Candidate>, Vec<Skipped>)) {
-    let (head, body) = front_matter(text);
-    let f = fields(&head);
-    let stem = source
-        .rsplit('/')
-        .next()
-        .unwrap_or(source)
-        .trim_end_matches(".mdc");
-    let description = field(&f, "description")
-        .first()
-        .cloned()
-        .unwrap_or_default();
-    let globs = field(&f, "globs").join(", ");
-    let mut value = String::new();
-    if !description.is_empty() {
-        value.push_str(&format!("**{description}**\n\n"));
-    }
-    if !globs.is_empty() {
-        value.push_str(&format!("Applies to files matching: {globs}\n\n"));
-    }
-    value.push_str(body);
-    push(
-        out,
-        Candidate {
-            source: source.into(),
-            title: stem.to_owned(),
-            key: key_for("cursor", stem, 0),
-            value,
-            tags: vec!["imported".into(), "cursor-rules".into()],
-            rule: RuleOptions::default(),
-            target: Target::Project,
-        },
-    );
-}
-
 /// Candidates from one file's text.
 pub fn parse(source: &str, format: Format, text: &str, out: &mut (Vec<Candidate>, Vec<Skipped>)) {
     match format {
         Format::Instructions => instructions(source, text, out),
-        Format::CursorRule => cursor_rule(source, text, out),
-        Format::AgentControl => agent_control(source, text, out),
+        Format::RuleFile => rule_file(source, text, out),
     }
 }
 
@@ -490,53 +445,42 @@ mod tests {
         );
         let long = format!("## Big\n\n{}", "x".repeat(MAX_VALUE + 1));
         assert_eq!(
-            run("CLAUDE.md", Format::Instructions, &long).1[0].reason,
+            run("AGENTS.md", Format::Instructions, &long).1[0].reason,
             "too_long"
         );
     }
 
     #[test]
-    fn agent_control_rules_keep_their_options() {
-        let text = "---\nid: ac-definition-of-done\nversion: 2\ntitle: 'Definition of done: fmt -> clippy'\ncontent: ''\nkind: contract\nscope: project\nsource:\n  kind: project\n  author: someone\npriority: 100\napplies_to:\n  languages: [Rust]\n  paths:\n  - crates/\ntags:\n- verification\n- gate\n- mise\n- Extra Tag\nenabled: true\nenforcement: verify\n---\nRun the full gate.\n";
-        let (c, _) = run(
-            ".agent-control/rules/ac-definition-of-done.md",
-            Format::AgentControl,
-            text,
-        );
+    fn rule_files_keep_their_options() {
+        let text = "---\nkey: definition-of-done\ntitle: 'Definition of done: fmt -> clippy'\nscope: project\npriority: 100\napplies_to:\n  languages: [Rust]\n  paths:\n  - crates/\ntags:\n- verification\n- gate\n- mise\n- Extra Tag\nenforcement: verify\n---\nRun the full gate.\n";
+        let (c, _) = run(".precept/rules/done.md", Format::RuleFile, text);
         let c = &c[0];
-        assert_eq!(c.key, "ac-definition-of-done");
+        assert_eq!(c.key, "definition-of-done");
         assert_eq!(
             c.value,
             "**Definition of done: fmt -> clippy**\n\nRun the full gate."
         );
         assert_eq!(
             c.tags,
-            ["agent-control", "gate", "imported", "mise", "verification"]
+            ["gate", "imported", "mise", "rule-file", "verification"]
         );
         assert_eq!(c.rule.priority, 100);
         assert_eq!(c.rule.enforcement, Enforcement::Verify);
         assert_eq!(c.rule.applies_to.languages, ["rust"]);
         assert_eq!(c.rule.applies_to.paths, ["crates/"]);
         assert_eq!(c.target, Target::Project);
-        let global = text.replace("scope: project", "scope: global");
+        let personal = text.replace("scope: project", "scope: personal");
         assert_eq!(
-            run("r.md", Format::AgentControl, &global).0[0].target,
+            run("r.md", Format::RuleFile, &personal).0[0].target,
             Target::Personal
         );
-    }
-
-    #[test]
-    fn cursor_rules_keep_globs_as_words() {
-        let text = "---\ndescription: TypeScript style\nglobs: src/**/*.ts\nalwaysApply: false\n---\nUse strict mode.\n";
-        let (c, _) = run(".cursor/rules/ts-style.mdc", Format::CursorRule, text);
-        assert_eq!(c[0].key, "cursor-ts-style");
-        assert!(
-            c[0].value
-                .contains("Applies to files matching: src/**/*.ts")
+        // `id` names the key when `key` is absent; else the file name does.
+        let by_id = text.replace("key: definition-of-done", "id: done-by-id");
+        assert_eq!(run("r.md", Format::RuleFile, &by_id).0[0].key, "done-by-id");
+        let unnamed = text.replace("key: definition-of-done\n", "");
+        assert_eq!(
+            run(".precept/rules/from-name.md", Format::RuleFile, &unnamed).0[0].key,
+            "from-name"
         );
-        assert!(
-            c[0].value.ends_with("Use strict mode.\n") || c[0].value.ends_with("Use strict mode.")
-        );
-        assert!(c[0].rule.applies_to.is_empty());
     }
 }
