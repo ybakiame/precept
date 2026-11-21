@@ -213,6 +213,12 @@ from the context. Agent projections omit origin, review history, losing values a
 raw typed explanations. No repository files are
 created or modified by this read path.
 
+Operator `rules.export` previews writing one confirmed convention of a served
+project as `.precept/rules/<id>.md` (path, exact text, `absent` / `same` /
+`different`, current digest); `rules.export.apply` with `enabled` writes it only
+to an absent path, guarded by the previewed digest, or takes back a file still
+exactly as Precept wrote it. Nothing is committed; agents cannot call either.
+
 ### Agent activity
 
 The daemon keeps an in-memory log of agent requests for the operator (the newest

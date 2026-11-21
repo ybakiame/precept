@@ -24,6 +24,7 @@ mod ownership_tests;
 #[cfg(test)]
 mod process_tests;
 mod profiles;
+mod rule_export;
 mod scope;
 mod sessions;
 mod state;
@@ -268,6 +269,50 @@ impl Service {
                         return Err(Error::InvalidRequest);
                     }
                     integration::apply(root, &p.project, enabled, p.expected_sha256.as_deref())
+                }
+                _ => Err(Error::InvalidRequest),
+            };
+        }
+        // A confirmed project convention written as a repository rule file:
+        // a preview, then an explicit write guarded by the previewed digest.
+        if matches!(
+            request.method.as_str(),
+            "rules.export" | "rules.export.apply"
+        ) {
+            if access != Access::Operator {
+                return Err(Error::Unauthorized);
+            }
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Export {
+                project: String,
+                id: u64,
+                #[serde(default)]
+                enabled: Option<bool>,
+                #[serde(default)]
+                expected_sha256: Option<String>,
+            }
+            let p: Export = decode(params)?;
+            if !self.profiles.allowed(&p.project) {
+                return Err(Error::NotFound);
+            }
+            let (store, roots) = self.profiles.read()?;
+            let root = roots.get(&p.project).ok_or(Error::NotFound)?;
+            let prefs = precept_core::PreferenceRepository::preferences(&store, &p.project)
+                .map_err(|_| Error::Unavailable)?;
+            let convention = rule_export::convention(prefs, &p.project, p.id)?;
+            if p.expected_sha256
+                .as_ref()
+                .is_some_and(|d| d.len() != 64 || !d.bytes().all(|b| b.is_ascii_hexdigit()))
+            {
+                return Err(Error::InvalidRequest);
+            }
+            return match (request.method.as_str(), p.enabled) {
+                ("rules.export", None) if p.expected_sha256.is_none() => {
+                    rule_export::preview(root, &convention)
+                }
+                ("rules.export.apply", Some(enabled)) => {
+                    rule_export::apply(root, &convention, enabled, p.expected_sha256.as_deref())
                 }
                 _ => Err(Error::InvalidRequest),
             };

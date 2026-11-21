@@ -451,3 +451,77 @@ fn real_selectors_unknown_match_nonmatch_and_malformed_never_change_authority() 
     }
     assert_eq!(logical(&f.db), before);
 }
+
+#[test]
+fn a_confirmed_convention_written_and_committed_becomes_the_repository_rule() {
+    let (f, b) = setup();
+    init(&f);
+    let alpha = Scope::Project {
+        name: "alpha".into(),
+    };
+    let id = preference(
+        &f,
+        &b,
+        alpha,
+        "commit-style",
+        "Small commits.",
+        Some("confirm"),
+    );
+    let personal = preference(&f, &b, Scope::Global, "personal", "x", Some("confirm"));
+    // Only a confirmed convention of this project can be written.
+    assert_eq!(
+        f.daemon
+            .control("rules.export", json!({"project":"alpha","id":personal})),
+        Err(precept_ipc::Error::NotFound)
+    );
+    assert_eq!(
+        f.daemon.call(
+            &f.daemon.credential("agent-alpha.cap"),
+            "rules.export.apply",
+            json!({"project":"alpha","id":id,"enabled":true})
+        ),
+        Err(precept_ipc::Error::Unauthorized)
+    );
+    let preview = f
+        .daemon
+        .control("rules.export", json!({"project":"alpha","id":id}))
+        .unwrap();
+    assert_eq!(preview["state"], "absent");
+    assert_eq!(preview["path"], ".precept/rules/commit-style.md");
+    let written = f
+        .daemon
+        .control(
+            "rules.export.apply",
+            json!({"project":"alpha","id":id,"enabled":true,"expected_sha256":null}),
+        )
+        .unwrap();
+    assert_eq!(written["action"], "created");
+    let file = f.temp.path().join("alpha/.precept/rules/commit-style.md");
+    assert_eq!(fs::read_to_string(&file).unwrap(), preview["text"]);
+    let pending = context(&f, json!({}));
+    assert_eq!(pending["pending_rules"][0]["key"], "commit-style");
+    assert!(
+        pending["preferences"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["key"] == "commit-style")
+    );
+    commit(&f);
+    let served = context(&f, json!({}));
+    assert_eq!(served["repository_rules"][0]["key"], "commit-style");
+    assert_eq!(served["repository_rules"][0]["text"], "Small commits.");
+    assert!(
+        served["preferences"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|p| p["key"] != "commit-style")
+    );
+    // Writing again is a no-op; nothing is overwritten.
+    let same = f
+        .daemon
+        .control("rules.export", json!({"project":"alpha","id":id}))
+        .unwrap();
+    assert_eq!(same["state"], "same");
+}

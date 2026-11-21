@@ -179,7 +179,12 @@ files the picks as suggestions; they are confirmed like any other.
 
 The Preferences & contracts page starts with the repository's effective contracts
 (read-only; changed in the repository), then one virtualized list of the confirmed
-effective rows, with no pages. A row's **Details** opens a dialog that renders the rule's
+effective rows, with no pages. Repository rules (committed `.precept/rules` files) are listed with their file,
+the current check result (checks pass n/m, check failing with the file, or checks
+could not run), declared enforcement and guard count; uncommitted and invalid files
+are named below them. In Review → Project conventions, a confirmed record offers
+**Write to repository…**: a dialog previews the exact file and path and writes it
+only to an absent path; the operator reviews and commits it. A row's **Details** opens a dialog that renders the rule's
 Markdown, with where it applies and its tags, **Copy text** and **Close** (the
 terminal keeps the paged inline detail). Review rows put the origin icon in its own
 column, then the title (key, number and revision; it wraps, and its accessible name

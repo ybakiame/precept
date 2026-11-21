@@ -30,6 +30,8 @@ pub const CONTROL_METHODS: &[&str] = &[
     "integration.hooks.apply",
     "integration.mcp",
     "integration.mcp.apply",
+    "rules.export",
+    "rules.export.apply",
     "import.scan",
     "sessions.list",
     "sessions.delete",

@@ -116,9 +116,26 @@ pub struct Operator {
     /// Revision of the held exact inspect snapshot, bound into the guard.
     pub inspect_revision: i64,
     pub digest_expanded: bool,
+    /// The rule file preview of the confirmed convention being written to
+    /// the repository (`rules.export`), with the record it is for.
+    pub export: Option<(i64, RuleExport)>,
+    pub export_busy: bool,
     pub delete_arm: Option<DeleteArm>,
     /// Authority and live sources of the last completed exact inspection.
     inspection: Option<Guard>,
+}
+/// What writing a confirmed convention as a repository rule file would do.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
+pub struct RuleExport {
+    /// `.precept/rules/<id>.md`.
+    pub path: String,
+    /// The file text Precept writes.
+    pub text: String,
+    /// `absent`, `same` (already written) or `different` (refused).
+    pub state: String,
+    pub valid: bool,
+    /// The current file's digest (none when absent): the write's guard.
+    pub sha256: Option<String>,
 }
 /// The most rules one import files (the writer's batch bound).
 pub const MAX_BATCH_UI: usize = precept_core::operator::MAX_BATCH;

@@ -799,6 +799,7 @@ pub(crate) fn shell(
                         .child(review::panel(model))
                         .child(projects::remove_dialog(model))
                         .child(features::preferences::detail_dialog(model))
+                        .child(features::review::export_dialog(model))
                         .child(agents::pointer_dialog(model))
                         .child(
                             scroll()

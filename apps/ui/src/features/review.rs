@@ -989,6 +989,21 @@ fn detail_tab(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
                 move || available(model) && write_grant(model) && status_is(model, "confirmed"),
                 move || review(model, "deprecate"),
             ))
+            .child(if m.operator.mode == ReviewMode::Project {
+                word_action(
+                    model,
+                    Msg::ExportRule,
+                    move || {
+                        available(model)
+                            && status_is(model, "confirmed")
+                            && !model.get().operator.export_busy
+                    },
+                    move || open_export(model),
+                )
+                .into_element()
+            } else {
+                view().into_element()
+            })
             .child(
                 ui::button(model, "")
                     .label_fn(move || model.get().word(Msg::ReviewDelete).into())
@@ -1003,6 +1018,126 @@ fn detail_tab(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
     );
     body.into_element()
 }
+/// Reads what writing the inspected confirmed convention as a rule file
+/// would do, and opens the preview.
+fn open_export(model: Signal<Model>) {
+    let m = model.get();
+    let (Some(project), Some(id)) = (m.project().map(|p| p.name.clone()), m.operator.selected_id)
+    else {
+        return;
+    };
+    model.update(|m| m.operator.export_busy = true);
+    super::profile::call(
+        model,
+        "rules.export",
+        serde_json::json!({"project": project, "id": id}),
+        move |_, m, r| {
+            m.operator.export_busy = false;
+            match r.and_then(|v| {
+                serde_json::from_value::<precept_ui_core::operator::RuleExport>(v)
+                    .map_err(|_| "Unavailable")
+            }) {
+                Ok(preview) => m.operator.export = Some((id, preview)),
+                Err(code) => ui::notify(ui::Tone::Error, code),
+            }
+        },
+    );
+}
+
+/// Writes the previewed rule file, guarded by the digest the preview saw.
+fn write_export(model: Signal<Model>) {
+    let m = model.get();
+    let (Some(project), Some((id, preview))) = (
+        m.project().map(|p| p.name.clone()),
+        m.operator.export.clone(),
+    ) else {
+        return;
+    };
+    model.update(|m| m.operator.export_busy = true);
+    super::profile::call(
+        model,
+        "rules.export.apply",
+        serde_json::json!({"project": project, "id": id, "enabled": true,
+            "expected_sha256": preview.sha256}),
+        move |model, m, r| {
+            m.operator.export_busy = false;
+            match r {
+                Ok(_) => {
+                    m.operator.export = None;
+                    ui::notify(ui::Tone::Success, m.word(Msg::ToastExported));
+                    // The new file shows as pending on Preferences & contracts.
+                    crate::load(model);
+                }
+                Err("Conflict") => ui::notify(ui::Tone::Error, m.word(Msg::ExportChanged)),
+                Err(code) => ui::notify(ui::Tone::Error, code),
+            }
+        },
+    );
+}
+
+/// The rule file preview: path, what writing does, and the exact text.
+/// Writing is offered only for an absent path and a valid file.
+pub(crate) fn export_dialog(model: Signal<Model>) -> impl IntoElement {
+    let preview = move || model.get().operator.export.clone().map(|(_, p)| p);
+    ui::dialog(model, "")
+        .size(ui::DialogSize::Large)
+        .title_fn(move || model.get().word(Msg::ExportTitle).into())
+        .description_fn(move || {
+            preview()
+                .map(|p| sanitize(&p.path, 160))
+                .unwrap_or_default()
+                .into()
+        })
+        .content_fn(move || {
+            let m = model.get();
+            let Some(p) = preview() else {
+                return view().into_element();
+            };
+            let state = match (p.valid, p.state.as_str()) {
+                (false, _) => Some((Msg::ExportInvalid, palette(model).danger)),
+                (_, "same") => Some((Msg::ExportSame, palette(model).muted)),
+                (_, "different") => Some((Msg::ExportDifferent, palette(model).danger)),
+                _ => None,
+            };
+            let mut body = view().gap_3().w_full().child(
+                text(m.word(Msg::ExportHelp))
+                    .text_size(px(ui::scale::text::CAPTION))
+                    .text_color(move || palette(model).muted),
+            );
+            if let Some((msg, color)) = state {
+                body = body.child(
+                    text(m.word(msg))
+                        .text_size(px(ui::scale::text::CAPTION))
+                        .text_color(move || color),
+                );
+            }
+            body.child(
+                scroll()
+                    .max_h(px(360.0))
+                    .w_full()
+                    .rounded(px(ui::scale::radius::CONTROL))
+                    .bg(move || palette(model).inset)
+                    .child(
+                        text(p.text)
+                            .p_3()
+                            .selectable(true)
+                            .font_family("monospace")
+                            .text_size(px(ui::scale::text::CAPTION)),
+                    ),
+            )
+            .into_element()
+        })
+        .cancel_fn(move || model.get().word(Msg::CloseDialog).into())
+        .confirm_fn(move || model.get().word(Msg::ExportWrite).into())
+        .confirm_disabled(move || {
+            model.get().operator.export_busy
+                || preview().is_none_or(|p| !p.valid || p.state != "absent")
+        })
+        .open(move || preview().is_some())
+        .on_cancel(move || model.update(|m| m.operator.export = None))
+        .on_confirm(move || write_export(model))
+}
+
 /// The History tab: bounded decision rows for the inspected id. A deleted record
 /// keeps no content or history snapshot, so this falls back to the empty state.
 fn history_tab(model: Signal<Model>) -> AnyElement {
