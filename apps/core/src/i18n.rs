@@ -187,7 +187,7 @@ catalog! {
     ReviewStatus => ("State", "状态"),
     ReviewCommit => ("commit", "提交"),
     ReviewProvenanceNote => ("Origin is the operator's claim, not verified authorship; the digest proves byte equality only.", "来源是操作者的声明，并非经过验证的作者身份；摘要仅证明字节一致。"),
-    ReviewContractNote => ("Repository ProjectContracts outrank personal preferences. Confirming a preference does not approve a ProjectContract.", "仓库 ProjectContract 的优先级高于个人偏好。确认偏好不代表批准 ProjectContract。"),
+    ReviewContractNote => ("Committed rules in the repository's .precept/rules/ outrank Profile records of the same key. Confirming a record here does not change the repository.", "仓库 .precept/rules/ 中已提交的规则优先于同键的 Profile 记录。在此确认记录不会改动仓库。"),
     ReviewInspect => ("Inspect exact record", "检查精确记录"),
     ReviewNoSelection => ("Select a queue row to inspect", "选择一条待审记录以检查"),
     ReviewDigest => ("Proposal digest", "提案摘要"),

@@ -1066,7 +1066,8 @@ fn write_export(model: Signal<Model>) {
                     m.operator.export = None;
                     ui::notify(ui::Tone::Success, m.word(Msg::ToastExported));
                     // The new file shows as pending on Preferences & contracts.
-                    crate::load(model);
+                    // Not inside this update: the loader updates the model itself.
+                    spawn(async move { crate::load(model) });
                 }
                 Err("Conflict") => ui::notify(ui::Tone::Error, m.word(Msg::ExportChanged)),
                 Err(code) => ui::notify(ui::Tone::Error, code),
@@ -3317,7 +3318,7 @@ mod tests {
         app.wait_for("Origin is the operator's claim, not verified authorship; the digest proves byte equality only.").unwrap();
         app.wait_for("Tags: #synthetic").unwrap();
         app.wait_for("Origin: Agent").unwrap();
-        app.wait_for("Repository ProjectContracts outrank personal preferences. Confirming a preference does not approve a ProjectContract.").unwrap();
+        app.wait_for("Committed rules in the repository's .precept/rules/ outrank Profile records of the same key. Confirming a record here does not change the repository.").unwrap();
         app.press_key("mod+l").unwrap();
         app.wait_for("来源: Agent").unwrap();
         app.wait_for("修订: 1").unwrap();
