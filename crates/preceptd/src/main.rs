@@ -73,6 +73,7 @@ struct AgentSuggest {
     /// `project` (this project), `environment` (this machine, for this
     /// project) or `personal` (every project).
     scope: String,
+    #[serde(default)]
     key: String,
     value: String,
     #[serde(default)]
@@ -81,6 +82,10 @@ struct AgentSuggest {
     applies_to: precept_core::operator::AppliesTo,
     #[serde(default)]
     enforcement: Option<String>,
+    /// A confirmed rule of this scope the suggestion would update: it takes
+    /// that rule's key and, when not given, its tags and rule options.
+    #[serde(default)]
+    replaces: Option<i64>,
     #[serde(default)]
     #[allow(dead_code)]
     client: Option<String>,
@@ -511,22 +516,37 @@ impl Service {
                 "personal" => Scope::Global,
                 _ => return Err(Error::InvalidRequest),
             };
+            // An update of a confirmed rule keeps that rule's key, and its tags
+            // and options unless the agent names new ones.
+            let target = match p.replaces {
+                None => None,
+                Some(id) if id > 0 => Some(self.profiles.confirmed_record(&project, &scope, id)?),
+                Some(_) => return Err(Error::InvalidRequest),
+            };
+            let key = target.as_ref().map_or(p.key, |t| t.key.clone());
             // Every record carries a tag; an untagged suggestion is filed under `agent`.
-            let tags = if p.tags.is_empty() {
-                vec!["agent".to_owned()]
-            } else {
-                p.tags
+            let tags = match (&target, p.tags.is_empty()) {
+                (Some(t), true) => t.tags.clone(),
+                (None, true) => vec!["agent".to_owned()],
+                _ => p.tags,
             };
             let tags = precept_ipc::operator::canonical_tags(&tags).ok_or(Error::InvalidRequest)?;
             let enforcement = match p.enforcement.as_deref() {
-                None => Default::default(),
+                None => target
+                    .as_ref()
+                    .map(|t| t.rule.enforcement)
+                    .unwrap_or_default(),
                 Some(e) => {
                     precept_core::operator::Enforcement::parse(e).ok_or(Error::InvalidRequest)?
                 }
             };
+            let applies_to = match &target {
+                Some(t) if p.applies_to.is_empty() => t.rule.applies_to.clone(),
+                _ => p.applies_to.canonical().ok_or(Error::InvalidRequest)?,
+            };
             let rule = precept_core::operator::RuleOptions {
-                applies_to: p.applies_to.canonical().ok_or(Error::InvalidRequest)?,
-                priority: 0,
+                applies_to,
+                priority: target.as_ref().map_or(0, |t| t.rule.priority),
                 enforcement,
             };
             if !rule.valid_for(&scope) {
@@ -534,7 +554,7 @@ impl Service {
             }
             return self
                 .profiles
-                .agent_suggest(&project, scope, p.key, p.value, tags, rule);
+                .agent_suggest(&project, scope, key, p.value, tags, rule);
         }
         let (store, roots) = self.profiles.read()?;
         let (project, include, task, selector) = match (request.method.as_str(), access) {

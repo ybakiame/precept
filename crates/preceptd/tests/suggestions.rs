@@ -116,3 +116,82 @@ fn agents_suggest_only_where_allowed_while_writes_are_on_and_never_confirm() {
     propose(&f, false);
     assert_eq!(suggest(&f, rule("off-again")), Err(Error::Unauthorized));
 }
+
+#[test]
+fn an_agent_proposes_an_update_of_a_confirmed_rule_for_review() {
+    let f = Fixture::created();
+    let b = f.daemon.enable();
+    f.register(&b, "alpha");
+    propose(&f, true);
+    let env = json!({"kind":"environment","name":"alpha"});
+    let filed = suggest(
+        &f,
+        json!({"scope":"environment","key":"toolchain","value":"Rust 1.98 via rustup.","tags":["rust"]}),
+    )
+    .unwrap();
+    let old: i64 = filed["id"].as_str().unwrap().parse().unwrap();
+    let inspect = |id: i64, revision: i64| {
+        f.daemon
+            .control(
+                "profile.review.inspect",
+                json!({"scope":env,"id":id,"revision":revision}),
+            )
+            .unwrap()
+    };
+    let digest = inspect(old, 1)["record"]["proposal_digest"].clone();
+    f.daemon
+        .mutate(
+            &b,
+            "confirm-old",
+            precept_write::Command::ConfirmPreference {
+                id: old,
+                scope: precept_write::Scope::Environment {
+                    name: "alpha".into(),
+                },
+                proposal_digest: digest.as_str().unwrap().into(),
+                channel: precept_core::operator::Channel::Desktop,
+                expected: precept_write::Expected::Revision(1),
+                note: None,
+            },
+        )
+        .unwrap();
+    // The agent sees the rule's id in its context and proposes the new fact.
+    let agent = f.daemon.credential("agent-alpha.cap");
+    let context = f.daemon.call(&agent, "context.get", json!({})).unwrap();
+    assert!(
+        context["preferences"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["id"] == old)
+    );
+    // A wrong id, or one of another scope, is refused.
+    assert_eq!(
+        suggest(
+            &f,
+            json!({"scope":"environment","value":"x","replaces":9999})
+        ),
+        Err(Error::NotFound)
+    );
+    assert_eq!(
+        suggest(&f, json!({"scope":"project","value":"x","replaces":old})),
+        Err(Error::NotFound)
+    );
+    let update = suggest(
+        &f,
+        json!({"scope":"environment","value":"Rust 1.99 via rustup.","replaces":old}),
+    )
+    .unwrap();
+    let new: i64 = update["id"].as_str().unwrap().parse().unwrap();
+    let proposed = inspect(new, 1);
+    assert_eq!(proposed["record"]["key"], "toolchain");
+    assert_eq!(proposed["record"]["tags"], json!(["rust"]));
+    assert_eq!(proposed["record"]["status"], "suggested");
+    assert_eq!(proposed["record"]["origin"], "agent");
+    // Review names the rule it would supersede.
+    assert_eq!(proposed["peer_demotions"][0]["id"], old);
+    // Until confirmed, agents keep reading the old fact.
+    let context = f.daemon.call(&agent, "context.get", json!({})).unwrap();
+    assert!(context.to_string().contains("Rust 1.98"));
+    assert!(!context.to_string().contains("Rust 1.99"));
+}

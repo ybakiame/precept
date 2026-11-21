@@ -558,7 +558,7 @@ fn header(model: Signal<Model>) -> impl IntoElement {
                         .gap_2()
                         .child({
                             // The title arrives with each destination (a short
-                            // fade and rise), so a page change reads as one.
+                            // rise), so a page change reads as one.
                             let destination = computed(move || current(&model.get()));
                             dynamic(move || {
                                 let _ = destination.get();

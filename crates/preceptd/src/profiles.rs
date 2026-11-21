@@ -708,6 +708,41 @@ impl Profiles {
     /// allows suggestions for the project and has writes on for this run;
     /// bounded per run and per scope, duplicates refused. The record lands as
     /// `suggested` with origin `agent`: confirming it stays the operator's.
+    /// A confirmed record of `scope` an agent of `project` may propose an
+    /// update to (its own project, its environment, or personal).
+    pub fn confirmed_record(
+        &self,
+        project: &str,
+        scope: &Scope,
+        id: i64,
+    ) -> Result<precept_core::operator::PreferenceRecord> {
+        let s = self.state.lock().unwrap();
+        match scope {
+            Scope::Global => {}
+            Scope::Project { name } | Scope::Environment { name } if name == project => {}
+            _ => return Err(Error::ScopeMismatch),
+        }
+        if !s.switches.proposers.contains(project) || !s.roots.contains_key(project) {
+            return Err(Error::Unauthorized);
+        }
+        let reader = s
+            .selected
+            .as_ref()
+            .ok_or(Error::Unavailable)?
+            .reader()
+            .map_err(storage_error)?;
+        let record = reader
+            .operator_preference(scope, id)
+            .map_err(|e| match e {
+                precept_store::Error::PreferenceNotFound => Error::NotFound,
+                _ => Error::Unavailable,
+            })?
+            .record;
+        if record.status != "confirmed" {
+            return Err(Error::NotFound);
+        }
+        Ok(record)
+    }
     pub fn agent_suggest(
         &self,
         project: &str,
@@ -858,7 +893,7 @@ impl Profiles {
                 | Command::SetPreferenceEnabled { scope, .. }
                 | Command::ConfirmPreference { scope, .. }
                 | Command::RejectPreference { scope, .. }
-                | Command::ReviseSuggestion { scope, .. }
+                | Command::RevisePreference { scope, .. }
                 | Command::DeprecatePreference { scope, .. }
                 | Command::DeletePreference { scope, .. } => match scope {
                     Scope::Global => None,

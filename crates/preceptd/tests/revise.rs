@@ -85,7 +85,7 @@ fn notes_stay_with_decisions_and_an_edit_replaces_a_suggestion_in_one_write() {
     // An edit: the new record is suggested and the operator's; the old one is
     // rejected by `replace`, naming it.
     let (old, digest) = suggest(&f, &b, "s2", "commits-2", &["style"]);
-    let revise = |digest: String, key: &str| Command::ReviseSuggestion {
+    let revise = |digest: String, key: &str| Command::RevisePreference {
         id: old,
         scope: Scope::Global,
         proposal_digest: digest,
@@ -125,7 +125,7 @@ fn notes_stay_with_decisions_and_an_edit_replaces_a_suggestion_in_one_write() {
     assert_eq!(h[0]["action"], "replace");
     assert_eq!(h[0]["replaced_by"], new);
     assert_eq!(h[0]["note"], "Tag corrected.");
-    // Only a suggestion can be edited.
+    // The replaced suggestion is closed: editing it again is stale.
     assert_eq!(
         f.daemon.mutate(&b, "v2", revise(digest, "again")).err(),
         Some(Error::Conflict)
@@ -138,6 +138,114 @@ fn notes_stay_with_decisions_and_an_edit_replaces_a_suggestion_in_one_write() {
     f.daemon
         .control("profile.select", json!({"path":f.db}))
         .expect("notes and replacements verify");
+}
+
+#[test]
+fn an_edit_of_a_confirmed_record_takes_its_place_and_keeps_the_earlier_text() {
+    let mut f = Fixture::created();
+    let b = f.daemon.enable();
+    let confirm = |f: &Fixture, op: &str, id: i64, digest: &str| {
+        f.daemon
+            .mutate(
+                &b,
+                op,
+                Command::ConfirmPreference {
+                    id,
+                    scope: Scope::Global,
+                    proposal_digest: digest.into(),
+                    channel: Channel::Desktop,
+                    expected: Expected::Revision(1),
+                    note: None,
+                },
+            )
+            .unwrap();
+    };
+    let (old, digest) = suggest(&f, &b, "s1", "editor", &["tools"]);
+    confirm(&f, "c1", old, &digest);
+    // Another confirmed record under the key the edit moves to.
+    let (peer, peer_digest) = suggest(&f, &b, "s2", "editor-choice", &["tools"]);
+    confirm(&f, "c2", peer, &peer_digest);
+    let edit = |op: &str, expected: i64| {
+        f.daemon.mutate(
+            &b,
+            op,
+            Command::RevisePreference {
+                id: old,
+                scope: Scope::Global,
+                proposal_digest: digest.clone(),
+                key: "editor-choice".into(),
+                value: "Use Helix; Vim keys elsewhere.".into(),
+                tags: vec!["tools".into()],
+                rule: RuleOptions::default(),
+                channel: Channel::Desktop,
+                expected: Expected::Revision(expected),
+                note: Some("Switched editors.".into()),
+            },
+        )
+    };
+    assert_eq!(edit("e-stale", 1).err(), Some(Error::Conflict));
+    let receipt = edit("e1", 2).unwrap();
+    assert_eq!(receipt["affected"].as_array().unwrap().len(), 3);
+    let new = peer + 1;
+    let fresh = get(&f, new);
+    assert_eq!(fresh["status"], "confirmed");
+    assert_eq!(fresh["key"], "editor-choice");
+    assert_eq!(fresh["value"], "Use Helix; Vim keys elsewhere.");
+    // The earlier text stays, deprecated, naming its replacement.
+    let earlier = get(&f, old);
+    assert_eq!(earlier["status"], "deprecated");
+    assert_eq!(earlier["value"], "Keep commits small.");
+    let h = history(&f, old, 3);
+    assert_eq!(h[0]["action"], "replace");
+    assert_eq!(h[0]["replaced_by"], new);
+    assert_eq!(h[0]["note"], "Switched editors.");
+    assert_eq!(history(&f, new, 2)[0]["action"], "confirm");
+    // The other record of that key stepped aside.
+    assert_eq!(get(&f, peer)["status"], "deprecated");
+    assert_eq!(history(&f, peer, 3)[0]["action"], "demote");
+    // A switched-off rule is switched on before it is edited.
+    let fresh_digest = fresh["proposal_digest"].as_str().unwrap().to_owned();
+    f.daemon
+        .mutate(
+            &b,
+            "off",
+            Command::SetPreferenceEnabled {
+                id: new,
+                scope: Scope::Global,
+                enabled: false,
+                channel: Channel::Desktop,
+                expected: Expected::Revision(2),
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        f.daemon
+            .mutate(
+                &b,
+                "e2",
+                Command::RevisePreference {
+                    id: new,
+                    scope: Scope::Global,
+                    proposal_digest: fresh_digest,
+                    key: "editor-choice".into(),
+                    value: "x".into(),
+                    tags: vec!["tools".into()],
+                    rule: RuleOptions::default(),
+                    channel: Channel::Desktop,
+                    expected: Expected::Revision(3),
+                    note: None,
+                },
+            )
+            .err(),
+        Some(Error::InvalidTransition)
+    );
+    // A new daemon re-verifies the whole Profile.
+    f.daemon.kill();
+    f.daemon = Daemon::relaunch(f.temp.path(), "run-b");
+    f.daemon.ready();
+    f.daemon
+        .control("profile.select", json!({"path":f.db}))
+        .expect("an edited confirmed record verifies");
 }
 
 #[test]

@@ -366,7 +366,7 @@ pub enum Command {
     /// Replaces a suggestion with the operator's edited version in one
     /// write: the new record is suggested (still to be confirmed) and the old
     /// one is rejected, its decision naming the new id.
-    ReviseSuggestion {
+    RevisePreference {
         id: i64,
         scope: Scope,
         proposal_digest: String,
@@ -450,7 +450,7 @@ impl Command {
             Command::ConfirmPreference { note, .. }
             | Command::RejectPreference { note, .. }
             | Command::DeprecatePreference { note, .. }
-            | Command::ReviseSuggestion { note, .. }
+            | Command::RevisePreference { note, .. }
             | Command::DecideBatch { note, .. } => note.as_deref(),
             _ => None,
         }

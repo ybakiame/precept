@@ -77,10 +77,11 @@ pub fn scrim() -> Motion {
     )
 }
 
-/// A queue row arriving: rise [`RISE`] points and fade in on `slower` ease-out,
-/// delayed by a capped index stagger so the page enters as a wave. The engine
-/// lands it at rest (no delay, no movement) under reduced motion. Create it once
-/// per row in the rendering body and bind it with `bind_motion`.
+/// A queue row arriving: rise [`RISE`] points on `slower` ease-out, delayed by
+/// a capped index stagger so the page enters as a wave. Movement only: a row
+/// rebuilt while an opacity entrance runs (a tab switch, a refresh) was left
+/// drawn dimmed on Windows. The engine lands it at rest under reduced motion.
+/// Create it once per row in the rendering body and bind it with `bind_motion`.
 pub fn arrive(delay_ms: f32) -> Motion {
     motion().entering(
         MotionSpec::new(
@@ -88,8 +89,7 @@ pub fn arrive(delay_ms: f32) -> Motion {
                 .easing(Easing::EaseOut)
                 .delay(delay_ms),
         )
-        .values(MotionChannel::TranslateY, [RISE, 0.0])
-        .values(MotionChannel::Opacity, [0.0, 1.0]),
+        .values(MotionChannel::TranslateY, [RISE, 0.0]),
     )
 }
 
@@ -104,13 +104,12 @@ pub fn pop() -> Motion {
     )
 }
 
-/// Page content arriving when the destination changes: a short fade, so
-/// sibling sections cross-fade rather than slide. Lands at rest under reduced
-/// motion.
+/// A page title arriving when the destination changes: a short rise, so a
+/// page change reads as one. Movement only, like [`arrive`]. Lands at rest
+/// under reduced motion.
 pub fn page() -> Motion {
     motion().entering(
         MotionSpec::new(KeyframeTiming::new(FAST).easing(Easing::EaseOut))
-            .values(MotionChannel::Opacity, [0.0, 1.0])
             .values(MotionChannel::TranslateY, [4.0, 0.0]),
     )
 }

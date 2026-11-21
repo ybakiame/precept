@@ -38,11 +38,16 @@ never delivered. The CLI exposes `--scope environment`, `--agent`, `--language`,
 
 Confirm, reject and deprecate decisions take an optional operator note (`note`;
 CLI `--note`; at most 500 characters), kept with the decision and returned in its
-history. `revise_suggestion {id, scope, proposal_digest, key, value, tags, rule,
-channel, expected, note?}` replaces a suggestion with the operator's edited version
-in one write: the new record is `suggested` with origin `operator` and still needs
-confirmation; the old one becomes `rejected` through a `replace` decision naming
-`replaced_by`. Only a suggestion can be revised. Agents have no edit path.
+history. `revise_preference {id, scope, proposal_digest, key, value, tags, rule,
+channel, expected, note?}` replaces a record with the operator's edited version in
+one write, with origin `operator`. For a suggestion the new record is `suggested`
+and still needs confirmation, and the old one becomes `rejected`. For a confirmed
+rule that is switched on, the edit is the operator's reviewed change: the new
+record is `confirmed` at once (other confirmed records of its key are demoted), and
+the old one becomes `deprecated`, keeping the earlier text. Either way the old one
+gets a `replace` decision naming `replaced_by` and the note. A switched-off rule is
+switched on before it is edited. Agents have no edit path; they propose updates
+(`suggest_rule` with `replaces`).
 `decide_batch {decision: confirm|reject, items: [{id, scope, proposal_digest,
 expected}], channel, note?}` decides 1 to 50 exact suggestions in one write, each
 as its own decision with the note; any stale item, or two items touching one record
@@ -163,8 +168,12 @@ matching capability. Unbound, every tool answers that the folder is not a
 registered project. Tool arguments cannot change scope.
 
 Tools: `get_effective_context` and `get_handoff` (read-only), and `suggest_rule
-{scope: project|environment|personal, key, value, tags?, applies_to?, enforcement?}`,
-which calls agent `preference.suggest`. The daemon accepts it only when the
+{scope: project|environment|personal, key, value, tags?, applies_to?, enforcement?,
+replaces?}`, which calls agent `preference.suggest`. With `replaces` (the id of a
+confirmed rule of that scope, from `get_effective_context`; else `NotFound`) the
+suggestion is an update of that rule: it takes its key and, when not given, its
+tags, where it applies, priority and enforcement; `key` may be left out.
+Confirming it demotes the rule it updates. The daemon accepts it only when the
 operator allowed suggestions for the project (`project.propose {name, enabled}`,
 Operator; `precept project suggestions NAME on|off`; off by default, listed as
 `propose` in `project.list`) and writes are on for this run; otherwise

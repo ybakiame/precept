@@ -420,4 +420,72 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
         !s.shows("2 picked")
     })
     .unwrap();
+
+    // A confirmed rule is edited in place of itself: the new version takes
+    // effect at once, the earlier text stays in its history.
+    app.press("Refresh").unwrap();
+    app.wait_until("confirmed row", Duration::from_secs(10), |s| {
+        s.count("role:button[#4 · review-style · confirmed · r2]")
+            .unwrap_or(0)
+            > 0
+    })
+    .unwrap();
+    app.press("#4 · review-style · confirmed · r2").unwrap();
+    app.wait_for("Edit…").unwrap();
+    app.type_text("Note (optional)", "Smaller still.").unwrap();
+    app.press("Edit…").unwrap();
+    app.wait_for("Edit rule #4").unwrap();
+    app.clear("Preference key").unwrap();
+    app.type_text("Preference key", "review-pace").unwrap();
+    app.press("Save the new version").unwrap();
+    app.wait_for("Prepared operation; no write sent yet")
+        .unwrap();
+    app.press_key("alt+shift+v").unwrap();
+    let start = Instant::now();
+    while record(&f, 5).is_none() {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "rule edit applied"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let edited = record(&f, 5).unwrap();
+    assert_eq!(edited["status"], "confirmed");
+    assert_eq!(edited["key"], "review-pace");
+    let earlier = record(&f, 4).unwrap();
+    assert_eq!(earlier["status"], "deprecated");
+    assert_eq!(earlier["key"], "review-style");
+
+    // An agent's update of that rule: review shows what it would replace.
+    let binding: operator::Binding = serde_json::from_value(f.info()["binding"].clone()).unwrap();
+    let update = operator::Mutation {
+        version: 2,
+        binding,
+        operation_id: "agent-update".into(),
+        command: operator::Command::SuggestPreference {
+            scope: operator::Scope::Global,
+            key: "review-pace".into(),
+            value: "Review two changes at a time.".into(),
+            tags: vec!["review".into()],
+            origin: operator::Origin::Agent,
+            rule: Default::default(),
+            expected: operator::Expected::Absent,
+        },
+    };
+    tokio_runtime(|| operator::mutate(&f.location, &update)).unwrap();
+    // The edit opened the new version's detail; close it first.
+    app.press("Close detail").unwrap();
+    app.press("Refresh").unwrap();
+    app.wait_until("update listed", Duration::from_secs(10), |s| {
+        s.count("role:button[#6 · review-pace · suggested · r1]")
+            .unwrap_or(0)
+            > 0
+    })
+    .unwrap();
+    app.press("#6 · review-pace · suggested · r1").unwrap();
+    app.wait_for("Updates #5 · review-pace").unwrap();
+    contains(
+        &mut app,
+        "Confirming replaces the confirmed rule with this version",
+    );
 }

@@ -528,6 +528,9 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
     }
     let mut history: BTreeMap<(String, String, String), RecordVersion> = BTreeMap::new();
     let mut receipts_by_seq: Vec<Receipt> = Vec::new();
+    // (receipt, preference, revision) steps a write passed over: each must be
+    // a decision's `from` in that same receipt.
+    let mut skipped: Vec<(i64, String, i64)> = Vec::new();
     let receipts = rows(
         db,
         "SELECT operation_id,generation,request_digest,commit_sequence,result_json FROM acp_receipts ORDER BY commit_sequence",
@@ -587,7 +590,14 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
                 valid(!version.deleted)?;
                 1
             };
-            valid(version.revision == wanted)?;
+            // One write advances a record one revision, except a preference
+            // created and confirmed at once (an edit of a confirmed record):
+            // two, each step then explained by a decision of this receipt.
+            let two_steps = version.kind == "preference" && version.revision == wanted + 1;
+            valid(version.revision == wanted || two_steps)?;
+            if two_steps {
+                skipped.push((i as i64 + 1, version.record_id.clone(), wanted));
+            }
             history.insert(key, version);
         }
     }
@@ -687,7 +697,9 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
         let next_status = match action {
             "confirm" if entry.1 == "suggested" => "confirmed",
             "reject" | "replace" if entry.1 == "suggested" => "rejected",
-            "deprecate" | "demote" if entry.1 == "confirmed" => "deprecated",
+            // A confirmed record the operator edited: its replacement holds
+            // the new text, it keeps the earlier one.
+            "deprecate" | "demote" | "replace" if entry.1 == "confirmed" => "deprecated",
             "enable" | "disable" if entry.1 == "confirmed" => "confirmed",
             _ => return Err(Error::InvalidRecord),
         };
@@ -696,6 +708,14 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
         }
         entry.0 = to;
         entry.1 = next_status.to_owned();
+    }
+    for (seq, record, revision) in &skipped {
+        let explained = decisions.iter().any(|r| {
+            positive(&r[3]).is_ok_and(|p| p.to_string() == *record)
+                && positive(&r[5]).is_ok_and(|from| from == *revision)
+                && positive(&r[8]).is_ok_and(|s| s == *seq)
+        });
+        valid(explained)?;
     }
     for (pref_id, revision) in &pref_revisions {
         let (expected_rev, expected_status) = decision_state

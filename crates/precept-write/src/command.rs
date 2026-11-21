@@ -135,7 +135,7 @@ impl Request {
                 }
                 (expected, Some(scope))
             }
-            Command::ReviseSuggestion {
+            Command::RevisePreference {
                 id,
                 scope,
                 proposal_digest,

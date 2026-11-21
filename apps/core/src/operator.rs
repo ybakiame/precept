@@ -90,8 +90,10 @@ pub struct Operator {
     pub enforcement: precept_core::operator::Enforcement,
     /// The note for the next decision (confirm, reject, retire or edit).
     pub note: String,
-    /// The suggestion whose edited version the draft holds.
+    /// The record whose edited version the draft holds.
     pub revising: Option<i64>,
+    /// That record is a confirmed rule: saving the edit takes effect at once.
+    pub revising_confirmed: bool,
     /// Suggestions picked for one batch decision (ids, ascending).
     pub batch: Vec<i64>,
     /// What an import scan found in the selected project's files.
@@ -116,6 +118,9 @@ pub struct Operator {
     /// Revision of the held exact inspect snapshot, bound into the guard.
     pub inspect_revision: i64,
     pub digest_expanded: bool,
+    /// The confirmed rule the inspected suggestion would replace (same key
+    /// and scope), read to show the change.
+    pub update_of: Option<precept_core::operator::PreferenceRecord>,
     /// The rule file preview of the confirmed convention being written to
     /// the repository (`rules.export`), with the record it is for.
     pub export: Option<(i64, RuleExport)>,
@@ -136,6 +141,11 @@ pub struct RuleExport {
     pub valid: bool,
     /// The current file's digest (none when absent): the write's guard.
     pub sha256: Option<String>,
+}
+/// Whether a record can be edited: a suggestion, or a confirmed rule that is
+/// on (switch a rule on before editing it).
+pub fn editable(r: &precept_core::operator::PreferenceRecord) -> bool {
+    r.status == "suggested" || (r.status == "confirmed" && r.enabled)
 }
 /// The most rules one import files (the writer's batch bound).
 pub const MAX_BATCH_UI: usize = precept_core::operator::MAX_BATCH;
@@ -294,12 +304,14 @@ impl Operator {
     pub fn remove_tag(&mut self, tag: &str) {
         self.tags.retain(|t| t != tag);
     }
-    /// A draft holding the selected suggestion, to edit and save as its
-    /// replacement. Only a suggestion can be edited.
+    /// A draft holding the selected record, to edit and save as its
+    /// replacement: a suggestion, or a confirmed rule that is switched on
+    /// (the edit then takes effect at once).
     pub fn start_revision(&mut self) -> bool {
-        let Some(r) = self.record().filter(|r| r.status == "suggested").cloned() else {
+        let Some(r) = self.record().filter(|r| editable(r)).cloned() else {
             return false;
         };
+        let confirmed = r.status == "confirmed";
         self.start_draft();
         self.key = r.key;
         self.value = r.value;
@@ -314,11 +326,13 @@ impl Operator {
         }
         self.enforcement = r.rule.enforcement;
         self.revising = Some(r.id);
+        self.revising_confirmed = confirmed;
         true
     }
     /// A fresh draft for the add dialog.
     pub fn start_draft(&mut self) {
         self.revising = None;
+        self.revising_confirmed = false;
         self.key.clear();
         self.value.clear();
         self.tags.clear();
@@ -682,9 +696,7 @@ impl Model {
                     // only decide a suggested one. Delete is armed separately.
                     match action {
                         "confirm" | "reject" if r.status != "suggested" => return false,
-                        "revise"
-                            if r.status != "suggested" || self.operator.revising != Some(r.id) =>
-                        {
+                        "revise" if !editable(r) || self.operator.revising != Some(r.id) => {
                             return false;
                         }
                         "deprecate" if r.status != "confirmed" => return false,
@@ -731,7 +743,7 @@ impl Model {
                         "revise" => {
                             let (tags, rule) = revision.expect("built above");
                             self.pin_tag_colors(&tags);
-                            Command::ReviseSuggestion {
+                            Command::RevisePreference {
                                 id,
                                 scope,
                                 proposal_digest,
@@ -1119,13 +1131,15 @@ impl Model {
                     // An edit opens its replacement the same way.
                     if matches!(
                         &mutation.command,
-                        Command::SuggestPreference { .. } | Command::ReviseSuggestion { .. }
+                        Command::SuggestPreference { .. } | Command::RevisePreference { .. }
                     ) {
+                        // The new record has the highest id of the write.
                         self.operator.follow = receipt
                             .affected
                             .iter()
-                            .find(|a| a.kind == "preference" && !a.deleted && a.revision == 1)
-                            .and_then(|a| a.record_id.parse().ok());
+                            .filter(|a| a.kind == "preference" && !a.deleted)
+                            .filter_map(|a| a.record_id.parse::<i64>().ok())
+                            .max();
                         if self.operator.follow.is_some() {
                             // The scoped pages find it in their record list;
                             // the inbox in the queue.

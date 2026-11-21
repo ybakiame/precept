@@ -112,10 +112,24 @@ fn send(model: Signal<Model>, request: Review) {
                 Err("Unauthorized")
             };
             let mut next = None;
+            let mut update_of = None;
             model.update(|m| {
                 m.complete_operator(&request, result);
                 next = m.operator.follow_up.take();
+                // An inspected suggestion that would replace a confirmed
+                // rule: read that rule to show the change.
+                if request.method == "profile.review.inspect"
+                    && let Some(i) = &m.operator.inspect
+                    && i.record.status == "suggested"
+                    && let Some(peer) = i.peer_demotions.first()
+                    && m.operator.update_of.as_ref().map(|o| o.id) != Some(peer.id)
+                {
+                    update_of = Some((i.record.scope.clone(), peer.id));
+                }
             });
+            if let Some((scope, id)) = update_of {
+                fetch_update_of(model, scope, id);
+            }
             // Save, then confirm: continue with the read the model asked for.
             // A read already in flight defers it to that read's completion.
             if let Some(method) = next {
@@ -873,6 +887,15 @@ fn detail_tab(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
             .into_element();
     };
     let r = &inspect.record;
+    // A suggestion that would replace a confirmed rule of its key: the
+    // change, against that rule's text.
+    // (Read when the inspection arrives; see `send`.)
+    if r.status == "suggested"
+        && let Some(peer) = inspect.peer_demotions.first()
+        && let Some(old) = m.operator.update_of.as_ref().filter(|o| o.id == peer.id)
+    {
+        body = body.child(update_section(model, &m, old, r));
+    }
     let digest = if m.operator.digest_expanded {
         r.proposal_digest.clone()
     } else {
@@ -976,7 +999,15 @@ fn detail_tab(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
             .child(word_action(
                 model,
                 Msg::EditSuggestion,
-                move || available(model) && write_grant(model) && status_is(model, "suggested"),
+                move || {
+                    available(model)
+                        && write_grant(model)
+                        && model
+                            .get()
+                            .operator
+                            .record()
+                            .is_some_and(precept_ui_core::operator::editable)
+                },
                 move || {
                     model.update(|m| {
                         m.operator.start_revision();
@@ -1018,6 +1049,74 @@ fn detail_tab(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
     );
     body.into_element()
 }
+/// Reads the confirmed rule `id` an inspected suggestion would replace.
+fn fetch_update_of(model: Signal<Model>, scope: precept_ui_core::operator::Scope, id: i64) {
+    super::profile::call(
+        model,
+        "profile.preferences.get",
+        serde_json::json!({"scope": scope, "id": id}),
+        move |_, m, r| {
+            if let Ok(v) = r
+                && let Ok(record) = serde_json::from_value::<
+                    precept_ui_core::operator::PreferenceRecord,
+                >(v["record"].clone())
+                && record.id == id
+            {
+                m.operator.update_of = Some(record);
+            }
+        },
+    );
+}
+
+/// "Updates #N": the confirmed rule's text against the suggestion's, and
+/// what else changes.
+fn update_section(
+    model: Signal<Model>,
+    m: &Model,
+    old: &precept_ui_core::operator::PreferenceRecord,
+    new: &precept_ui_core::operator::PreferenceRecord,
+) -> AnyElement {
+    let caption = |s: String| {
+        text(s)
+            .text_size(px(ui::scale::text::CAPTION))
+            .text_color(move || palette(model).muted)
+    };
+    let mut section = view()
+        .gap_2()
+        .p_3()
+        .rounded(px(ui::scale::radius::CONTAINER))
+        .bg(move || palette(model).panel)
+        .border_1()
+        .border_color(move || palette(model).hairline)
+        .child(
+            text(
+                m.word(Msg::UpdatesRule)
+                    .replace("{id}", &old.id.to_string())
+                    .replace("{key}", &sanitize(&old.key, 120)),
+            )
+            .font_weight(FontWeight::SEMIBOLD),
+        )
+        .child(caption(m.word(Msg::UpdatesRuleHelp).into()));
+    if ui::terminal() {
+        section = section
+            .child(caption(format!("− {}", sanitize(&old.value, 600))))
+            .child(caption(format!("+ {}", sanitize(&new.value, 600))));
+    } else {
+        section = section.child(ui::text_diff(model, old.value.clone(), new.value.clone()));
+    }
+    if old.tags != new.tags {
+        section = section.child(caption(
+            m.word(Msg::UpdatesTags)
+                .replace("{old}", &precept_ui_core::presentation::hashtags(&old.tags))
+                .replace("{new}", &precept_ui_core::presentation::hashtags(&new.tags)),
+        ));
+    }
+    if old.rule != new.rule {
+        section = section.child(caption(m.word(Msg::UpdatesOptions).into()));
+    }
+    section.into_element()
+}
+
 /// Reads what writing the inspected confirmed convention as a rule file
 /// would do, and opens the preview.
 fn open_export(model: Signal<Model>) {
@@ -2268,7 +2367,7 @@ fn apply_dialog(model: Signal<Model>, destructive: bool) -> impl IntoElement {
                                     lines.push(m.word(Msg::OperatorPeerWarning).into());
                                 }
                             }
-                            Command::ReviseSuggestion {
+                            Command::RevisePreference {
                                 id,
                                 key,
                                 value,
@@ -2276,8 +2375,12 @@ fn apply_dialog(model: Signal<Model>, destructive: bool) -> impl IntoElement {
                                 ..
                             } => {
                                 lines.push(
-                                    m.word(Msg::EditSuggestionHelp)
-                                        .replace("{id}", &id.to_string()),
+                                    m.word(if m.operator.revising_confirmed {
+                                        Msg::EditRuleHelp
+                                    } else {
+                                        Msg::EditSuggestionHelp
+                                    })
+                                    .replace("{id}", &id.to_string()),
                                 );
                                 lines.push(format!(
                                     "{} · {}",
@@ -2492,7 +2595,11 @@ fn add_dialog(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElement 
             let m = model.get();
             if let Some(id) = m.operator.revising {
                 return m
-                    .word(Msg::EditSuggestionTitle)
+                    .word(if m.operator.revising_confirmed {
+                        Msg::EditRuleTitle
+                    } else {
+                        Msg::EditSuggestionTitle
+                    })
                     .replace("{id}", &id.to_string())
                     .into();
             }
@@ -2509,7 +2616,11 @@ fn add_dialog(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElement 
             let m = model.get();
             match m.operator.revising {
                 Some(id) => m
-                    .word(Msg::EditSuggestionHelp)
+                    .word(if m.operator.revising_confirmed {
+                        Msg::EditRuleHelp
+                    } else {
+                        Msg::EditSuggestionHelp
+                    })
                     .replace("{id}", &id.to_string())
                     .into(),
                 None => m.word(Msg::AddPreferenceHelp).into(),
@@ -2602,7 +2713,9 @@ fn add_dialog(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElement 
         .cancel_fn(move || model.get().word(Msg::Cancel).into())
         .confirm_fn(move || {
             let m = model.get();
-            m.word(if m.operator.revising.is_some() {
+            m.word(if m.operator.revising_confirmed {
+                Msg::SaveRuleEdit
+            } else if m.operator.revising.is_some() {
                 Msg::SaveEdit
             } else {
                 Msg::SaveAsSuggestion

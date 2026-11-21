@@ -28,7 +28,7 @@ fn tools() -> Value {
     json!([
         {"name":"get_effective_context","description":"Call this first, before planning or editing in this project: returns the developer's confirmed preferences (with tags) and the repository's effective contracts that apply. Optional selector labels (agent_id, path, language, task_tags) narrow applicability; they are not authorization.","inputSchema":{"type":"object","properties":{"include_documents":{"type":"boolean","default":false},"selector":selector},"additionalProperties":false}},
         {"name":"get_handoff","description":"Resume saved work: returns the task's handoff (objective, completed work, next action, recorded checks) with the current git revision and drift warnings. Saved checks are historical; rerun them. Does not grant permissions.","inputSchema":{"type":"object","properties":{"task_id":{"type":"string"}},"required":["task_id"],"additionalProperties":false}},
-        {"name":"suggest_rule","description":"File a lasting rule for the developer to review in Precept: a preference they stated, or a durable convention of this project you confirmed. It is NOT active until the developer confirms it, so keep following your current instructions. Use a short kebab-case key and state the rule itself as the value (one imperative sentence or a few lines). Do not file one-off task instructions, secrets or personal data. scope: project (this repository), environment (facts about this machine, for this project) or personal (the developer's habits across projects).","inputSchema":{"type":"object","properties":{
+        {"name":"suggest_rule","description":"File a lasting rule for the developer to review in Precept: a preference they stated, or a durable convention of this project you confirmed. It is NOT active until the developer confirms it, so keep following your current instructions. Use a short kebab-case key and state the rule itself as the value (one imperative sentence or a few lines). Do not file one-off task instructions, secrets or personal data. scope: project (this repository), environment (facts about this machine, for this project) or personal (the developer's habits across projects). To update a rule that changed (a work-environment fact, a convention that moved on), pass replaces with its id from get_effective_context and the new value: the key comes from that rule, and the developer reviews the change against it.","inputSchema":{"type":"object","properties":{
             "scope":{"type":"string","enum":["project","environment","personal"]},
             "key":{"type":"string","maxLength":120},
             "value":{"type":"string","maxLength":4096},
@@ -39,8 +39,9 @@ fn tools() -> Value {
                 "paths":{"type":"array","items":{"type":"string"}},
                 "task_tags":{"type":"array","items":{"type":"string"}}
             },"additionalProperties":false},
-            "enforcement":{"type":"string","enum":["advisory","verify","hard"]}
-        },"required":["scope","key","value"],"additionalProperties":false}},
+            "enforcement":{"type":"string","enum":["advisory","verify","hard"]},
+            "replaces":{"type":"integer","minimum":1,"description":"The id of the confirmed rule this updates (same scope); key may then be left out"}
+        },"required":["scope","value"],"additionalProperties":false}},
         {"name":"start_session","description":"Start (or resume) your work session in this project and say what you are working on. Other agents of this project see open sessions at their start, so work can continue across agents and after compaction. Call it once your task is clear; pass the conversation id if you have one, so the same conversation finds its session again.","inputSchema":{"type":"object","properties":{
             "goal":{"type":"string","maxLength":500},
             "conversation_id":{"type":"string","maxLength":128},
@@ -84,6 +85,9 @@ fn suggestion_reply(result: Result<Value, Error>) -> Value {
         }
         Err(Error::Capacity) => {
             "The suggestion limit is reached for now. Do not file more; mention further rules in your reply."
+        }
+        Err(Error::NotFound) => {
+            "replaces names no confirmed rule of that scope. Check the id and scope in get_effective_context, or file a new rule without replaces."
         }
         Err(Error::ScopeMismatch | Error::InvalidRequest | Error::InvalidTransition) => {
             "Invalid suggestion: check the key (short, kebab-case), value, tags, applies_to and enforcement (environment notes are advisory only)."
@@ -275,16 +279,31 @@ impl Bridge {
                 ("context.get", params)
             }
             Some("suggest_rule") => {
-                const KEYS: [&str; 6] =
-                    ["scope", "key", "value", "tags", "applies_to", "enforcement"];
+                const KEYS: [&str; 7] = [
+                    "scope",
+                    "key",
+                    "value",
+                    "tags",
+                    "applies_to",
+                    "enforcement",
+                    "replaces",
+                ];
+                let replaces = args.get("replaces");
+                let required: &[&str] = if replaces.is_some() {
+                    &["scope", "value"]
+                } else {
+                    &["scope", "key", "value"]
+                };
                 if args.keys().any(|k| !KEYS.contains(&k.as_str()))
-                    || !["scope", "key", "value"]
+                    || !required
                         .iter()
                         .all(|k| args.get(*k).is_some_and(Value::is_string))
+                    || args.get("key").is_some_and(|k| !k.is_string())
+                    || replaces.is_some_and(|r| r.as_i64().is_none_or(|n| n <= 0))
                 {
                     diagnose("suggest_rule refused: invalid arguments");
                     return Ok(tool_error(
-                        "scope, key and value are required strings; only tags, applies_to and enforcement may be added",
+                        "scope and value are required strings, and key unless replaces names the rule to update; only tags, applies_to, enforcement and replaces may be added",
                     ));
                 }
                 ("preference.suggest", Value::Object(args.clone()))

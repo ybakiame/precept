@@ -123,5 +123,5 @@ or broad execution permission is implied by the current architecture.
 <!-- precept:begin v1 -->
 ## Precept
 
-This project's confirmed engineering context (the developer's reviewed preferences and the repository's contracts) is served by Precept. Before planning or editing, call `get_effective_context` on the `precept-agent-control-plane` MCP server, and again after your context is compacted. Current repository files and contracts outrank those preferences: report a conflict instead of choosing silently.
+This project's confirmed engineering context (the developer's reviewed preferences and the repository's contracts) is served by Precept. Before planning or editing, call `get_effective_context` on the `precept` MCP server, and again after your context is compacted. Current repository files and contracts outrank those preferences: report a conflict instead of choosing silently.
 <!-- precept:end -->

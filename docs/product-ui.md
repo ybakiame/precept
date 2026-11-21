@@ -164,8 +164,13 @@ content, and saving prepares one write that files the edit as a new suggestion
 (origin `operator`) and closes the old one as replaced; the new one then opens to
 be confirmed. Above the decisions, an optional **Note** (at most 500 characters)
 is kept with the next confirm, reject, retire or edit and shown in the record's
-history, with "replaced by #N" for edits. Agents cannot edit: a correction from an
-agent is a new suggestion.
+history, with "replaced by #N" for edits. A confirmed rule that is on has
+**Edit…** too ("Edit rule #N", **Save the new version**): the new version takes
+effect at once and the old record keeps the earlier text. Agents cannot edit: an
+agent's correction is a suggestion. When a suggestion would replace a confirmed
+rule of its key, its sheet starts with **Updates #N** and the change: the rule's
+text against the suggestion's in a unified diff (changed words marked, long lines
+wrapped; plain − / + lines in the terminal), plus changed tags or options.
 
 Suggested rows (in To review and in a scope's list) have a checkbox. While any are
 picked, a bar above the list shows the count, an optional note and **Confirm N…**

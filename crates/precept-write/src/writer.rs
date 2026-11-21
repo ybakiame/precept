@@ -499,7 +499,7 @@ fn mutate(
                 versions.insert(pref_key(*id), (revision, false));
             }
         }
-        Command::ReviseSuggestion {
+        Command::RevisePreference {
             id,
             scope: requested,
             proposal_digest,
@@ -511,16 +511,16 @@ fn mutate(
             expected,
             note,
         } => {
-            let row: Option<ProposalRow> = db
+            let row: Option<SwitchRow> = db
                 .query_row(
-                    "SELECT scope,project,pref_key,status,revision,proposal_digest FROM preferences WHERE id=?1",
+                    "SELECT scope,project,status,revision,proposal_digest,enabled FROM preferences WHERE id=?1",
                     [id],
                     |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
                 )
                 .optional()
                 .map_err(crate::sql_error)?;
-            cas(row.as_ref().map(|r| r.4), expected)?;
-            let (stored_scope, project, _, status, previous, stored_digest) =
+            cas(row.as_ref().map(|r| r.3), expected)?;
+            let (stored_scope, project, status, previous, stored_digest, was_enabled) =
                 row.ok_or(Error::Conflict)?;
             let (want_scope, want_project) = scope(requested);
             if stored_scope != want_scope || project.as_deref() != want_project {
@@ -531,11 +531,16 @@ fn mutate(
             if supplied.as_slice() != stored_digest.as_slice() {
                 return Err(Error::ReviewMismatch);
             }
-            if status != "suggested" {
+            // A switched-off rule is switched on before it is edited: one
+            // receipt names each record at one revision.
+            if !(status == "suggested" || (status == "confirmed" && was_enabled == 1)) {
                 return Err(Error::InvalidTransition);
             }
-            // The edited version: a new suggestion in the same scope, by the
-            // operator (it is their wording now), still to be confirmed.
+            let confirmed = status == "confirmed";
+            // The edited version: a new record in the same scope, by the
+            // operator (it is their wording now). A suggestion's edit is still
+            // to be confirmed; a confirmed record's edit is the operator's
+            // reviewed change and takes its place confirmed.
             let origin = precept_core::operator::Origin::Operator;
             let digest = precept_core::operator::proposal_digest(
                 requested,
@@ -570,37 +575,113 @@ fn mutate(
             )
             .map_err(crate::sql_error)?;
             versions.insert(pref_key(allocated), (1, false));
-            // The old one is closed, naming its replacement.
+            let channel = channel_name(*channel);
+            let mut review_id = next_review_id;
+            let mut decision = |preference_id: i64,
+                                action: &str,
+                                from: i64,
+                                to: i64,
+                                digest: &[u8],
+                                note: Option<&str>,
+                                replaced_by: Option<i64>|
+             -> Result<()> {
+                let row = review_id;
+                review_id = review_id.checked_add(1).ok_or(Error::Capacity)?;
+                db.execute(
+                    "INSERT INTO acp_review_decisions(id,scope,project,preference_id,action,from_revision,to_revision,proposal_digest,receipt_commit_sequence,channel,decided_at,note,replaced_by) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+                    params![
+                        row,
+                        want_scope,
+                        want_project,
+                        preference_id,
+                        action,
+                        from,
+                        to,
+                        digest.to_vec(),
+                        sequence,
+                        channel,
+                        now,
+                        note,
+                        replaced_by
+                    ],
+                )
+                .map_err(crate::sql_error)?;
+                Ok(())
+            };
+            // The old one is closed, naming its replacement: a suggestion as
+            // rejected, a confirmed record as deprecated (its text stays in
+            // the Profile as the earlier version).
             let revision = next_revision(previous)?;
             db.execute(
-                "UPDATE preferences SET status='rejected',revision=?1,updated_at=?2 WHERE id=?3",
-                (revision, now, id),
-            )
-            .map_err(crate::sql_error)?;
-            db.execute(
-                "INSERT INTO acp_review_decisions(id,scope,project,preference_id,action,from_revision,to_revision,proposal_digest,receipt_commit_sequence,channel,decided_at,note,replaced_by) VALUES(?1,?2,?3,?4,'replace',?5,?6,?7,?8,?9,?10,?11,?12)",
-                params![
-                    next_review_id,
-                    want_scope,
-                    want_project,
-                    id,
-                    previous,
+                "UPDATE preferences SET status=?1,revision=?2,updated_at=?3 WHERE id=?4",
+                (
+                    if confirmed { "deprecated" } else { "rejected" },
                     revision,
-                    stored_digest,
-                    sequence,
-                    channel_name(*channel),
                     now,
-                    note,
-                    allocated
-                ],
+                    id,
+                ),
             )
             .map_err(crate::sql_error)?;
+            decision(
+                *id,
+                "replace",
+                previous,
+                revision,
+                &stored_digest,
+                note.as_deref(),
+                Some(allocated),
+            )?;
+            versions.insert(pref_key(*id), (revision, false));
+            if confirmed {
+                // Other confirmed records of the new key step aside, as on
+                // any confirmation.
+                let mut stmt = db
+                    .prepare("SELECT id,revision,proposal_digest FROM preferences WHERE scope=?1 AND project IS ?2 AND pref_key=?3 AND status='confirmed' AND id<>?4 AND id<>?5 ORDER BY id")
+                    .map_err(crate::sql_error)?;
+                let peers = stmt
+                    .query_map(params![want_scope, want_project, key, id, allocated], |r| {
+                        Ok((
+                            r.get::<_, i64>(0)?,
+                            r.get::<_, i64>(1)?,
+                            r.get::<_, Vec<u8>>(2)?,
+                        ))
+                    })
+                    .map_err(crate::sql_error)?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+                    .map_err(crate::sql_error)?;
+                drop(stmt);
+                for (peer, peer_previous, peer_digest) in peers {
+                    let peer_revision = next_revision(peer_previous)?;
+                    db.execute(
+                        "UPDATE preferences SET status='deprecated',revision=?1,updated_at=?2 WHERE id=?3",
+                        (peer_revision, now, peer),
+                    )
+                    .map_err(crate::sql_error)?;
+                    decision(
+                        peer,
+                        "demote",
+                        peer_previous,
+                        peer_revision,
+                        &peer_digest,
+                        None,
+                        None,
+                    )?;
+                    versions.insert(pref_key(peer), (peer_revision, false));
+                }
+                // The new record: confirmed at once.
+                db.execute(
+                    "UPDATE preferences SET status='confirmed',revision=2,updated_at=?1 WHERE id=?2",
+                    (now, allocated),
+                )
+                .map_err(crate::sql_error)?;
+                decision(allocated, "confirm", 1, 2, &digest, note.as_deref(), None)?;
+                versions.insert(pref_key(allocated), (2, false));
+            }
             db.execute(
                 "UPDATE acp_profile SET next_review_id=?1 WHERE singleton=1",
-                [next_review_id.checked_add(1).ok_or(Error::Capacity)?],
+                [review_id],
             )
             .map_err(crate::sql_error)?;
-            versions.insert(pref_key(*id), (revision, false));
         }
         Command::SuggestBatch { items } => {
             for item in items {
