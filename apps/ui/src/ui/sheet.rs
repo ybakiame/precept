@@ -102,9 +102,11 @@ impl IntoElement for Sheet {
                 s.w(move || px((window().width.0 - 32.0).clamp(280.0, width)))
                     .h_full()
                     .border_l_1()
-                    .border_color(palette(model).hairline)
-                    .bg(palette(model).raised)
-                    .text_color(palette(model).text)
+                    // Bindings: the sheet is mounted once and must follow a
+                    // light/dark or theme change.
+                    .border_color(move || palette(model).hairline)
+                    .bg(move || palette(model).raised)
+                    .text_color(move || palette(model).text)
                     .shadow_xl()
             })
             .child({

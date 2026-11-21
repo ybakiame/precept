@@ -7,7 +7,7 @@ use precept_ui_core::{
     i18n::{Locale, Msg},
 };
 use tokens::palette;
-use ui::{ButtonSize, button, field, scale, surface, tabs};
+use ui::{button, field, scale, surface, tabs};
 
 fn note(model: Signal<Model>, key: Msg) -> impl IntoElement {
     text(move || model.get().word(key))
@@ -136,21 +136,18 @@ pub(crate) fn appearance(model: Signal<Model>) -> impl IntoElement {
                 .child(field(
                     model,
                     word(model, Msg::HighContrast),
-                    view().items_start().child(
-                        button(model, "")
-                            .label_fn(move || {
-                                let m = model.get();
-                                m.word(if m.high_contrast {
-                                    Msg::ContrastOn
-                                } else {
-                                    Msg::ContrastOff
-                                })
-                                .into()
-                            })
-                            .size(ButtonSize::Small)
-                            .selected(move || model.get().high_contrast)
-                            .on_press(move || toggle_contrast(model)),
-                    ),
+                    // Two states: a switch.
+                    view().items_start().child(ui::switch(
+                        model,
+                        word(model, Msg::HighContrast),
+                        move || model.get().high_contrast,
+                        || false,
+                        move |on| {
+                            if on != model.get_untracked().high_contrast {
+                                toggle_contrast(model)
+                            }
+                        },
+                    )),
                 ))
                 .child(
                     field(model, word(model, Msg::Language), languages)

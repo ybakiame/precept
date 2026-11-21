@@ -50,7 +50,7 @@ fn thumb(
     s.size(px(16.0))
         .rounded(px(scale::radius::PILL))
         .border_2()
-        .border_color(palette(model).raised)
+        .border_color(move || palette(model).raised)
         .shadow_md()
 }
 
