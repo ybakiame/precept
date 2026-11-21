@@ -1,43 +1,20 @@
-//! Bounded repository claims and a privacy-preserving adapter to frozen typed v1.
-//! No writer, authorization, discovery, or prose interpretation lives here.
+//! Repository rules (`.precept/rules/*.md`): bounded parsing, checks against
+//! the repository, and their projection beside the Profile's preferences.
+//! No writer, authorization or discovery lives here.
 mod bridge;
+mod checks;
 mod parser;
 mod snapshot;
 
 pub use bridge::{Projection, SelectorQuery, project};
-pub use parser::{InvalidSource, MAX_BYTES, SOURCE, parse};
+pub use checks::{MAX_CHECKED_BYTES, evaluate};
+pub use parser::{
+    Check, DIR, Guard, GuardTool, InvalidSource, MAX_BYTES, MAX_FILES, RuleFile, id_for, parse,
+    relative_path, render, valid_id, valid_key,
+};
 pub use snapshot::Snapshot;
 
 use crate::typed_context as typed;
-use serde::Deserialize;
-
-#[derive(Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Contract {
-    id: String,
-    revision: u64,
-    review: RepositoryReview,
-    key: String,
-    allowed_values: Vec<String>,
-    #[serde(default)]
-    selector: RepositorySelector,
-    #[serde(default)]
-    supersedes: Vec<typed::RuleRef>,
-}
-#[derive(Clone, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum RepositoryReview {
-    Accepted,
-    Unreviewed,
-}
-#[derive(Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RepositorySelector {
-    agents: Option<Vec<String>>,
-    paths: Option<Vec<String>>,
-    languages: Option<Vec<String>>,
-    task_tags: Option<Vec<String>>,
-}
 
 fn binding(project: &str) -> typed::ProjectBinding {
     typed::ProjectBinding {
@@ -60,35 +37,32 @@ fn source(id: &str, digest: &str) -> typed::Source {
         },
     }
 }
-impl Contract {
-    fn rule(&self, project: &str, digest: &str) -> typed::Rule {
+/// The repository path of rule `id`.
+pub fn file_of(id: &str) -> String {
+    format!("{DIR}/{id}.md")
+}
+impl RuleFile {
+    /// The typed contract of a rule with allowed values (applicability is
+    /// decided before resolution, so the typed selector matches everything).
+    fn typed(&self, project: &str, digest: &str) -> typed::Rule {
         typed::Rule {
             schema_version: 1,
             reference: typed::RuleRef {
                 id: self.id.clone(),
-                revision: self.revision,
+                revision: 1,
             },
             kind: typed::RuleKind::Contract,
             scope: typed::Scope::Project {
                 binding: binding(project),
             },
             authority: typed::Authority::Repository,
-            review: match self.review {
-                RepositoryReview::Accepted => typed::ReviewState::Accepted,
-                RepositoryReview::Unreviewed => typed::ReviewState::Unreviewed,
-            },
-            selector: typed::Selector {
-                agents: self.selector.agents.clone(),
-                paths: self.selector.paths.clone(),
-                languages: self.selector.languages.clone(),
-                task_tags: self.selector.task_tags.clone(),
-                projects: None,
-            },
+            review: typed::ReviewState::Accepted,
+            selector: typed::Selector::default(),
             key: self.key.clone(),
-            allowed_values: self.allowed_values.clone(),
+            allowed_values: self.allowed.clone(),
             legacy_preference_id: None,
-            supersedes: self.supersedes.clone(),
-            source: source(SOURCE, digest),
+            supersedes: vec![],
+            source: source(&file_of(&self.id), digest),
         }
     }
 }

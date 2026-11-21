@@ -258,8 +258,10 @@ fn n_independent_daemon_contract_source_changes_refuse_publication() {
             )
             .unwrap();
         daemon.call(&credential,"profile.mutate",json!({"version":2,"binding":binding,"operation_id":"confirm","command":{"command":"confirm_preference","scope":{"kind":"global"},"id":1,"proposal_digest":record["record"]["proposal_digest"],"channel":"cli","expected":{"kind":"revision","revision":1}}})).unwrap();
-        let source = root.join("ACP.contracts.md");
-        let contract = "```acp-contracts-v1\n{\"schema_version\":1,\"rules\":[{\"id\":\"fmt\",\"revision\":1,\"review\":\"accepted\",\"key\":\"formatter\",\"allowed_values\":[\"rustfmt\"]}]}\n```\n";
+        let rules = root.join(".precept/rules");
+        fs::create_dir_all(&rules).unwrap();
+        let source = rules.join("fmt.md");
+        let contract = "+++\nkey = \"formatter\"\nallowed = [\"rustfmt\"]\n+++\nUse rustfmt.\n";
         if action != "add" {
             fs::write(&source, contract).unwrap();
         }
@@ -335,7 +337,7 @@ fn n_independent_daemon_contract_source_changes_refuse_publication() {
                 let result = result.unwrap();
                 assert_eq!(result["contract_resolution"]["status"], "source_changed");
                 assert_eq!(result["preferences"], json!([]));
-                assert_eq!(result["effective_contracts"], json!([]));
+                assert_eq!(result["repository_rules"], json!([]));
                 assert!(!result.to_string().contains("PRIVATE_RACE_SOURCE"));
             }
         });

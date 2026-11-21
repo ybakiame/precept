@@ -81,33 +81,46 @@ fn tag_filters(model: Signal<Model>, current: &Model) -> AnyElement {
         .into_element()
 }
 
-/// The selected rule in a dialog: its Markdown rendered, where it applies and
+/// The open details: a preference or a repository rule, as title,
+/// description and Markdown.
+fn open_detail(m: &Model) -> Option<(String, String, String)> {
+    if let Some(r) = m.preference_detail() {
+        return Some((
+            sanitize(&r.key, 120),
+            format!(
+                "{} · {}",
+                scope_word(m, &r.scope),
+                precept_ui_core::presentation::hashtags(&r.tags)
+            ),
+            r.value.clone(),
+        ));
+    }
+    let r = m.rule_detail()?;
+    let mut text = r.text.clone();
+    if !r.allowed_values.is_empty() {
+        text = format!("{text}\n\n`{}`", r.allowed_values.join("` | `"));
+    }
+    Some((
+        sanitize(r.title.as_deref().unwrap_or(&r.key), 120),
+        format!(
+            "{} · {}",
+            sanitize(&r.file, 120),
+            precept_ui_core::presentation::hashtags(&r.tags)
+        ),
+        text,
+    ))
+}
+
+/// The selected rule in a dialog: its Markdown rendered, where it lives and
 /// its tags; Copy puts the text on the clipboard. Mounted by the shell.
 pub(crate) fn detail_dialog(model: Signal<Model>) -> impl IntoElement {
-    let selected = move || model.get().preference_detail().cloned();
+    let selected = move || open_detail(&model.get());
     ui::dialog(model, "")
         .size(ui::DialogSize::Large)
-        .title_fn(move || {
-            selected()
-                .map(|r| sanitize(&r.key, 120))
-                .unwrap_or_default()
-                .into()
-        })
-        .description_fn(move || {
-            let m = model.get();
-            selected()
-                .map(|r| {
-                    format!(
-                        "{} · {}",
-                        scope_word(&m, &r.scope),
-                        precept_ui_core::presentation::hashtags(&r.tags)
-                    )
-                })
-                .unwrap_or_default()
-                .into()
-        })
+        .title_fn(move || selected().map(|d| d.0).unwrap_or_default().into())
+        .description_fn(move || selected().map(|d| d.1).unwrap_or_default().into())
         .content_fn(move || {
-            let value = selected().map(|r| r.value).unwrap_or_default();
+            let value = selected().map(|d| d.2).unwrap_or_default();
             scroll()
                 .max_h(px(440.0))
                 .w_full()
@@ -117,10 +130,15 @@ pub(crate) fn detail_dialog(model: Signal<Model>) -> impl IntoElement {
         .cancel_fn(move || model.get().word(Msg::CloseDialog).into())
         .confirm_fn(move || model.get().word(Msg::CopyRule).into())
         .open(move || !ui::terminal() && selected().is_some())
-        .on_cancel(move || model.update(|m| m.selected_preference = None))
+        .on_cancel(move || {
+            model.update(|m| {
+                m.selected_preference = None;
+                m.selected_rule = None;
+            })
+        })
         .on_confirm(move || {
-            if let Some(r) = selected() {
-                set_clipboard(r.value);
+            if let Some(d) = selected() {
+                set_clipboard(d.2);
                 ui::notify(ui::Tone::Success, model.get().word(Msg::CopiedShort));
             }
         })
@@ -202,39 +220,183 @@ fn row(model: Signal<Model>, r: &Preference, index: usize) -> AnyElement {
         .into_element()
 }
 
-/// The repository's contracts: what outranks every preference. Read-only.
-fn contracts(model: Signal<Model>, current: &Model) -> impl IntoElement {
-    let list = current
-        .project()
-        .map(|p| p.context.effective_contracts.clone())
-        .unwrap_or_default();
-    let mut lines: Vec<String> = list
-        .iter()
-        .take(50)
-        .map(|c| {
-            let key = c
-                .get("key")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("?");
-            let allowed: Vec<&str> = c
-                .get("allowed_values")
-                .and_then(serde_json::Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(serde_json::Value::as_str)
-                .collect();
-            format!(
-                "{}: {}",
-                sanitize(key, 120),
-                sanitize(&allowed.join(" | "), 400)
+/// What a rule's checks found now, as a badge (`None` when it has none).
+fn check_badge(model: Signal<Model>, m: &Model, checks: &serde_json::Value) -> AnyElement {
+    let n = |k: &str| {
+        checks
+            .get(k)
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0)
+    };
+    let (label, variant) = match checks.get("status").and_then(serde_json::Value::as_str) {
+        Some("verified") => (
+            m.word(Msg::CheckVerified)
+                .replace("{passed}", &n("passed").to_string())
+                .replace("{total}", &n("total").to_string()),
+            ui::BadgeVariant::Success,
+        ),
+        Some("failing") => (
+            m.word(Msg::CheckFailing).replace(
+                "{file}",
+                &sanitize(
+                    checks
+                        .pointer("/failure/file")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("?"),
+                    80,
+                ),
+            ),
+            ui::BadgeVariant::Danger,
+        ),
+        Some("unavailable") => (
+            m.word(Msg::CheckUnavailable).to_owned(),
+            ui::BadgeVariant::Warning,
+        ),
+        _ => return view().into_element(),
+    };
+    ui::badge(model, label).variant(variant).into_element()
+}
+
+/// One committed repository rule: key and Details, its first line, then its
+/// file, check result, enforcement and tags.
+fn rule_row(model: Signal<Model>, r: &precept_ui_core::RepositoryRule, index: usize) -> AnyElement {
+    let m = model.get();
+    let key = sanitize(&r.key, 64);
+    let spoken = format!("{} · {key}", m.word(Msg::Details));
+    let mut meta = view()
+        .flex_row()
+        .flex_wrap()
+        .items_center()
+        .gap_2()
+        .child(
+            text(sanitize(&r.file, 120))
+                .text_size(px(ui::scale::text::CAPTION))
+                .text_color(move || palette(model).muted),
+        )
+        .child(check_badge(model, &m, &r.checks))
+        .child(ui::tag_list(model, &r.tags));
+    if let Some(e @ ("verify" | "hard")) = r.enforcement.as_deref() {
+        meta = meta.child(
+            ui::badge(
+                model,
+                m.word(if e == "hard" {
+                    Msg::EnforcementHard
+                } else {
+                    Msg::EnforcementVerify
+                }),
             )
-        })
-        .collect();
-    if lines.is_empty() {
-        lines.push(current.word(Msg::ContractsNone).into());
+            .variant(ui::BadgeVariant::Info),
+        );
     }
-    lines.push(current.word(Msg::ContractsSource).into());
-    card(model, current.word(Msg::ContractsHeading), lines)
+    if r.guards > 0 {
+        meta = meta.child(
+            text(
+                m.word(Msg::RuleGuards)
+                    .replace("{count}", &r.guards.to_string()),
+            )
+            .text_size(px(ui::scale::text::CAPTION))
+            .text_color(move || palette(model).muted),
+        );
+    }
+    view()
+        .p_3()
+        .gap_1()
+        .rounded(px(ui::scale::radius::CONTAINER))
+        .bg(move || palette(model).panel)
+        .border_1()
+        .border_color(move || palette(model).hairline)
+        .child(
+            view()
+                .flex_row()
+                .items_center()
+                .gap_2()
+                .child(
+                    text(key)
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .flex_1()
+                        .min_w_0(),
+                )
+                .child(
+                    ui::button(model, "")
+                        .label_fn(move || model.get().word(Msg::Details).into())
+                        .spoken(move || spoken.clone().into())
+                        .size(ui::ButtonSize::Small)
+                        .variant(ui::ButtonVariant::Ghost)
+                        .on_press(move || model.update(|m| m.select_rule(index))),
+                ),
+        )
+        .child(text(sanitize(
+            &precept_ui_core::presentation::preview_line(&r.text, 160),
+            170,
+        )))
+        .child(meta)
+        .into_element()
+}
+
+/// The repository's committed rules: what outranks preferences of their key.
+/// Read-only; uncommitted and invalid files are named, not shown.
+fn contracts(model: Signal<Model>, current: &Model) -> impl IntoElement {
+    let context = current.project().map(|p| p.context.clone());
+    let rules = context
+        .as_ref()
+        .map(|c| c.repository_rules.clone())
+        .unwrap_or_default();
+    let note = |s: String| {
+        text(s)
+            .text_size(px(ui::scale::text::CAPTION))
+            .text_color(move || palette(model).muted)
+            .into_element()
+    };
+    let mut section = view()
+        .gap_2()
+        .child(text(current.word(Msg::ContractsHeading)).font_weight(FontWeight::SEMIBOLD));
+    for (i, r) in rules.iter().take(50).enumerate() {
+        section = section.child(rule_row(model, r, i));
+    }
+    if rules.is_empty() {
+        section = section.child(note(current.word(Msg::ContractsNone).into()));
+    }
+    if let Some(c) = &context {
+        let pending = c.pending_rules.len();
+        if pending > 0 {
+            section = section.child(note(
+                current
+                    .word(Msg::RulesPending)
+                    .replace("{count}", &pending.to_string()),
+            ));
+        }
+        match c
+            .contract_resolution
+            .get("status")
+            .and_then(serde_json::Value::as_str)
+        {
+            Some("invalid_source") => {
+                let files: Vec<String> = c
+                    .contract_resolution
+                    .get("invalid_files")
+                    .and_then(serde_json::Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(|f| sanitize(f, 120))
+                    .collect();
+                section = section.child(
+                    ui::badge(
+                        model,
+                        current
+                            .word(Msg::RulesInvalid)
+                            .replace("{files}", &files.join(", ")),
+                    )
+                    .variant(ui::BadgeVariant::Danger),
+                );
+            }
+            Some("source_unavailable") => {
+                section = section.child(note(current.word(Msg::RulesUnreadable).into()));
+            }
+            _ => {}
+        }
+    }
+    section.child(note(current.word(Msg::ContractsSource).into()))
 }
 
 pub(crate) fn preferences(model: Signal<Model>) -> impl IntoElement {

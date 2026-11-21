@@ -1,6 +1,6 @@
 //! The session-start briefing: the effective context of one project rendered
 //! as short Markdown an agent reads before it works. Built only from the
-//! projected context (confirmed preferences, effective contracts, warnings),
+//! projected context (repository rules, confirmed preferences, warnings),
 //! so it carries nothing an agent could not read through MCP. Bounded; a cut
 //! briefing says so and points to the MCP tool for the rest.
 use serde_json::Value;
@@ -119,6 +119,83 @@ fn work(context: &Value) -> String {
     out
 }
 
+/// A repository rule: its key, file, tags, declared enforcement and what its
+/// checks found now, then its text.
+fn rule_entry(r: &Value) -> String {
+    let key = r.get("key").and_then(Value::as_str).unwrap_or("?");
+    let file = r.get("file").and_then(Value::as_str).unwrap_or("?");
+    let mut meta = vec![format!("repository · `{file}`")];
+    let tags: Vec<String> = r
+        .get("tags")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(|t| format!("#{t}"))
+        .collect();
+    if !tags.is_empty() {
+        meta.push(tags.join(" "));
+    }
+    if let Some(e) = r.get("enforcement").and_then(Value::as_str)
+        && e != "advisory"
+    {
+        meta.push(e.to_owned());
+    }
+    let checks = r.get("checks");
+    let total = checks
+        .and_then(|c| c.get("total"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let passed = checks
+        .and_then(|c| c.get("passed"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    match checks.and_then(|c| c.get("status")).and_then(Value::as_str) {
+        Some("verified") => meta.push(format!("checks pass ({passed}/{total})")),
+        Some("failing") => {
+            let f = checks.and_then(|c| c.get("failure"));
+            let file = f
+                .and_then(|f| f.get("file"))
+                .and_then(Value::as_str)
+                .unwrap_or("?");
+            let what = match f.and_then(|f| f.get("kind")).and_then(Value::as_str) {
+                Some("exists") => "is missing".to_owned(),
+                Some("contains") => "lacks the expected text".to_owned(),
+                Some("absent") => "has text the rule excludes".to_owned(),
+                _ => format!(
+                    "`{}` differs",
+                    f.and_then(|f| f.get("path"))
+                        .and_then(Value::as_str)
+                        .unwrap_or("?")
+                ),
+            };
+            meta.push(format!(
+                "check failing: `{file}` {what} ({passed}/{total} pass)"
+            ));
+        }
+        Some("unavailable") => meta.push("checks could not run".into()),
+        _ => {}
+    }
+    let mut entry = format!("\n### {key}\n\n_{}_\n\n", meta.join(" · "));
+    if let Some(where_) = applies(r) {
+        entry.push_str(&format!("Applies to {where_} only.\n\n"));
+    }
+    if let Some(allowed) = r.get("allowed_values").and_then(Value::as_array) {
+        let v: Vec<&str> = allowed.iter().filter_map(Value::as_str).collect();
+        entry.push_str(&format!("Allowed values: {}\n\n", v.join(" | ")));
+    }
+    let (text, cut_text) = cut(
+        r.get("text").and_then(Value::as_str).unwrap_or("").trim(),
+        MAX_VALUE,
+    );
+    entry.push_str(text);
+    if cut_text {
+        entry.push_str(" …");
+    }
+    entry.push('\n');
+    entry
+}
+
 /// Renders `context` (the `context.get` projection) for `project`.
 pub fn render(project: &str, context: &Value, moment: Moment) -> String {
     let mut out = String::new();
@@ -134,24 +211,31 @@ pub fn render(project: &str, context: &Value, moment: Moment) -> String {
          choosing silently. Call the `get_effective_context` MCP tool for details, \
          selectors or documents.\n",
     );
-    let contracts = context
-        .get("effective_contracts")
+    let mut truncated = false;
+    let rules = context
+        .get("repository_rules")
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    if !contracts.is_empty() {
-        out.push_str("\n## Project contracts\n\n");
-        for c in &contracts {
-            let key = c.get("key").and_then(Value::as_str).unwrap_or("?");
-            let allowed: Vec<&str> = c
-                .get("allowed_values")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(Value::as_str)
-                .collect();
-            out.push_str(&format!("- **{key}**: {}\n", allowed.join(" | ")));
+    if !rules.is_empty() {
+        out.push_str("\n## Repository rules\n");
+        for r in &rules {
+            let entry = rule_entry(r);
+            if out.len() + entry.len() > MAX_BYTES - 200 {
+                truncated = true;
+                break;
+            }
+            out.push_str(&entry);
         }
+    }
+    let pending = context
+        .get("pending_rules")
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len);
+    if pending > 0 {
+        out.push_str(&format!(
+            "\n{pending} rule file(s) under `.precept/rules/` are not committed yet; they apply once committed.\n"
+        ));
     }
     let (environment, preferences): (Vec<Value>, Vec<Value>) = context
         .get("preferences")
@@ -160,12 +244,16 @@ pub fn render(project: &str, context: &Value, moment: Moment) -> String {
         .unwrap_or_default()
         .into_iter()
         .partition(|p| p.get("scope").and_then(Value::as_str) == Some("environment"));
-    out.push_str("\n## Preferences\n");
-    if preferences.is_empty() {
-        out.push_str("\nNo confirmed preferences apply.\n");
+    if !truncated {
+        out.push_str("\n## Preferences\n");
+        if preferences.is_empty() {
+            out.push_str("\nNo confirmed preferences apply.\n");
+        }
     }
-    let mut truncated = false;
-    for p in &preferences {
+    for p in preferences
+        .iter()
+        .take(if truncated { 0 } else { usize::MAX })
+    {
         let key = p.get("key").and_then(Value::as_str).unwrap_or("?");
         let scope = match p.get("scope").and_then(Value::as_str) {
             Some("project") => "this project",
@@ -234,8 +322,15 @@ pub fn render(project: &str, context: &Value, moment: Moment) -> String {
         .and_then(Value::as_str)
         && !matches!(status, "ready" | "not_configured")
     {
+        let detail = match status {
+            "partial" => "some rule keys conflict and are unresolved",
+            "invalid_source" => {
+                "a rule file under `.precept/rules/` is invalid; no rules or preferences are served until it is fixed"
+            }
+            _ => "rules could not be read",
+        };
         out.push_str(&format!(
-            "\nContract source status: `{status}` (some contract keys may be unresolved).\n"
+            "\nRepository rules status: `{status}` ({detail}).\n"
         ));
     }
     if truncated {
@@ -254,7 +349,10 @@ mod tests {
     #[test]
     fn renders_contracts_preferences_and_compaction_within_bounds() {
         let context = json!({
-            "effective_contracts":[{"key":"formatter","allowed_values":["rustfmt"]}],
+            "repository_rules":[{"key":"formatter","file":".precept/rules/formatter.md","text":"Use rustfmt.",
+                "tags":["rust"],"enforcement":"hard","allowed_values":["rustfmt"],
+                "checks":{"status":"failing","passed":1,"total":2,"failure":{"file":"rustfmt.toml","kind":"exists"}}}],
+            "pending_rules":[{"id":"x","key":"x"}],
             "preferences":[
                 {"key":"style","scope":"global","tags":["style","docs"],"value":"Short sentences."},
                 {"key":"build","scope":"project","tags":[],"value":"Use mise."}
@@ -264,7 +362,9 @@ mod tests {
         let b = render("alpha", &context, Moment::Compact);
         assert!(b.starts_with("# Precept: context for alpha"));
         assert!(b.contains("was compacted"));
-        assert!(b.contains("- **formatter**: rustfmt"));
+        assert!(b.contains("### formatter\n\n_repository · `.precept/rules/formatter.md` · #rust · hard · check failing: `rustfmt.toml` is missing (1/2 pass)_"));
+        assert!(b.contains("Allowed values: rustfmt\n\nUse rustfmt."));
+        assert!(b.contains("1 rule file(s)"));
         assert!(b.contains("### style\n\n_personal · #style #docs_\n\nShort sentences."));
         assert!(b.contains("_this project_"));
         assert!(b.contains("`partial`"));

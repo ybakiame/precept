@@ -109,11 +109,23 @@ acceptable. Do not introduce dual-version support or migration layers.
 
 ## Repository contracts and context resolution
 
-Repository contracts are current project sources, not personal Profile values. An
-optional exact `ACP.contracts.md` source can provide bounded, versioned structured
-claims. Existing allowlisted documents remain valid document sources. Ordinary
-repository prose is not automatically parsed into enforceable contracts, and
-onboarding never scaffolds, migrates or rewrites `AGENTS.md` or contract files.
+Repository rules are current project sources, not personal Profile values. They
+live in `.precept/rules/<id>.md`: one rule per file, TOML front matter between `+++`
+lines (`key`, optional `title`, `allowed`, `tags`, `priority`, `enforcement`,
+`[applies_to]`, `[[check]]`, `[[guard]]`; unknown fields refuse the file) and the
+rule's Markdown text below. At most 64 files of 16 KiB each are read; links are
+never followed. A file Git tracks with no uncommitted change is reviewed through
+the repository and served; any other file is listed as pending (id and key only)
+and masks nothing. Any invalid file refuses the whole source, naming the file.
+
+A served rule replaces Profile preferences of its key where it applies; one with
+`allowed` values keeps preferences whose value it allows and reports unresolved
+conflicts. Checks (a file exists, contains or lacks a substring, or a TOML/JSON
+value equals an expected one) run read-only against the repository on every read;
+each served rule carries `verified`, `failing` (with the first failure),
+`unchecked` or `unavailable`. Existing allowlisted documents remain valid document
+sources. Ordinary repository prose is not parsed into rules, and onboarding never
+scaffolds or rewrites `AGENTS.md` or rule files.
 
 The resolver binds one registered project, rechecks registration and reads live
 Git/allowlisted metadata. A compatible project preference masks a global preference

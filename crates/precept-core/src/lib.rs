@@ -128,6 +128,15 @@ pub trait HandoffRepository {
 /// Fingerprints must use Python's acp-worktree-v1 algorithm or remain None.
 pub trait WorktreeInspector {
     fn inspect(&self, project: &Project, fingerprint: bool) -> Result<Worktree>;
+    /// File names (without `.md`) directly under `dir` that Git tracks with
+    /// no uncommitted change; `None` when Git cannot tell.
+    fn reviewed(
+        &self,
+        _project: &Project,
+        _dir: &str,
+    ) -> Option<std::collections::BTreeSet<String>> {
+        None
+    }
 }
 /// Supplies live allowlisted metadata without coupling resolution to filesystem access.
 pub trait DocumentRepository {
@@ -252,7 +261,8 @@ impl<'a> ContextResolver<'a> {
     ) -> Result<PreparedContext> {
         selector.validate()?;
         let project = self.bound_project()?;
-        let snapshot = contracts::Snapshot::read(&project.root);
+        let snapshot = contracts::Snapshot::read(&project.root)
+            .with_reviewed(self.worktree.reviewed(&project, contracts::DIR));
         let projection = contracts::project(
             &self.project,
             self.preferences.preferences(&self.project)?,
@@ -289,7 +299,8 @@ impl<'a> ContextResolver<'a> {
             response: json!({"project":self.project,"authority":AUTHORITY,"preferences":preferences,
             "documents":self.documents.metadata(&project, include_documents)?,
             "repository":repository,"warnings":WARNINGS,
-            "contract_resolution":projection.contract_resolution,"effective_contracts":projection.effective_contracts}),
+            "contract_resolution":projection.contract_resolution,"repository_rules":projection.repository_rules,
+            "pending_rules":projection.pending_rules}),
         })
     }
     pub fn handoff(&self, task_id: &str) -> Result<Value> {
@@ -371,7 +382,8 @@ impl PreparedContext {
     pub fn finish(mut self, root: &std::path::Path) -> Result<Value> {
         if !self.snapshot.unchanged(root) {
             self.response["preferences"] = json!([]);
-            self.response["effective_contracts"] = json!([]);
+            self.response["repository_rules"] = json!([]);
+            self.response["pending_rules"] = json!([]);
             self.response["contract_resolution"] = json!({"status":"source_changed"});
         }
         Ok(self.response)
@@ -396,7 +408,10 @@ fn confirmed_preferences(project: &str, preferences: Vec<Preference>) -> Vec<Pre
 /// A dimension the request does not name keeps the rule (it is projected with
 /// its `applies_to`, so the agent can judge).
 fn applicable(p: &Preference, query: &contracts::SelectorQuery) -> bool {
-    let a = &p.rule.applies_to;
+    applies(&p.rule.applies_to, query)
+}
+/// Whether rules limited to `a` may apply to `query` (see [`applicable`]).
+fn applies(a: &operator::AppliesTo, query: &contracts::SelectorQuery) -> bool {
     let one = |wanted: &[String], actual: &Option<String>| match actual {
         Some(v) if !wanted.is_empty() => wanted.contains(&v.to_lowercase()),
         _ => true,

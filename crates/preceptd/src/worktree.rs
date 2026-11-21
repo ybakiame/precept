@@ -335,6 +335,59 @@ impl WorktreeInspector for GitInspector {
             worktree_fingerprint,
         })
     }
+    fn reviewed(&self, p: &Project, dir: &str) -> Option<std::collections::BTreeSet<String>> {
+        if !p.root.join(".git").exists() || !safe_git_config(&p.root) {
+            return None;
+        }
+        let top = git(&p.root, &["rev-parse", "--show-toplevel"])?;
+        if Path::new(&top).canonicalize().ok() != p.root.canonicalize().ok() {
+            return None;
+        }
+        let names = |raw: Vec<u8>| -> Vec<String> {
+            raw.split(|b| *b == 0)
+                .filter(|s| !s.is_empty())
+                .filter_map(|s| std::str::from_utf8(s).ok())
+                .map(str::to_owned)
+                .collect()
+        };
+        let limit = Duration::from_secs(4);
+        let tracked = names(git_bytes(
+            &p.root,
+            &["ls-files", "-z", "--", dir],
+            65536,
+            limit,
+        )?);
+        // Index or worktree changes, untracked files included.
+        let changed: std::collections::BTreeSet<String> = names(git_bytes(
+            &p.root,
+            &[
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--untracked-files=all",
+                "--",
+                dir,
+            ],
+            65536,
+            limit,
+        )?)
+        .into_iter()
+        .filter_map(|e| e.get(3..).map(str::to_owned))
+        .collect();
+        let prefix = format!("{dir}/");
+        Some(
+            tracked
+                .into_iter()
+                .filter(|f| !changed.contains(f))
+                .filter_map(|f| {
+                    f.strip_prefix(&prefix)?
+                        .strip_suffix(".md")
+                        .filter(|id| !id.contains('/'))
+                        .map(str::to_owned)
+                })
+                .collect(),
+        )
+    }
 }
 
 #[cfg(test)]

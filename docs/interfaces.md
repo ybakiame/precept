@@ -198,11 +198,14 @@ queries fail rather than widen applicability. Project/root/session overrides are
 refused. Operator `context.get` supplies its authorized project separately; Agent
 `context.get` derives it from the capability and accepts the same optional selector.
 
-The [repository contract boundary](architecture.md#repository-contracts-and-context-resolution)
-specifies the optional exact `ACP.contracts.md` source. It is enforced even when
-`include_documents` is false. `contract_resolution.status` distinguishes `ready`,
-`partial`, `not_configured`, `invalid_source`, `source_unavailable`, `source_changed`.
-Whole-source refusal returns empty `preferences` and `effective_contracts`; partial
+The [repository rule boundary](architecture.md#repository-contracts-and-context-resolution)
+specifies `.precept/rules/`. It is enforced even when `include_documents` is false.
+`repository_rules` lists the committed rules that apply (id, key, text, file,
+sha256, tags, enforcement, optional title, allowed values, priority, applies_to,
+guard count, and `checks`); `pending_rules` lists uncommitted files by id and key.
+`contract_resolution.status` distinguishes `ready`, `partial`, `not_configured`,
+`invalid_source` (with `invalid_files`), `source_unavailable`, `source_changed`.
+Whole-source refusal returns empty `preferences` and `repository_rules`; partial
 resolution suppresses affected unresolved keys only. Absence does not mean ordinary
 AGENTS/ADRs have no authority. Each projected preference carries its `tags`, so an
 agent can find the ones relevant to a task; tags never remove a confirmed preference

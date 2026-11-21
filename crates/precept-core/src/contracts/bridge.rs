@@ -1,6 +1,6 @@
-use super::{SOURCE, Snapshot, binding, source};
+use super::{RuleFile, Snapshot, binding, checks, file_of, source};
 use crate::{
-    Preference, Result, Scope, applicable, confirmed_preferences, legacy_preferences,
+    Preference, Result, Scope, applicable, applies, confirmed_preferences, legacy_preferences,
     typed_context as typed,
 };
 use serde::{Deserialize, Serialize};
@@ -46,19 +46,62 @@ impl SelectorQuery {
 pub struct Projection {
     pub preferences: Vec<Preference>,
     pub contract_resolution: Value,
-    pub effective_contracts: Vec<Value>,
+    /// Committed, unchanged rule files that apply to the request, each with
+    /// its text and the result of its checks.
+    pub repository_rules: Vec<Value>,
+    /// Rule files with uncommitted changes or not tracked (ids and keys only;
+    /// their text is not served until it is committed).
+    pub pending_rules: Vec<Value>,
 }
 impl Projection {
-    pub fn refused(status: &str) -> Self {
+    pub fn refused(status: &str, invalid: Vec<String>) -> Self {
+        let mut resolution = json!({"status":status});
+        if !invalid.is_empty() {
+            resolution["invalid_files"] =
+                json!(invalid.iter().map(|id| file_of(id)).collect::<Vec<_>>());
+        }
         Self {
             preferences: vec![],
-            contract_resolution: json!({"status":status}),
-            effective_contracts: vec![],
+            contract_resolution: resolution,
+            repository_rules: vec![],
+            pending_rules: vec![],
         }
     }
 }
 
-/// Adapt exact profile values without carrying private source/decision provenance.
+/// One served rule: what agents read, never private Profile provenance.
+fn served(r: &RuleFile, digest: &str, root: Option<&std::path::Path>) -> Value {
+    let mut v = json!({
+        "id": r.id, "key": r.key, "text": r.body, "tags": r.tags,
+        "file": file_of(&r.id), "sha256": digest, "review": "accepted",
+        "enforcement": r.enforcement,
+        "checks": match root {
+            Some(root) => checks::evaluate(root, &r.checks),
+            None => json!({"status":"unavailable","passed":0,"total":r.checks.len()}),
+        },
+    });
+    if let Some(t) = &r.title {
+        v["title"] = json!(t);
+    }
+    if !r.allowed.is_empty() {
+        v["allowed_values"] = json!(r.allowed);
+    }
+    if r.priority != 0 {
+        v["priority"] = json!(r.priority);
+    }
+    if !r.applies_to.is_empty() {
+        v["applies_to"] = json!(r.applies_to);
+    }
+    if !r.guards.is_empty() {
+        v["guards"] = json!(r.guards.len());
+    }
+    v
+}
+
+/// Resolve the Profile's confirmed rules against the repository's rules.
+/// A committed rule that applies masks Profile preferences of its key; one
+/// with allowed values keeps those whose value it allows. Environment notes
+/// never compete. Uncommitted rule files are listed as pending only.
 pub fn project(
     project: &str,
     preferences: Vec<Preference>,
@@ -66,89 +109,105 @@ pub fn project(
     query: &SelectorQuery,
 ) -> Result<Projection> {
     query.validate()?;
-    // Environment notes never compete with preferences or contracts: they are
-    // listed after the effective preferences, whatever the contract outcome.
     let (environment, candidates): (Vec<_>, Vec<_>) = confirmed_preferences(project, preferences)
         .into_iter()
         .filter(|p| applicable(p, query))
         .partition(|p| p.scope == Scope::Environment);
     let mut legacy = legacy_preferences(candidates.clone());
-    let Some((contracts, digest)) = snapshot.contracts() else {
+    let Some(rules) = snapshot.rules() else {
         return Ok(if snapshot.status() == "not_configured" {
             Projection {
                 preferences: legacy.into_iter().chain(environment).collect(),
                 contract_resolution: json!({"status":"not_configured"}),
-                effective_contracts: vec![],
+                repository_rules: vec![],
+                pending_rules: vec![],
             }
         } else {
-            Projection::refused(snapshot.status())
+            Projection::refused(snapshot.status(), snapshot.invalid())
         });
     };
-    let mut rules: Vec<_> = contracts.iter().map(|c| c.rule(project, &digest)).collect();
-    let base = typed::resolve(&query.input(project, rules.clone()))
-        .map_err(|_| crate::Error::InvalidArguments)?;
-    // Pending and definitely nonmatching contracts do not pull a legacy key into
-    // typed validation. Missing query on an accepted rule is genuinely affected.
-    let affected: BTreeSet<_> = base
-        .explanations
+    let (accepted, pending): (Vec<_>, Vec<_>) = rules
+        .into_iter()
+        .partition(|(r, _)| snapshot.reviewed(&r.id));
+    let pending_rules = pending
         .iter()
-        .filter(|e| {
-            e.rule.review == typed::ReviewState::Accepted
-                && e.applicability != typed::Applicability::NoMatch
-        })
-        .map(|e| e.rule.key.clone())
+        .map(|(r, _)| json!({"id":r.id,"key":r.key,"file":file_of(&r.id),"review":"unreviewed"}))
         .collect();
-    let contract_ids: BTreeSet<_> = rules.iter().map(|r| r.reference.id.clone()).collect();
-    for p in candidates.iter().filter(|p| affected.contains(&p.key)) {
-        let mut id = format!("personal-{}", p.id);
-        while contract_ids.contains(&id) {
-            id.insert(0, '_');
-        }
-        rules.push(typed::Rule {
-            schema_version: 1,
-            reference: typed::RuleRef { id, revision: 1 },
-            kind: typed::RuleKind::Preference,
-            scope: match p.scope {
-                Scope::Global => typed::Scope::Global,
-                Scope::Project | Scope::Environment => typed::Scope::Project {
-                    binding: binding(project),
+    let applying: Vec<_> = accepted
+        .into_iter()
+        .filter(|(r, _)| applies(&r.applies_to, query))
+        .collect();
+    // Rules without allowed values replace the Profile's rules of their key.
+    let masked: BTreeSet<_> = applying
+        .iter()
+        .filter(|(r, _)| r.allowed.is_empty())
+        .map(|(r, _)| r.key.clone())
+        .collect();
+    legacy.retain(|p| !masked.contains(&p.key));
+    let mut typed_rules: Vec<_> = applying
+        .iter()
+        .filter(|(r, _)| !r.allowed.is_empty())
+        .map(|(r, digest)| r.typed(project, digest))
+        .collect();
+    let mut unresolved = BTreeSet::new();
+    if !typed_rules.is_empty() {
+        let affected: BTreeSet<_> = typed_rules.iter().map(|r| r.key.clone()).collect();
+        let contract_ids: BTreeSet<_> =
+            typed_rules.iter().map(|r| r.reference.id.clone()).collect();
+        for p in candidates
+            .iter()
+            .filter(|p| affected.contains(&p.key) && !masked.contains(&p.key))
+        {
+            let mut id = format!("personal-{}", p.id);
+            while contract_ids.contains(&id) {
+                id.insert(0, '_');
+            }
+            typed_rules.push(typed::Rule {
+                schema_version: 1,
+                reference: typed::RuleRef { id, revision: 1 },
+                kind: typed::RuleKind::Preference,
+                scope: match p.scope {
+                    Scope::Global => typed::Scope::Global,
+                    Scope::Project | Scope::Environment => typed::Scope::Project {
+                        binding: binding(project),
+                    },
                 },
-            },
-            authority: typed::Authority::Personal,
-            review: typed::ReviewState::Confirmed,
-            selector: typed::Selector::default(),
-            key: p.key.clone(),
-            allowed_values: vec![p.value.clone()],
-            legacy_preference_id: Some(p.id),
-            supersedes: vec![],
-            source: source("personal-context", "local"),
-        });
+                authority: typed::Authority::Personal,
+                review: typed::ReviewState::Confirmed,
+                selector: typed::Selector::default(),
+                key: p.key.clone(),
+                allowed_values: vec![p.value.clone()],
+                legacy_preference_id: Some(p.id),
+                supersedes: vec![],
+                source: source("personal-context", "local"),
+            });
+        }
+        let resolved = typed::resolve(&query.input(project, typed_rules))
+            .map_err(|_| crate::Error::InvalidArguments)?;
+        let selected: BTreeSet<_> = resolved
+            .explanations
+            .iter()
+            .filter(|e| {
+                e.rule.kind == typed::RuleKind::Preference && e.outcome == typed::Outcome::Selected
+            })
+            .filter_map(|e| e.rule.legacy_preference_id)
+            .collect();
+        legacy.retain(|p| !affected.contains(&p.key) || selected.contains(&p.id));
+        unresolved = resolved
+            .conflicts
+            .iter()
+            .filter(|c| c.status == typed::ConflictStatus::Unresolved)
+            .map(|c| c.key.clone())
+            .collect();
     }
-    let resolved =
-        typed::resolve(&query.input(project, rules)).map_err(|_| crate::Error::InvalidArguments)?;
-    let selected: BTreeSet<_> = resolved
-        .explanations
+    let repository_rules = applying
         .iter()
-        .filter(|e| {
-            e.rule.kind == typed::RuleKind::Preference && e.outcome == typed::Outcome::Selected
-        })
-        .filter_map(|e| e.rule.legacy_preference_id)
+        .map(|(r, digest)| served(r, digest, snapshot.root()))
         .collect();
-    legacy.retain(|p| !affected.contains(&p.key) || selected.contains(&p.id));
-    let unresolved: BTreeSet<_> = resolved
-        .conflicts
-        .iter()
-        .filter(|c| c.status == typed::ConflictStatus::Unresolved)
-        .map(|c| c.key.clone())
-        .collect();
-    let effective_contracts = resolved.effective.iter().filter_map(|e| {
-        let ids: Vec<_> = e.rules.iter().filter(|r| contract_ids.contains(&r.id)).map(|r| &r.id).collect();
-        if ids.is_empty() { return None; }
-        Some(json!({"key":e.key,"allowed_values":e.allowed_values,"rule_ids":ids,"source":{"path":SOURCE,"sha256":digest}}))
-    }).collect();
     Ok(Projection {
         preferences: legacy.into_iter().chain(environment).collect(),
         contract_resolution: json!({"status":if unresolved.is_empty() { "ready" } else { "partial" }, "unresolved_keys":unresolved}),
-        effective_contracts,
+        repository_rules,
+        pending_rules,
     })
 }

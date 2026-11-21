@@ -118,7 +118,7 @@ pub fn context_counts(result: &Value) -> Counts {
         .unwrap_or("unknown");
     Counts {
         preferences: len("preferences"),
-        contracts: len("effective_contracts"),
+        contracts: len("repository_rules"),
         documents: len("documents"),
         contract_status: status.to_owned(),
     }
@@ -242,7 +242,7 @@ mod tests {
         assert_eq!(client_label("\u{7}"), None);
         assert_eq!(client_label(&"x".repeat(200)).unwrap().len(), MAX_CLIENT);
         let c = context_counts(&json!({
-            "preferences":[{"value":"secret"}],"effective_contracts":[],
+            "preferences":[{"value":"secret"}],"repository_rules":[],
             "documents":[{},{}],"contract_resolution":{"status":"not_configured"}
         }));
         assert_eq!(

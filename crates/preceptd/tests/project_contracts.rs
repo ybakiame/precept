@@ -10,19 +10,50 @@ use serde_json::{Value, json};
 use std::{fs, process::Command as Process};
 use support::*;
 
-const SOURCE: &str = "ACP.contracts.md";
-fn rule(review: &str) -> Value {
-    json!({"id":"fmt","revision":1,"review":review,"key":"formatter","allowed_values":["rustfmt"]})
+const DIR: &str = ".precept/rules";
+/// A rule file for `formatter` allowing `rustfmt`, with `extra` front matter.
+fn rule(extra: &str) -> String {
+    format!("+++\nkey = \"formatter\"\nallowed = [\"rustfmt\"]\n{extra}+++\nUse rustfmt.\n")
 }
-fn put(f: &Fixture, rules: Vec<Value>) {
-    fs::write(
-        f.temp.path().join("alpha").join(SOURCE),
-        format!(
-            "```acp-contracts-v1\n{}\n```\n",
-            json!({"schema_version":1,"rules":rules})
-        ),
-    )
-    .unwrap();
+fn put(f: &Fixture, raw: &str) {
+    let dir = f.temp.path().join("alpha").join(DIR);
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("fmt.md"), raw).unwrap();
+}
+fn git(f: &Fixture, args: &[&str]) {
+    let root = f.temp.path().join("alpha");
+    let hooks = f.temp.path().join("owned-empty-hooks");
+    fs::create_dir_all(&hooks).unwrap();
+    assert!(
+        Process::new("git")
+            .arg("-c")
+            .arg(format!("core.hooksPath={}", hooks.to_str().unwrap()))
+            .args([
+                "-c",
+                "init.templateDir=",
+                "-c",
+                "commit.gpgSign=false",
+                "-c",
+                "user.name=Synthetic",
+                "-c",
+                "user.email=synthetic@example.invalid",
+            ])
+            .args(args)
+            .current_dir(&root)
+            .status()
+            .unwrap()
+            .success()
+    );
+}
+/// A Git checkout with one empty commit.
+fn init(f: &Fixture) {
+    git(f, &["init", "-q"]);
+    git(f, &["commit", "-q", "--allow-empty", "-m", "synthetic"]);
+}
+/// Commit the rule files: the repository's review.
+fn commit(f: &Fixture) {
+    git(f, &["add", DIR]);
+    git(f, &["commit", "-q", "-m", "rules"]);
 }
 fn setup() -> (Fixture, Binding) {
     let f = Fixture::created();
@@ -131,8 +162,11 @@ fn assert_safe(v: &Value) {
 #[test]
 fn production_ipc_and_mcp_mask_contract_conflicts_and_preserve_fallback_privacy() {
     let (f, b) = setup();
-    put(&f, vec![rule("accepted")]);
-    let source_before = fs::read(f.temp.path().join("alpha").join(SOURCE)).unwrap();
+    init(&f);
+    put(&f, &rule(""));
+    commit(&f);
+    let source = f.temp.path().join("alpha").join(DIR).join("fmt.md");
+    let source_before = fs::read(&source).unwrap();
     preference(
         &f,
         &b,
@@ -201,7 +235,7 @@ fn production_ipc_and_mcp_mask_contract_conflicts_and_preserve_fallback_privacy(
         Some("confirm"),
     );
     assert_eq!(
-        fs::read(f.temp.path().join("alpha").join(SOURCE)).unwrap(),
+        fs::read(&source).unwrap(),
         source_before,
         "operator confirmation cannot alter repository claims"
     );
@@ -218,9 +252,11 @@ fn production_ipc_and_mcp_mask_contract_conflicts_and_preserve_fallback_privacy(
         assert_eq!(v["preferences"].as_array().unwrap().len(), 1);
         assert_eq!(v["preferences"][0]["key"], "fallback");
         assert_eq!(
-            v["effective_contracts"][0]["allowed_values"],
+            v["repository_rules"][0]["allowed_values"],
             json!(["rustfmt"])
         );
+        assert_eq!(v["repository_rules"][0]["review"], "accepted");
+        assert_eq!(v["repository_rules"][0]["text"], "Use rustfmt.");
         assert_eq!(v["contract_resolution"]["status"], "ready");
     }
     // No alpha source/contract follows the other project capability.
@@ -233,7 +269,7 @@ fn production_ipc_and_mcp_mask_contract_conflicts_and_preserve_fallback_privacy(
         )
         .unwrap();
     assert_eq!(beta["contract_resolution"]["status"], "not_configured");
-    assert!(beta["effective_contracts"].as_array().unwrap().is_empty());
+    assert!(beta["repository_rules"].as_array().unwrap().is_empty());
     assert_eq!(logical(&f.db), before);
     let tools = mcp.request("tools/list", json!({}));
     let tools = tools["result"]["tools"].as_array().unwrap();
@@ -259,38 +295,7 @@ fn actual_absence_invalidity_dirty_edit_and_unreviewed_profile_text_are_distinct
         Some("confirm"),
     );
     let root = f.temp.path().join("alpha");
-    assert!(
-        Process::new("git")
-            .args(["-c", "init.templateDir=", "init", "-q"])
-            .current_dir(&root)
-            .status()
-            .unwrap()
-            .success()
-    );
-    let hooks = root.join("owned-empty-hooks");
-    fs::create_dir(&hooks).unwrap();
-    assert!(
-        Process::new("git")
-            .arg("-c")
-            .arg(format!("core.hooksPath={}", hooks.to_str().unwrap()))
-            .args([
-                "-c",
-                "commit.gpgSign=false",
-                "-c",
-                "user.name=Synthetic",
-                "-c",
-                "user.email=synthetic@example.invalid",
-                "commit",
-                "-q",
-                "--allow-empty",
-                "-m",
-                "synthetic"
-            ])
-            .current_dir(&root)
-            .status()
-            .unwrap()
-            .success()
-    );
+    init(&f);
     let before = logical(&f.db);
     let mut mcp = Mcp::start(&f.daemon, "alpha");
     let absent = mcp.context(json!({}));
@@ -298,40 +303,54 @@ fn actual_absence_invalidity_dirty_edit_and_unreviewed_profile_text_are_distinct
     assert_eq!(absent["preferences"][0]["value"], "keep\nmultiline");
     let head = absent["repository"]["head"].clone();
     assert!(head.is_string());
-    put(&f, vec![rule("unreviewed")]);
+    put(&f, &rule(""));
     let pending = mcp.context(json!({}));
     assert_eq!(pending["preferences"][0]["value"], "keep\nmultiline");
-    put(&f, vec![rule("accepted")]);
+    assert_eq!(pending["pending_rules"][0]["key"], "formatter");
+    assert_eq!(pending["repository_rules"], json!([]));
+    commit(&f);
     let affected = context(&f, json!({}));
+    // The multiline value cannot be typed against the allowed values: withheld.
     assert_eq!(affected["contract_resolution"]["status"], "partial");
     assert_eq!(affected["preferences"], json!([]));
-    let file = root.join(SOURCE);
+    assert_eq!(affected["repository_rules"][0]["key"], "formatter");
+    // An uncommitted edit of a committed rule is pending again.
+    put(&f, &rule("priority = 3\n"));
+    let edited = context(&f, json!({}));
+    assert_eq!(edited["repository_rules"], json!([]));
+    assert_eq!(edited["pending_rules"][0]["key"], "formatter");
+    let file = root.join(DIR).join("fmt.md");
     for bytes in [
         "malformed".to_owned(),
-        "```acp-contracts-v2\n{}\n```\n".into(),
+        "+++\nkey = \"formatter\"\nunknown = 1\n+++\nx\n".into(),
         "x".repeat(16385),
     ] {
         fs::write(&file, bytes).unwrap();
         for v in [context(&f, json!({})), mcp.context(json!({}))] {
             assert_eq!(v["contract_resolution"]["status"], "invalid_source");
             assert_eq!(v["preferences"], json!([]));
-            assert_eq!(v["effective_contracts"], json!([]));
-            assert_eq!(v["repository"]["head"], head);
+            assert_eq!(v["repository_rules"], json!([]));
+            assert_eq!(
+                v["contract_resolution"]["invalid_files"],
+                json!([".precept/rules/fmt.md"])
+            );
             assert_safe(&v);
         }
     }
-    fs::remove_file(&file).unwrap();
+    let _ = &head;
+    fs::remove_dir_all(root.join(".precept")).unwrap();
     assert_eq!(
         mcp.context(json!({}))["contract_resolution"]["status"],
         "not_configured"
     );
-    fs::create_dir(&file).unwrap();
+    fs::create_dir(root.join(".precept")).unwrap();
+    fs::write(root.join(DIR), "not a directory").unwrap();
     assert_eq!(
         context(&f, json!({}))["contract_resolution"]["status"],
         "invalid_source"
     );
-    fs::remove_dir(&file).unwrap();
-    put(&f, vec![rule("accepted")]);
+    fs::remove_file(root.join(DIR)).unwrap();
+    put(&f, &rule(""));
     #[cfg(unix)]
     let refused = {
         use std::os::unix::fs::PermissionsExt;
@@ -353,7 +372,7 @@ fn actual_absence_invalidity_dirty_edit_and_unreviewed_profile_text_are_distinct
     for v in refused {
         assert_eq!(v["contract_resolution"]["status"], "source_unavailable");
         assert_eq!(v["preferences"], json!([]));
-        assert_eq!(v["effective_contracts"], json!([]));
+        assert_eq!(v["repository_rules"], json!([]));
     }
     assert_eq!(logical(&f.db), before);
 }
@@ -369,9 +388,14 @@ fn real_selectors_unknown_match_nonmatch_and_malformed_never_change_authority() 
         "personal",
         Some("confirm"),
     );
-    let mut r = rule("accepted");
-    r["selector"] = json!({"paths":["src/lib.rs"],"languages":["rust"],"agents":["coder"],"task_tags":["review"]});
-    put(&f, vec![r]);
+    init(&f);
+    put(
+        &f,
+        &rule(
+            "[applies_to]\npaths = [\"src/lib.rs\"]\nlanguages = [\"rust\"]\nagents = [\"coder\"]\ntask_tags = [\"review\"]\n",
+        ),
+    );
+    commit(&f);
     let before = logical(&f.db);
     let mut mcp = Mcp::start(&f.daemon, "alpha");
     let matching =
@@ -386,15 +410,18 @@ fn real_selectors_unknown_match_nonmatch_and_malformed_never_change_authority() 
         let bridged = mcp.context(args.clone());
         assert_eq!(ipc, bridged);
         assert_safe(&ipc);
-        if args.get("selector").is_none() {
-            assert_eq!(ipc["contract_resolution"]["status"], "partial");
-        } else if args["selector"]["language"] == "rust" {
+        if args["selector"]["path"] == "Src/lib.rs" {
+            // A definite mismatch: the rule does not apply.
+            assert_eq!(ipc["repository_rules"], json!([]));
+            assert_eq!(ipc["preferences"][0]["value"], "personal");
+        } else {
+            // Matching, or a dimension the request leaves open.
             assert_eq!(
-                ipc["effective_contracts"][0]["allowed_values"],
+                ipc["repository_rules"][0]["allowed_values"],
                 json!(["rustfmt"])
             );
-        } else {
-            assert_eq!(ipc["preferences"][0]["value"], "personal");
+            assert_eq!(ipc["contract_resolution"]["status"], "ready");
+            assert_eq!(ipc["preferences"], json!([]));
         }
     }
     for args in [

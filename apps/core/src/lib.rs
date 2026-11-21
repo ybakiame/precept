@@ -69,9 +69,40 @@ pub struct Context {
     pub repository: Repository,
     pub documents: Vec<Value>,
     pub warnings: Vec<String>,
-    /// The repository's effective contracts (key and allowed values).
+    /// Committed `.precept/rules` files that apply, with their check results.
     #[serde(default)]
-    pub effective_contracts: Vec<Value>,
+    pub repository_rules: Vec<RepositoryRule>,
+    /// Rule files not committed yet (id, key, file).
+    #[serde(default)]
+    pub pending_rules: Vec<Value>,
+    /// `status` and, for an invalid source, `invalid_files`.
+    #[serde(default)]
+    pub contract_resolution: Value,
+}
+/// A committed repository rule as agents receive it.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct RepositoryRule {
+    pub id: String,
+    pub key: String,
+    pub text: String,
+    pub file: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub enforcement: Option<String>,
+    #[serde(default)]
+    pub allowed_values: Vec<String>,
+    #[serde(default)]
+    pub applies_to: Option<Value>,
+    /// `status` (verified, failing, unchecked, unavailable), `passed`,
+    /// `total` and the first `failure`.
+    #[serde(default)]
+    pub checks: Value,
+    /// How many tool guards the rule declares.
+    #[serde(default)]
+    pub guards: u64,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Handoff {
@@ -260,6 +291,8 @@ pub struct Model {
     pub evidence_page: usize,
     pub high_contrast: bool,
     pub selected_preference: Option<usize>,
+    /// The repository rule whose details are open (index into the project's rules).
+    pub selected_rule: Option<usize>,
     pub detail_page: usize,
     pub copied: bool,
     pub data: Option<Arc<Snapshot>>,
@@ -327,6 +360,7 @@ impl Model {
             evidence_page: 0,
             high_contrast: false,
             selected_preference: None,
+            selected_rule: None,
             detail_page: 0,
             copied: false,
             data: None,
@@ -447,6 +481,7 @@ impl Model {
         self.evidence_page = 0;
         self.detail_page = 0;
         self.selected_preference = None;
+        self.selected_rule = None;
         self.expanded = false;
         self.copied = false;
         self.last_read_ms = None;
@@ -461,6 +496,7 @@ impl Model {
         self.operator.invalidate();
         self.data = None;
         self.selected_preference = None;
+        self.selected_rule = None;
         self.copied = false;
         self.permission_denied = false;
         self.read_failure = None;
@@ -565,6 +601,7 @@ impl Model {
             self.selected_project = Some(name);
             self.page = 0;
             self.selected_preference = None;
+            self.selected_rule = None;
             self.detail_page = 0;
             self.evidence_page = 0;
             self.expanded = false;
@@ -625,12 +662,14 @@ impl Model {
         }
         self.page = 0;
         self.selected_preference = None;
+        self.selected_rule = None;
         self.detail_page = 0;
     }
     pub fn clear_tags(&mut self) {
         self.tag_filter.clear();
         self.page = 0;
         self.selected_preference = None;
+        self.selected_rule = None;
         self.detail_page = 0;
     }
     /// Tags offered while a preference's tags are edited: the ones already in
@@ -739,12 +778,14 @@ impl Model {
             .collect();
         self.page = 0;
         self.selected_preference = None;
+        self.selected_rule = None;
         self.detail_page = 0;
     }
     pub fn page_by(&mut self, delta: isize) {
         let last = self.rows().len().saturating_sub(1) / PAGE_SIZE;
         self.page = self.page.saturating_add_signed(delta).min(last);
         self.selected_preference = None;
+        self.selected_rule = None;
         self.detail_page = 0;
     }
     pub fn page_label(&self) -> String {
@@ -771,7 +812,21 @@ impl Model {
             self.data = None;
         }
     }
+    pub fn select_rule(&mut self, index: usize) {
+        self.selected_preference = None;
+        self.selected_rule = self
+            .project()
+            .is_some_and(|p| index < p.context.repository_rules.len())
+            .then_some(index);
+    }
+    pub fn rule_detail(&self) -> Option<&RepositoryRule> {
+        self.project()?
+            .context
+            .repository_rules
+            .get(self.selected_rule?)
+    }
     pub fn select_preference(&mut self, index: usize) {
+        self.selected_rule = None;
         self.selected_preference = (index < self.rows().len()).then_some(index);
         self.detail_page = 0;
         self.copied = false;
