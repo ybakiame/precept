@@ -469,6 +469,7 @@ async fn fetch(
                     repository: Repository::default(),
                     documents: Vec::new(),
                     warnings: Vec::new(),
+                    effective_contracts: Vec::new(),
                 },
                 name,
                 handoff: None,

@@ -66,14 +66,15 @@ Organize navigation around three clear operational paths plus utilities:
 
 - **Workspace:** one persistent workspace switcher at the top of the group (or an
   explicit `Add workspace…` shortcut to Runtime checks when none exist), followed
-  by **Dashboard**, **Preferences** (effective confirmed rows), **Agents** (MCP
+  by **Dashboard**, **Preferences & contracts** (the repository's contracts and the
+  effective confirmed rows), **Agents** (MCP
   access and recent activity) and **Handoff** for that active project. There is one workspace switcher in the app; workspace-scoped headers
   display a calm read-only scope badge rather than a second switcher.
-- **Review:** one unified **Review & preferences** hub (To review, Personal,
-  Project and **Environment** — the selected project's notes about this machine) combining the pending
+- **Review:** one unified **Review & rules** hub (To review, Personal, Project
+  conventions and **Environment** — the selected project's notes about this machine) combining the pending
   review queue (`To review`, with personal vs current-project scope toggle),
-  **Personal** preferences (global scope) and **Project** preferences (active
-  project scope). Its sidebar item carries the live count pill of waiting
+  **Personal** preferences (global scope) and **Project conventions** (active
+  project scope: the repository's shared conventions, not anyone's personal taste). Its sidebar item carries the live count pill of waiting
   suggestions.
 - **Set up:** **Runtime checks**, uniting **Connection**, **Profile** and
   **Workspaces** as three step tabs with live completion indicators (`✓` or
@@ -145,8 +146,17 @@ that is exactly `operator` (typed by the operator) or `agent` (an agent's sugges
 the operator records). Tags and origin belong to the reviewed proposal: changing
 either is a new suggestion. Origin is the operator's claim, not verified authorship.
 
-The Preferences page is one virtualized list of the confirmed effective rows, with
-no pages. Tag filters above it narrow to rows carrying every selected tag; the filter
+A suggestion's sheet has **Edit…**: the add dialog opens with the suggestion's
+content, and saving prepares one write that files the edit as a new suggestion
+(origin `operator`) and closes the old one as replaced; the new one then opens to
+be confirmed. Above the decisions, an optional **Note** (at most 500 characters)
+is kept with the next confirm, reject, retire or edit and shown in the record's
+history, with "replaced by #N" for edits. Agents cannot edit: a correction from an
+agent is a new suggestion.
+
+The Preferences & contracts page starts with the repository's effective contracts
+(read-only; changed in the repository), then one virtualized list of the confirmed
+effective rows, with no pages. Tag filters above it narrow to rows carrying every selected tag; the filter
 text matches key, value, scope or tag, and a leading `#` matches tags only. Review
 lists (the queue and a scope's records) load further batches as the list nears its
 end, with a visible Load more control for keyboard and terminal use.

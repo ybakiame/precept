@@ -6,7 +6,7 @@ pub(crate) fn section_path(section: Section) -> &'static str {
     match section {
         Section::Dashboard => "M3 3H10V10H3ZM14 3H21V10H14ZM3 14H10V21H3ZM14 14H21V21H14Z",
         Section::Projects => "M3 6H10L12 9H21V20H3Z",
-        Section::Preferences => "M4 6H20M4 12H20M4 18H20M8 3V9M16 9V15M10 15V21",
+        Section::Rules => "M4 6H20M4 12H20M4 18H20M8 3V9M16 9V15M10 15V21",
         Section::Handoff => "M4 4H14V20H4ZM9 9H21M17 5L21 9L17 13",
         Section::Diagnostics => "M3 12H7L10 5L14 19L17 12H21",
     }

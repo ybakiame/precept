@@ -135,6 +135,29 @@ impl Request {
                 }
                 (expected, Some(scope))
             }
+            Command::ReviseSuggestion {
+                id,
+                scope,
+                proposal_digest,
+                key,
+                value,
+                tags,
+                rule,
+                expected,
+                ..
+            } => {
+                if *id <= 0
+                    || !digest(proposal_digest)
+                    || !matches!(expected, Expected::Revision(n) if *n>0)
+                    || !text(key, 120, true)
+                    || !text(value, 4096, true)
+                    || !precept_core::operator::tags_canonical(tags)
+                    || !rule.valid_for(scope)
+                {
+                    return Err(Error::InvalidCommand);
+                }
+                (expected, Some(scope))
+            }
             Command::PutHandoff {
                 project,
                 task_id,
@@ -162,6 +185,11 @@ impl Request {
                 (expected, None)
             }
         };
+        if let Some(note) = self.command.note()
+            && precept_core::operator::canonical_note(Some(note)) != Some(Some(note.to_owned()))
+        {
+            return Err(Error::InvalidCommand);
+        }
         if matches!(expected, Expected::Revision(n) if *n<=0)
             || matches!(scope, Some(Scope::Project{name} | Scope::Environment{name}) if !name_valid(name))
         {

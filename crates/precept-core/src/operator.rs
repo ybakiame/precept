@@ -339,6 +339,9 @@ pub enum Command {
         proposal_digest: String,
         channel: Channel,
         expected: Expected,
+        /// The operator's note, kept with the decision.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        note: Option<String>,
     },
     RejectPreference {
         id: i64,
@@ -346,6 +349,9 @@ pub enum Command {
         proposal_digest: String,
         channel: Channel,
         expected: Expected,
+        /// The operator's note, kept with the decision.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        note: Option<String>,
     },
     DeprecatePreference {
         id: i64,
@@ -353,6 +359,26 @@ pub enum Command {
         proposal_digest: String,
         channel: Channel,
         expected: Expected,
+        /// The operator's note, kept with the decision.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        note: Option<String>,
+    },
+    /// Replaces a suggestion with the operator's edited version in one
+    /// write: the new record is suggested (still to be confirmed) and the old
+    /// one is rejected, its decision naming the new id.
+    ReviseSuggestion {
+        id: i64,
+        scope: Scope,
+        proposal_digest: String,
+        key: String,
+        value: String,
+        tags: Vec<String>,
+        #[serde(default)]
+        rule: RuleOptions,
+        channel: Channel,
+        expected: Expected,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        note: Option<String>,
     },
     DeletePreference {
         id: i64,
@@ -371,6 +397,19 @@ pub enum Command {
         snapshot: Snapshot,
         expected: Expected,
     },
+}
+
+impl Command {
+    /// The operator's note on a decision, if the command carries one.
+    pub fn note(&self) -> Option<&str> {
+        match self {
+            Command::ConfirmPreference { note, .. }
+            | Command::RejectPreference { note, .. }
+            | Command::DeprecatePreference { note, .. }
+            | Command::ReviseSuggestion { note, .. } => note.as_deref(),
+            _ => None,
+        }
+    }
 }
 
 /// One exact persisted preference, never inferred from effective context.
@@ -483,6 +522,8 @@ pub enum DecisionAction {
     /// The operator switched a confirmed rule on or off (no new review).
     Enable,
     Disable,
+    /// A suggestion replaced by an edited one (`replaced_by`).
+    Replace,
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -496,6 +537,28 @@ pub struct ReviewDecisionRecord {
     pub receipt_commit_sequence: i64,
     pub channel: Channel,
     pub decided_at: String,
+    /// The operator's note on the decision.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// For `replace`: the suggestion that took this one's place.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replaced_by: Option<i64>,
+}
+
+/// The longest decision note, in characters.
+pub const MAX_NOTE: usize = 500;
+/// A note as stored: trimmed, one to [`MAX_NOTE`] characters, no control
+/// characters but line breaks. `Some(None)` for no note, `None` if invalid.
+pub fn canonical_note(note: Option<&str>) -> Option<Option<String>> {
+    let Some(raw) = note else {
+        return Some(None);
+    };
+    let t = raw.trim();
+    if t.is_empty() {
+        return Some(None);
+    }
+    (t.chars().count() <= MAX_NOTE && !t.chars().any(|c| c.is_control() && c != '\n'))
+        .then(|| Some(t.to_owned()))
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]

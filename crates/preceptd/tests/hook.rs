@@ -89,6 +89,7 @@ fn session_start_briefing_reaches_each_harness_shape_and_fails_open() {
                     .into(),
                 channel: Channel::Desktop,
                 expected: Expected::Revision(1),
+                note: None,
             },
         )
         .unwrap();

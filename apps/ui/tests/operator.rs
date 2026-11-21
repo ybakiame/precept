@@ -214,7 +214,7 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     f.register();
     app.press_key("mod+r").unwrap();
     // The newly registered project becomes the current one.
-    app.wait_for("Project · alpha").unwrap();
+    app.wait_for("Project conventions · alpha").unwrap();
     writes_on(&mut app);
     // Workspace → Preferences → Manage & add preferences opens the unified
     // Review hub on alpha's project tab; Add preference saves a suggestion.
@@ -254,7 +254,7 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
         })
         .unwrap();
     };
-    waiting(&mut app, "Review & preferences, 1 waiting");
+    waiting(&mut app, "Review & rules, 1 waiting");
     // The saved suggestion opens as the exact record; confirming it is the
     // second explicit step.
     app.wait_for("Show full digest").unwrap();
@@ -265,7 +265,7 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 3");
     // Confirmed: nothing waits, and the count leaves rather than showing 0.
-    waiting(&mut app, "Review & preferences");
+    waiting(&mut app, "Review & rules");
     add(&mut app);
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 4");
@@ -339,7 +339,7 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     app.wait_for("本次 daemon 运行未开启写入").unwrap();
     app.press_key("Escape").unwrap();
     app.press_key("alt+3").unwrap();
-    app.wait_for("已确认偏好").unwrap();
+    app.wait_for("已确认的偏好与约定").unwrap();
     f.child.kill().unwrap();
     f.child.wait().unwrap();
     app.press_key("alt+o").unwrap();

@@ -88,6 +88,10 @@ pub struct Operator {
     /// The draft's priority as typed (empty = 0).
     pub priority: String,
     pub enforcement: precept_core::operator::Enforcement,
+    /// The note for the next decision (confirm, reject, retire or edit).
+    pub note: String,
+    /// The suggestion whose edited version the draft holds.
+    pub revising: Option<i64>,
     pub task: String,
     pub error: Option<String>,
     pub receipt: Option<Receipt>,
@@ -189,8 +193,31 @@ impl Operator {
     pub fn remove_tag(&mut self, tag: &str) {
         self.tags.retain(|t| t != tag);
     }
+    /// A draft holding the selected suggestion, to edit and save as its
+    /// replacement. Only a suggestion can be edited.
+    pub fn start_revision(&mut self) -> bool {
+        let Some(r) = self.record().filter(|r| r.status == "suggested").cloned() else {
+            return false;
+        };
+        self.start_draft();
+        self.key = r.key;
+        self.value = r.value;
+        self.tags = r.tags;
+        let join = |v: &[String]| v.join(", ");
+        self.applies_agents = join(&r.rule.applies_to.agents);
+        self.applies_languages = join(&r.rule.applies_to.languages);
+        self.applies_paths = join(&r.rule.applies_to.paths);
+        self.applies_tags = join(&r.rule.applies_to.task_tags);
+        if r.rule.priority != 0 {
+            self.priority = r.rule.priority.to_string();
+        }
+        self.enforcement = r.rule.enforcement;
+        self.revising = Some(r.id);
+        true
+    }
     /// A fresh draft for the add dialog.
     pub fn start_draft(&mut self) {
+        self.revising = None;
         self.key.clear();
         self.value.clear();
         self.tags.clear();
@@ -317,11 +344,15 @@ impl Model {
     }
     /// Whether the exact inspection still belongs to the current selection,
     /// authority and observed sources. A false value requires a fresh inspect.
+    /// The draft's serial is not part of it: editing a draft (an edit of this
+    /// very record) does not change what was inspected.
     pub fn operator_inspected(&self) -> bool {
-        self.operator
-            .inspection
-            .as_ref()
-            .is_some_and(|guard| self.operator_guard().as_ref() == Some(guard))
+        self.operator.inspection.as_ref().is_some_and(|inspected| {
+            self.operator_guard().is_some_and(|mut guard| {
+                guard.serial = inspected.serial;
+                guard == *inspected
+            })
+        })
     }
     pub fn operator_current(&self, review: &Review) -> bool {
         let Some(mut guard) = self.operator_guard() else {
@@ -412,7 +443,7 @@ impl Model {
             }
             "disable" if info.write_enabled => ("profile.write.disable", json!({}), None),
             "suggest" | "confirm" | "reject" | "deprecate" | "delete" | "switch_on"
-            | "switch_off"
+            | "switch_off" | "revise"
                 if info.write_enabled =>
             {
                 let Some(binding) = info.binding.clone() else {
@@ -453,7 +484,9 @@ impl Model {
                     let Some(inspect) = &self.operator.inspect else {
                         return false;
                     };
-                    if self.operator.inspection.as_ref() != Some(&guard) {
+                    // The record, authority and sources must still be the ones
+                    // inspected; the draft (its serial) is not part of that.
+                    if !self.operator_inspected() {
                         return false;
                     }
                     if r.scope != scope
@@ -468,6 +501,11 @@ impl Model {
                     // only decide a suggested one. Delete is armed separately.
                     match action {
                         "confirm" | "reject" if r.status != "suggested" => return false,
+                        "revise"
+                            if r.status != "suggested" || self.operator.revising != Some(r.id) =>
+                        {
+                            return false;
+                        }
                         "deprecate" if r.status != "confirmed" => return false,
                         "switch_on" | "switch_off" if r.status != "confirmed" => return false,
                         "switch_on" if r.enabled => return false,
@@ -479,7 +517,52 @@ impl Model {
                     let proposal_digest = r.proposal_digest.clone();
                     let channel = self.operator.channel;
                     let expected = Expected::Revision(r.revision);
+                    // The operator's note, only on decisions that keep one.
+                    let note = if matches!(action, "confirm" | "reject" | "deprecate" | "revise") {
+                        let Some(note) = precept_core::operator::canonical_note(Some(
+                            self.operator.note.as_str(),
+                        )) else {
+                            self.operator.error = Some("InvalidNote".into());
+                            return false;
+                        };
+                        note
+                    } else {
+                        None
+                    };
+                    let revision = if action == "revise" {
+                        let Some(tags) = canonical_tags(&self.operator.tags) else {
+                            return false;
+                        };
+                        if self.operator.key.trim().is_empty()
+                            || self.operator.value.trim().is_empty()
+                        {
+                            return false;
+                        }
+                        let Some(rule) = self.operator.draft_rule(&scope) else {
+                            self.operator.error = Some("InvalidRule".into());
+                            return false;
+                        };
+                        Some((tags, rule))
+                    } else {
+                        None
+                    };
                     match action {
+                        "revise" => {
+                            let (tags, rule) = revision.expect("built above");
+                            self.pin_tag_colors(&tags);
+                            Command::ReviseSuggestion {
+                                id,
+                                scope,
+                                proposal_digest,
+                                key: self.operator.key.clone(),
+                                value: self.operator.value.clone(),
+                                tags,
+                                rule,
+                                channel,
+                                expected,
+                                note,
+                            }
+                        }
                         "switch_on" | "switch_off" => Command::SetPreferenceEnabled {
                             id,
                             scope,
@@ -493,6 +576,7 @@ impl Model {
                             proposal_digest,
                             channel,
                             expected,
+                            note,
                         },
                         "reject" => Command::RejectPreference {
                             id,
@@ -500,6 +584,7 @@ impl Model {
                             proposal_digest,
                             channel,
                             expected,
+                            note,
                         },
                         "deprecate" => Command::DeprecatePreference {
                             id,
@@ -507,6 +592,7 @@ impl Model {
                             proposal_digest,
                             channel,
                             expected,
+                            note,
                         },
                         _ => Command::DeletePreference {
                             id,
@@ -529,7 +615,7 @@ impl Model {
         };
         let record = if matches!(
             action,
-            "confirm" | "reject" | "deprecate" | "delete" | "switch_on" | "switch_off"
+            "confirm" | "reject" | "deprecate" | "delete" | "switch_on" | "switch_off" | "revise"
         ) {
             self.operator.record().cloned()
         } else {
@@ -849,11 +935,15 @@ impl Model {
                     }
                     // Save, then confirm: a preference the operator just saved
                     // opens as the exact record to confirm (two explicit steps).
-                    if let Command::SuggestPreference { .. } = &mutation.command {
+                    // An edit opens its replacement the same way.
+                    if matches!(
+                        &mutation.command,
+                        Command::SuggestPreference { .. } | Command::ReviseSuggestion { .. }
+                    ) {
                         self.operator.follow = receipt
                             .affected
                             .iter()
-                            .find(|a| a.kind == "preference" && !a.deleted)
+                            .find(|a| a.kind == "preference" && !a.deleted && a.revision == 1)
                             .and_then(|a| a.record_id.parse().ok());
                         if self.operator.follow.is_some() {
                             // The scoped pages find it in their record list;
@@ -868,6 +958,8 @@ impl Model {
                         }
                     }
                     self.operator.receipt = Some(receipt);
+                    self.operator.note.clear();
+                    self.operator.revising = None;
                     self.operator.pending = None;
                     self.operator.outcome_unknown = false;
                     self.operator.page = None;
@@ -1262,6 +1354,8 @@ mod tests {
             receipt_commit_sequence: seq,
             channel: Channel::Desktop,
             decided_at: "2026-01-01T00:00:00Z".into(),
+            note: None,
+            replaced_by: None,
         }
     }
     fn inspect_of(
@@ -1608,7 +1702,9 @@ mod tests {
                 proposal_digest,
                 channel,
                 expected,
+                note,
             } => {
+                assert_eq!(*note, None);
                 assert_eq!(*id, 1);
                 assert!(*scope == Scope::Global);
                 assert_eq!(*proposal_digest, digest);

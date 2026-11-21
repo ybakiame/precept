@@ -120,13 +120,17 @@ pub const REVIEW_DECISIONS: &str = r#"CREATE TABLE acp_review_decisions (
     project TEXT REFERENCES projects(name) ON DELETE RESTRICT,
     preference_id INTEGER NOT NULL CHECK (preference_id > 0),
     action TEXT NOT NULL
-      CHECK (action IN ('confirm', 'reject', 'deprecate', 'demote', 'delete', 'enable', 'disable')),
+      CHECK (action IN ('confirm', 'reject', 'deprecate', 'demote', 'delete', 'enable', 'disable', 'replace')),
     from_revision INTEGER NOT NULL CHECK (from_revision > 0),
     to_revision INTEGER NOT NULL CHECK (to_revision > 0),
     proposal_digest BLOB NOT NULL CHECK (length(proposal_digest) = 32),
     receipt_commit_sequence INTEGER NOT NULL CHECK (receipt_commit_sequence > 0),
     channel TEXT NOT NULL CHECK (channel IN ('cli', 'desktop', 'tui')),
     decided_at TEXT NOT NULL,
+    note TEXT CHECK (note IS NULL OR length(note) BETWEEN 1 AND 500),
+    replaced_by INTEGER CHECK (replaced_by IS NULL OR replaced_by > preference_id),
+    CHECK ((action = 'replace') = (replaced_by IS NOT NULL)),
+    CHECK (note IS NULL OR action IN ('confirm', 'reject', 'deprecate', 'replace')),
     CHECK (
       (scope = 'global' AND project IS NULL) OR
       (scope IN ('project', 'environment') AND project IS NOT NULL)
@@ -597,7 +601,7 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
     valid(live.is_empty() && next > max_id && (seq != 0 || next == 1))?;
     let decisions = rows_capped(
         db,
-        "SELECT id,scope,project,preference_id,action,from_revision,to_revision,proposal_digest,receipt_commit_sequence,channel,decided_at FROM acp_review_decisions ORDER BY id",
+        "SELECT id,scope,project,preference_id,action,from_revision,to_revision,proposal_digest,receipt_commit_sequence,channel,decided_at,note,replaced_by FROM acp_review_decisions ORDER BY id",
         8192,
     )?;
     let mut max_review_id = 0i64;
@@ -636,9 +640,26 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
                 "delete",
                 "enable",
                 "disable",
+                "replace",
             ]
             .contains(&action),
         )?;
+        // A note is the operator's words on a decision they made: bounded,
+        // canonical, and only on confirm, reject, deprecate or replace.
+        match &r[11] {
+            Value::Null => {}
+            Value::Text(note) => valid(
+                ["confirm", "reject", "deprecate", "replace"].contains(&action)
+                    && precept_core::operator::canonical_note(Some(note))
+                        == Some(Some(note.clone())),
+            )?,
+            _ => return Err(Error::InvalidRecord),
+        }
+        match &r[12] {
+            Value::Null => valid(action != "replace")?,
+            Value::Integer(by) => valid(action == "replace" && *by > pref_id)?,
+            _ => return Err(Error::InvalidRecord),
+        }
         let from = positive(&r[5])?;
         let to = positive(&r[6])?;
         valid(to == from + 1)?;
@@ -665,7 +686,7 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
         valid(from == entry.0)?;
         let next_status = match action {
             "confirm" if entry.1 == "suggested" => "confirmed",
-            "reject" if entry.1 == "suggested" => "rejected",
+            "reject" | "replace" if entry.1 == "suggested" => "rejected",
             "deprecate" | "demote" if entry.1 == "confirmed" => "deprecated",
             "enable" | "disable" if entry.1 == "confirmed" => "confirmed",
             _ => return Err(Error::InvalidRecord),

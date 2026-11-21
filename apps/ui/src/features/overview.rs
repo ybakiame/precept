@@ -148,7 +148,7 @@ pub(crate) fn dashboard(model: Signal<Model>) -> impl IntoElement {
             button(model, "")
                 .label_fn(move || model.get().word(Msg::OpenPreferences).into())
                 .size(ButtonSize::Small)
-                .on_press(move || shell::go(model, shell::Destination::Preferences)),
+                .on_press(move || shell::go(model, shell::Destination::Rules)),
         ),
     );
 

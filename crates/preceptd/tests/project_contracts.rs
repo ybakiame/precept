@@ -86,6 +86,7 @@ fn preference(
                 proposal_digest: digest,
                 channel: Channel::Cli,
                 expected: Expected::Revision(1),
+                note: None,
             },
             _ => Command::ConfirmPreference {
                 id,
@@ -93,6 +94,7 @@ fn preference(
                 proposal_digest: digest,
                 channel: Channel::Cli,
                 expected: Expected::Revision(1),
+                note: None,
             },
         };
         f.daemon
@@ -184,6 +186,7 @@ fn production_ipc_and_mcp_mask_contract_conflicts_and_preserve_fallback_privacy(
                 proposal_digest: record["record"]["proposal_digest"].as_str().unwrap().into(),
                 channel: Channel::Cli,
                 expected: Expected::Revision(2),
+                note: None,
             },
         )
         .unwrap();

@@ -154,6 +154,41 @@ fn row(model: Signal<Model>, r: &Preference, index: usize) -> AnyElement {
         .into_element()
 }
 
+/// The repository's contracts: what outranks every preference. Read-only.
+fn contracts(model: Signal<Model>, current: &Model) -> impl IntoElement {
+    let list = current
+        .project()
+        .map(|p| p.context.effective_contracts.clone())
+        .unwrap_or_default();
+    let mut lines: Vec<String> = list
+        .iter()
+        .take(50)
+        .map(|c| {
+            let key = c
+                .get("key")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("?");
+            let allowed: Vec<&str> = c
+                .get("allowed_values")
+                .and_then(serde_json::Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(serde_json::Value::as_str)
+                .collect();
+            format!(
+                "{}: {}",
+                sanitize(key, 120),
+                sanitize(&allowed.join(" | "), 400)
+            )
+        })
+        .collect();
+    if lines.is_empty() {
+        lines.push(current.word(Msg::ContractsNone).into());
+    }
+    lines.push(current.word(Msg::ContractsSource).into());
+    card(model, current.word(Msg::ContractsHeading), lines)
+}
+
 pub(crate) fn preferences(model: Signal<Model>) -> impl IntoElement {
     let current = model.get();
     let rows: Rc<Vec<Preference>> = Rc::new(current.rows().into_iter().cloned().collect());
@@ -191,6 +226,7 @@ pub(crate) fn preferences(model: Signal<Model>) -> impl IntoElement {
             ),
         );
     }
+    body = body.child(contracts(model, &current));
     body = body.child(tag_filters(model, &current));
     if rows.is_empty() {
         return body.child(card(

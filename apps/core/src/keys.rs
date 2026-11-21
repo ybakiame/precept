@@ -64,7 +64,7 @@ shortcuts! {
     "theme.instrument", General, KeyThemeInstrument, ["alt+a"];
     "go.dashboard", Navigation, KeyGoDashboard, ["alt+1"];
     "go.workspaces", Navigation, KeyGoWorkspaces, ["alt+2"];
-    "go.preferences", Navigation, KeyGoPreferences, ["alt+3"];
+    "go.preferences", Navigation, KeyGoRules, ["alt+3"];
     "go.handoff", Navigation, KeyGoHandoff, ["alt+4"];
     "go.diagnostics", Navigation, KeyGoDiagnostics, ["alt+5"];
     "go.review", Navigation, KeyGoReview, ["alt+o"];

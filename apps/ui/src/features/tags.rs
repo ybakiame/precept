@@ -196,7 +196,7 @@ mod tests {
     #[component]
     fn TagConsole() -> impl IntoElement {
         let mut model = precept_ui_core::Model::loading();
-        model.section = precept_ui_core::Section::Preferences;
+        model.section = precept_ui_core::Section::Rules;
         model.receive(Ok(precept_ui_core::Snapshot::fixture()));
         crate::console(signal(model))
     }

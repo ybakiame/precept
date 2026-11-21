@@ -68,6 +68,7 @@ fn mcp_starts_reads_and_refusals_are_logged_by_count_for_the_operator_only() {
                     .into(),
                 channel: Channel::Desktop,
                 expected: Expected::Revision(1),
+                note: None,
             },
         )
         .unwrap();

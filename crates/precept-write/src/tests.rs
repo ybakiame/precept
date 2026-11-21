@@ -94,6 +94,7 @@ fn transition(id: i64, scope: Scope, revision: i64, action: usize) -> Command {
             proposal_digest,
             channel,
             expected: Expected::Revision(revision),
+            note: None,
         },
         1 => Command::RejectPreference {
             id,
@@ -101,6 +102,7 @@ fn transition(id: i64, scope: Scope, revision: i64, action: usize) -> Command {
             proposal_digest,
             channel,
             expected: Expected::Revision(revision),
+            note: None,
         },
         _ => Command::DeprecatePreference {
             id,
@@ -108,6 +110,7 @@ fn transition(id: i64, scope: Scope, revision: i64, action: usize) -> Command {
             proposal_digest,
             channel,
             expected: Expected::Revision(revision),
+            note: None,
         },
     }
 }
@@ -1214,6 +1217,7 @@ fn writer_produced_decision_chain_passes_strict_verification() {
         proposal_digest: proposal(&Scope::Global),
         channel: precept_core::operator::Channel::Cli,
         expected: Expected::Revision(1),
+        note: None,
     };
     p.writer()
         .unwrap()
@@ -1253,6 +1257,7 @@ fn writer_confirm_then_deprecate_chain_verifies_and_missing_last_decision_is_ref
                 proposal_digest: digest.clone(),
                 channel: precept_core::operator::Channel::Cli,
                 expected: Expected::Revision(1),
+                note: None,
             },
         ))
         .unwrap();
@@ -1267,6 +1272,7 @@ fn writer_confirm_then_deprecate_chain_verifies_and_missing_last_decision_is_ref
                 proposal_digest: digest,
                 channel: precept_core::operator::Channel::Cli,
                 expected: Expected::Revision(2),
+                note: None,
             },
         ))
         .unwrap();

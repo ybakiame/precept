@@ -60,6 +60,8 @@ fn decision(row: &rusqlite::Row<'_>) -> rusqlite::Result<ReviewDecisionRecord> {
         channel: serde_json::from_value(serde_json::Value::String(channel))
             .map_err(|_| malformed(6, "channel"))?,
         decided_at: row.get(7)?,
+        note: row.get(8)?,
+        replaced_by: row.get(9)?,
     })
 }
 /// Exact scope admission shared by every operator read; never a union of scopes.
@@ -177,7 +179,7 @@ impl SqliteStore {
             let (kind, project) = scoped(self, scope)?;
             let record = self.db.query_row(&format!("SELECT {PREFERENCE_COLUMNS} FROM preferences WHERE scope=?1 AND project IS ?2 AND id=?3"), (kind,project,id), preference)
                 .optional().map_err(|_|Error::ReadFailed)?.ok_or(Error::PreferenceNotFound)?;
-            let mut stmt = self.db.prepare("SELECT preference_id,action,from_revision,to_revision,proposal_digest,receipt_commit_sequence,channel,decided_at FROM acp_review_decisions WHERE scope=?1 AND project IS ?2 AND preference_id=?3 ORDER BY id DESC LIMIT 8").map_err(|_|Error::ReadFailed)?;
+            let mut stmt = self.db.prepare("SELECT preference_id,action,from_revision,to_revision,proposal_digest,receipt_commit_sequence,channel,decided_at,note,replaced_by FROM acp_review_decisions WHERE scope=?1 AND project IS ?2 AND preference_id=?3 ORDER BY id DESC LIMIT 8").map_err(|_|Error::ReadFailed)?;
             let decisions = stmt.query_map((kind, project, id), decision)
                 .map_err(|_|Error::ReadFailed)?.collect::<std::result::Result<Vec<_>,_>>()
                 .map_err(|_|Error::InvalidRecord)?;

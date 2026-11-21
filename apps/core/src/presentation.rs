@@ -90,7 +90,7 @@ impl Model {
                 );
                 lines.extend(p.context.warnings.iter().take(8).cloned());
             }
-            Section::Preferences => {
+            Section::Rules => {
                 lines.extend(self.preference_lines());
                 if let Some(row) = self.preference_detail() {
                     lines.push(format!("Selected preference: {}", sanitize(&row.key, 120)));
@@ -225,7 +225,7 @@ impl Model {
                     ));
                 }
             }
-            Section::Preferences => {
+            Section::Rules => {
                 lines.push(self.word(Msg::PreferencesHeading).into());
                 lines.push(self.page_label());
                 lines.extend(

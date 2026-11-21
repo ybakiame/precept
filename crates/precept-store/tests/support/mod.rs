@@ -44,7 +44,7 @@ fn push_decision(
 ) {
     *review_id += 1;
     db.execute(
-        "INSERT INTO acp_review_decisions VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,'cli',?10)",
+        "INSERT INTO acp_review_decisions VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,'cli',?10,NULL,NULL)",
         params![
             *review_id,
             scope,

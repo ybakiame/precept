@@ -160,6 +160,7 @@ fn seven_real_ipc_commands_scope_cas_transitions_and_denials() {
                 proposal_digest: digest.clone(),
                 channel: Channel::Cli,
                 expected: Expected::Revision(1),
+                note: None,
             },
         )
         .unwrap();
@@ -180,6 +181,7 @@ fn seven_real_ipc_commands_scope_cas_transitions_and_denials() {
                 proposal_digest: digest.clone(),
                 channel: Channel::Cli,
                 expected: Expected::Revision(1),
+                note: None,
             },
         )
         .unwrap();
@@ -194,6 +196,7 @@ fn seven_real_ipc_commands_scope_cas_transitions_and_denials() {
                 proposal_digest: digest.clone(),
                 channel: Channel::Cli,
                 expected: Expected::Revision(2),
+                note: None,
             },
         )
         .unwrap();
@@ -213,6 +216,7 @@ fn seven_real_ipc_commands_scope_cas_transitions_and_denials() {
                 proposal_digest: digest.clone(),
                 channel: Channel::Cli,
                 expected: Expected::Revision(1),
+                note: None,
             },
         )
         .unwrap();
@@ -248,6 +252,7 @@ fn seven_real_ipc_commands_scope_cas_transitions_and_denials() {
                 proposal_digest: digest.clone(),
                 channel: Channel::Cli,
                 expected: Expected::Revision(3),
+                note: None,
             },
             Error::InvalidTransition,
         ),
@@ -843,6 +848,7 @@ fn project_review_decisions_refuse_a_root_lost_after_inspection_without_writing(
                         proposal_digest: digest.clone(),
                         channel: Channel::Desktop,
                         expected: Expected::Revision(1),
+                        note: None,
                     },
                 )
                 .unwrap();
@@ -863,6 +869,7 @@ fn project_review_decisions_refuse_a_root_lost_after_inspection_without_writing(
                 proposal_digest: digest,
                 channel: Channel::Desktop,
                 expected: Expected::Revision(revision),
+                note: None,
             },
             "reject" => Command::RejectPreference {
                 id: 1,
@@ -870,6 +877,7 @@ fn project_review_decisions_refuse_a_root_lost_after_inspection_without_writing(
                 proposal_digest: digest,
                 channel: Channel::Desktop,
                 expected: Expected::Revision(revision),
+                note: None,
             },
             "deprecate" => Command::DeprecatePreference {
                 id: 1,
@@ -877,6 +885,7 @@ fn project_review_decisions_refuse_a_root_lost_after_inspection_without_writing(
                 proposal_digest: digest,
                 channel: Channel::Desktop,
                 expected: Expected::Revision(revision),
+                note: None,
             },
             "delete" => Command::DeletePreference {
                 id: 1,
@@ -1652,6 +1661,7 @@ fn review_queue_inspect_and_digest_binding_are_exact_and_operator_only() {
                 proposal_digest: digest.clone(),
                 channel: Channel::Cli,
                 expected: Expected::Revision(1),
+                note: None,
             },
         )
         .unwrap();
@@ -1679,6 +1689,7 @@ fn review_queue_inspect_and_digest_binding_are_exact_and_operator_only() {
                 proposal_digest: "0".repeat(64),
                 channel: Channel::Desktop,
                 expected: Expected::Revision(1),
+                note: None,
             },
         ),
         Err(Error::ReviewMismatch)
@@ -1694,6 +1705,7 @@ fn review_queue_inspect_and_digest_binding_are_exact_and_operator_only() {
                 proposal_digest: digest.clone(),
                 channel: Channel::Tui,
                 expected: Expected::Revision(1),
+                note: None,
             },
         )
         .unwrap();

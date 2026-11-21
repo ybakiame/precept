@@ -17,7 +17,7 @@ use tokens::{mix, palette};
 pub(crate) fn open(model: Signal<Model>) {
     open_mode(model, ReviewMode::Inbox);
 }
-/// Opens the unified Review & preferences workspace on one of its three tabs:
+/// Opens the unified Review & rules workspace on one of its three tabs:
 /// To review (pending suggestions), Personal (global records) or Project
 /// (records for the currently selected workspace).
 pub(crate) fn open_mode(model: Signal<Model>, mode: ReviewMode) {
@@ -147,7 +147,7 @@ fn review(model: Signal<Model>, action: &str) {
     }
     if matches!(
         action,
-        "confirm" | "reject" | "deprecate" | "delete" | "switch_on" | "switch_off"
+        "confirm" | "reject" | "deprecate" | "delete" | "switch_on" | "switch_off" | "revise"
     ) && !ensure_inspected(model)
     {
         return;
@@ -252,6 +252,7 @@ fn error_msg(code: &str, wsl: bool) -> Msg {
         "Unavailable" => Msg::ReviewErrorUnavailable,
         "OutcomeUnknown" => Msg::OperatorUnknown,
         "InvalidRule" => Msg::RuleInvalid,
+        "InvalidNote" => Msg::NoteInvalid,
         _ => Msg::ReviewErrorGeneric,
     }
 }
@@ -305,6 +306,7 @@ fn decision_word(locale: Locale, action: DecisionAction) -> &'static str {
         DecisionAction::Delete => tr(locale, Msg::DecisionDelete),
         DecisionAction::Enable => tr(locale, Msg::DecisionEnable),
         DecisionAction::Disable => tr(locale, Msg::DecisionDisable),
+        DecisionAction::Replace => tr(locale, Msg::DecisionReplace),
     }
 }
 fn channel_word(locale: Locale, channel: Channel) -> &'static str {
@@ -809,6 +811,16 @@ fn detail_tab(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
             ))
             .child(word_action(
                 model,
+                Msg::EditSuggestion,
+                move || available(model) && write_grant(model) && status_is(model, "suggested"),
+                move || {
+                    model.update(|m| {
+                        m.operator.start_revision();
+                    })
+                },
+            ))
+            .child(word_action(
+                model,
                 Msg::ReviewDeprecate,
                 move || available(model) && write_grant(model) && status_is(model, "confirmed"),
                 move || review(model, "deprecate"),
@@ -860,7 +872,7 @@ fn history_tab(model: Signal<Model>) -> AnyElement {
         .iter()
         .take(8)
         .map(|d| {
-            format!(
+            let mut line = format!(
                 "{} · r{}→r{} · {} · {} · {} {}",
                 decision_word(m.locale, d.action),
                 d.from_revision,
@@ -869,7 +881,17 @@ fn history_tab(model: Signal<Model>) -> AnyElement {
                 sanitize(&d.decided_at, 40),
                 m.word(Msg::ReviewCommit),
                 d.receipt_commit_sequence
-            )
+            );
+            if let Some(by) = d.replaced_by {
+                line.push_str(&format!(
+                    " · {}",
+                    m.word(Msg::ReplacedBy).replace("{id}", &by.to_string())
+                ));
+            }
+            if let Some(note) = &d.note {
+                line.push_str(&format!(" — {}", sanitize(note, 500)));
+            }
+            line
         })
         .collect();
     body = body.child(card(model, m.word(Msg::ReviewHistoryTab), lines));
@@ -1436,10 +1458,13 @@ fn mode_tabs(model: Signal<Model>) -> impl IntoElement {
             move || {
                 let m = model.get();
                 match m.selected_project.as_deref() {
-                    Some(name) => {
-                        format!("{} · {}", m.word(Msg::ReviewTabProject), sanitize(name, 32)).into()
-                    }
-                    None => m.word(Msg::ReviewTabProject).into(),
+                    Some(name) => format!(
+                        "{} · {}",
+                        m.word(Msg::ReviewTabConventions),
+                        sanitize(name, 32)
+                    )
+                    .into(),
+                    None => m.word(Msg::ReviewTabConventions).into(),
                 }
             },
             move || model.get().operator.mode == ReviewMode::Project,
@@ -1577,6 +1602,13 @@ fn page_toolbar(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElemen
                         m.operator.page = None;
                         m.operator.queue = None;
                         m.operator.error = None;
+                        // The list is read again after the Profile, even when
+                        // the Profile did not change (else it stays loading).
+                        m.operator.follow_up = Some(if m.operator.mode == ReviewMode::Inbox {
+                            "profile.review.queue"
+                        } else {
+                            "profile.preferences.list"
+                        });
                     });
                     refresh(model, "profile.info");
                 }),
@@ -1752,6 +1784,41 @@ fn delivered_switch(model: Signal<Model>) -> impl IntoElement {
             },
         ))
 }
+/// The note the next decision on this record keeps (outside the rebuilt
+/// detail, so typing keeps its focus).
+fn decision_note(model: Signal<Model>) -> impl IntoElement {
+    view()
+        .style_when(
+            move || {
+                model
+                    .get()
+                    .operator
+                    .record()
+                    .is_none_or(|r| !matches!(r.status.as_str(), "suggested" | "confirmed"))
+            },
+            |s| s.hidden(),
+        )
+        .gap_1()
+        .child(ui::field(
+            model,
+            move || model.get().word(Msg::DecisionNote).into(),
+            ui::input(model, "")
+                .label_fn(move || model.get().word(Msg::DecisionNote).into())
+                .value(move || model.get().operator.note.clone())
+                .disabled(move || model.get().operator.busy || model.get().operator.outcome_unknown)
+                .on_change(move |v: &str| {
+                    model.update(|m| {
+                        m.operator.review = None;
+                        m.operator.note = v.chars().take(600).collect();
+                    })
+                }),
+        ))
+        .child(
+            text(move || model.get().word(Msg::DecisionNoteHelp))
+                .text_size(px(ui::scale::text::CAPTION))
+                .text_color(move || palette(model).muted),
+        )
+}
 fn record_sheet(model: Signal<Model>, delete_open: Signal<bool>) -> impl IntoElement {
     ui::sheet(model)
         .title_fn(move || {
@@ -1780,6 +1847,7 @@ fn record_sheet(model: Signal<Model>, delete_open: Signal<bool>) -> impl IntoEle
             view()
                 .gap_4()
                 .child(delivered_switch(model))
+                .child(decision_note(model))
                 .child(dynamic(move || detail_tab(model, delete_open)))
                 .child(dynamic(move || history_tab(model)))
                 .into_element()
@@ -1844,7 +1912,32 @@ fn apply_dialog(model: Signal<Model>, destructive: bool) -> impl IntoElement {
                                 lines.push(sanitize(key, 120));
                                 lines.extend(literal(value).into_iter().take(6));
                             }
+                            Command::ReviseSuggestion {
+                                id,
+                                key,
+                                value,
+                                tags,
+                                ..
+                            } => {
+                                lines.push(
+                                    m.word(Msg::EditSuggestionHelp)
+                                        .replace("{id}", &id.to_string()),
+                                );
+                                lines.push(format!(
+                                    "{} · {}",
+                                    sanitize(key, 120),
+                                    precept_ui_core::presentation::hashtags(tags)
+                                ));
+                                lines.extend(literal(value).into_iter().take(6));
+                            }
                             _ => {}
+                        }
+                        if let Some(note) = mutation.command.note() {
+                            lines.push(format!(
+                                "{}: {}",
+                                m.word(Msg::DecisionNote),
+                                sanitize(note, 500)
+                            ));
                         }
                     }
                     if raw.get() {
@@ -2041,16 +2134,31 @@ fn add_dialog(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElement 
         .icon(icons::PLUS, ui::DialogTone::Accent)
         .title_fn(move || {
             let m = model.get();
+            if let Some(id) = m.operator.revising {
+                return m
+                    .word(Msg::EditSuggestionTitle)
+                    .replace("{id}", &id.to_string())
+                    .into();
+            }
             m.word(if m.operator.global {
                 Msg::AddPersonalPreference
             } else if m.operator.mode == ReviewMode::Environment {
                 Msg::AddEnvironmentNote
             } else {
-                Msg::AddProjectPreference
+                Msg::AddProjectConvention
             })
             .into()
         })
-        .description_fn(move || model.get().word(Msg::AddPreferenceHelp).into())
+        .description_fn(move || {
+            let m = model.get();
+            match m.operator.revising {
+                Some(id) => m
+                    .word(Msg::EditSuggestionHelp)
+                    .replace("{id}", &id.to_string())
+                    .into(),
+                None => m.word(Msg::AddPreferenceHelp).into(),
+            }
+        })
         .content_fn(move || {
             view()
                 .w_full()
@@ -2108,32 +2216,59 @@ fn add_dialog(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElement 
                         model.get().operator.busy || model.get().operator.outcome_unknown
                     }),
                 )
-                .child(ui::field(
-                    model,
-                    move || model.get().word(Msg::OriginQuestion).into(),
-                    ui::radio_group(model, move || model.get().word(Msg::OriginQuestion).into())
-                        .option(
-                            model.get().word(Msg::OriginOperator),
-                            move || model.get().operator.origin == Origin::Operator,
-                            move || model.update(|m| m.operator.origin = Origin::Operator),
+                .child(
+                    view()
+                        .style_when(
+                            move || model.get().operator.revising.is_some(),
+                            |s| s.hidden(),
                         )
-                        .option(
-                            model.get().word(Msg::OriginAgent),
-                            move || model.get().operator.origin == Origin::Agent,
-                            move || model.update(|m| m.operator.origin = Origin::Agent),
-                        ),
-                ))
+                        .child(ui::field(
+                            model,
+                            move || model.get().word(Msg::OriginQuestion).into(),
+                            ui::radio_group(model, move || {
+                                model.get().word(Msg::OriginQuestion).into()
+                            })
+                            .option(
+                                model.get().word(Msg::OriginOperator),
+                                move || model.get().operator.origin == Origin::Operator,
+                                move || model.update(|m| m.operator.origin = Origin::Operator),
+                            )
+                            .option(
+                                model.get().word(Msg::OriginAgent),
+                                move || model.get().operator.origin == Origin::Agent,
+                                move || model.update(|m| m.operator.origin = Origin::Agent),
+                            ),
+                        )),
+                )
                 .child(rule_options(model))
                 .into_element()
         })
         .cancel_fn(move || model.get().word(Msg::Cancel).into())
-        .confirm_fn(move || model.get().word(Msg::SaveAsSuggestion).into())
+        .confirm_fn(move || {
+            let m = model.get();
+            m.word(if m.operator.revising.is_some() {
+                Msg::SaveEdit
+            } else {
+                Msg::SaveAsSuggestion
+            })
+            .into()
+        })
         .confirm_disabled(move || !ready() || !available(model) || !write_grant(model))
-        .open(move || add_open.get() && model.get().operator.open)
-        .on_cancel(move || add_open.set(false))
+        .open(move || {
+            let m = model.get();
+            (add_open.get() || m.operator.revising.is_some()) && m.operator.open
+        })
+        .on_cancel(move || {
+            add_open.set(false);
+            model.update(|m| m.operator.revising = None);
+        })
         .on_confirm(move || {
             add_open.set(false);
-            review(model, "suggest");
+            if model.get().operator.revising.is_some() {
+                review(model, "revise");
+            } else {
+                review(model, "suggest");
+            }
         })
 }
 

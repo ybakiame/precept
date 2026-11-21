@@ -201,7 +201,7 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     cfg.viewport = Size::new(px(1080.0), px(1000.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
     app.wait_for("Daemon status").unwrap();
-    app.press("Review & preferences").unwrap();
+    app.press("Review & rules").unwrap();
     app.press("Personal").unwrap();
     writes_on(&mut app);
     // A daemon read finishing afterwards keeps the chosen tab (it must not
@@ -290,4 +290,73 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     }
     assert_eq!(global(&f)[0]["status"], "confirmed");
     contains(&mut app, "Off");
+
+    // An agent's suggestion with the wrong key: the operator edits it, with a
+    // note. The edit is a new suggestion; the old one is closed as replaced.
+    let binding: operator::Binding = serde_json::from_value(f.info()["binding"].clone()).unwrap();
+    let mutation = operator::Mutation {
+        version: 2,
+        binding,
+        operation_id: "agent-tone".into(),
+        command: operator::Command::SuggestPreference {
+            scope: operator::Scope::Global,
+            key: "tone".into(),
+            value: "Short answers.".into(),
+            tags: vec!["style".into()],
+            origin: operator::Origin::Agent,
+            rule: Default::default(),
+            expected: operator::Expected::Absent,
+        },
+    };
+    tokio_runtime(|| operator::mutate(&f.location, &mutation)).unwrap();
+    app.press_key("escape").unwrap();
+    // Refresh reads the list again even though the Profile did not change.
+    app.press("Refresh").unwrap();
+    contains(&mut app, "#2 · tone · suggested · r1");
+    app.press("#2 · tone · suggested · r1").unwrap();
+    app.wait_for("Edit…").unwrap();
+    app.type_text("Note (optional)", "Key should say what it governs.")
+        .unwrap();
+    app.press("Edit…").unwrap();
+    app.wait_for("Edit suggestion #2").unwrap();
+    assert_eq!(
+        app.screen().input_text("Preference key").unwrap(),
+        Some("tone")
+    );
+    app.clear("Preference key").unwrap();
+    app.type_text("Preference key", "answer-length").unwrap();
+    app.press("Save as a new suggestion").unwrap();
+    app.wait_for("Prepared operation; no write sent yet")
+        .unwrap();
+    app.press_key("alt+shift+v").unwrap();
+    let record = |f: &Fixture, id: i64| {
+        f.call(
+            "profile.preferences.get",
+            json!({"scope":{"kind":"global"},"id":id}),
+        )
+        .ok()
+        .map(|v| v["record"].clone())
+    };
+    let start = Instant::now();
+    while record(&f, 3).is_none() {
+        assert!(start.elapsed() < Duration::from_secs(10), "edit applied");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let edited = record(&f, 3).unwrap();
+    assert_eq!(edited["key"], "answer-length");
+    assert_eq!(edited["status"], "suggested");
+    assert_eq!(edited["tags"], json!(["style"]));
+    assert_eq!(record(&f, 2).unwrap()["status"], "rejected");
+    let history = f
+        .call(
+            "profile.review.inspect",
+            json!({"scope":{"kind":"global"},"id":2,"revision":2}),
+        )
+        .unwrap();
+    assert_eq!(history["decisions"][0]["action"], "replace");
+    assert_eq!(history["decisions"][0]["replaced_by"], 3);
+    assert_eq!(
+        history["decisions"][0]["note"],
+        "Key should say what it governs."
+    );
 }

@@ -36,6 +36,14 @@ never delivered. The CLI exposes `--scope environment`, `--agent`, `--language`,
 `--path`, `--task-tag` (repeatable), `--priority`, `--enforcement` and
 `preference-enable` / `preference-disable`.
 
+Confirm, reject and deprecate decisions take an optional operator note (`note`;
+CLI `--note`; at most 500 characters), kept with the decision and returned in its
+history. `revise_suggestion {id, scope, proposal_digest, key, value, tags, rule,
+channel, expected, note?}` replaces a suggestion with the operator's edited version
+in one write: the new record is `suggested` with origin `operator` and still needs
+confirmation; the old one becomes `rejected` through a `replace` decision naming
+`replaced_by`. Only a suggestion can be revised. Agents have no edit path.
+
 Effective context keeps a confirmed, enabled rule unless the request's selector
 definitely mismatches its `applies_to` (a dimension the request does not name
 keeps it); each projected preference carries `applies_to`, `priority` and

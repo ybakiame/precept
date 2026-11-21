@@ -54,7 +54,8 @@ pub(crate) fn card(
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Destination {
     Dashboard,
-    Preferences,
+    /// Preferences & contracts.
+    Rules,
     Agents,
     Handoff,
     Review,
@@ -76,7 +77,7 @@ pub(crate) fn current(m: &Model) -> Destination {
         match m.section {
             Section::Dashboard => Destination::Dashboard,
             Section::Projects => Destination::RuntimeChecks,
-            Section::Preferences => Destination::Preferences,
+            Section::Rules => Destination::Rules,
             Section::Handoff => Destination::Handoff,
             Section::Diagnostics => Destination::Diagnostics,
         }
@@ -128,9 +129,9 @@ pub(crate) fn go(model: Signal<Model>, destination: Destination) {
             leave_workspaces(m);
             m.set_section(Section::Dashboard);
         }),
-        Destination::Preferences => model.update(|m| {
+        Destination::Rules => model.update(|m| {
             leave_workspaces(m);
-            m.set_section(Section::Preferences);
+            m.set_section(Section::Rules);
         }),
         Destination::Handoff => model.update(|m| {
             leave_workspaces(m);
@@ -146,7 +147,7 @@ pub(crate) fn go(model: Signal<Model>, destination: Destination) {
 fn title_key(destination: Destination) -> Msg {
     match destination {
         Destination::Dashboard => Msg::Dashboard,
-        Destination::Preferences => Msg::Preferences,
+        Destination::Rules => Msg::RulesAndContracts,
         Destination::Agents => Msg::AgentsDestination,
         Destination::Handoff => Msg::Handoff,
         Destination::Review => Msg::ReviewHub,
@@ -176,7 +177,7 @@ fn page_help(m: &Model) -> Option<String> {
             Msg::ReviewProvenanceNote,
             Msg::OperatorCliGate,
         ]),
-        Destination::Preferences => words(&[Msg::PreferencesSources]),
+        Destination::Rules => words(&[Msg::PreferencesSources]),
         _ => return None,
     })
 }
@@ -231,10 +232,7 @@ fn status_row(model: Signal<Model>) -> impl IntoElement {
 pub(crate) fn workspace_scoped(d: Destination) -> bool {
     matches!(
         d,
-        Destination::Dashboard
-            | Destination::Preferences
-            | Destination::Agents
-            | Destination::Handoff
+        Destination::Dashboard | Destination::Rules | Destination::Agents | Destination::Handoff
     )
 }
 
@@ -396,7 +394,7 @@ fn sidebar(model: Signal<Model>) -> impl IntoElement {
     // Workspace: every page scoped to the active project chosen above.
     let work = [
         (Dashboard, icons::section_path(Section::Dashboard)),
-        (Preferences, icons::section_path(Section::Preferences)),
+        (Rules, icons::section_path(Section::Rules)),
         (Agents, icons::AGENTS),
         (Handoff, icons::section_path(Section::Handoff)),
     ];
@@ -526,7 +524,7 @@ fn copyable_destination(d: Destination) -> bool {
     matches!(
         d,
         Destination::Dashboard
-            | Destination::Preferences
+            | Destination::Rules
             | Destination::Handoff
             | Destination::Diagnostics
     )
@@ -708,7 +706,7 @@ fn preference_input(model: Signal<Model>, filter_ref: ElementRef) -> impl IntoEl
     view()
         .gap_1()
         .style_when(
-            move || current(&model.get()) != Destination::Preferences,
+            move || current(&model.get()) != Destination::Rules,
             |s| s.hidden(),
         )
         .gap_2()

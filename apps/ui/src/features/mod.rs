@@ -50,7 +50,7 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
     if current.section == Section::Dashboard {
         return body.child(dashboard(model));
     }
-    if current.section == Section::Preferences {
+    if current.section == Section::Rules {
         return body.child(preferences(model));
     }
     if matches!(current.section, Section::Handoff | Section::Diagnostics) {

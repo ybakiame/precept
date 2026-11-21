@@ -229,7 +229,7 @@ fn forged_decision_without_matching_receipt_transition_is_refused() {
         .query_row("SELECT next_review_id FROM acp_profile", [], |r| r.get(0))
         .unwrap();
     db.execute(
-        "INSERT INTO acp_review_decisions VALUES(?1,'global',NULL,5,'confirm',1,2,?2,1,'cli','2026-01-01T00:00:00Z')",
+        "INSERT INTO acp_review_decisions VALUES(?1,'global',NULL,5,'confirm',1,2,?2,1,'cli','2026-01-01T00:00:00Z',NULL,NULL)",
         rusqlite::params![next_id, digest],
     )
     .unwrap();

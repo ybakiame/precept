@@ -273,7 +273,7 @@ pub fn App() -> impl IntoElement {
                 initial.setup_tab = precept_ui_core::SetupTab::Workspaces;
                 precept_ui_core::Section::Dashboard
             }
-            "preferences" => precept_ui_core::Section::Preferences,
+            "rules" | "preferences" => precept_ui_core::Section::Rules,
             "handoff" => precept_ui_core::Section::Handoff,
             "diagnostics" => precept_ui_core::Section::Diagnostics,
             _ => precept_ui_core::Section::Dashboard,
@@ -410,7 +410,7 @@ fn console(model: Signal<Model>) -> impl IntoElement {
         "preferences.filter",
         auto,
         Box::new(move || {
-            to_section(precept_ui_core::Section::Preferences);
+            to_section(precept_ui_core::Section::Rules);
             filter_ref.focus();
         }),
     );
@@ -648,7 +648,7 @@ mod tests {
         app.press_key("Escape").unwrap();
         for (key, label) in [
             ("alt+2", "Registered workspaces"),
-            ("alt+3", "Confirmed preferences"),
+            ("alt+3", "Confirmed preferences and conventions"),
             (
                 "alt+4",
                 "Empty — no handoff for task missing in this project",
@@ -718,7 +718,7 @@ mod tests {
         app.press("简体中文").unwrap();
         app.wait_for("主题集").unwrap();
         app.press_key("alt+3").unwrap();
-        app.wait_for("已确认偏好").unwrap();
+        app.wait_for("已确认的偏好与约定").unwrap();
         app.wait_for("2 条已确认").unwrap();
         // Tags filter the list; several narrow to rows carrying all of them.
         app.press("#language · 1").unwrap();
@@ -744,7 +744,7 @@ mod tests {
             })
             .collect();
         let mut model = Model::loading();
-        model.section = precept_ui_core::Section::Preferences;
+        model.section = precept_ui_core::Section::Rules;
         model.receive(Ok(data));
         console(signal(model))
     }
@@ -820,8 +820,8 @@ mod tests {
                 .shows("Only the daemon's projects; switching clears the task lookup.")
         );
         assert_eq!(app.screen().count("role:button[beta]").unwrap(), 0);
-        // Merged Review & preferences hub shows offline guidance on Demo data.
-        app.press("Review & preferences").unwrap();
+        // Merged Review & rules hub shows offline guidance on Demo data.
+        app.press("Review & rules").unwrap();
         app.wait_for("Live daemon required").unwrap();
         // Agents page lives under Workspace and shows offline guidance on Demo data.
         app.press("Agents").unwrap();

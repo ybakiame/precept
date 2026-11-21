@@ -114,6 +114,10 @@ pub struct Review {
     pub proposal_digest: String,
     #[arg(long)]
     pub confirm: bool,
+    /// A note kept with the decision (confirm, reject, deprecate; at most 500
+    /// characters).
+    #[arg(long)]
+    pub note: Option<String>,
 }
 #[derive(Args)]
 pub struct ReviewQueueArgs {
@@ -465,6 +469,7 @@ pub async fn review(location: &Location, p: Review, action: &str) -> Result<Valu
     let id = p.id;
     let proposal_digest = p.proposal_digest;
     let channel = Channel::Cli;
+    let note = canonical_note(p.note.as_deref()).ok_or(Error::InvalidRequest)?;
     let command = match action {
         "confirm" => Command::ConfirmPreference {
             id,
@@ -472,6 +477,7 @@ pub async fn review(location: &Location, p: Review, action: &str) -> Result<Valu
             proposal_digest,
             channel,
             expected,
+            note: note.clone(),
         },
         "reject" => Command::RejectPreference {
             id,
@@ -479,6 +485,7 @@ pub async fn review(location: &Location, p: Review, action: &str) -> Result<Valu
             proposal_digest,
             channel,
             expected,
+            note: note.clone(),
         },
         "deprecate" => Command::DeprecatePreference {
             id,
@@ -486,7 +493,9 @@ pub async fn review(location: &Location, p: Review, action: &str) -> Result<Valu
             proposal_digest,
             channel,
             expected,
+            note: note.clone(),
         },
+        "delete" if note.is_some() => return Err(Error::InvalidRequest),
         "delete" => Command::DeletePreference {
             id,
             scope,

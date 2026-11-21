@@ -810,6 +810,7 @@ impl Profiles {
                 | Command::SetPreferenceEnabled { scope, .. }
                 | Command::ConfirmPreference { scope, .. }
                 | Command::RejectPreference { scope, .. }
+                | Command::ReviseSuggestion { scope, .. }
                 | Command::DeprecatePreference { scope, .. }
                 | Command::DeletePreference { scope, .. } => match scope {
                     Scope::Global => None,

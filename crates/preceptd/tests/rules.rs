@@ -61,6 +61,7 @@ fn confirm(f: &Fixture, b: &Binding, op: &str, scope: Scope, id: i64, digest: St
                 proposal_digest: digest,
                 channel: Channel::Desktop,
                 expected: Expected::Revision(1),
+                note: None,
             },
         )
         .unwrap();

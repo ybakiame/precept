@@ -647,6 +647,7 @@ fn s3_only_confirmed_rows_and_their_tags_reach_real_ipc_or_mcp() {
                     proposal_digest: digest.into(),
                     channel: Channel::Desktop,
                     expected: Expected::Revision(1),
+                    note: None,
                 }
             } else {
                 Command::ConfirmPreference {
@@ -655,6 +656,7 @@ fn s3_only_confirmed_rows_and_their_tags_reach_real_ipc_or_mcp() {
                     proposal_digest: digest.into(),
                     channel: Channel::Tui,
                     expected: Expected::Revision(1),
+                    note: None,
                 }
             };
             f.daemon
@@ -672,6 +674,7 @@ fn s3_only_confirmed_rows_and_their_tags_reach_real_ipc_or_mcp() {
                         proposal_digest: digest.into(),
                         channel: Channel::Cli,
                         expected: Expected::Revision(2),
+                        note: None,
                     },
                 )
                 .unwrap();

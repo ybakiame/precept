@@ -103,6 +103,7 @@ fn export_then_import_moves_preferences_as_suggestions_and_replays() {
                 proposal_digest: digest,
                 channel: Channel::Desktop,
                 expected: Expected::Revision(1),
+                note: None,
             },
         )
         .unwrap();
@@ -118,6 +119,7 @@ fn export_then_import_moves_preferences_as_suggestions_and_replays() {
                 proposal_digest: digest,
                 channel: Channel::Desktop,
                 expected: Expected::Revision(1),
+                note: None,
             },
         )
         .unwrap();

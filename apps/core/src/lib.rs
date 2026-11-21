@@ -68,6 +68,9 @@ pub struct Context {
     pub repository: Repository,
     pub documents: Vec<Value>,
     pub warnings: Vec<String>,
+    /// The repository's effective contracts (key and allowed values).
+    #[serde(default)]
+    pub effective_contracts: Vec<Value>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Handoff {
@@ -157,7 +160,8 @@ pub struct ReadRequest {
 pub enum Section {
     Dashboard,
     Projects,
-    Preferences,
+    /// Preferences & contracts: what agents receive for the project.
+    Rules,
     Handoff,
     Diagnostics,
 }
@@ -165,7 +169,7 @@ impl Section {
     pub const ALL: [Self; 5] = [
         Self::Dashboard,
         Self::Projects,
-        Self::Preferences,
+        Self::Rules,
         Self::Handoff,
         Self::Diagnostics,
     ];
@@ -173,7 +177,7 @@ impl Section {
         match self {
             Self::Dashboard => "Dashboard",
             Self::Projects => "Projects",
-            Self::Preferences => "Preferences",
+            Self::Rules => "Preferences & contracts",
             Self::Handoff => "Handoff",
             Self::Diagnostics => "Diagnostics",
         }
@@ -1197,7 +1201,7 @@ mod target_tests {
         assert!(lines.contains(p.context.repository.branch.as_deref().unwrap()));
         assert!(lines.contains(&p.handoff.as_ref().unwrap().objective));
         assert!(lines.contains(&p.context.warnings[0]));
-        m.section = Section::Preferences;
+        m.section = Section::Rules;
         let mut snapshot = Snapshot::fixture();
         snapshot.projects[0].context.preferences[0].value = "中文".repeat(600);
         m.receive(Ok(snapshot));
@@ -1217,7 +1221,7 @@ mod target_tests {
         assert!(lines.contains(&h.objective));
         assert!(lines.contains(&h.validation[0].to_string()));
         assert!(lines.contains("并非当前会话验证"));
-        m.section = Section::Preferences;
+        m.section = Section::Rules;
         assert!(m.visible_lines().join("\n").contains(&m.rows()[0].value));
     }
 }

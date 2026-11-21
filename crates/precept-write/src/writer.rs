@@ -347,6 +347,7 @@ fn mutate(
             proposal_digest,
             channel,
             expected,
+            ..
         }
         | Command::RejectPreference {
             id,
@@ -354,6 +355,7 @@ fn mutate(
             proposal_digest,
             channel,
             expected,
+            ..
         }
         | Command::DeprecatePreference {
             id,
@@ -361,6 +363,7 @@ fn mutate(
             proposal_digest,
             channel,
             expected,
+            ..
         }
         | Command::DeletePreference {
             id,
@@ -425,16 +428,18 @@ fn mutate(
                 };
                 let channel = channel_name(*channel);
                 let mut review_id = next_review_id;
+                let note = command.note();
                 let mut decision = |preference_id: i64,
                                     action: &str,
                                     from: i64,
                                     to: i64,
-                                    digest: &[u8]|
+                                    digest: &[u8],
+                                    note: Option<&str>|
                  -> Result<()> {
                     let id = review_id;
                     review_id = review_id.checked_add(1).ok_or(Error::Capacity)?;
                     db.execute(
-                        "INSERT INTO acp_review_decisions(id,scope,project,preference_id,action,from_revision,to_revision,proposal_digest,receipt_commit_sequence,channel,decided_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+                        "INSERT INTO acp_review_decisions(id,scope,project,preference_id,action,from_revision,to_revision,proposal_digest,receipt_commit_sequence,channel,decided_at,note) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
                         params![
                             id,
                             want_scope,
@@ -446,7 +451,8 @@ fn mutate(
                             digest.to_vec(),
                             sequence,
                             channel,
-                            now
+                            now,
+                            note
                         ],
                     )
                     .map_err(crate::sql_error)?;
@@ -468,7 +474,14 @@ fn mutate(
                     for (peer, peer_previous, peer_digest) in peers {
                         let peer_revision = next_revision(peer_previous)?;
                         db.execute("UPDATE preferences SET status='deprecated',revision=?1,updated_at=?2 WHERE id=?3",(peer_revision,now,peer)).map_err(crate::sql_error)?;
-                        decision(peer, "demote", peer_previous, peer_revision, &peer_digest)?;
+                        decision(
+                            peer,
+                            "demote",
+                            peer_previous,
+                            peer_revision,
+                            &peer_digest,
+                            None,
+                        )?;
                         versions.insert(pref_key(peer), (peer_revision, false));
                     }
                 }
@@ -477,7 +490,7 @@ fn mutate(
                     (next, revision, now, id),
                 )
                 .map_err(crate::sql_error)?;
-                decision(*id, action, previous, revision, &stored_digest)?;
+                decision(*id, action, previous, revision, &stored_digest, note)?;
                 db.execute(
                     "UPDATE acp_profile SET next_review_id=?1 WHERE singleton=1",
                     [review_id],
@@ -485,6 +498,109 @@ fn mutate(
                 .map_err(crate::sql_error)?;
                 versions.insert(pref_key(*id), (revision, false));
             }
+        }
+        Command::ReviseSuggestion {
+            id,
+            scope: requested,
+            proposal_digest,
+            key,
+            value,
+            tags,
+            rule,
+            channel,
+            expected,
+            note,
+        } => {
+            let row: Option<ProposalRow> = db
+                .query_row(
+                    "SELECT scope,project,pref_key,status,revision,proposal_digest FROM preferences WHERE id=?1",
+                    [id],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+                )
+                .optional()
+                .map_err(crate::sql_error)?;
+            cas(row.as_ref().map(|r| r.4), expected)?;
+            let (stored_scope, project, _, status, previous, stored_digest) =
+                row.ok_or(Error::Conflict)?;
+            let (want_scope, want_project) = scope(requested);
+            if stored_scope != want_scope || project.as_deref() != want_project {
+                return Err(Error::ScopeMismatch);
+            }
+            let supplied = precept_core::operator::digest_from_hex(proposal_digest)
+                .ok_or(Error::ReviewMismatch)?;
+            if supplied.as_slice() != stored_digest.as_slice() {
+                return Err(Error::ReviewMismatch);
+            }
+            if status != "suggested" {
+                return Err(Error::InvalidTransition);
+            }
+            // The edited version: a new suggestion in the same scope, by the
+            // operator (it is their wording now), still to be confirmed.
+            let origin = precept_core::operator::Origin::Operator;
+            let digest = precept_core::operator::proposal_digest(
+                requested,
+                want_project,
+                key,
+                value,
+                origin,
+                tags,
+                rule,
+            );
+            db.execute(
+                "INSERT INTO preferences(id,scope,project,pref_key,value,status,tags,revision,created_at,updated_at,origin,proposal_digest,applies_to,priority,enforcement,enabled) VALUES(?1,?2,?3,?4,?5,'suggested',?6,1,?7,?7,?8,?9,?10,?11,?12,1)",
+                params![
+                    allocated,
+                    want_scope,
+                    want_project,
+                    key,
+                    value,
+                    precept_core::operator::tags_json(tags),
+                    now,
+                    origin.as_str(),
+                    digest.to_vec(),
+                    rule.applies_to.json(),
+                    rule.priority,
+                    rule.enforcement.as_str()
+                ],
+            )
+            .map_err(crate::sql_error)?;
+            db.execute(
+                "UPDATE acp_profile SET next_preference_id=?1 WHERE singleton=1",
+                [next_revision(allocated)?],
+            )
+            .map_err(crate::sql_error)?;
+            versions.insert(pref_key(allocated), (1, false));
+            // The old one is closed, naming its replacement.
+            let revision = next_revision(previous)?;
+            db.execute(
+                "UPDATE preferences SET status='rejected',revision=?1,updated_at=?2 WHERE id=?3",
+                (revision, now, id),
+            )
+            .map_err(crate::sql_error)?;
+            db.execute(
+                "INSERT INTO acp_review_decisions(id,scope,project,preference_id,action,from_revision,to_revision,proposal_digest,receipt_commit_sequence,channel,decided_at,note,replaced_by) VALUES(?1,?2,?3,?4,'replace',?5,?6,?7,?8,?9,?10,?11,?12)",
+                params![
+                    next_review_id,
+                    want_scope,
+                    want_project,
+                    id,
+                    previous,
+                    revision,
+                    stored_digest,
+                    sequence,
+                    channel_name(*channel),
+                    now,
+                    note,
+                    allocated
+                ],
+            )
+            .map_err(crate::sql_error)?;
+            db.execute(
+                "UPDATE acp_profile SET next_review_id=?1 WHERE singleton=1",
+                [next_review_id.checked_add(1).ok_or(Error::Capacity)?],
+            )
+            .map_err(crate::sql_error)?;
+            versions.insert(pref_key(*id), (revision, false));
         }
         Command::PutHandoff {
             project,
