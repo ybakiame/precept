@@ -248,7 +248,7 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
         false,
         "creation never enables writes"
     );
-    app.press("Enable writes").unwrap();
+    app.press("Writes for this daemon run").unwrap();
     app.wait_for("Writes on for this daemon run").unwrap();
     assert_eq!(f.info()["write_enabled"], true);
     app.press_key("alt+o").unwrap();
@@ -470,7 +470,7 @@ fn terminal_channel_and_revoked_delete(f: &Fixture) {
     // A new grant from Runtime checks -> Profile, then back to the records.
     app.press("Runtime checks").unwrap();
     app.press("Profile").unwrap();
-    app.press("Enable writes").unwrap();
+    app.press("Writes for this daemon run").unwrap();
     app.wait_for("Writes on for this daemon run").unwrap();
     manage_project(&mut app);
     open_row(&mut app, "#3 · terminal-editor · deprecated · r3");

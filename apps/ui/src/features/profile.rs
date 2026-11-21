@@ -456,26 +456,21 @@ pub(crate) fn section(model: Signal<Model>) -> impl IntoElement {
                                         m.profile_info.as_ref().is_some_and(|i| i.write_enabled);
                                     (if on { Msg::WritesOn } else { Msg::WritesOff }, on)
                                 }))
-                                .child(
-                                    view().style_when(writes_on, |s| s.hidden()).child(
-                                        button(model, "")
-                                            .label_fn(word(model, Msg::EnableWrites))
-                                            .size(ButtonSize::Small)
-                                            .loading(move || model.get().profile_setup.busy)
-                                            .on_press(move || enable_writes(model, |_| {})),
-                                    ),
-                                )
-                                .child(
-                                    view()
-                                        .style_when(move || !writes_on(), |s| s.hidden())
-                                        .child(
-                                            button(model, "")
-                                                .label_fn(word(model, Msg::DisableWrites))
-                                                .size(ButtonSize::Small)
-                                                .loading(move || model.get().profile_setup.busy)
-                                                .on_press(move || disable_writes(model)),
-                                        ),
-                                ),
+                                .child(view().flex_1())
+                                // Two states: a switch, not a button pair.
+                                .child(ui::switch(
+                                    model,
+                                    word(model, Msg::WritesSwitch),
+                                    writes_on,
+                                    move || model.get().profile_setup.busy,
+                                    move |on| {
+                                        if on {
+                                            enable_writes(model, |_| {})
+                                        } else {
+                                            disable_writes(model)
+                                        }
+                                    },
+                                )),
                         )
                         .child(caption(model, |_| Some(Msg::WritesHelp)))
                         .child(error_note(model)),

@@ -6,7 +6,18 @@ use nsh_base::{DiffInline, DiffLayout, DiffViewStyles, diff_view};
 use nsh_core::element::{Style, StyleRefinement};
 
 /// Rows the view shows at most before it scrolls inside.
-const MAX_ROWS: usize = 14;
+const MAX_ROWS: usize = 16;
+/// Characters a wrapped row holds in a narrow column (a sheet), so the
+/// estimate errs tall rather than cutting rows off.
+const ROW_CHARS: usize = 38;
+
+/// Rows `text` takes once long lines wrap.
+fn wrapped_rows(text: &str) -> usize {
+    text.lines()
+        .map(|l| l.chars().count().div_ceil(ROW_CHARS).max(1))
+        .sum::<usize>()
+        .max(1)
+}
 
 fn styles(model: Signal<Model>) -> DiffViewStyles {
     let p = palette(model);
@@ -28,9 +39,9 @@ fn styles(model: Signal<Model>) -> DiffViewStyles {
 }
 
 /// `old` → `new`, unified, every unchanged line shown (rules are short),
-/// its height from the line count up to [`MAX_ROWS`].
+/// its height from the wrapped row count up to [`MAX_ROWS`].
 pub fn text_diff(model: Signal<Model>, old: String, new: String) -> impl IntoElement {
-    let rows = old.lines().count() + new.lines().count();
+    let rows = wrapped_rows(&old) + wrapped_rows(&new);
     let height = (rows.clamp(2, MAX_ROWS) as f32) * 20.0 + 8.0;
     view()
         .w_full()
