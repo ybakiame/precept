@@ -50,8 +50,8 @@ separate design with its own threat model.
   readable by the Operator alone, and records methods, outcomes, counts and the
   client's self-reported label, never values, selectors, task ids, paths or tokens.
 - The session-start hook is read-only, uses the project's agent capability,
-  stays silent outside the project root and fails open. Its entry in Claude Code's
-  or Codex's user configuration is added or removed by the daemon only on an
+  stays silent outside the project root and fails open. Its entry in Claude Code's,
+  Codex's or Antigravity's user configuration is added or removed by the daemon only on an
   Operator request carrying the reported file digest, touching only Precept's
   entry and keeping a backup. The AGENTS.md pointer is written by the daemon only on an Operator
   request carrying the previewed file digest, only between Precept's markers, in a

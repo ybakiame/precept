@@ -109,7 +109,7 @@ are never displayed.
 
 Project sharing is a switch. **Agent integrations** come first, above the manual
 configuration text: quick-setting tiles, one
-switch each: the Claude Code and Codex session-start hooks (written into their user
+switch each: the Claude Code, Codex and Antigravity session-start hooks (written into their user
 configuration, the exact command shown below the tiles) and the project's
 **AGENTS.md** pointer, whose switch opens a dialog previewing the exact text before
 anything is written. Settings with only two states use switches, not button pairs.

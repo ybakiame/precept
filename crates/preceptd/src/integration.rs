@@ -141,19 +141,24 @@ pub enum Vendor {
     Claude,
     /// Codex: `~/.codex/hooks.json` (Codex asks to approve a new hook once).
     Codex,
+    /// Antigravity: `~/.gemini/config/hooks.json`, whose top-level keys name
+    /// hooks; Precept owns the one named `precept-<project>`.
+    Antigravity,
 }
 impl Vendor {
-    pub const ALL: [Vendor; 2] = [Vendor::Claude, Vendor::Codex];
+    pub const ALL: [Vendor; 3] = [Vendor::Claude, Vendor::Codex, Vendor::Antigravity];
     fn file(self) -> (&'static str, &'static str) {
         match self {
             Vendor::Claude => (".claude", "settings.json"),
             Vendor::Codex => (".codex", "hooks.json"),
+            Vendor::Antigravity => (".gemini/config", "hooks.json"),
         }
     }
     fn name(self) -> &'static str {
         match self {
             Vendor::Claude => "claude",
             Vendor::Codex => "codex",
+            Vendor::Antigravity => "antigravity",
         }
     }
 }
@@ -235,6 +240,91 @@ fn session_start_commands(config: &crate::ojson::J) -> Vec<String> {
         .collect()
 }
 
+/// The commands of `SessionStart` handlers in Antigravity's named hooks: each
+/// top-level value's `SessionStart` list holds handlers directly or, as tool
+/// events do, groups with `hooks`.
+fn named_session_start_commands(config: &crate::ojson::J) -> Vec<String> {
+    use crate::ojson::J;
+    let J::Obj(entries) = config else {
+        return vec![];
+    };
+    let mut out = Vec::new();
+    for (_, hook) in entries {
+        let Some(J::Arr(items)) = hook.get("SessionStart") else {
+            continue;
+        };
+        for item in items {
+            if let Some(c) = item.get("command").and_then(J::as_str) {
+                out.push(c.to_owned());
+            }
+            if let Some(J::Arr(hs)) = item.get("hooks") {
+                out.extend(
+                    hs.iter()
+                        .filter_map(|h| h.get("command").and_then(J::as_str).map(str::to_owned)),
+                );
+            }
+        }
+    }
+    out
+}
+
+/// Removes `project`'s Precept handlers from Antigravity's named hooks (any
+/// version, under any name), drops what that empties, then adds Precept's own
+/// named hook when `enabled`.
+fn edit_named(config: &mut crate::ojson::J, project: &str, cmd: &str, enabled: bool) {
+    use crate::ojson::J;
+    let mine = |h: &J| {
+        h.get("command")
+            .and_then(J::as_str)
+            .is_some_and(|c| ours(c, project))
+    };
+    let name = format!("precept-{project}");
+    let J::Obj(entries) = config else {
+        return;
+    };
+    entries.retain(|(k, _)| *k != name);
+    for (_, hook) in entries.iter_mut() {
+        let J::Obj(events) = hook else {
+            continue;
+        };
+        let Some((_, J::Arr(items))) = events.iter_mut().find(|(k, _)| k == "SessionStart") else {
+            continue;
+        };
+        let before = items.len();
+        let mut touched = false;
+        items.retain(|i| !mine(i));
+        for i in items.iter_mut() {
+            if let J::Obj(fields) = i
+                && let Some((_, J::Arr(hs))) = fields.iter_mut().find(|(k, _)| k == "hooks")
+            {
+                let n = hs.len();
+                hs.retain(|h| !mine(h));
+                touched |= hs.len() != n;
+            }
+        }
+        if touched {
+            items.retain(|i| !matches!(i.get("hooks"), Some(J::Arr(hs)) if hs.is_empty()));
+        }
+        if (touched || items.len() != before) && items.is_empty() {
+            events.retain(|(k, _)| k != "SessionStart");
+        }
+    }
+    entries.retain(|(_, hook)| !matches!(hook, J::Obj(events) if events.is_empty()));
+    if enabled {
+        entries.push((
+            name,
+            J::Obj(vec![(
+                "SessionStart".into(),
+                J::Arr(vec![J::Obj(vec![
+                    ("type".into(), J::str("command")),
+                    ("command".into(), J::str(cmd)),
+                    ("timeout".into(), J::Num(10.into())),
+                ])]),
+            )]),
+        ));
+    }
+}
+
 /// One harness's hook state for `project`.
 pub fn hook_status(
     home: &Path,
@@ -258,7 +348,10 @@ pub fn hook_status(
     };
     let commands = parsed
         .flatten()
-        .map(|j| session_start_commands(&j))
+        .map(|j| match vendor {
+            Vendor::Antigravity => named_session_start_commands(&j),
+            _ => session_start_commands(&j),
+        })
         .unwrap_or_default();
     let mine: Vec<&String> = commands.iter().filter(|c| ours(c, project)).collect();
     Ok(json!({
@@ -292,33 +385,14 @@ fn read_config(path: &Path) -> Result<Option<String>, Error> {
         .map_err(|_| Error::InvalidRequest)
 }
 
-/// Adds (`enabled`) or removes the Precept `SessionStart` entry for `project`
-/// if the file is still the one the status reported (`expected` digest).
-/// Every other key and hook is kept in place; the previous file is kept as
-/// `<file>.precept.bak`.
-pub fn hook_apply(
-    home: &Path,
-    vendor: Vendor,
+/// Claude Code's and Codex's shape: `hooks.SessionStart` groups of handlers.
+fn edit_grouped(
+    config: &mut crate::ojson::J,
     project: &str,
     cmd: &str,
     enabled: bool,
-    expected: Option<&str>,
-) -> Result<Value, Error> {
+) -> Result<(), Error> {
     use crate::ojson::J;
-    let path = config_file(home, vendor);
-    let current = read_config(&path)?;
-    let actual = current.as_ref().map(|t| pointer::digest(t.as_bytes()));
-    if actual.as_deref() != expected {
-        return Err(Error::Conflict);
-    }
-    let mut config = match current.as_deref() {
-        None => J::Obj(vec![]),
-        Some(t) if t.trim().is_empty() => J::Obj(vec![]),
-        Some(t) => crate::ojson::parse(t).ok_or(Error::InvalidRequest)?,
-    };
-    if !matches!(config, J::Obj(_)) {
-        return Err(Error::InvalidRequest);
-    }
     let hooks = config
         .entry("hooks", J::Obj(vec![]))
         .ok_or(Error::InvalidRequest)?;
@@ -356,6 +430,41 @@ pub fn hook_apply(
     }
     if groups.is_empty() {
         hooks.remove("SessionStart");
+    }
+    Ok(())
+}
+
+/// Adds (`enabled`) or removes the Precept `SessionStart` entry for `project`
+/// if the file is still the one the status reported (`expected` digest).
+/// Every other key and hook is kept in place; the previous file is kept as
+/// `<file>.precept.bak`.
+pub fn hook_apply(
+    home: &Path,
+    vendor: Vendor,
+    project: &str,
+    cmd: &str,
+    enabled: bool,
+    expected: Option<&str>,
+) -> Result<Value, Error> {
+    use crate::ojson::J;
+    let path = config_file(home, vendor);
+    let current = read_config(&path)?;
+    let actual = current.as_ref().map(|t| pointer::digest(t.as_bytes()));
+    if actual.as_deref() != expected {
+        return Err(Error::Conflict);
+    }
+    let mut config = match current.as_deref() {
+        None => J::Obj(vec![]),
+        Some(t) if t.trim().is_empty() => J::Obj(vec![]),
+        Some(t) => crate::ojson::parse(t).ok_or(Error::InvalidRequest)?,
+    };
+    if !matches!(config, J::Obj(_)) {
+        return Err(Error::InvalidRequest);
+    }
+    if vendor == Vendor::Antigravity {
+        edit_named(&mut config, project, cmd, enabled);
+    } else {
+        edit_grouped(&mut config, project, cmd, enabled)?;
     }
     let next = crate::ojson::pretty(&config);
     let action = if current.as_deref() == Some(next.as_str()) || (current.is_none() && !enabled) {
@@ -536,5 +645,70 @@ mod tests {
             fs::read_to_string(codex.join("hooks.json")).unwrap(),
             "{nope"
         );
+    }
+
+    #[test]
+    fn antigravity_named_hooks_keep_others_and_own_only_precept_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let cmd = command(&launch(Path::new("/r")), Vendor::Antigravity, "alpha");
+        assert!(cmd.contains("--vendor antigravity --project alpha"));
+        let file = home.join(".gemini/config/hooks.json");
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        let theirs = r#"{
+  "my-linter": {"PostToolUse": [{"matcher": "run_command", "hooks": [{"type": "command", "command": "./lint.sh"}]}]},
+  "session-init": {"SessionStart": [{"type": "command", "command": "./init.sh"}], "enabled": true}
+}"#;
+        fs::write(&file, theirs).unwrap();
+        let s = hook_status(home, Vendor::Antigravity, "alpha", &cmd).unwrap();
+        assert_eq!(s["file"], "~/.gemini/config/hooks.json");
+        assert_eq!(s["installed"], false);
+        let d = s["sha256"].as_str().map(str::to_owned);
+        let added =
+            hook_apply(home, Vendor::Antigravity, "alpha", &cmd, true, d.as_deref()).unwrap();
+        assert_eq!(added["action"], "added");
+        assert_eq!(added["current"], true);
+        let written: Value = serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
+        assert_eq!(
+            written["precept-alpha"]["SessionStart"][0],
+            json!({"type":"command","command":cmd,"timeout":10})
+        );
+        assert_eq!(
+            written["session-init"]["SessionStart"][0]["command"],
+            "./init.sh"
+        );
+        assert_eq!(
+            written["my-linter"]["PostToolUse"][0]["matcher"],
+            "run_command"
+        );
+        let text = fs::read_to_string(&file).unwrap();
+        assert!(text.find("my-linter") < text.find("session-init"));
+        assert!(text.find("session-init") < text.find("precept-alpha"));
+        // An outdated command anywhere is replaced, not duplicated.
+        let old = cmd.replace("--root /r", "--root /old");
+        let stale = text.replace(&cmd, &old);
+        fs::write(&file, &stale).unwrap();
+        let s = hook_status(home, Vendor::Antigravity, "alpha", &cmd).unwrap();
+        assert_eq!(
+            (s["installed"].clone(), s["current"].clone()),
+            (json!(true), json!(false))
+        );
+        let d = s["sha256"].as_str().map(str::to_owned);
+        hook_apply(home, Vendor::Antigravity, "alpha", &cmd, true, d.as_deref()).unwrap();
+        assert_eq!(
+            fs::read_to_string(&file)
+                .unwrap()
+                .matches("precept-hook")
+                .count(),
+            1
+        );
+        // Off: only Precept's entry goes; the user's hooks stay as they were.
+        let d = pointer::digest(fs::read_to_string(&file).unwrap().as_bytes());
+        let removed =
+            hook_apply(home, Vendor::Antigravity, "alpha", &cmd, false, Some(&d)).unwrap();
+        assert_eq!(removed["action"], "removed");
+        let after: Value = serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
+        assert!(after.get("precept-alpha").is_none());
+        assert_eq!(after, serde_json::from_str::<Value>(theirs).unwrap());
     }
 }

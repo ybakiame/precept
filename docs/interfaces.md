@@ -58,14 +58,16 @@ commits or writes any other file. `precept project pointer` exposes both.
 ### Session-start hooks in the agents' configuration
 
 Operator-only `integration.hooks {project}` reports, for Claude Code
-(`~/.claude/settings.json`) and Codex (`~/.codex/hooks.json`) in the daemon user's
-home: `file`, `exists`, `sha256`, `malformed` (not a JSON object), `installed`,
+(`~/.claude/settings.json`), Codex (`~/.codex/hooks.json`) and Antigravity
+(`~/.gemini/config/hooks.json`) in the daemon user's home: `file`, `exists`, `sha256`, `malformed` (not a JSON object), `installed`,
 `current` (installed exactly as written now) and the exact `command`, or
 `available: false` when no `precept-hook` ships beside `precept-mcp`.
 `integration.hooks.apply {project, vendor, enabled, expected_sha256}` adds
 (`enabled: true`) or removes the project's one Precept entry under
 `hooks.SessionStart` (`{"type":"command","command":…,"timeout":10}`) only if the
-file still has the reported digest, otherwise `Conflict`. A handler is Precept's
+file still has the reported digest, otherwise `Conflict`. Antigravity's file maps
+hook names to events, so its entry is the named hook `precept-<project>` holding
+`SessionStart: [{"type":"command","command":…,"timeout":10}]`. A handler is Precept's
 when its command runs `precept-hook` with `--project <name>`; every other key, hook
 and their order are kept, the previous file is kept as `<file>.precept.bak`,
 writes are atomic, a new file is owner-only. The command passes `--root`, so the
@@ -97,14 +99,16 @@ credential and endpoint, with one bound project. Tool arguments cannot change sc
 `get_effective_context` before planning or editing and again after compaction,
 and that repository files and contracts outrank preferences.
 
-`precept-hook --vendor claude|codex|cursor` (same location, project and capability
+`precept-hook --vendor claude|codex|cursor|antigravity` (same location, project and capability
 arguments as `precept-mcp`) is the read-only session-start hook. It reads the
 harness's hook input (only `source`; `compact` adds a resume note), calls agent
 `context.get` with the client label `<vendor> hook`, and prints a bounded (12 KiB)
 Markdown briefing of the effective contracts and confirmed preferences in the
 harness's shape: `hookSpecificOutput.additionalContext` for Claude Code and Codex,
-`additional_context` for Cursor. With `--root`, a session whose working directory
-(the input's `cwd`, else the hook's) is outside that root gets nothing at all. Any
+`additional_context` for Cursor, and `injectSteps: [{systemMessage: {systemMessage}}]`
+for Antigravity. With `--root`, a session whose working directory (the input's
+`cwd`, else any of Antigravity's `workspacePaths`, else the hook's) is outside that
+root gets nothing at all. Any
 refusal or a 4 s timeout prints nothing on stdout, exits 0 and writes one
 sanitized line to stderr (fail-open).
 

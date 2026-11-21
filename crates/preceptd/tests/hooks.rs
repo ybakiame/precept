@@ -9,8 +9,14 @@ use std::{fs, io::Write, process::Stdio};
 use support::*;
 
 fn run(cmd: &str, cwd: &std::path::Path) -> String {
+    run_with(cmd, &json!({"source":"startup","cwd":cwd}))
+}
+
+/// Runs the written command from an unrelated directory with `input` on stdin.
+fn run_with(cmd: &str, input: &Value) -> String {
     let mut child = std::process::Command::new("sh")
         .args(["-c", cmd])
+        .current_dir("/")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -20,7 +26,7 @@ fn run(cmd: &str, cwd: &std::path::Path) -> String {
         .stdin
         .take()
         .unwrap()
-        .write_all(json!({"source":"startup","cwd":cwd}).to_string().as_bytes())
+        .write_all(input.to_string().as_bytes())
         .unwrap();
     String::from_utf8(child.wait_with_output().unwrap().stdout).unwrap()
 }
@@ -114,4 +120,66 @@ fn hooks_switch_on_brief_inside_the_project_only_and_switch_off() {
             .join(".claude/settings.json.precept.bak")
             .exists()
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn antigravity_hook_is_a_named_entry_that_injects_a_system_message_for_its_workspace() {
+    let f = Fixture::created();
+    let b = f.daemon.enable();
+    f.register(&b, "alpha");
+    let status = f
+        .daemon
+        .control("integration.hooks", json!({"project":"alpha"}))
+        .unwrap();
+    let ag = status["hooks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|h| h["vendor"] == "antigravity")
+        .unwrap()
+        .clone();
+    assert_eq!(ag["file"], "~/.gemini/config/hooks.json");
+    assert_eq!(ag["installed"], false);
+    let on = f
+        .daemon
+        .control(
+            "integration.hooks.apply",
+            json!({"project":"alpha","vendor":"antigravity","enabled":true,"expected_sha256":null}),
+        )
+        .unwrap();
+    assert_eq!(on["action"], "added");
+    let file = f.temp.path().join(".gemini/config/hooks.json");
+    let config: Value = serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
+    let cmd = config["precept-alpha"]["SessionStart"][0]["command"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(cmd, on["command"]);
+    assert!(cmd.contains("--vendor antigravity"));
+    // Antigravity's input names the workspaces; there is no `cwd`.
+    let input =
+        |p: &std::path::Path| json!({"conversationId":"c-1","workspacePaths":[p],"modelName":"m"});
+    let out = run_with(&cmd, &input(&f.temp.path().join("alpha")));
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert!(
+        v["injectSteps"][0]["systemMessage"]["systemMessage"]
+            .as_str()
+            .unwrap()
+            .contains("# Precept: context for alpha")
+    );
+    assert_eq!(
+        run_with(&cmd, &input(&f.temp.path().join("beta"))),
+        "",
+        "silent in other workspaces"
+    );
+    let off = f
+        .daemon
+        .control(
+            "integration.hooks.apply",
+            json!({"project":"alpha","vendor":"antigravity","enabled":false,"expected_sha256":on["sha256"]}),
+        )
+        .unwrap();
+    assert_eq!(off["action"], "removed");
+    assert!(!fs::read_to_string(&file).unwrap().contains("precept-hook"));
 }

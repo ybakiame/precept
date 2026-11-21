@@ -324,6 +324,7 @@ catalog! {
     IntegrationsCommand => ("The hooks run:", "hook 运行的命令："),
     TileClaude => ("Claude Code", "Claude Code"),
     TileCodex => ("Codex", "Codex"),
+    TileAntigravity => ("Antigravity", "Antigravity"),
     TileAgentsMd => ("AGENTS.md", "AGENTS.md"),
     TileOff => ("Off", "已关闭"),
     HookOn => ("Briefs each session · {file}", "每个会话开始时注入 · {file}"),

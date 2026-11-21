@@ -596,6 +596,7 @@ fn integrations(model: Signal<Model>) -> impl IntoElement {
                 .gap_2()
                 .child(hook_tile(model, "claude", Msg::TileClaude))
                 .child(hook_tile(model, "codex", Msg::TileCodex))
+                .child(hook_tile(model, "antigravity", Msg::TileAntigravity))
                 .child(pointer_tile(model)),
         )
         .child(
