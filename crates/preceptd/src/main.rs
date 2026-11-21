@@ -237,8 +237,8 @@ impl Service {
             }
             return self.hooks(&request.method, params);
         }
-        // What an import would suggest from the project's own files: a read
-        // of bounded files in the served root; nothing is written here.
+        // What an import would suggest from the project's AGENTS.md: a
+        // bounded read in the served root; nothing is written here.
         if request.method == "import.scan" {
             if access != Access::Operator {
                 return Err(Error::Unauthorized);
@@ -258,11 +258,9 @@ impl Service {
             let candidates: Vec<Value> = candidates
                 .into_iter()
                 .map(|c| {
-                    let scope = match c.target {
-                        precept_core::import::Target::Project => Scope::Project {
-                            name: p.project.clone(),
-                        },
-                        precept_core::import::Target::Personal => Scope::Global,
+                    // AGENTS.md sections are this project's conventions.
+                    let scope = Scope::Project {
+                        name: p.project.clone(),
                     };
                     // Already in the Profile (suggested or confirmed) as is.
                     let exists = store

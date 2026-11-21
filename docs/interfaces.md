@@ -50,17 +50,14 @@ as its own decision with the note; any stale item, or two items touching one rec
 `suggest_batch {items: [{scope, key, value, tags, origin, rule}]}` files 1 to 50
 suggestions in one write (an import the operator picked); none is confirmed.
 
-Operator-only `import.scan {project}` reads the served project's own instruction
-files and rule folders and returns `candidates` (`source`, `title`, `key`, `value`,
-canonical `tags` with `imported` and the file's tag, `rule`, `scope` and `exists`:
-the Profile already holds that scope, key and value suggested or confirmed) and
-`skipped` parts (`too_long`, `empty`, `unreadable`). It reads only `AGENTS.md`
-(one candidate per `##` section, or per `###` inside one, outside Precept's own
-block and code fences), the instruction file agents share, and
-Precept rule files `.precept/rules/*.md` (one per file: front matter `key` (or
-`id`, else the file name), `title`, `tags`, `priority`, `enforcement`,
-`applies_to` and `scope: project|personal`, then the rule's text). Only regular files
-(never links), at most 256 KiB each and 100 per folder; nothing is written.
+Operator-only `import.scan {project}` reads the served project's `AGENTS.md` (the
+instruction file agents share; a regular file only, never a link, at most 256 KiB)
+and returns `candidates`, one per `##` section or per `###` inside one, outside
+Precept's own block and code fences (`source`, `title`, `key` `agents-…`, `value`,
+tags `agents-md` and `imported`, default `rule`, project `scope`, and `exists`: the
+Profile already holds that key and value suggested or confirmed), and `skipped`
+sections (`too_long`, `empty`, `unreadable`). Nothing is written; AGENTS.md is not
+changed. Precept's own `.precept/rules` is never an import source.
 
 Effective context keeps a confirmed, enabled rule unless the request's selector
 definitely mismatches its `applies_to` (a dimension the request does not name

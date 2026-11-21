@@ -405,9 +405,16 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     app.press_key("alt+2").unwrap();
     app.wait_for("Add project…").unwrap();
     app.press("Add project…").unwrap();
-    app.clear("Folder").unwrap();
-    app.type_text("Folder", delta.canonicalize().unwrap().to_str().unwrap())
-        .unwrap();
+    // The form may still be settling from the previous add: type until the
+    // field holds the path.
+    let path = delta.canonicalize().unwrap().to_str().unwrap().to_owned();
+    let start = Instant::now();
+    while app.screen().input_text("Folder").unwrap() != Some(path.as_str()) {
+        assert!(start.elapsed() < Duration::from_secs(10), "folder typed");
+        app.clear("Folder").unwrap();
+        app.type_text("Folder", &path).unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+    }
     app.press("Check").unwrap();
     contains(&mut app, "This folder can be added.");
     app.press("Add").unwrap();

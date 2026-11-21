@@ -2430,7 +2430,7 @@ fn add_dialog(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElement 
         })
 }
 
-/// Reads the selected project's files for rules to import (a read; the
+/// Reads the selected project's AGENTS.md for sections to import (a read; the
 /// dialog opens at once and fills in).
 fn open_import(model: Signal<Model>) {
     let Some(project) = model.get().selected_project.clone() else {

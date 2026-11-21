@@ -1,4 +1,4 @@
-//! Import from files over a real daemon: the scan lists the project's rules,
+//! Import from AGENTS.md over a real daemon: the scan lists its sections,
 //! picks become suggestions in one write. Real NSH components and IPC; not
 //! native GUI/Wayland/TTY evidence.
 #![cfg(feature = "native")]
@@ -197,8 +197,8 @@ fn rules_in_the_projects_files_are_picked_and_filed_as_suggestions() {
     app.wait_for("Daemon status").unwrap();
     app.press_key("alt+o").unwrap();
     writes_on(&mut app);
-    app.press("Import from files…").unwrap();
-    app.wait_for("Import rules from alpha's files").unwrap();
+    app.press("Import from AGENTS.md…").unwrap();
+    app.wait_for("Import rules from alpha's AGENTS.md").unwrap();
     contains(&mut app, "agents-commits");
     contains(&mut app, "AGENTS.md · Commits");
     // New rules start picked; leave Testing out.
@@ -207,7 +207,10 @@ fn rules_in_the_projects_files_are_picked_and_filed_as_suggestions() {
     app.press("Suggest 1…").unwrap();
     app.wait_for("Prepared operation; no write sent yet")
         .unwrap();
-    contains(&mut app, "Suggest 1 rules found in the project's files");
+    contains(
+        &mut app,
+        "Suggest 1 sections of AGENTS.md as project conventions",
+    );
     app.press_key("alt+shift+v").unwrap();
     let queue = || {
         f.call(
@@ -230,7 +233,7 @@ fn rules_in_the_projects_files_are_picked_and_filed_as_suggestions() {
     assert_eq!(records[0]["status"], "suggested");
     assert_eq!(records[0]["value"], "Use conventional commits.");
     // A second scan marks it as already in Precept and leaves it unpicked.
-    app.press("Import from files…").unwrap();
+    app.press("Import from AGENTS.md…").unwrap();
     contains(&mut app, "Already in Precept");
     app.wait_for("Suggest 1…").unwrap();
 }

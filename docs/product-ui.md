@@ -168,11 +168,10 @@ key, digest prefix) before one write decides them all, each as its own decision.
 If any picked record changed since it was listed, nothing is written. Switching
 tab or scope clears the selection.
 
-**Import from files…** in Review reads the selected project's instruction files
-and rule folders and lists each rule found with a checkbox, its key, scope (this
-project, or personal for a rule file with `scope: personal`), source and first line;
-new ones start picked, ones already in Precept are marked and cannot be picked,
-and parts that could not be imported say why. Saving prepares one write that
+**Import from AGENTS.md…** in Review reads the selected project's AGENTS.md and
+lists each section with a checkbox, its key, source heading and first line; new
+ones start picked, ones already in Precept are marked and cannot be picked, and
+sections that could not be imported say why. Saving prepares one write that
 files the picks as suggestions; they are confirmed like any other.
 
 The Preferences & contracts page starts with the repository's effective contracts

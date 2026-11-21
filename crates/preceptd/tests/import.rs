@@ -1,5 +1,5 @@
-//! Importing rules a repository already writes down, through a real daemon:
-//! the scan reads only the project's own instruction files and rule folders,
+//! Importing the rules a repository's AGENTS.md already writes down, through a
+//! real daemon: the scan reads only that file,
 //! the operator's picks become ordinary suggestions in one write, and a
 //! second scan marks them as already in the Profile.
 #[allow(dead_code)] // Shared harness; this suite uses part of it.
@@ -22,12 +22,6 @@ fn a_scan_suggests_and_the_operator_files_picks_as_suggestions() {
         "# Alpha\n\n## Commits\n\nUse conventional commits.\n\n## Testing\n\nRun the gates.\n",
     )
     .unwrap();
-    fs::create_dir_all(root.join(".precept/rules")).unwrap();
-    fs::write(
-        root.join(".precept/rules/style.md"),
-        "---\nkey: personal-style\ntitle: Short answers\nscope: personal\npriority: 3\ntags:\n- tone\n---\nKeep answers short.\n",
-    )
-    .unwrap();
     let scan = || {
         f.daemon
             .control("import.scan", json!({"project":"alpha"}))
@@ -39,13 +33,11 @@ fn a_scan_suggests_and_the_operator_files_picks_as_suggestions() {
         .iter()
         .map(|c| c["key"].as_str().unwrap())
         .collect();
-    assert_eq!(keys, ["agents-commits", "agents-testing", "personal-style"]);
+    assert_eq!(keys, ["agents-commits", "agents-testing"]);
     assert_eq!(
         candidates[0]["scope"],
         json!({"kind":"project","name":"alpha"})
     );
-    assert_eq!(candidates[2]["scope"], json!({"kind":"global"}));
-    assert_eq!(candidates[2]["rule"]["priority"], 3);
     assert!(candidates.iter().all(|c| c["exists"] == false));
     // Agents cannot scan.
     let agent = f.daemon.credential("agent-alpha.cap");
@@ -70,11 +62,11 @@ fn a_scan_suggests_and_the_operator_files_picks_as_suggestions() {
             &b,
             "import-1",
             Command::SuggestBatch {
-                items: vec![item(&candidates[0]), item(&candidates[2])],
+                items: vec![item(&candidates[0])],
             },
         )
         .unwrap();
-    assert_eq!(receipt["affected"].as_array().unwrap().len(), 2);
+    assert_eq!(receipt["affected"].as_array().unwrap().len(), 1);
     let queue = |scope: Scope| {
         f.daemon
             .control("profile.review.queue", json!({"scope":scope,"after_id":0}))
@@ -89,7 +81,6 @@ fn a_scan_suggests_and_the_operator_files_picks_as_suggestions() {
     assert_eq!(project.len(), 1);
     assert_eq!(project[0]["status"], "suggested");
     assert_eq!(project[0]["tags"], json!(["agents-md", "imported"]));
-    assert_eq!(queue(Scope::Global)[0]["key"], "personal-style");
     let again = scan();
     let exists: Vec<bool> = again["candidates"]
         .as_array()
@@ -97,7 +88,7 @@ fn a_scan_suggests_and_the_operator_files_picks_as_suggestions() {
         .iter()
         .map(|c| c["exists"].as_bool().unwrap())
         .collect();
-    assert_eq!(exists, [true, false, true]);
+    assert_eq!(exists, [true, false]);
     // An empty batch is malformed.
     assert_eq!(
         f.daemon
