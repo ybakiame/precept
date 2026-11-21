@@ -56,12 +56,19 @@ pub fn status(root: &Path, project: &str) -> Result<Value, Error> {
     }))
 }
 
-fn write_atomic(path: &Path, text: &str) -> Result<(), Error> {
+/// Writes `text` over `path` through a new temporary file in the same
+/// directory and a rename, keeping the file's mode.
+pub(crate) fn write_atomic(path: &Path, text: &str) -> Result<(), Error> {
     let dir = path.parent().ok_or(Error::UnsafeRuntime)?;
     let mut nonce = [0u8; 8];
     getrandom::fill(&mut nonce).map_err(|_| Error::Unavailable)?;
     let name: String = nonce.iter().map(|b| format!("{b:02x}")).collect();
-    let temp = dir.join(format!(".{}.precept-{name}", pointer::FILE));
+    let file = path
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or("file")
+        .trim_start_matches('.');
+    let temp = dir.join(format!(".{file}.precept-{name}"));
     let mode = fs::metadata(path).ok().map(|m| m.permissions());
     let result = (|| {
         let mut file = fs::OpenOptions::new()
@@ -367,7 +374,7 @@ pub fn hook_status(
 }
 
 /// A config file Precept may edit: absent, or bounded UTF-8 in a regular file.
-fn read_config(path: &Path) -> Result<Option<String>, Error> {
+pub(crate) fn read_config(path: &Path) -> Result<Option<String>, Error> {
     let meta = match fs::symlink_metadata(path) {
         Ok(m) => m,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),

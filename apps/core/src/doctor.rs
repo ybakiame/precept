@@ -51,9 +51,15 @@ fn check(title: Msg, level: Level, detail: impl Into<String>, fix: Option<Fix>) 
 
 /// The harnesses with a one-switch session-start hook, in page order.
 pub const HOOKS: [(&str, Msg); 3] = [
-    ("claude", Msg::TileClaude),
-    ("codex", Msg::TileCodex),
-    ("antigravity", Msg::TileAntigravity),
+    ("claude", Msg::DoctorHookClaude),
+    ("codex", Msg::DoctorHookCodex),
+    ("antigravity", Msg::DoctorHookAntigravity),
+];
+/// The clients with a one-switch MCP entry, in page order.
+pub const MCP: [(&str, Msg); 3] = [
+    ("claude", Msg::DoctorMcpClaude),
+    ("codex", Msg::DoctorMcpCodex),
+    ("antigravity", Msg::DoctorMcpAntigravity),
 ];
 
 fn daemon(m: &Model) -> Check {
@@ -285,6 +291,57 @@ fn hooks(m: &Model) -> Vec<Check> {
         .collect()
 }
 
+fn mcp(m: &Model) -> Vec<Check> {
+    let current = for_project(m, m.selected_project.as_deref());
+    MCP.iter()
+        .map(|(client, title)| {
+            let Some(entries) = m.agents.mcp.as_ref().filter(|_| current) else {
+                return check(
+                    *title,
+                    Level::Unknown,
+                    m.word(Msg::DoctorNotRead),
+                    Some(Fix::Agents),
+                );
+            };
+            if !entries.available {
+                return check(*title, Level::Problem, m.word(Msg::McpUnavailable), None);
+            }
+            match entries.get(client) {
+                Some(e) if e.malformed => check(
+                    *title,
+                    Level::Problem,
+                    m.word(Msg::HookMalformed).replace("{file}", &e.file),
+                    None,
+                ),
+                Some(e) if e.installed && !e.current => check(
+                    *title,
+                    Level::Attention,
+                    m.word(Msg::HookOutdated),
+                    Some(Fix::Agents),
+                ),
+                Some(e) if e.installed => check(
+                    *title,
+                    Level::Ok,
+                    m.word(Msg::McpOn).replace("{file}", &e.file),
+                    None,
+                ),
+                Some(_) => check(
+                    *title,
+                    Level::Off,
+                    m.word(Msg::DoctorMcpOff),
+                    Some(Fix::Agents),
+                ),
+                None => check(
+                    *title,
+                    Level::Unknown,
+                    m.word(Msg::DoctorNotRead),
+                    Some(Fix::Agents),
+                ),
+            }
+        })
+        .collect()
+}
+
 fn pointer(m: &Model) -> Check {
     let title = Msg::TileAgentsMd;
     let Some(p) = m
@@ -423,6 +480,7 @@ pub fn checks(m: &Model) -> Vec<Check> {
     out.extend(profile(m));
     out.extend(workspace(m));
     out.push(preferences(m));
+    out.extend(mcp(m));
     out.extend(hooks(m));
     out.push(pointer(m));
     out.push(activity(m));
@@ -499,7 +557,8 @@ mod tests {
         assert_eq!(find(&cs, Msg::DoctorWorkspace).level, Level::Ok);
         for title in [
             Msg::DoctorProfile,
-            Msg::TileClaude,
+            Msg::DoctorHookClaude,
+            Msg::DoctorMcpClaude,
             Msg::TileAgentsMd,
             Msg::DoctorActivity,
             Msg::DoctorPreferences,
@@ -541,16 +600,35 @@ mod tests {
             ..Default::default()
         });
         m.review_count = Some(2);
+        m.agents.mcp = Some(crate::mcp::McpEntries {
+            available: true,
+            clients: vec![
+                crate::mcp::McpEntry {
+                    client: "claude".into(),
+                    file: "~/.claude.json".into(),
+                    installed: true,
+                    current: true,
+                    ..Default::default()
+                },
+                crate::mcp::McpEntry {
+                    client: "codex".into(),
+                    ..Default::default()
+                },
+            ],
+        });
         let cs = checks(&m);
+        assert_eq!(find(&cs, Msg::DoctorMcpClaude).level, Level::Ok);
+        assert_eq!(find(&cs, Msg::DoctorMcpCodex).level, Level::Off);
+        assert_eq!(find(&cs, Msg::DoctorMcpAntigravity).level, Level::Unknown);
         let profile = find(&cs, Msg::DoctorProfile);
         assert_eq!(
             (profile.level, profile.fix),
             (Level::Attention, Some(Fix::Profile))
         );
         assert_eq!(find(&cs, Msg::DoctorWrites).level, Level::Off);
-        assert_eq!(find(&cs, Msg::TileClaude).level, Level::Ok);
-        assert_eq!(find(&cs, Msg::TileCodex).level, Level::Attention);
-        assert_eq!(find(&cs, Msg::TileAntigravity).level, Level::Off);
+        assert_eq!(find(&cs, Msg::DoctorHookClaude).level, Level::Ok);
+        assert_eq!(find(&cs, Msg::DoctorHookCodex).level, Level::Attention);
+        assert_eq!(find(&cs, Msg::DoctorHookAntigravity).level, Level::Off);
         assert_eq!(find(&cs, Msg::TileAgentsMd).level, Level::Off);
         let prefs = find(&cs, Msg::DoctorPreferences);
         assert_eq!(
@@ -561,7 +639,7 @@ mod tests {
         // Another project's integration reads are not this project's.
         m.selected_project = Some("beta".into());
         let cs = checks(&m);
-        assert_eq!(find(&cs, Msg::TileClaude).level, Level::Unknown);
+        assert_eq!(find(&cs, Msg::DoctorHookClaude).level, Level::Unknown);
         assert_eq!(find(&cs, Msg::DoctorWorkspace).level, Level::Unknown);
     }
 

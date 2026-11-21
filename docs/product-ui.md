@@ -107,12 +107,17 @@ Agent sharing is a separate per-project operator switch. Configuration text can 
 copied, but Precept never writes another tool's configuration automatically. Credentials
 are never displayed.
 
-Project sharing is a switch. **Agent integrations** come first, above the manual
-configuration text: quick-setting tiles, one
-switch each: the Claude Code, Codex and Antigravity session-start hooks (written into their user
-configuration, the exact command shown below the tiles) and the project's
-**AGENTS.md** pointer, whose switch opens a dialog previewing the exact text before
-anything is written. Settings with only two states use switches, not button pairs.
+Project sharing is a switch. **Agent integrations** are grouped by mechanism, each
+group headed by what it does and where it reaches, with one quick-setting tile per
+agent: **MCP tools** (on demand; the `precept-<project>` server entry in Claude
+Code's, Codex's and Antigravity's user configuration), **Session-start briefing**
+(automatic; their session-start hooks) and the **Repository pointer** (the
+project's AGENTS.md section, whose switch opens a dialog previewing the exact text
+before anything is written). Settings with only two states use switches, not
+button pairs. Manual setup, the configuration to paste for agents on Windows or
+other MCP clients and the exact hook command, is folded under **Advanced: manual
+setup**, a disclosure that is closed by default and springs open (at once under
+reduced motion).
 
 Below project sharing, a switch lets the project's agents suggest rules (off by
 default, disabled while the project is not shared); its help says suggestions need

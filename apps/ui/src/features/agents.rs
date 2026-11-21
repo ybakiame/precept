@@ -11,7 +11,7 @@ use precept_ui_core::{
     ProjectEntry,
     connection::Target,
     i18n::Msg,
-    mcp::{Client, Hooks, Host, Launch, Pointer, server_name, snippet},
+    mcp::{Client, Hooks, Host, Launch, McpEntries, Pointer, server_name, snippet},
 };
 use tokens::palette;
 use ui::{BadgeVariant, ButtonSize, ButtonVariant, badge, button, scale, surface, tabs};
@@ -124,6 +124,109 @@ fn apply_hook(model: Signal<Model>, vendor: &'static str, enabled: bool) {
     );
 }
 
+/// Reads the project's MCP entry in each client's user configuration.
+fn load_mcp(model: Signal<Model>, name: String) {
+    super::profile::call(
+        model,
+        "integration.mcp",
+        serde_json::json!({ "project": name }),
+        move |_, m, r| {
+            if m.agents.project.as_deref() != Some(name.as_str()) {
+                return;
+            }
+            match r.and_then(|v| serde_json::from_value::<McpEntries>(v).map_err(|_| "Unavailable"))
+            {
+                Ok(e) => m.agents.mcp = Some(e),
+                Err(code) => {
+                    m.agents.mcp = None;
+                    m.agents.hooks_error = Some(code.into());
+                }
+            }
+        },
+    );
+}
+
+/// Switches one client's MCP entry, guarded by the digest last read.
+fn apply_mcp(model: Signal<Model>, client: &'static str, enabled: bool) {
+    let m = model.get();
+    let Some(name) = m.agents.project.clone() else {
+        return;
+    };
+    let expected = m
+        .agents
+        .mcp
+        .as_ref()
+        .and_then(|e| e.get(client))
+        .and_then(|e| e.sha256.clone());
+    model.update(|m| {
+        m.agents.mcp_busy = Some(client.into());
+        m.agents.hooks_error = None;
+    });
+    super::profile::call(
+        model,
+        "integration.mcp.apply",
+        serde_json::json!({ "project": name, "client": client, "enabled": enabled, "expected_sha256": expected }),
+        move |model, m, r| {
+            m.agents.mcp_busy = None;
+            if let Err(code) = r {
+                m.agents.hooks_error = Some(if code == "Conflict" {
+                    m.word(Msg::HookChanged).into()
+                } else {
+                    code.into()
+                });
+            }
+            let name = name.clone();
+            spawn(async move { load_mcp(model, name) });
+        },
+    );
+}
+
+fn mcp_detail(m: &Model, client: &str) -> String {
+    let Some(entries) = m.agents.mcp.as_ref() else {
+        return m.word(Msg::TileOff).into();
+    };
+    if !entries.available {
+        return m.word(Msg::McpUnavailable).into();
+    }
+    match entries.get(client) {
+        Some(e) if e.malformed => m.word(Msg::HookMalformed).replace("{file}", &e.file),
+        Some(e) if e.installed && !e.current => m.word(Msg::HookOutdated).into(),
+        Some(e) if e.installed => m.word(Msg::McpOn).replace("{file}", &e.file),
+        _ => m.word(Msg::TileOff).into(),
+    }
+}
+
+fn mcp_tile(model: Signal<Model>, client: &'static str, title: Msg) -> impl IntoElement {
+    let installed = move || {
+        model
+            .get()
+            .agents
+            .mcp
+            .as_ref()
+            .and_then(|e| e.get(client))
+            .is_some_and(|e| e.installed)
+    };
+    ui::quick_tile(model, icons::AGENTS, installed, move |on| {
+        apply_mcp(model, client, on)
+    })
+    .title_fn(word(model, title))
+    .spoken(move || {
+        let m = model.get();
+        m.word(Msg::McpSpoken)
+            .replace("{name}", m.word(title))
+            .into()
+    })
+    .detail(move || mcp_detail(&model.get(), client).into())
+    .disabled(move || {
+        let m = model.get();
+        m.agents.mcp_busy.is_some()
+            || m.agents
+                .mcp
+                .as_ref()
+                .is_none_or(|e| !e.available || e.get(client).is_none_or(|s| s.malformed))
+    })
+}
+
 /// Reads the project's AGENTS.md pointer status.
 fn load_pointer(model: Signal<Model>, name: String) {
     model.update(|m| {
@@ -204,6 +307,7 @@ pub(crate) fn fetch(model: Signal<Model>, name: String) {
     load_pointer(model, name.clone());
     model.update(|m| m.agents.hooks_error = None);
     load_hooks(model, name.clone());
+    load_mcp(model, name.clone());
     super::profile::call(
         model,
         "project.mcp",
@@ -662,56 +766,52 @@ fn pointer_tile(model: Signal<Model>) -> impl IntoElement {
     })
 }
 
-/// The integrations: one switch per harness hook, and the AGENTS.md pointer.
+/// One group of integration switches: what the mechanism is, what it can do
+/// and where it reaches, then its tiles.
+fn group(
+    model: Signal<Model>,
+    title: Msg,
+    scope: Msg,
+    tiles: impl IntoElement,
+) -> impl IntoElement {
+    view()
+        .gap_2()
+        .child(text(word(model, title)).font_weight(FontWeight::SEMIBOLD))
+        .child(caption(model, move |_| Some(scope)))
+        .child(tiles)
+}
+
+/// The integrations, by mechanism: MCP tools, the session-start briefing and
+/// the AGENTS.md pointer. One switch per agent each.
 fn integrations(model: Signal<Model>) -> impl IntoElement {
+    let row = || view().flex_row().flex_wrap().gap_2();
     surface(model)
         .title_fn(word(model, Msg::IntegrationsTitle))
         .child(caption(model, |_| Some(Msg::IntegrationsHelp)))
-        .child(
-            view()
-                .flex_row()
-                .flex_wrap()
-                .gap_2()
+        .child(group(
+            model,
+            Msg::McpGroup,
+            Msg::McpScope,
+            row()
+                .child(mcp_tile(model, "claude", Msg::TileClaude))
+                .child(mcp_tile(model, "codex", Msg::TileCodex))
+                .child(mcp_tile(model, "antigravity", Msg::TileAntigravity)),
+        ))
+        .child(group(
+            model,
+            Msg::HookGroup,
+            Msg::HookScope,
+            row()
                 .child(hook_tile(model, "claude", Msg::TileClaude))
                 .child(hook_tile(model, "codex", Msg::TileCodex))
-                .child(hook_tile(model, "antigravity", Msg::TileAntigravity))
-                .child(pointer_tile(model)),
-        )
-        .child(
-            view()
-                .gap_1()
-                .style_when(
-                    move || {
-                        model
-                            .get()
-                            .agents
-                            .hooks
-                            .as_ref()
-                            .and_then(|h| h.hooks.first())
-                            .is_none()
-                    },
-                    |s| s.hidden(),
-                )
-                .child(caption(model, |_| Some(Msg::IntegrationsCommand)))
-                .child(
-                    text(move || {
-                        model
-                            .get()
-                            .agents
-                            .hooks
-                            .as_ref()
-                            .and_then(|h| h.get("claude"))
-                            .map(|h| {
-                                h.command
-                                    .replace("--vendor claude", "--vendor <claude|codex>")
-                            })
-                            .unwrap_or_default()
-                    })
-                    .font_family("monospace")
-                    .text_size(px(scale::text::CAPTION))
-                    .text_color(move || palette(model).muted),
-                ),
-        )
+                .child(hook_tile(model, "antigravity", Msg::TileAntigravity)),
+        ))
+        .child(group(
+            model,
+            Msg::PointerGroup,
+            Msg::PointerScope,
+            row().child(pointer_tile(model)),
+        ))
         .child(
             text(move || {
                 let m = model.get();
@@ -724,6 +824,59 @@ fn integrations(model: Signal<Model>) -> impl IntoElement {
             .text_size(px(scale::text::CAPTION))
             .text_color(move || palette(model).error),
         )
+}
+
+/// The exact hook command, for setting a hook up by hand.
+fn hook_command(model: Signal<Model>) -> impl IntoElement {
+    view()
+        .gap_1()
+        .style_when(
+            move || {
+                model
+                    .get()
+                    .agents
+                    .hooks
+                    .as_ref()
+                    .and_then(|h| h.hooks.first())
+                    .is_none()
+            },
+            |s| s.hidden(),
+        )
+        .child(caption(model, |_| Some(Msg::IntegrationsCommand)))
+        .child(
+            text(move || {
+                model
+                    .get()
+                    .agents
+                    .hooks
+                    .as_ref()
+                    .and_then(|h| h.get("claude"))
+                    .map(|h| {
+                        h.command.replace(
+                            "--vendor claude",
+                            "--vendor <claude|codex|antigravity|cursor>",
+                        )
+                    })
+                    .unwrap_or_default()
+            })
+            .font_family("monospace")
+            .text_size(px(scale::text::CAPTION))
+            .text_color(move || palette(model).muted),
+        )
+}
+
+/// Manual setup, folded away: the MCP configuration to paste (for agents on
+/// Windows or other clients) and the hook command.
+fn advanced(model: Signal<Model>) -> impl IntoElement {
+    ui::disclosure(
+        model,
+        word(model, Msg::AdvancedSetup),
+        word(model, Msg::AdvancedHint),
+        view()
+            .gap_6()
+            .child(configure(model))
+            .child(surface(model).child(hook_command(model))),
+    )
 }
 
 /// The pointer confirmation, previewing the exact block; a sibling of the
@@ -982,7 +1135,7 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
                 )
                 .child(project_access(model))
                 .child(integrations(model))
-                .child(configure(model))
+                .child(advanced(model))
                 .child(activity(model)),
         )
 }

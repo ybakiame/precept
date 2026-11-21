@@ -600,7 +600,8 @@ mod tests {
         // Demo data: nothing is claimed as working that was not read.
         app.wait_for("Demo data: no daemon is connected").unwrap();
         assert!(app.screen().shows("Not read"));
-        assert!(app.screen().shows("Antigravity"));
+        assert!(app.screen().shows("Antigravity · MCP"));
+        assert!(app.screen().shows("Antigravity · hook"));
         app.press("Copy report").unwrap();
         let report = app.screen().clipboard().unwrap();
         assert!(report.starts_with("Precept doctor · alpha\n"), "{report}");

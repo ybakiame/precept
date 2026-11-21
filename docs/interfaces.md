@@ -74,6 +74,21 @@ writes are atomic, a new file is owner-only. The command passes `--root`, so the
 hook prints nothing in sessions outside the project. Codex asks the user to
 approve a new hook once.
 
+Operator-only `integration.mcp {project}` reports, for Claude Code
+(`~/.claude.json`, `mcpServers`), Codex (`~/.codex/config.toml`,
+`[mcp_servers."precept-<project>"]`) and Antigravity
+(`~/.gemini/config/mcp_config.json`, `mcpServers`) in the daemon user's home:
+`file`, `server`, `exists`, `sha256`, `malformed`, `installed` and `current` (the
+entry starts this daemon's `precept-mcp` for the project exactly), or
+`available: false` without `precept-mcp`. `integration.mcp.apply {project,
+client, enabled, expected_sha256}` adds, updates in place or removes only the
+`precept-<project>` entry if the file still has the reported digest, otherwise
+`Conflict`; an entry already exact is left untouched. JSON files keep every other
+key and their order. Codex's TOML is edited as text: only Precept's own table
+goes or comes, other tables and their comments stay, and the result must parse
+with exactly the intended entry, else nothing is written (an inline
+`mcp_servers = {…}` is refused). Backups and atomic writes as for hooks.
+
 ### Profile export and import
 
 `precept profile export --out FILE` writes every preference of the selected Profile

@@ -183,3 +183,103 @@ fn antigravity_hook_is_a_named_entry_that_injects_a_system_message_for_its_works
     assert_eq!(off["action"], "removed");
     assert!(!fs::read_to_string(&file).unwrap().contains("precept-hook"));
 }
+
+#[cfg(unix)]
+#[test]
+fn mcp_entries_switch_per_client_and_the_written_command_serves_the_project() {
+    let f = Fixture::created();
+    let b = f.daemon.enable();
+    f.register(&b, "alpha");
+    let status = f
+        .daemon
+        .control("integration.mcp", json!({"project":"alpha"}))
+        .unwrap();
+    assert_eq!(status["available"], true);
+    let files: Vec<&str> = status["clients"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["file"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        files,
+        [
+            "~/.claude.json",
+            "~/.codex/config.toml",
+            "~/.gemini/config/mcp_config.json"
+        ]
+    );
+    let agent = f.daemon.credential("agent-alpha.cap");
+    assert_eq!(
+        f.daemon
+            .call(&agent, "integration.mcp", json!({"project":"alpha"})),
+        Err(Error::Unauthorized)
+    );
+    for client in ["claude", "codex", "antigravity"] {
+        let on = f
+            .daemon
+            .control(
+                "integration.mcp.apply",
+                json!({"project":"alpha","client":client,"enabled":true,"expected_sha256":null}),
+            )
+            .unwrap();
+        assert_eq!(on["action"], "added", "{client}");
+        assert_eq!(on["current"], true, "{client}");
+    }
+    // The Codex entry, read back with a TOML parser, starts a working server.
+    let text = fs::read_to_string(f.temp.path().join(".codex/config.toml")).unwrap();
+    let table: toml::Table = toml::from_str(&text).unwrap();
+    let entry = &table["mcp_servers"]["precept-alpha"];
+    let args: Vec<&str> = entry["args"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a.as_str().unwrap())
+        .collect();
+    let mut child = std::process::Command::new(entry["command"].as_str().unwrap())
+        .args(&args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    {
+        let mut input = child.stdin.take().unwrap();
+        for m in [
+            json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}),
+            json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
+            json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}),
+        ] {
+            writeln!(input, "{m}").unwrap();
+        }
+    }
+    let out = String::from_utf8(child.wait_with_output().unwrap().stdout).unwrap();
+    assert!(out.contains("get_effective_context") && out.contains("suggest_rule"));
+
+    // Off again, guarded by the reported digest.
+    let status = f
+        .daemon
+        .control("integration.mcp", json!({"project":"alpha"}))
+        .unwrap();
+    let codex = status["clients"][1].clone();
+    assert_eq!(
+        f.daemon.control(
+            "integration.mcp.apply",
+            json!({"project":"alpha","client":"codex","enabled":false,"expected_sha256":null}),
+        ),
+        Err(Error::Conflict)
+    );
+    let off = f
+        .daemon
+        .control(
+            "integration.mcp.apply",
+            json!({"project":"alpha","client":"codex","enabled":false,"expected_sha256":codex["sha256"]}),
+        )
+        .unwrap();
+    assert_eq!(off["installed"], false);
+    assert!(
+        !fs::read_to_string(f.temp.path().join(".codex/config.toml"))
+            .unwrap()
+            .contains("precept-alpha")
+    );
+}

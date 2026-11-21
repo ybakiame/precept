@@ -257,8 +257,13 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         listed["ok"], false,
         "gamma is now a project: it overlaps itself"
     );
-    // Agents (under Workspace): the launch line for gamma, per client; sharing per project.
+    // Agents (under Workspace): the switches by mechanism come first; the
+    // manual launch line per client is folded under Advanced.
     app.press("Agents").unwrap();
+    app.wait_for("MCP tools · on demand").unwrap();
+    contains(&mut app, "Session-start briefing · automatic");
+    assert!(!app.screen().shows("Configure · precept-gamma"), "folded");
+    app.press("Advanced: manual setup").unwrap();
     app.wait_for("Configure · precept-gamma").unwrap();
     contains(&mut app, "claude mcp add --scope user precept-gamma -- ");
     contains(&mut app, "--project gamma --capability-file ");
@@ -471,6 +476,25 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
             .unwrap()
             .contains("keep-me")
     );
+    // The MCP switch writes only Precept's server entry into ~/.claude.json.
+    let claude_json = f.root.path().join(".claude.json");
+    std::fs::write(&claude_json, "{\n  \"numStartups\": 7\n}\n").unwrap();
+    app.press("Claude Code MCP server").unwrap();
+    contains(&mut app, "The file changed since it was read");
+    app.press("Claude Code MCP server").unwrap();
+    contains(&mut app, "Listed in every session · ~/.claude.json");
+    let v: Value = serde_json::from_str(&std::fs::read_to_string(&claude_json).unwrap()).unwrap();
+    assert_eq!(v["numStartups"], 7);
+    assert_eq!(v["mcpServers"]["precept-delta"]["type"], "stdio");
+    app.press("Claude Code MCP server").unwrap();
+    let start = Instant::now();
+    while std::fs::read_to_string(&claude_json)
+        .unwrap()
+        .contains("precept-delta")
+    {
+        assert!(start.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(20));
+    }
     // The AGENTS.md switch: previewed before writing, removed at once.
     let agents_md = f.root.path().join("delta/AGENTS.md");
     assert!(!agents_md.exists());

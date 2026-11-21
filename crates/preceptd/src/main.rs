@@ -15,6 +15,7 @@ use std::{
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 mod activity;
 mod integration;
+mod mcp_config;
 mod ojson;
 #[cfg(test)]
 mod ownership_tests;
@@ -233,6 +234,15 @@ impl Service {
             }
             return self.hooks(&request.method, params);
         }
+        if matches!(
+            request.method.as_str(),
+            "integration.mcp" | "integration.mcp.apply"
+        ) {
+            if access != Access::Operator {
+                return Err(Error::Unauthorized);
+            }
+            return self.mcp_entries(&request.method, params);
+        }
         // The daemon's own project set needs no Profile: an operator connecting
         // before creating or selecting one must still get a successful read.
         if request.method == "project.list" {
@@ -431,6 +441,74 @@ impl Service {
                     vendor,
                     &p.project,
                     &cmd,
+                    enabled,
+                    p.expected_sha256.as_deref(),
+                )
+            }
+            _ => Err(Error::InvalidRequest),
+        }
+    }
+    /// The project's `precept-mcp` entry in each client's user configuration in
+    /// the daemon user's home: status, or one explicit add/remove guarded by
+    /// the reported digest.
+    fn mcp_entries(&self, method: &str, params: Value) -> precept_ipc::Result<Value> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct P {
+            project: String,
+            #[serde(default)]
+            client: Option<mcp_config::Client>,
+            #[serde(default)]
+            enabled: Option<bool>,
+            #[serde(default)]
+            expected_sha256: Option<String>,
+        }
+        let p: P = decode(params)?;
+        if !self.profiles.allowed(&p.project) {
+            return Err(Error::NotFound);
+        }
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .filter(|h| h.is_absolute())
+            .ok_or(Error::Unavailable)?;
+        let Some(command) = self.mcp_path() else {
+            return Ok(json!({"available": false, "clients": []}));
+        };
+        let location = self.profiles.location();
+        let path = |p: &std::path::Path| p.to_string_lossy().into_owned();
+        let launch = mcp_config::Launch {
+            command: path(&command),
+            args: vec![
+                "--runtime-dir".into(),
+                path(&location.runtime_dir),
+                "--endpoint".into(),
+                location.endpoint.clone(),
+                "--project".into(),
+                p.project.clone(),
+                "--capability-file".into(),
+                path(&location.credential_path(Some(&p.project))?),
+            ],
+        };
+        match (method, p.client, p.enabled) {
+            ("integration.mcp", None, None) if p.expected_sha256.is_none() => {
+                let clients = mcp_config::Client::ALL
+                    .iter()
+                    .map(|c| mcp_config::status(&home, *c, &p.project, &launch))
+                    .collect::<precept_ipc::Result<Vec<_>>>()?;
+                Ok(json!({"available": true, "clients": clients}))
+            }
+            ("integration.mcp.apply", Some(client), Some(enabled)) => {
+                if p.expected_sha256
+                    .as_ref()
+                    .is_some_and(|d| d.len() != 64 || !d.bytes().all(|b| b.is_ascii_hexdigit()))
+                {
+                    return Err(Error::InvalidRequest);
+                }
+                mcp_config::apply(
+                    &home,
+                    client,
+                    &p.project,
+                    &launch,
                     enabled,
                     p.expected_sha256.as_deref(),
                 )

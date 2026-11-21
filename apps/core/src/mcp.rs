@@ -189,6 +189,37 @@ impl Hooks {
     }
 }
 
+/// One client's `precept-<project>` MCP entry (`integration.mcp`).
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+pub struct McpEntry {
+    /// `claude`, `codex` or `antigravity`.
+    pub client: String,
+    /// Where it lives, `~/`-relative for display.
+    pub file: String,
+    pub server: String,
+    pub exists: bool,
+    pub sha256: Option<String>,
+    pub malformed: bool,
+    pub installed: bool,
+    /// Installed exactly as this daemon would write it.
+    pub current: bool,
+    #[serde(default)]
+    pub action: Option<String>,
+}
+
+/// Every client's entry for a project, or `available: false` without
+/// `precept-mcp` beside the daemon.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+pub struct McpEntries {
+    pub available: bool,
+    pub clients: Vec<McpEntry>,
+}
+impl McpEntries {
+    pub fn get(&self, client: &str) -> Option<&McpEntry> {
+        self.clients.iter().find(|c| c.client == client)
+    }
+}
+
 /// The Agents page state.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct AgentsPage {
@@ -208,6 +239,10 @@ pub struct AgentsPage {
     /// The harness whose hook is being switched.
     pub hook_busy: Option<String>,
     pub hooks_error: Option<String>,
+    /// The project's MCP entries in the clients' user configuration.
+    pub mcp: Option<McpEntries>,
+    /// The client whose MCP entry is being switched.
+    pub mcp_busy: Option<String>,
     /// The project's AGENTS.md pointer (`integration.pointer`).
     pub pointer: Option<Pointer>,
     /// The pointer dialog: `Some(true)` add/update, `Some(false)` remove.

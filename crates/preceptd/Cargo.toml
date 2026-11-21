@@ -15,6 +15,7 @@ clap = { version = "4", features = ["derive"] }
 precept-core = { path = "../precept-core" }
 precept-store = { path = "../precept-store" }
 precept-write = { path = "../precept-write", features = ["daemon-owner"] }
+toml = "1.2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -22,7 +23,6 @@ libc = "0.2"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
 [dev-dependencies]
 tempfile = "3"
-toml = "1.2"
 rusqlite = { version = "=0.41.1", features = ["bundled"] }
 sha2 = "0.10"
 
