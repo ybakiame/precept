@@ -337,6 +337,61 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         "Read context: 0 preferences, 0 contracts, 1 documents",
     );
     contains(&mut app, "Started precept-mcp");
+    // Agent suggestions: off until the operator's switch, then they land in
+    // Review (writes are on in this run).
+    contains(&mut app, "Agents cannot suggest rules");
+    app.press("Agents may suggest rules for gamma").unwrap();
+    let start = Instant::now();
+    let proposes = |f: &Fixture| {
+        f.call("project.list", json!({}))
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["name"] == "gamma" && p["propose"] == true)
+    };
+    while !proposes(&f) {
+        assert!(start.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    contains(
+        &mut app,
+        "Agents may suggest rules; each waits for your review",
+    );
+    {
+        use std::io::{BufRead, BufReader, Write};
+        let mut mcp = Command::new(bin("precept-mcp"))
+            .arg("--runtime-dir")
+            .arg(&f.location.runtime_dir)
+            .arg("--endpoint")
+            .arg(&f.location.endpoint)
+            .args(["--project", "gamma", "--capability-file"])
+            .arg(f.location.runtime_dir.join("agent-gamma.cap"))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let mut input = mcp.stdin.take().unwrap();
+        let mut output = BufReader::new(mcp.stdout.take().unwrap());
+        let mut line = String::new();
+        for message in [
+            json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"headless-agent","version":"2.0"}}}),
+            json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
+            json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"suggest_rule","arguments":{"scope":"project","key":"commit-style","value":"Use conventional commits."}}}),
+        ] {
+            writeln!(input, "{message}").unwrap();
+            if message.get("id").is_some() {
+                line.clear();
+                output.read_line(&mut line).unwrap();
+            }
+        }
+        assert!(line.contains("not active"), "suggested: {line}");
+        let _ = mcp.kill();
+        let _ = mcp.wait();
+    }
+    app.press("Refresh activity").unwrap();
+    contains(&mut app, "Suggested a rule: it waits in Review");
     // A second project, then switch from the ONE sidebar workspace switcher:
     // the read it starts must finish after the menu closes (never stuck Reading).
     let delta = f.root.path().join("delta");

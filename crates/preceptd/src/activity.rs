@@ -31,6 +31,8 @@ pub enum Kind {
     Context,
     /// `get_handoff` (`handoff.get`).
     Handoff,
+    /// `suggest_rule` (`preference.suggest`): an agent suggested a rule.
+    Suggested,
     /// The connection's credential was refused before any request.
     Refused,
 }

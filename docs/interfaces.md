@@ -89,11 +89,25 @@ whose project is not served; the operator confirms imported suggestions again.
 Version 1 files (before rule options) still import, with the defaults.
 This is how preferences move between Profile schemas: there is no migration.
 
-## Read-only MCP stdio
+## MCP stdio
 
 The Rust `precept-mcp` binary uses newline-delimited UTF-8 JSON-RPC; stdout contains only
 protocol output and failures are sanitized. It uses an explicit protected native
 credential and endpoint, with one bound project. Tool arguments cannot change scope.
+
+Tools: `get_effective_context` and `get_handoff` (read-only), and `suggest_rule
+{scope: project|environment|personal, key, value, tags?, applies_to?, enforcement?}`,
+which calls agent `preference.suggest`. The daemon accepts it only when the
+operator allowed suggestions for the project (`project.propose {name, enabled}`,
+Operator; `precept project suggestions NAME on|off`; off by default, listed as
+`propose` in `project.list`) and writes are on for this run; otherwise
+`Unauthorized` or `Unavailable`, and nothing is queued. The record is created as
+`suggested` with origin `agent` (an untagged one is tagged `agent`; environment
+notes advisory only; priority 0). The same scope, key and value already suggested
+or confirmed is `Conflict`; more than 20 per project per daemon run or 30 waiting
+agent suggestions in a scope is `Capacity`. The tool's reply says the rule is not
+active until the operator confirms it, and whether to retry. Each call is in the
+activity log as `suggested` with its outcome.
 
 `initialize` returns `instructions` telling the agent to call
 `get_effective_context` before planning or editing and again after compaction,

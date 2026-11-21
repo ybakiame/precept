@@ -36,7 +36,17 @@ struct State {
     startup_failure: Option<&'static str>,
     /// Projects whose agent credential is not published (external agents off).
     withheld: BTreeSet<String>,
+    /// Projects whose agents may suggest rules (the operator's switch).
+    proposers: BTreeSet<String>,
+    /// Agent suggestions accepted this daemon run, per project.
+    suggested: BTreeMap<String, u32>,
 }
+/// The most suggestions one project's agents may make in one daemon run.
+pub const MAX_AGENT_SUGGESTIONS: u32 = 20;
+/// The most agent suggestions one scope may hold waiting for review.
+pub const MAX_PENDING_AGENT: i64 = 30;
+/// The longest agent suggestion value, in bytes.
+pub const MAX_AGENT_VALUE: usize = 4096;
 /// What the daemon does around a project-set change, outside the Profile.
 /// The file name offered (never created) for a first Profile in the state directory.
 pub const SUGGESTED_PROFILE: &str = "profile.sqlite3";
@@ -170,7 +180,7 @@ impl Profiles {
         .map_err(|_| Error::UnsafeRuntime)?;
         let mut projects = Roots::new();
         let mut unavailable = Roots::new();
-        let (listed, withheld) = state_dir.load_projects()?;
+        let (listed, withheld, proposers) = state_dir.load_projects()?;
         for (name, root) in listed {
             match root.canonicalize() {
                 Ok(c) if c == root && c.is_dir() => {
@@ -202,6 +212,8 @@ impl Profiles {
                 unavailable,
                 startup_failure: None,
                 withheld,
+                proposers,
+                suggested: BTreeMap::new(),
             }),
             location,
             runtime,
@@ -263,6 +275,7 @@ impl Profiles {
                 // Without a selected Profile nothing is registered; a missing
                 // root still reads as unavailable.
                 let agents = !s.withheld.contains(name);
+                let propose = s.proposers.contains(name);
                 let state = if s.roots.contains_key(name) {
                     "ready"
                 } else if root.is_dir() {
@@ -270,14 +283,14 @@ impl Profiles {
                 } else {
                     "unavailable"
                 };
-                json!({"name":name,"root":root,"state":state,"agents":agents})
+                json!({"name":name,"root":root,"state":state,"agents":agents,"propose":propose})
             })
             .collect();
         out.extend(
             s.unavailable
                 .iter()
                 .map(|(name, root)| {
-                    json!({"name":name,"root":root,"state":"unavailable","agents":!s.withheld.contains(name)})
+                    json!({"name":name,"root":root,"state":"unavailable","agents":!s.withheld.contains(name),"propose":s.proposers.contains(name)})
                 }),
         );
         Value::Array(out)
@@ -587,18 +600,24 @@ impl Profiles {
         // A project (re)joins shared with agents.
         let mut withheld = s.withheld.clone();
         withheld.remove(&p.name);
+        // ...and without agent suggestions until the operator allows them.
+        let mut proposers = s.proposers.clone();
+        proposers.remove(&p.name);
         self.state_dir
-            .save_projects(&file, &withheld)
+            .save_projects(&file, &withheld, &proposers)
             .map_err(|_| Error::OutcomeUnknown)?;
         s.projects = next;
         s.withheld = withheld;
+        s.proposers = proposers;
         s.roots.insert(p.name.clone(), root.clone());
         if hooks.added(&p.name).is_err() {
             s.projects.remove(&p.name);
             s.roots.remove(&p.name);
             let mut file = s.projects.clone();
             file.extend(s.unavailable.clone());
-            let _ = self.state_dir.save_projects(&file, &s.withheld);
+            let _ = self
+                .state_dir
+                .save_projects(&file, &s.withheld, &s.proposers);
             return Err(Error::OutcomeUnknown);
         }
         Ok(json!({"added":p.name,"root":root,"registered":!registered,"receipt":receipt}))
@@ -622,7 +641,8 @@ impl Profiles {
         if changed {
             let mut file = s.projects.clone();
             file.extend(s.unavailable.clone());
-            self.state_dir.save_projects(&file, &withheld)?;
+            self.state_dir
+                .save_projects(&file, &withheld, &s.proposers)?;
             s.withheld = withheld;
             let served = s.projects.contains_key(&p.name);
             drop(s);
@@ -633,6 +653,113 @@ impl Profiles {
             }
         }
         Ok(json!({"name":p.name,"agents":p.enabled}))
+    }
+    /// The operator lets a project's agents suggest rules, or stops them. No
+    /// Profile write and no credential change: only which agent requests the
+    /// daemon accepts.
+    fn set_propose(&self, params: Value) -> Result<Value> {
+        let p: AgentsParams = super::decode(params)?;
+        let mut s = self.state.lock().unwrap();
+        if !s.projects.contains_key(&p.name) && !s.unavailable.contains_key(&p.name) {
+            return Err(Error::NotFound);
+        }
+        let mut proposers = s.proposers.clone();
+        let changed = if p.enabled {
+            proposers.insert(p.name.clone())
+        } else {
+            proposers.remove(&p.name)
+        };
+        if changed {
+            let mut file = s.projects.clone();
+            file.extend(s.unavailable.clone());
+            self.state_dir
+                .save_projects(&file, &s.withheld, &proposers)?;
+            s.proposers = proposers;
+        }
+        Ok(json!({"name":p.name,"propose":p.enabled}))
+    }
+    /// An agent of `project` suggests a rule. Accepted only while the operator
+    /// allows suggestions for the project and has writes on for this run;
+    /// bounded per run and per scope, duplicates refused. The record lands as
+    /// `suggested` with origin `agent`: confirming it stays the operator's.
+    pub fn agent_suggest(
+        &self,
+        project: &str,
+        scope: Scope,
+        key: String,
+        value: String,
+        tags: Vec<String>,
+        rule: precept_core::operator::RuleOptions,
+    ) -> Result<Value> {
+        let mut s = self.state.lock().unwrap();
+        if !s.proposers.contains(project) || !s.roots.contains_key(project) {
+            return Err(Error::Unauthorized);
+        }
+        // Agents reach their own project, its environment, or personal scope.
+        match &scope {
+            Scope::Global => {}
+            Scope::Project { name } | Scope::Environment { name } if name == project => {}
+            _ => return Err(Error::ScopeMismatch),
+        }
+        if value.trim().is_empty() || value.len() > MAX_AGENT_VALUE {
+            return Err(Error::InvalidRequest);
+        }
+        let (owner, grant) = match (s.owner.as_ref(), s.grant.as_ref()) {
+            (Some(o), Some(g)) if g.check().is_ok() => (o, g.clone()),
+            // Writes are off for this run: nothing is queued anywhere.
+            _ => return Err(Error::Unavailable),
+        };
+        if s.suggested.get(project).copied().unwrap_or(0) >= MAX_AGENT_SUGGESTIONS {
+            return Err(Error::Capacity);
+        }
+        let reader = s
+            .selected
+            .as_ref()
+            .ok_or(Error::Unavailable)?
+            .reader()
+            .map_err(storage_error)?;
+        let (duplicate, pending) = reader
+            .agent_suggestion_state(&scope, &key, &value)
+            .map_err(|_| Error::Unavailable)?;
+        if duplicate {
+            return Err(Error::Conflict);
+        }
+        if pending >= MAX_PENDING_AGENT {
+            return Err(Error::Capacity);
+        }
+        let b = owner.binding();
+        let request = precept_write::Request {
+            version: 2,
+            binding: precept_write::Binding {
+                profile_id: b.profile_id,
+                generation: b.generation,
+                owner_epoch: b.owner_epoch,
+            },
+            operation_id: precept_ipc::operator::operation_id()?,
+            command: Command::SuggestPreference {
+                scope,
+                key,
+                value,
+                tags,
+                origin: precept_core::operator::Origin::Agent,
+                rule,
+                expected: precept_write::Expected::Absent,
+            },
+        };
+        let receipt = owner
+            .execute(&request, &|| {
+                grant
+                    .check()
+                    .map_err(|_| precept_write::Error::Unauthorized)
+            })
+            .map_err(storage_error)?;
+        *s.suggested.entry(project.to_owned()).or_insert(0) += 1;
+        let id = receipt
+            .affected
+            .first()
+            .map(|a| a.record_id.clone())
+            .unwrap_or_default();
+        Ok(json!({"status":"suggested","id":id}))
     }
     pub fn handle(
         &self,
@@ -774,10 +901,13 @@ impl Profiles {
             file.extend(gone.clone());
             let mut withheld = s.withheld.clone();
             withheld.remove(&p.name);
-            self.state_dir.save_projects(&file, &withheld)?;
+            let mut proposers = s.proposers.clone();
+            proposers.remove(&p.name);
+            self.state_dir.save_projects(&file, &withheld, &proposers)?;
             s.projects = next;
             s.unavailable = gone;
             s.withheld = withheld;
+            s.proposers = proposers;
             s.roots.remove(&p.name);
             drop(s);
             hooks.removed(&p.name);
@@ -785,6 +915,9 @@ impl Profiles {
         }
         if access != Access::Operator {
             return Err(Error::Unauthorized);
+        }
+        if method == "project.propose" {
+            return self.set_propose(params);
         }
         if method == "project.agents" {
             return self.set_agents(params, hooks);

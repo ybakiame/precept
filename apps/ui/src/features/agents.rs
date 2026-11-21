@@ -251,6 +251,31 @@ pub(crate) fn load_activity(model: Signal<Model>, name: String) {
     );
 }
 
+fn set_propose(model: Signal<Model>, name: String, enabled: bool) {
+    model.update(|m| m.agents.busy = true);
+    super::profile::call(
+        model,
+        "project.propose",
+        serde_json::json!({ "name": name, "enabled": enabled }),
+        move |model, m, r| {
+            m.agents.busy = false;
+            match r {
+                Ok(_) => ui::notify(
+                    ui::Tone::Success,
+                    m.word(if enabled {
+                        Msg::ToastSuggestOn
+                    } else {
+                        Msg::ToastSuggestOff
+                    })
+                    .replace("{name}", &name),
+                ),
+                Err(code) => m.agents.error = Some(code.into()),
+            }
+            spawn(async move { load(model) });
+        },
+    );
+}
+
 fn set_shared(model: Signal<Model>, name: String, enabled: bool) {
     model.update(|m| m.agents.busy = true);
     super::profile::call(
@@ -369,8 +394,56 @@ fn project_access(model: Signal<Model>) -> impl IntoElement {
                         move |on| set_shared(model, toggle_name.clone(), on),
                     )),
             )
+            .child(suggest_row(model, &entry))
             .into_element()
     })
+}
+
+/// Whether the project's agents may suggest rules (`suggest_rule`).
+fn suggest_row(model: Signal<Model>, entry: &ProjectEntry) -> impl IntoElement {
+    let m = model.get_untracked();
+    let on = entry.propose;
+    let name = entry.name.clone();
+    let spoken = entry.name.clone();
+    view()
+        .flex_row()
+        .flex_wrap()
+        .items_center()
+        .gap_3()
+        .pt_3()
+        .border_t_1()
+        .border_color(move || palette(model).hairline)
+        .child(
+            view()
+                .flex_1()
+                .min_w(px(160.0))
+                .gap_0p5()
+                .child(
+                    text(m.word(if on { Msg::SuggestOn } else { Msg::SuggestOff }))
+                        .font_weight(FontWeight::MEDIUM),
+                )
+                .child(
+                    text(m.word(Msg::SuggestHelp))
+                        .text_size(px(scale::text::CAPTION))
+                        .text_color(move || palette(model).muted),
+                ),
+        )
+        .child(ui::switch(
+            model,
+            move || {
+                model
+                    .get()
+                    .word(Msg::SuggestSwitch)
+                    .replace("{name}", &spoken)
+                    .into()
+            },
+            move || on,
+            move || model.get().agents.busy || !entry_shared(&model.get()),
+            move |enabled| set_propose(model, name.clone(), enabled),
+        ))
+}
+fn entry_shared(m: &Model) -> bool {
+    active_entry(m).is_some_and(|e| e.agents)
 }
 
 fn configure(model: Signal<Model>) -> impl IntoElement {

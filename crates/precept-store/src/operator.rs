@@ -137,6 +137,36 @@ impl SqliteStore {
             })
         })
     }
+    /// Before an agent's suggestion: whether the scope already holds this exact
+    /// key and value (suggested or confirmed), and how many agent suggestions
+    /// of the scope still wait for review.
+    pub fn agent_suggestion_state(
+        &self,
+        scope: &Scope,
+        key: &str,
+        value: &str,
+    ) -> Result<(bool, i64)> {
+        self.snapshot(|_| {
+            let (kind, project) = scoped(self, scope)?;
+            let duplicate: i64 = self
+                .db
+                .query_row(
+                    "SELECT COUNT(*) FROM preferences WHERE scope=?1 AND project IS ?2 AND pref_key=?3 AND value=?4 AND status IN ('suggested','confirmed')",
+                    (kind, project, key, value),
+                    |row| row.get(0),
+                )
+                .map_err(|_| Error::ReadFailed)?;
+            let pending: i64 = self
+                .db
+                .query_row(
+                    "SELECT COUNT(*) FROM preferences WHERE scope=?1 AND project IS ?2 AND status='suggested' AND origin='agent'",
+                    (kind, project),
+                    |row| row.get(0),
+                )
+                .map_err(|_| Error::ReadFailed)?;
+            Ok((duplicate > 0, pending))
+        })
+    }
     /// Exact record, bounded recent history and the projected peer-demotion set.
     /// The authoritative demotion set is still computed inside the write transaction.
     pub fn operator_review_inspect(&self, scope: &Scope, id: i64) -> Result<ReviewInspect> {

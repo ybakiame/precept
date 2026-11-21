@@ -281,6 +281,7 @@ fn list(model: Signal<Model>) -> impl IntoElement {
                     root: String::new(),
                     state: "ready".into(),
                     agents: true,
+                    propose: false,
                 })
                 .collect(),
             None => Vec::new(),

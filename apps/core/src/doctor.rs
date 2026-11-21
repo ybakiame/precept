@@ -196,7 +196,28 @@ fn workspace(m: &Model) -> Vec<Check> {
             Some(Fix::Agents),
         )
     };
-    vec![state, shared]
+    let writes = m.profile_info.as_ref().map(|i| i.write_enabled);
+    let suggest = match (entry.propose, writes) {
+        (false, _) => check(
+            Msg::DoctorSuggest,
+            Level::Off,
+            m.word(Msg::DoctorSuggestOff),
+            Some(Fix::Agents),
+        ),
+        (true, Some(false)) => check(
+            Msg::DoctorSuggest,
+            Level::Attention,
+            m.word(Msg::DoctorSuggestWritesOff),
+            Some(Fix::Profile),
+        ),
+        (true, _) => check(
+            Msg::DoctorSuggest,
+            Level::Ok,
+            m.word(Msg::DoctorSuggestOn),
+            None,
+        ),
+    };
+    vec![state, shared, suggest]
 }
 
 /// Whether the integration reads on the Agents state belong to `project`.
@@ -317,10 +338,11 @@ fn activity(m: &Model) -> Check {
             Some(Fix::Agents),
         );
     };
+    // Reads only: a refused suggestion is the suggestions row's business.
     let refused = page
         .events
         .iter()
-        .filter(|e| e.kind == "refused" || e.outcome != "ok")
+        .filter(|e| e.kind == "refused" || (e.kind != "suggested" && e.outcome != "ok"))
         .count();
     if let Some(last) = page.last_read() {
         let client = last
@@ -457,6 +479,7 @@ mod tests {
             root: "/home/u/alpha".into(),
             state: "ready".into(),
             agents: true,
+            propose: false,
         }];
         m.data = Some(std::sync::Arc::new(data));
         m.phase = Phase::Ready;

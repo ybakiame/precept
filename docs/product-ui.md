@@ -114,6 +114,12 @@ configuration, the exact command shown below the tiles) and the project's
 **AGENTS.md** pointer, whose switch opens a dialog previewing the exact text before
 anything is written. Settings with only two states use switches, not button pairs.
 
+Below project sharing, a switch lets the project's agents suggest rules (off by
+default, disabled while the project is not shared); its help says suggestions need
+writes on and stay inactive until confirmed in Review, where they carry the agent
+origin badge. Doctor reports the switch, and warns when it is on while writes are
+off.
+
 The Agents page lists the selected project's recent agent activity from the daemon's
 in-memory log: when an MCP client started `precept-mcp`, what it read (by count), who
 asked (the client's self-reported name, or how it arrived) and each outcome,

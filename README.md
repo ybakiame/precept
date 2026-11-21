@@ -18,8 +18,9 @@ Desktop/TUI operator app.
   human review.
 - Effective context that explains applicable, masked, conflicting and unknown rules
   without letting personal or session state override repository contracts.
-- Exactly two project-bound, read-only MCP tools: `get_effective_context` and
-  `get_handoff`.
+- Project-bound MCP tools: `get_effective_context` and `get_handoff` (read-only)
+  and, where you allow it, `suggest_rule`, which only files a suggestion for your
+  review.
 - Historical Handoffs with revision, branch, worktree and content-drift warnings.
 - A Windows Desktop workflow that operates a daemon inside WSL2 through the typed
   `precept-bridge` helper, without TCP or shell forwarding.

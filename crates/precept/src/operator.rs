@@ -267,6 +267,13 @@ pub enum Project {
     Share { name: String },
     /// Stop external agents (MCP) from reading this project's context.
     Unshare { name: String },
+    /// Whether this project's agents may suggest rules (`suggest_rule`); each
+    /// suggestion still waits for your review. Off by default.
+    Suggestions {
+        name: String,
+        #[arg(value_parser = ["on", "off"])]
+        state: String,
+    },
     /// How an MCP client starts precept-mcp for this project (paths, no token).
     Mcp { name: String },
     /// The project's AGENTS.md pointer: its status and the exact block, or with
@@ -308,6 +315,14 @@ pub async fn project(location: &Location, command: Project) -> Result<Value> {
                 location,
                 "project.agents",
                 json!({"name":name,"enabled":true}),
+            )
+            .await
+        }
+        Project::Suggestions { name, state } => {
+            precept_ipc::operator::control(
+                location,
+                "project.propose",
+                json!({"name":name,"enabled":state == "on"}),
             )
             .await
         }

@@ -102,6 +102,9 @@ pub struct ProjectEntry {
     /// Shared with external agents (MCP); the daemon always reports it.
     #[serde(default)]
     pub agents: bool,
+    /// Agents may suggest rules for it (`suggest_rule`).
+    #[serde(default)]
+    pub propose: bool,
 }
 impl Snapshot {
     pub fn validate(&self) -> Result<(), &'static str> {

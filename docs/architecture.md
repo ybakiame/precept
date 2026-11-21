@@ -17,7 +17,7 @@ flowchart LR
     Store["precept-store<br/>read-only"]
     Profile[("Explicit local<br/>Rust-native Profile v1")]
     Agent["Trusted agent"]
-    MCP["precept-mcp<br/>two read-only tools"]
+    MCP["precept-mcp<br/>read tools + suggest_rule"]
 
     Operator --> Clients
     Clients -->|"Operator IPC"| Daemon

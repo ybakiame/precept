@@ -1,5 +1,5 @@
 use clap::Parser;
-use precept_core::{ContextResolver, documents::FileDocuments};
+use precept_core::{ContextResolver, documents::FileDocuments, operator::Scope};
 use precept_ipc::{
     Access, Error, Location, MAX_PEERS, MAX_REQUESTS, Request, Response, RuntimeLease, Stream,
     read_frame, write_frame,
@@ -57,6 +57,26 @@ struct OperatorContext {
     include_documents: bool,
     #[serde(default)]
     selector: precept_core::contracts::SelectorQuery,
+}
+/// An agent's rule suggestion (`preference.suggest`). The scope is relative to
+/// the agent's own project; there is no way to name another one.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AgentSuggest {
+    /// `project` (this project), `environment` (this machine, for this
+    /// project) or `personal` (every project).
+    scope: String,
+    key: String,
+    value: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    applies_to: precept_core::operator::AppliesTo,
+    #[serde(default)]
+    enforcement: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    client: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -118,6 +138,7 @@ impl Service {
                     | "project.register"
                     | "project.remove"
                     | "project.agents"
+                    | "project.propose"
             )
         {
             return self
@@ -220,6 +241,46 @@ impl Service {
                 return Err(Error::Unauthorized);
             }
             return Ok(self.profiles.list());
+        }
+        if request.method == "preference.suggest" {
+            let Access::Agent { project } = access else {
+                return Err(Error::Unauthorized);
+            };
+            let p: AgentSuggest = decode(params)?;
+            let scope = match p.scope.as_str() {
+                "project" => Scope::Project {
+                    name: project.clone(),
+                },
+                "environment" => Scope::Environment {
+                    name: project.clone(),
+                },
+                "personal" => Scope::Global,
+                _ => return Err(Error::InvalidRequest),
+            };
+            // Every record carries a tag; an untagged suggestion is filed under `agent`.
+            let tags = if p.tags.is_empty() {
+                vec!["agent".to_owned()]
+            } else {
+                p.tags
+            };
+            let tags = precept_ipc::operator::canonical_tags(&tags).ok_or(Error::InvalidRequest)?;
+            let enforcement = match p.enforcement.as_deref() {
+                None => Default::default(),
+                Some(e) => {
+                    precept_core::operator::Enforcement::parse(e).ok_or(Error::InvalidRequest)?
+                }
+            };
+            let rule = precept_core::operator::RuleOptions {
+                applies_to: p.applies_to.canonical().ok_or(Error::InvalidRequest)?,
+                priority: 0,
+                enforcement,
+            };
+            if !rule.valid_for(&scope) {
+                return Err(Error::InvalidRequest);
+            }
+            return self
+                .profiles
+                .agent_suggest(&project, scope, p.key, p.value, tags, rule);
         }
         let (store, roots) = self.profiles.read()?;
         let (project, include, task, selector) = match (request.method.as_str(), access) {
@@ -519,6 +580,7 @@ async fn peer(mut stream: Stream, service: Service, permit: Arc<OwnedSemaphorePe
                 "daemon.health" => Some(activity::Kind::Started),
                 "context.get" => Some(activity::Kind::Context),
                 "handoff.get" => Some(activity::Kind::Handoff),
+                "preference.suggest" => Some(activity::Kind::Suggested),
                 _ => None,
             };
             if let Some(kind) = kind {
@@ -657,7 +719,9 @@ pub(crate) fn test_state(
         .iter()
         .map(|(n, r)| ((*n).to_owned(), r.canonicalize().unwrap()))
         .collect();
-    state.save_projects(&set, &Default::default()).unwrap();
+    state
+        .save_projects(&set, &Default::default(), &Default::default())
+        .unwrap();
     if let Some(profile) = profile {
         state.save_startup(profile).unwrap();
     }

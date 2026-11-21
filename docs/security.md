@@ -56,8 +56,14 @@ separate design with its own threat model.
   entry and keeping a backup. The AGENTS.md pointer is written by the daemon only on an Operator
   request carrying the previewed file digest, only between Precept's markers, in a
   served project's root, never through links; Precept never commits.
-- Exactly two project-bound read-only MCP tools; no administrative previews, profile
-  mutations, context-driven approval or tool-supplied project selector.
+- Project-bound MCP tools: two read-only tools and `suggest_rule`; no
+  administrative previews, decisions, context-driven approval or tool-supplied
+  project selector. `suggest_rule` is accepted only for a project whose agents
+  the operator allowed to suggest (`project.propose`, off by default, persisted in
+  daemon state) and only while the operator has writes on for the daemon run; it
+  can create nothing but a `suggested` record with origin `agent` in its own
+  project, its environment or the personal scope, bounded per run and per scope,
+  with duplicates refused. Nothing is queued while writes are off.
 - Preference confirmation binds the exact record/revision/scope. Only confirmed
   applicable values reach effective context; repository contracts remain authoritative.
 - Document bodies are opt-in, narrowly allowlisted, bounded and contained. Native

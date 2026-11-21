@@ -446,12 +446,16 @@ fn real_stdio_two_schema_versions_and_notifications_remain_compatible() {
             .request(json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}))
             .unwrap();
         let tools = listing["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 2);
+        assert_eq!(tools.len(), 3);
         let names: std::collections::BTreeSet<_> =
             tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert_eq!(
             names,
-            std::collections::BTreeSet::from(["get_effective_context", "get_handoff"])
+            std::collections::BTreeSet::from([
+                "get_effective_context",
+                "get_handoff",
+                "suggest_rule"
+            ])
         );
         for tool in tools {
             assert_eq!(tool["inputSchema"]["additionalProperties"], false);

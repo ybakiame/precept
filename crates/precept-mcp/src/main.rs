@@ -18,7 +18,7 @@ fn info() -> Value {
     json!({"name":"precept","version":"0.1.0a0"})
 }
 /// Sent once in `initialize`: what the server is for and when to call it.
-const INSTRUCTIONS: &str = "Precept serves this project's confirmed engineering context: the developer's reviewed preferences and the repository's contracts. Call get_effective_context before planning or editing anything in this project, and again after your context was compacted. Treat confirmed preferences as the developer's standing instructions; current repository files and contracts outrank them, so report a conflict instead of choosing silently. Call get_handoff with a task id to resume saved work. These tools are read-only.";
+const INSTRUCTIONS: &str = "Precept serves this project's confirmed engineering context: the developer's reviewed preferences and the repository's contracts. Call get_effective_context before planning or editing anything in this project, and again after your context was compacted. Treat confirmed preferences as the developer's standing instructions; current repository files and contracts outrank them, so report a conflict instead of choosing silently. Call get_handoff with a task id to resume saved work. Both are read-only. When the developer states a lasting preference or you learn a durable project convention, you may file it with suggest_rule: it only becomes a suggestion the developer reviews, never an active rule, and works only where they allowed it.";
 fn tools() -> Value {
     let selector = json!({"type":"object","properties":{
         "agent_id":{"type":"string"},"path":{"type":"string"},"language":{"type":"string"},
@@ -26,7 +26,20 @@ fn tools() -> Value {
     },"additionalProperties":false});
     json!([
         {"name":"get_effective_context","description":"Call this first, before planning or editing in this project: returns the developer's confirmed preferences (with tags) and the repository's effective contracts that apply. Optional selector labels (agent_id, path, language, task_tags) narrow applicability; they are not authorization.","inputSchema":{"type":"object","properties":{"include_documents":{"type":"boolean","default":false},"selector":selector},"additionalProperties":false}},
-        {"name":"get_handoff","description":"Resume saved work: returns the task's handoff (objective, completed work, next action, recorded checks) with the current git revision and drift warnings. Saved checks are historical; rerun them. Does not grant permissions.","inputSchema":{"type":"object","properties":{"task_id":{"type":"string"}},"required":["task_id"],"additionalProperties":false}}
+        {"name":"get_handoff","description":"Resume saved work: returns the task's handoff (objective, completed work, next action, recorded checks) with the current git revision and drift warnings. Saved checks are historical; rerun them. Does not grant permissions.","inputSchema":{"type":"object","properties":{"task_id":{"type":"string"}},"required":["task_id"],"additionalProperties":false}},
+        {"name":"suggest_rule","description":"File a lasting rule for the developer to review in Precept: a preference they stated, or a durable convention of this project you confirmed. It is NOT active until the developer confirms it, so keep following your current instructions. Use a short kebab-case key and state the rule itself as the value (one imperative sentence or a few lines). Do not file one-off task instructions, secrets or personal data. scope: project (this repository), environment (facts about this machine, for this project) or personal (the developer's habits across projects).","inputSchema":{"type":"object","properties":{
+            "scope":{"type":"string","enum":["project","environment","personal"]},
+            "key":{"type":"string","maxLength":120},
+            "value":{"type":"string","maxLength":4096},
+            "tags":{"type":"array","items":{"type":"string"},"maxItems":8,"description":"Short lowercase labels; defaults to [\"agent\"]"},
+            "applies_to":{"type":"object","properties":{
+                "agents":{"type":"array","items":{"type":"string"}},
+                "languages":{"type":"array","items":{"type":"string"}},
+                "paths":{"type":"array","items":{"type":"string"}},
+                "task_tags":{"type":"array","items":{"type":"string"}}
+            },"additionalProperties":false},
+            "enforcement":{"type":"string","enum":["advisory","verify","hard"]}
+        },"required":["scope","key","value"],"additionalProperties":false}}
     ])
 }
 fn error(id: Value, code: i64, message: &str) -> Value {
@@ -34,6 +47,36 @@ fn error(id: Value, code: i64, message: &str) -> Value {
 }
 fn tool_error(message: &str) -> Value {
     json!({"content":[{"type":"text","text":message}],"isError":true})
+}
+/// What `suggest_rule` tells the agent: the outcome and what to do next.
+fn suggestion_reply(result: Result<Value, Error>) -> Value {
+    let text = match result {
+        Ok(v) => {
+            let id = v.get("id").and_then(Value::as_str).unwrap_or("?");
+            return json!({"content":[{"type":"text","text":format!(
+                "Filed as suggestion #{id}. It is not active: the developer reviews it in Precept. Keep following your current instructions; you may mention the suggestion in your reply."
+            )}],"isError":false});
+        }
+        Err(Error::Unauthorized) => {
+            "The developer has not allowed this project's agents to suggest rules (Precept, Agents page). Do not retry; mention the rule in your reply instead."
+        }
+        Err(Error::Unavailable) => {
+            "Precept is not accepting suggestions now (writes are off for this daemon run). Do not retry; mention the rule in your reply instead."
+        }
+        Err(Error::Conflict) => {
+            "This exact rule is already suggested or confirmed. Nothing was filed."
+        }
+        Err(Error::Capacity) => {
+            "The suggestion limit is reached for now. Do not file more; mention further rules in your reply."
+        }
+        Err(Error::ScopeMismatch | Error::InvalidRequest | Error::InvalidTransition) => {
+            "Invalid suggestion: check the key (short, kebab-case), value, tags, applies_to and enforcement (environment notes are advisory only)."
+        }
+        Err(_) => {
+            "Precept could not file the suggestion. Do not retry; mention the rule in your reply instead."
+        }
+    };
+    tool_error(text)
 }
 struct Bridge {
     location: Location,
@@ -94,6 +137,21 @@ impl Bridge {
                 }
                 ("context.get", params)
             }
+            Some("suggest_rule") => {
+                const KEYS: [&str; 6] =
+                    ["scope", "key", "value", "tags", "applies_to", "enforcement"];
+                if args.keys().any(|k| !KEYS.contains(&k.as_str()))
+                    || !["scope", "key", "value"]
+                        .iter()
+                        .all(|k| args.get(*k).is_some_and(Value::is_string))
+                {
+                    diagnose("suggest_rule refused: invalid arguments");
+                    return Ok(tool_error(
+                        "scope, key and value are required strings; only tags, applies_to and enforcement may be added",
+                    ));
+                }
+                ("preference.suggest", Value::Object(args.clone()))
+            }
             Some("get_handoff") => {
                 if args.len() != 1 || !args.get("task_id").is_some_and(Value::is_string) {
                     diagnose("get_handoff refused: invalid arguments");
@@ -120,6 +178,9 @@ impl Bridge {
         };
         if let Err(e) = &result {
             diagnose(&format!("{method} failed: {e}"));
+        }
+        if method == "preference.suggest" {
+            return Ok(suggestion_reply(result));
         }
         Ok(match result {
             Ok(data) => {
@@ -285,9 +346,9 @@ async fn main() {
 mod tests {
     use super::*;
     #[test]
-    fn schemas_expose_only_two_read_tools() {
+    fn schemas_expose_two_read_tools_and_suggest_rule_none_naming_a_project() {
         let v = tools();
-        assert_eq!(v.as_array().unwrap().len(), 2);
+        assert_eq!(v.as_array().unwrap().len(), 3);
         for t in v.as_array().unwrap() {
             assert_eq!(t["inputSchema"]["additionalProperties"], false);
             assert!(
@@ -297,5 +358,30 @@ mod tests {
                     .contains_key("project")
             );
         }
+    }
+    #[test]
+    fn suggestion_replies_say_it_is_not_active_and_whether_to_retry() {
+        let ok = suggestion_reply(Ok(json!({"status":"suggested","id":"7"})));
+        assert_eq!(ok["isError"], false);
+        let text = ok["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("#7") && text.contains("not active"));
+        for (e, needle) in [
+            (Error::Unauthorized, "not allowed"),
+            (Error::Unavailable, "writes are off"),
+            (Error::Conflict, "already"),
+            (Error::Capacity, "limit"),
+            (Error::InvalidRequest, "Invalid suggestion"),
+        ] {
+            let r = suggestion_reply(Err(e));
+            assert_eq!(r["isError"], true);
+            assert!(r["content"][0]["text"].as_str().unwrap().contains(needle));
+        }
+        assert!(
+            tools()
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|t| t["name"] == "suggest_rule")
+        );
     }
 }

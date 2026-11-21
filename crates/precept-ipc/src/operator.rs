@@ -21,6 +21,7 @@ pub const CONTROL_METHODS: &[&str] = &[
     "project.check",
     "project.list",
     "project.agents",
+    "project.propose",
     "project.mcp",
     "activity.list",
     "integration.pointer",
