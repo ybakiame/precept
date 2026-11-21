@@ -158,6 +158,22 @@ impl Request {
                 }
                 (expected, Some(scope))
             }
+            Command::DecideBatch { items, .. } => {
+                let mut ids = std::collections::BTreeSet::new();
+                if items.is_empty()
+                    || items.len() > precept_core::operator::MAX_BATCH
+                    || items.iter().any(|i| {
+                        i.id <= 0
+                            || !ids.insert(i.id)
+                            || !digest(&i.proposal_digest)
+                            || !matches!(i.expected, Expected::Revision(n) if n > 0)
+                            || matches!(&i.scope, Scope::Project { name } | Scope::Environment { name } if !name_valid(name))
+                    })
+                {
+                    return Err(Error::InvalidCommand);
+                }
+                (&items[0].expected, Some(&items[0].scope))
+            }
             Command::PutHandoff {
                 project,
                 task_id,

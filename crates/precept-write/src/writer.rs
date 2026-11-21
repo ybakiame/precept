@@ -602,6 +602,55 @@ fn mutate(
             .map_err(crate::sql_error)?;
             versions.insert(pref_key(*id), (revision, false));
         }
+        Command::DecideBatch {
+            decision,
+            items,
+            channel,
+            note,
+        } => {
+            // Each item through the one-record path, in order, inside this
+            // transaction; a record touched twice (two of one key) refuses all.
+            for item in items {
+                let next: i64 = db
+                    .query_row(
+                        "SELECT next_review_id FROM acp_profile WHERE singleton=1",
+                        [],
+                        |r| r.get(0),
+                    )
+                    .map_err(crate::sql_error)?;
+                let (id, scope, proposal_digest, expected, channel, note) = (
+                    item.id,
+                    item.scope.clone(),
+                    item.proposal_digest.clone(),
+                    item.expected.clone(),
+                    *channel,
+                    note.clone(),
+                );
+                let single = match decision {
+                    precept_core::operator::BatchDecision::Confirm => Command::ConfirmPreference {
+                        id,
+                        scope,
+                        proposal_digest,
+                        channel,
+                        expected,
+                        note,
+                    },
+                    precept_core::operator::BatchDecision::Reject => Command::RejectPreference {
+                        id,
+                        scope,
+                        proposal_digest,
+                        channel,
+                        expected,
+                        note,
+                    },
+                };
+                for (key, version) in mutate(db, &single, now, allocated, sequence, next)? {
+                    if versions.insert(key, version).is_some() {
+                        return Err(Error::Conflict);
+                    }
+                }
+            }
+        }
         Command::PutHandoff {
             project,
             task_id,

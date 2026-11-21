@@ -806,6 +806,21 @@ impl Profiles {
                     Some(name)
                 }
                 Command::PutHandoff { project, .. } => Some(project),
+                // Every item's project must be served; the first is the one
+                // whose root is rechecked at admission.
+                Command::DecideBatch { items, .. } => {
+                    let names: Vec<&String> = items
+                        .iter()
+                        .filter_map(|i| match &i.scope {
+                            Scope::Global => None,
+                            Scope::Project { name } | Scope::Environment { name } => Some(name),
+                        })
+                        .collect();
+                    if names.iter().any(|n| !s.projects.contains_key(*n)) {
+                        return Err(Error::Unauthorized);
+                    }
+                    names.first().copied()
+                }
                 Command::SuggestPreference { scope, .. }
                 | Command::SetPreferenceEnabled { scope, .. }
                 | Command::ConfirmPreference { scope, .. }

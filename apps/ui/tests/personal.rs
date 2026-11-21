@@ -359,4 +359,55 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
         history["decisions"][0]["note"],
         "Key should say what it governs."
     );
+
+    // A batch: pick two suggestions, add a note, confirm both in one write.
+    let binding: operator::Binding = serde_json::from_value(f.info()["binding"].clone()).unwrap();
+    let another = operator::Mutation {
+        version: 2,
+        binding,
+        operation_id: "agent-review".into(),
+        command: operator::Command::SuggestPreference {
+            scope: operator::Scope::Global,
+            key: "review-style".into(),
+            value: "Review in small batches.".into(),
+            tags: vec!["review".into()],
+            origin: operator::Origin::Agent,
+            rule: Default::default(),
+            expected: operator::Expected::Absent,
+        },
+    };
+    tokio_runtime(|| operator::mutate(&f.location, &another)).unwrap();
+    // The edit opened its replacement (#3) for confirmation; close it.
+    app.wait_for("#3 · answer-length").unwrap();
+    app.press("Close detail").unwrap();
+    app.press("Refresh").unwrap();
+    contains(&mut app, "#4 · review-style · suggested · r1");
+    assert!(!app.screen().shows("Confirm 2…"));
+    app.press("Pick #3 for a batch decision").unwrap();
+    app.press("Pick #4 for a batch decision").unwrap();
+    app.wait_for("2 picked").unwrap();
+    app.type_text("Note (optional)", "Both reviewed together.")
+        .unwrap();
+    app.press("Confirm 2…").unwrap();
+    app.wait_for("Prepared operation; no write sent yet")
+        .unwrap();
+    contains(&mut app, "Confirm 2 suggestions");
+    app.press_key("alt+shift+v").unwrap();
+    let start = Instant::now();
+    while record(&f, 4).unwrap()["status"] != "confirmed" {
+        assert!(start.elapsed() < Duration::from_secs(10), "batch applied");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(record(&f, 3).unwrap()["status"], "confirmed");
+    let history = f
+        .call(
+            "profile.review.inspect",
+            json!({"scope":{"kind":"global"},"id":4,"revision":2}),
+        )
+        .unwrap();
+    assert_eq!(history["decisions"][0]["note"], "Both reviewed together.");
+    app.wait_until("selection cleared", Duration::from_secs(10), |s| {
+        !s.shows("2 picked")
+    })
+    .unwrap();
 }

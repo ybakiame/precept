@@ -154,6 +154,13 @@ is kept with the next confirm, reject, retire or edit and shown in the record's
 history, with "replaced by #N" for edits. Agents cannot edit: a correction from an
 agent is a new suggestion.
 
+Suggested rows (in To review and in a scope's list) have a checkbox. While any are
+picked, a bar above the list shows the count, an optional note and **Confirm N…**
+/ **Reject N…** / **Clear**; the prepared operation lists every picked record (id,
+key, digest prefix) before one write decides them all, each as its own decision.
+If any picked record changed since it was listed, nothing is written. Switching
+tab or scope clears the selection.
+
 The Preferences & contracts page starts with the repository's effective contracts
 (read-only; changed in the repository), then one virtualized list of the confirmed
 effective rows, with no pages. Tag filters above it narrow to rows carrying every selected tag; the filter

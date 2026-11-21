@@ -92,6 +92,8 @@ pub struct Operator {
     pub note: String,
     /// The suggestion whose edited version the draft holds.
     pub revising: Option<i64>,
+    /// Suggestions picked for one batch decision (ids, ascending).
+    pub batch: Vec<i64>,
     pub task: String,
     pub error: Option<String>,
     pub receipt: Option<Receipt>,
@@ -155,6 +157,35 @@ impl Operator {
     /// The exact selected record paired with the binding of the snapshot that
     /// sourced it. A held exact inspect snapshot outranks list/queue pages for
     /// the same id, so Detail never acts on a superseded page row.
+    /// Picks or unpicks a suggestion for the batch.
+    pub fn toggle_batch(&mut self, id: i64) {
+        match self.batch.binary_search(&id) {
+            Ok(i) => {
+                self.batch.remove(i);
+            }
+            Err(i) if self.batch.len() < precept_core::operator::MAX_BATCH => {
+                self.batch.insert(i, id)
+            }
+            Err(_) => {}
+        }
+        self.review = None;
+    }
+    /// The picked suggestions as the current list shows them (the queue on
+    /// To review, else the scope's records), with that list's binding.
+    pub fn batch_records(&self) -> (Vec<&PreferenceRecord>, Option<&Binding>) {
+        let (records, binding) = match (&self.queue, &self.page) {
+            (Some(q), _) if self.mode == ReviewMode::Inbox => (&q.records, Some(&q.binding)),
+            (_, Some(p)) => (&p.records, Some(&p.binding)),
+            _ => return (Vec::new(), None),
+        };
+        (
+            records
+                .iter()
+                .filter(|r| r.status == "suggested" && self.batch.binary_search(&r.id).is_ok())
+                .collect(),
+            binding,
+        )
+    }
     fn selected(&self) -> Option<(&PreferenceRecord, &Binding)> {
         let id = self.selected_id?;
         if let Some(i) = &self.inspect
@@ -442,6 +473,50 @@ impl Model {
                 )
             }
             "disable" if info.write_enabled => ("profile.write.disable", json!({}), None),
+            "batch_confirm" | "batch_reject" if info.write_enabled => {
+                let Some(binding) = info.binding.clone() else {
+                    return false;
+                };
+                let (records, source) = self.operator.batch_records();
+                // Every picked row must still be listed, from this Profile.
+                if records.is_empty()
+                    || records.len() != self.operator.batch.len()
+                    || source != Some(&binding)
+                {
+                    return false;
+                }
+                let Some(note) =
+                    precept_core::operator::canonical_note(Some(self.operator.note.as_str()))
+                else {
+                    self.operator.error = Some("InvalidNote".into());
+                    return false;
+                };
+                let items = records
+                    .iter()
+                    .map(|r| precept_core::operator::BatchItem {
+                        id: r.id,
+                        scope: r.scope.clone(),
+                        proposal_digest: r.proposal_digest.clone(),
+                        expected: Expected::Revision(r.revision),
+                    })
+                    .collect();
+                let mutation = Mutation {
+                    version: 2,
+                    binding,
+                    operation_id: operation_id.into(),
+                    command: Command::DecideBatch {
+                        decision: if action == "batch_confirm" {
+                            precept_core::operator::BatchDecision::Confirm
+                        } else {
+                            precept_core::operator::BatchDecision::Reject
+                        },
+                        items,
+                        channel: self.operator.channel,
+                        note,
+                    },
+                };
+                ("profile.mutate", json!({}), Some(mutation))
+            }
             "suggest" | "confirm" | "reject" | "deprecate" | "delete" | "switch_on"
             | "switch_off" | "revise"
                 if info.write_enabled =>
@@ -960,6 +1035,7 @@ impl Model {
                     self.operator.receipt = Some(receipt);
                     self.operator.note.clear();
                     self.operator.revising = None;
+                    self.operator.batch.clear();
                     self.operator.pending = None;
                     self.operator.outcome_unknown = false;
                     self.operator.page = None;

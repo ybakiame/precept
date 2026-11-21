@@ -380,6 +380,16 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         note: Option<String>,
     },
+    /// Confirms or rejects several exact suggestions in one write, each as
+    /// its own decision: every item must still be the reviewed revision and
+    /// proposal, or nothing is written.
+    DecideBatch {
+        decision: BatchDecision,
+        items: Vec<BatchItem>,
+        channel: Channel,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        note: Option<String>,
+    },
     DeletePreference {
         id: i64,
         scope: Scope,
@@ -399,6 +409,25 @@ pub enum Command {
     },
 }
 
+/// What a batch decides for each of its items.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BatchDecision {
+    Confirm,
+    Reject,
+}
+/// One exact suggestion of a batch.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BatchItem {
+    pub id: i64,
+    pub scope: Scope,
+    pub proposal_digest: String,
+    pub expected: Expected,
+}
+/// The most suggestions one batch decides.
+pub const MAX_BATCH: usize = 50;
+
 impl Command {
     /// The operator's note on a decision, if the command carries one.
     pub fn note(&self) -> Option<&str> {
@@ -406,7 +435,8 @@ impl Command {
             Command::ConfirmPreference { note, .. }
             | Command::RejectPreference { note, .. }
             | Command::DeprecatePreference { note, .. }
-            | Command::ReviseSuggestion { note, .. } => note.as_deref(),
+            | Command::ReviseSuggestion { note, .. }
+            | Command::DecideBatch { note, .. } => note.as_deref(),
             _ => None,
         }
     }

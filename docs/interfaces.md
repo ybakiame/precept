@@ -43,6 +43,10 @@ channel, expected, note?}` replaces a suggestion with the operator's edited vers
 in one write: the new record is `suggested` with origin `operator` and still needs
 confirmation; the old one becomes `rejected` through a `replace` decision naming
 `replaced_by`. Only a suggestion can be revised. Agents have no edit path.
+`decide_batch {decision: confirm|reject, items: [{id, scope, proposal_digest,
+expected}], channel, note?}` decides 1 to 50 exact suggestions in one write, each
+as its own decision with the note; any stale item, or two items touching one record
+(two suggestions of one key in a confirm batch), refuses the whole batch.
 
 Effective context keeps a confirmed, enabled rule unless the request's selector
 definitely mismatches its `applies_to` (a dimension the request does not name

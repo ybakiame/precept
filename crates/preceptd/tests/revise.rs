@@ -139,3 +139,93 @@ fn notes_stay_with_decisions_and_an_edit_replaces_a_suggestion_in_one_write() {
         .control("profile.select", json!({"path":f.db}))
         .expect("notes and replacements verify");
 }
+
+#[test]
+fn a_batch_decides_exact_suggestions_all_or_nothing() {
+    use precept_core::operator::{BatchDecision, BatchItem};
+    let mut f = Fixture::created();
+    let b = f.daemon.enable();
+    let (a, da) = suggest(&f, &b, "a", "alpha-key", &["git"]);
+    let (bb, db) = suggest(&f, &b, "b", "beta-key", &["git"]);
+    let (c, dc) = suggest(&f, &b, "c", "alpha-key", &["style"]);
+    let item = |id: i64, digest: &str, revision: i64| BatchItem {
+        id,
+        scope: Scope::Global,
+        proposal_digest: digest.into(),
+        expected: Expected::Revision(revision),
+    };
+    let batch = |decision, items: Vec<BatchItem>| Command::DecideBatch {
+        decision,
+        items,
+        channel: Channel::Desktop,
+        note: Some("Imported again after the schema change.".into()),
+    };
+    // Two of one key in one confirm batch: refused, nothing written.
+    assert_eq!(
+        f.daemon
+            .mutate(
+                &b,
+                "same-key",
+                batch(
+                    BatchDecision::Confirm,
+                    vec![item(a, &da, 1), item(c, &dc, 1)]
+                )
+            )
+            .err(),
+        Some(Error::Conflict)
+    );
+    // A stale item refuses the whole batch.
+    assert_eq!(
+        f.daemon
+            .mutate(
+                &b,
+                "stale",
+                batch(
+                    BatchDecision::Confirm,
+                    vec![item(a, &da, 1), item(bb, &db, 2)]
+                )
+            )
+            .err(),
+        Some(Error::Conflict)
+    );
+    assert_eq!(get(&f, a)["status"], "suggested", "nothing written");
+    let receipt = f
+        .daemon
+        .mutate(
+            &b,
+            "confirm-two",
+            batch(
+                BatchDecision::Confirm,
+                vec![item(a, &da, 1), item(bb, &db, 1)],
+            ),
+        )
+        .unwrap();
+    assert_eq!(receipt["affected"].as_array().unwrap().len(), 2);
+    assert_eq!(get(&f, a)["status"], "confirmed");
+    assert_eq!(get(&f, bb)["status"], "confirmed");
+    assert_eq!(
+        history(&f, bb, 2)[0]["note"],
+        "Imported again after the schema change."
+    );
+    f.daemon
+        .mutate(
+            &b,
+            "reject-one",
+            batch(BatchDecision::Reject, vec![item(c, &dc, 1)]),
+        )
+        .unwrap();
+    assert_eq!(get(&f, c)["status"], "rejected");
+    // Empty and oversized batches are malformed.
+    assert_eq!(
+        f.daemon
+            .mutate(&b, "empty", batch(BatchDecision::Confirm, vec![]))
+            .err(),
+        Some(Error::InvalidRequest)
+    );
+    f.daemon.kill();
+    f.daemon = Daemon::relaunch(f.temp.path(), "run-b");
+    f.daemon.ready();
+    f.daemon
+        .control("profile.select", json!({"path":f.db}))
+        .expect("batch decisions verify");
+}

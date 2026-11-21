@@ -45,6 +45,9 @@ pub(crate) fn open_mode(model: Signal<Model>, mode: ReviewMode) {
         if !m.operator.open {
             m.operator.info = None;
         }
+        if m.operator.mode != mode {
+            m.operator.batch.clear();
+        }
         m.operator.mode = mode;
         m.operator.open = true;
         m.settings = false;
@@ -538,6 +541,7 @@ fn queue_row(
                 .flex_row()
                 .items_center()
                 .gap_2()
+                .child(pick(model, r))
                 .child(view().flex_1().min_w_0().child(action(
                     model,
                     label,
@@ -568,6 +572,101 @@ fn queue_row(
         .child(record_meta(model, r))
         .bind_motion(&arrive)
         .into_element()
+}
+/// The batch checkbox of a suggested row (nothing for other statuses).
+fn pick(model: Signal<Model>, r: &PreferenceRecord) -> AnyElement {
+    if r.status != "suggested" {
+        return view().into_element();
+    }
+    let id = r.id;
+    ui::checkbox(
+        model,
+        move || {
+            model
+                .get()
+                .word(Msg::BatchPick)
+                .replace("{id}", &id.to_string())
+                .into()
+        },
+        move || model.get().operator.batch.binary_search(&id).is_ok(),
+        move || !write_grant(model) || model.get().operator.busy,
+        move |_| model.update(|m| m.operator.toggle_batch(id)),
+    )
+    .into_element()
+}
+/// What to do with the picked suggestions: a note, then confirm or reject
+/// them all in one write. Shown only while something is picked.
+fn batch_bar(model: Signal<Model>) -> impl IntoElement {
+    let count = move || model.get().operator.batch.len();
+    let words = move |key: Msg| {
+        move || -> SharedString {
+            model
+                .get()
+                .word(key)
+                .replace("{n}", &count().to_string())
+                .into()
+        }
+    };
+    let ready = move || available(model) && write_grant(model) && !model.get().operator.busy;
+    view()
+        .style_when(move || count() == 0, |s| s.hidden())
+        .gap_2()
+        .p_3()
+        .rounded(px(ui::scale::radius::CONTAINER))
+        .border_1()
+        .border_color(move || palette(model).primary)
+        .bg(move || mix(palette(model).panel, palette(model).primary, 0.06))
+        .child(
+            view()
+                .flex_row()
+                .flex_wrap()
+                .items_center()
+                .gap_2()
+                .child(
+                    text(words(Msg::BatchPicked))
+                        .font_weight(FontWeight::MEDIUM)
+                        .flex_1(),
+                )
+                .child(
+                    ui::button(model, "")
+                        .label_fn(words(Msg::BatchConfirm))
+                        .size(ui::ButtonSize::Small)
+                        .variant(ui::ButtonVariant::Primary)
+                        .disabled(move || !ready())
+                        .on_press(move || review(model, "batch_confirm")),
+                )
+                .child(
+                    ui::button(model, "")
+                        .label_fn(words(Msg::BatchReject))
+                        .size(ui::ButtonSize::Small)
+                        .disabled(move || !ready())
+                        .on_press(move || review(model, "batch_reject")),
+                )
+                .child(
+                    ui::button(model, "")
+                        .label_fn(move || model.get().word(Msg::BatchClear).into())
+                        .size(ui::ButtonSize::Small)
+                        .variant(ui::ButtonVariant::Ghost)
+                        .on_press(move || model.update(|m| m.operator.batch.clear())),
+                ),
+        )
+        .child(
+            ui::input(model, "")
+                .label_fn(move || model.get().word(Msg::DecisionNote).into())
+                .value(move || model.get().operator.note.clone())
+                .disabled(move || model.get().operator.busy || model.get().operator.outcome_unknown)
+                .on_change(move |v: &str| {
+                    model.update(|m| {
+                        m.operator.review = None;
+                        m.operator.note = v.chars().take(600).collect();
+                    })
+                }),
+        )
+        .child(
+            text(move || model.get().word(Msg::BatchHelp))
+                .text_size(px(ui::scale::text::CAPTION))
+                .text_color(move || palette(model).muted),
+        )
 }
 /// A record's tags and origin on one wrapping line.
 fn record_meta(model: Signal<Model>, r: &PreferenceRecord) -> AnyElement {
@@ -1196,6 +1295,7 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
         .child(mode_tabs(model))
         .child(writes_notice(model))
         .child(page_toolbar(model, add_open))
+        .child(batch_bar(model))
         .child(
             view()
                 .style_when(
@@ -1542,6 +1642,7 @@ fn page_toolbar(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElemen
                 model.update(|m| {
                     if m.operator.global != global {
                         m.operator.invalidate();
+                        m.operator.batch.clear();
                         m.operator.global = global;
                         m.operator.after_id = 0;
                         m.operator.queue_after_id = 0;
@@ -1692,6 +1793,7 @@ fn record_row(
                 .items_center()
                 .gap_3()
                 .min_h(px(ui::scale::control::LG))
+                .child(pick(model, r))
                 .child(view().flex_1().min_w_0().child(action(
                     model,
                     format!(
@@ -1911,6 +2013,37 @@ fn apply_dialog(model: Signal<Model>, destructive: bool) -> impl IntoElement {
                             Command::SuggestPreference { key, value, .. } => {
                                 lines.push(sanitize(key, 120));
                                 lines.extend(literal(value).into_iter().take(6));
+                            }
+                            Command::DecideBatch {
+                                decision, items, ..
+                            } => {
+                                let confirm =
+                                    *decision == precept_ui_core::operator::BatchDecision::Confirm;
+                                lines.push(
+                                    m.word(if confirm {
+                                        Msg::BatchConfirmLine
+                                    } else {
+                                        Msg::BatchRejectLine
+                                    })
+                                    .replace("{n}", &items.len().to_string()),
+                                );
+                                let (listed, _) = m.operator.batch_records();
+                                for i in items {
+                                    let key = listed
+                                        .iter()
+                                        .find(|r| r.id == i.id)
+                                        .map(|r| sanitize(&r.key, 80))
+                                        .unwrap_or_default();
+                                    lines.push(format!(
+                                        "#{} · {} · {}…",
+                                        i.id,
+                                        key,
+                                        i.proposal_digest.chars().take(12).collect::<String>()
+                                    ));
+                                }
+                                if confirm {
+                                    lines.push(m.word(Msg::OperatorPeerWarning).into());
+                                }
                             }
                             Command::ReviseSuggestion {
                                 id,
