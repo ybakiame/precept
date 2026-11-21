@@ -728,6 +728,8 @@ fn hook_detail(m: &Model, vendor: &str, event: &str) -> String {
     }
     m.word(if vendor == "codex" {
         Msg::HookOnCodex
+    } else if event == "pre_tool" {
+        Msg::GateHookOn
     } else {
         Msg::HookOn
     })
@@ -1103,12 +1105,14 @@ pub(crate) fn activity_row(
                     e.outcome.clone()
                 },
             )
-            .variant(if ok {
-                BadgeVariant::Success
-            } else if refused || e.outcome == "Unauthorized" {
-                BadgeVariant::Danger
-            } else {
-                BadgeVariant::Warning
+            // A gate's answer is a decision, not a failure: a denial is the
+            // one worth a look; allow and off are routine.
+            .variant(match (e.kind.as_str(), e.outcome.as_str()) {
+                (_, "ok") | ("gate", "allow") => BadgeVariant::Success,
+                ("gate", "off") => BadgeVariant::Neutral,
+                ("gate", "deny") => BadgeVariant::Warning,
+                _ if refused || e.outcome == "Unauthorized" => BadgeVariant::Danger,
+                _ => BadgeVariant::Warning,
             }),
         )
         .into_element()

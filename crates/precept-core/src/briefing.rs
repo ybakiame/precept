@@ -119,6 +119,26 @@ fn work(context: &Value) -> String {
     out
 }
 
+/// Markdown text placed under a `###` entry: its own headings move below
+/// that level (`# A` becomes `#### A`), outside fenced code.
+fn demote(text: &str) -> String {
+    let mut fenced = false;
+    text.lines()
+        .map(|l| {
+            if l.trim_start().starts_with("```") {
+                fenced = !fenced;
+            }
+            let hashes = l.chars().take_while(|c| *c == '#').count();
+            if !fenced && (1..=6).contains(&hashes) && l[hashes..].starts_with(' ') {
+                format!("{}{l}", "#".repeat(3.min(6 - hashes)))
+            } else {
+                l.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// A repository rule: its key, file, tags, declared enforcement and what its
 /// checks found now, then its text.
 fn rule_entry(r: &Value) -> String {
@@ -188,7 +208,7 @@ fn rule_entry(r: &Value) -> String {
         r.get("text").and_then(Value::as_str).unwrap_or("").trim(),
         MAX_VALUE,
     );
-    entry.push_str(text);
+    entry.push_str(&demote(text));
     if cut_text {
         entry.push_str(" …");
     }
@@ -282,7 +302,7 @@ pub fn render(project: &str, context: &Value, moment: Moment) -> String {
         if let Some(where_) = applies(p) {
             entry.push_str(&format!("Applies to {where_} only.\n\n"));
         }
-        entry.push_str(value);
+        entry.push_str(&demote(value));
         if cut_value {
             entry.push_str(" …");
         }
@@ -364,6 +384,10 @@ mod tests {
         assert!(b.contains("was compacted"));
         assert!(b.contains("### formatter\n\n_repository · `.precept/rules/formatter.md` · #rust · hard · check failing: `rustfmt.toml` is missing (1/2 pass)_"));
         assert!(b.contains("Allowed values: rustfmt\n\nUse rustfmt."));
+        assert_eq!(
+            demote("# A\n```\n# not\n```\n### B"),
+            "#### A\n```\n# not\n```\n###### B"
+        );
         assert!(b.contains("1 rule file(s)"));
         assert!(b.contains("### style\n\n_personal · #style #docs_\n\nShort sentences."));
         assert!(b.contains("_this project_"));
