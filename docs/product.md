@@ -80,18 +80,46 @@ confirms the exact record; editing a reviewed value is a new suggestion.
 Automatic learning (for example, a repeated gate denial or test failure becoming a
 suggested rule) may only create suggestions, never bind a rule.
 
+## Connecting agents
+
+Two channels carry rules to an agent; use both where the harness allows it.
+
+| | Hooks only | MCP only | Hooks + MCP (recommended) |
+| --- | --- | --- | --- |
+| How rules arrive | A briefing at session start and after compaction, without the agent asking | When the agent calls `get_effective_context`; an agent that does not call gets nothing | The briefing always; details on demand |
+| What the agent reads | Confirmed preferences, repository rules with their check results, environment notes, open work sessions; at most 12 KiB, then cut | Everything, narrowed by path, language or task; documents on request; Handoffs | Both |
+| Can the agent give back | No (read-only) | Yes: rule suggestions and updates, its work session | Yes |
+| Continuity across agents and compaction | Sees work others left, cannot record its own | Records its work, may not read others' | The full loop |
+| Harnesses | Those with a session-start hook: Claude Code, Codex, Antigravity | Any MCP client | Claude Code, Codex, Antigravity |
+
+Add-ons, for the cases that need them:
+
+| Add-on | What it adds | When to use it | Cost |
+| --- | --- | --- | --- |
+| Pre-tool gate | Denies shell commands and file writes that break a hard rule's guard | Things that must not happen (force pushes, editing a lock file), with those rules committed | One local question per mediated tool call; only calls routed through the hook; not a sandbox |
+| AGENTS.md pointer | Tells agents that read AGENTS.md to call the `precept` MCP server | Agents without a session-start hook, or MCP-only setups | Committed: teammates without Precept see a pointer to a server they do not have; best for solo repositories or teams that all use Precept |
+| Rules in Git (`.precept/rules`) | Conventions that travel with the repository, reviewed like code, for every person and machine; checks and guards | Shared conventions; checks ("verified"); the gate, whose guards come only from committed rule files | Kept and committed in the repository; uncommitted files do not apply |
+
+The gate depends on committed rules: Profile conventions never deny a call. The
+pointer matters most without hooks; with hooks the briefing already tells the agent
+where its context is.
+
+A path that grows with need: start with hooks + MCP and rules in the Profile; commit
+stable project conventions with checks when a team shares them; add guards and the
+gate for what must never happen; use MCP with the AGENTS.md pointer for agents that
+have no hooks.
+
 ## Integrations Precept writes
 
 Precept may write, only on an explicit operator action with a preview, and always
 revocably:
 
-- a Precept-marked pointer block inside a repository's agent files
-  (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.cursor/rules`), touching nothing
-  outside its markers;
-- Precept-owned hook groups inside a harness's own configuration, touching nothing
-  else;
-- reviewed project contract files, as a change the user commits through their own
-  review.
+- a Precept-marked pointer block inside a repository's `AGENTS.md`, touching
+  nothing outside its markers;
+- Precept-owned hook groups and the one `precept` MCP server entry inside a
+  harness's own configuration, touching nothing else;
+- repository rule files under `.precept/rules/`, as a change the user commits
+  through their own review.
 
 It never commits, pushes, rewrites other content, scans for repositories or
 installs integrations on its own. Environment notes never enter a committed file.

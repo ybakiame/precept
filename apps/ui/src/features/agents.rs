@@ -866,6 +866,42 @@ fn group(
         .child(tiles)
 }
 
+/// Each agent's connection level (hooks, MCP, both) with what it means;
+/// the recommended setup and the add-ons in one line under it.
+fn levels(model: Signal<Model>) -> impl IntoElement {
+    use precept_ui_core::mcp::Level;
+    let row = move |agent: &'static str, name: Msg| {
+        view()
+            .flex_row()
+            .items_center()
+            .gap_3()
+            .child(
+                text(word(model, name))
+                    .font_weight(FontWeight::MEDIUM)
+                    .w(px(120.0)),
+            )
+            .child(dynamic(move || {
+                let m = model.get();
+                let (msg, variant) = match m.agents.level(agent) {
+                    Some(Level::Full) => (Msg::LevelFull, BadgeVariant::Success),
+                    Some(Level::Hooks) => (Msg::LevelHooks, BadgeVariant::Info),
+                    Some(Level::Mcp) => (Msg::LevelMcp, BadgeVariant::Info),
+                    Some(Level::None) => (Msg::LevelNone, BadgeVariant::Neutral),
+                    None => (Msg::LevelUnknown, BadgeVariant::Neutral),
+                };
+                badge(model, m.word(msg)).variant(variant).into_element()
+            }))
+    };
+    view()
+        .gap_2()
+        .pt_2()
+        .child(text(word(model, Msg::LevelHeading)).font_weight(FontWeight::SEMIBOLD))
+        .child(row("claude", Msg::TileClaude))
+        .child(row("codex", Msg::TileCodex))
+        .child(row("antigravity", Msg::TileAntigravity))
+        .child(caption(model, |_| Some(Msg::LevelHelp)))
+}
+
 /// The integrations, by mechanism: MCP tools, the session-start briefing and
 /// the AGENTS.md pointer. One switch per agent each.
 fn integrations(model: Signal<Model>) -> impl IntoElement {
@@ -873,6 +909,7 @@ fn integrations(model: Signal<Model>) -> impl IntoElement {
     surface(model)
         .title_fn(word(model, Msg::IntegrationsTitle))
         .child(caption(model, |_| Some(Msg::IntegrationsHelp)))
+        .child(levels(model))
         .child(group(
             model,
             Msg::McpGroup,

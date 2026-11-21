@@ -18,9 +18,15 @@ Desktop/TUI operator app.
   human review.
 - Effective context that explains applicable, masked, conflicting and unknown rules
   without letting personal or session state override repository contracts.
-- Project-bound MCP tools: `get_effective_context` and `get_handoff` (read-only)
-  and, where you allow it, `suggest_rule`, which only files a suggestion for your
-  review.
+- One `precept` MCP server for every registered project, bound to the session's
+  folder: `get_effective_context` and `get_handoff`, and, where you allow it,
+  `suggest_rule` (suggestions and updates for your review) and work-session tools.
+- Session-start briefings and an opt-in pre-tool gate through harness hooks, and
+  repository rules (`.precept/rules/`) with checks.
+
+Recommended setup: the session-start hook and MCP together. The pre-tool gate, the
+AGENTS.md pointer and rules in Git are add-ons for specific needs; see
+[Connecting agents](docs/product.md#connecting-agents).
 - Historical Handoffs with revision, branch, worktree and content-drift warnings.
 - A Windows Desktop workflow that operates a daemon inside WSL2 through the typed
   `precept-bridge` helper, without TCP or shell forwarding.

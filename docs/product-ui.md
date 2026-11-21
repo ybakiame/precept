@@ -108,7 +108,10 @@ Agent sharing is a separate per-project operator switch. Configuration text can 
 copied, but Precept never writes another tool's configuration automatically. Credentials
 are never displayed.
 
-Project sharing is a switch. **Agent integrations** are grouped by mechanism, each
+Project sharing is a switch. **Agent integrations** open with **Connection by
+agent**: each harness's level from its session-start hook and MCP entry (Hooks +
+MCP · recommended, Hooks only, MCP only, Not connected, or Not read yet), then one
+line naming the recommended setup and the add-ons. The integrations are grouped by mechanism, each
 group headed by what it does and where it reaches, with one quick-setting tile per
 agent: **MCP tools** (on demand; the one `precept` server entry, for every
 registered project, in Claude
@@ -249,7 +252,8 @@ selected workspace's context, in the order a fix usually has to happen (daemon,
 Profile and writes, workspace registration and agent sharing, preferences
 delivered and waiting, repository rules (invalid files, failing checks, files not
 committed) and the pre-tool gate (switch, gate hooks; reported as set up, never as
-enforcement achieved), each harness's session-start hook, the AGENTS.md section,
+enforcement achieved), each harness's session-start hook, connection by agent (OK when one agent has
+hooks + MCP), the AGENTS.md section,
 agent reads since the daemon started). Each row shows what was observed and one of
 OK, Look, Problem, Off or Not read; a value that was not read is never shown as a
 pass. A row that can be fixed has **Fix…**, which opens the page where the change

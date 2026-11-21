@@ -241,6 +241,36 @@ impl McpEntries {
     }
 }
 
+/// How an agent is connected (docs/product.md, "Connecting agents").
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Level {
+    /// The session-start hook and MCP: the recommended setup.
+    Full,
+    /// The briefing only: read-only, nothing given back.
+    Hooks,
+    /// MCP only: the agent must call it.
+    Mcp,
+    None,
+}
+/// The agents a level is shown for: (hook vendor and MCP client name).
+pub const AGENTS: [&str; 3] = ["claude", "codex", "antigravity"];
+impl AgentsPage {
+    /// `agent`'s level from its session-start hook and MCP entry; `None`
+    /// until both were read (never guessed).
+    pub fn level(&self, agent: &str) -> Option<Level> {
+        let hook = self.hooks.as_ref()?;
+        let hook = hook.available && hook.get(agent)?.installed;
+        let mcp = self.mcp.as_ref()?;
+        let mcp = mcp.available && mcp.get(agent)?.installed;
+        Some(match (hook, mcp) {
+            (true, true) => Level::Full,
+            (true, false) => Level::Hooks,
+            (false, true) => Level::Mcp,
+            (false, false) => Level::None,
+        })
+    }
+}
+
 /// The Agents page state.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct AgentsPage {

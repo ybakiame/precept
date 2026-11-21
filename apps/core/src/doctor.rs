@@ -636,6 +636,52 @@ fn rules(m: &Model) -> Vec<Check> {
     vec![first, gate]
 }
 
+/// How each agent is connected, in one row: OK when at least one has the
+/// recommended hooks + MCP; never guessed before both were read.
+fn level(m: &Model) -> Check {
+    use crate::mcp::{AGENTS, Level as Connection};
+    let title = Msg::DoctorLevel;
+    let unread = |m: &Model| {
+        check(
+            title,
+            Level::Unknown,
+            m.word(Msg::DoctorNotRead),
+            Some(Fix::Agents),
+        )
+    };
+    if !for_project(m, m.selected_project.as_deref()) {
+        return unread(m);
+    }
+    let names = [Msg::TileClaude, Msg::TileCodex, Msg::TileAntigravity];
+    let mut parts = vec![];
+    let mut levels = vec![];
+    for (agent, name) in AGENTS.iter().zip(names) {
+        let Some(l) = m.agents.level(agent) else {
+            return unread(m);
+        };
+        let word = match l {
+            Connection::Full => Msg::LevelFull,
+            Connection::Hooks => Msg::LevelHooks,
+            Connection::Mcp => Msg::LevelMcp,
+            Connection::None => Msg::LevelNone,
+        };
+        parts.push(format!("{}: {}", m.word(name), m.word(word)));
+        levels.push(l);
+    }
+    if levels.contains(&Connection::Full) {
+        check(title, Level::Ok, parts.join("; "), None)
+    } else if levels.iter().all(|l| *l == Connection::None) {
+        check(
+            title,
+            Level::Off,
+            m.word(Msg::DoctorLevelNone),
+            Some(Fix::Agents),
+        )
+    } else {
+        check(title, Level::Attention, parts.join("; "), Some(Fix::Agents))
+    }
+}
+
 /// Every check, in the order a fix usually has to happen.
 pub fn checks(m: &Model) -> Vec<Check> {
     let mut out = vec![daemon(m)];
@@ -645,6 +691,7 @@ pub fn checks(m: &Model) -> Vec<Check> {
     out.extend(rules(m));
     out.extend(mcp(m));
     out.extend(hooks(m));
+    out.push(level(m));
     out.push(pointer(m));
     out.push(activity(m));
     out
@@ -711,6 +758,59 @@ mod tests {
     }
     fn find(cs: &[Check], title: Msg) -> &Check {
         cs.iter().find(|c| c.title == title).unwrap()
+    }
+
+    #[test]
+    fn connection_level_needs_both_reads_and_names_each_agent() {
+        use crate::mcp::{McpEntries, McpEntry};
+        let mut m = ready();
+        assert_eq!(find(&checks(&m), Msg::DoctorLevel).level, Level::Unknown);
+        m.agents.project = Some("alpha".into());
+        let hook = |vendor: &str, installed| HookState {
+            vendor: vendor.into(),
+            installed,
+            current: installed,
+            ..Default::default()
+        };
+        m.agents.hooks = Some(Hooks {
+            available: true,
+            hooks: vec![
+                hook("claude", true),
+                hook("codex", false),
+                hook("antigravity", true),
+            ],
+            ..Default::default()
+        });
+        // Hooks read, MCP entries not yet: still not guessed.
+        assert_eq!(find(&checks(&m), Msg::DoctorLevel).level, Level::Unknown);
+        let entry = |client: &str, installed| McpEntry {
+            client: client.into(),
+            installed,
+            ..Default::default()
+        };
+        m.agents.mcp = Some(McpEntries {
+            available: true,
+            clients: vec![
+                entry("claude", true),
+                entry("codex", true),
+                entry("antigravity", false),
+            ],
+        });
+        let c = find(&checks(&m), Msg::DoctorLevel).clone();
+        assert_eq!(c.level, Level::Ok);
+        assert_eq!(
+            c.detail,
+            "Claude Code: Hooks + MCP · recommended; Codex: MCP only · only when the agent calls it; Antigravity: Hooks only · briefed, cannot give back"
+        );
+        m.agents.mcp = Some(McpEntries {
+            available: true,
+            clients: vec![
+                entry("claude", false),
+                entry("codex", false),
+                entry("antigravity", false),
+            ],
+        });
+        assert_eq!(find(&checks(&m), Msg::DoctorLevel).level, Level::Attention);
     }
 
     #[test]
