@@ -29,6 +29,18 @@ pub struct Event {
     pub duration_ms: u64,
     #[serde(default)]
     pub counts: Option<Counts>,
+    /// The work session the request belonged to, when the agent had one.
+    #[serde(default)]
+    pub session: Option<String>,
+}
+
+/// Whether the project's persisted evidence chain still verifies.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+pub struct Chain {
+    pub ok: bool,
+    pub entries: usize,
+    pub dropped: u64,
+    pub broken_at: Option<u64>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
@@ -37,6 +49,9 @@ pub struct Page {
     pub events: Vec<Event>,
     #[serde(default)]
     pub more: bool,
+    /// The chain's state (project lists only).
+    #[serde(default)]
+    pub chain: Option<Chain>,
 }
 
 /// The activity panel's state on the Agents page.
@@ -59,6 +74,7 @@ impl Page {
         }
         for e in &mut page.events {
             e.client = e.client.as_deref().map(|c| sanitize(c, 64));
+            e.session = e.session.as_deref().map(|s| sanitize(s, 32));
             e.outcome = sanitize(&e.outcome, 32);
         }
         Ok(page)

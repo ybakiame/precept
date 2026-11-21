@@ -46,9 +46,16 @@ separate design with its own threat model.
   (`project.agents`): an unshared project has no agent credential, and a held
   token is refused. `precept-mcp` is stdio-only (no port); the GUI shows client
   configuration to copy and never writes other tools' files.
-- The agent activity log is daemon memory only (bounded, emptied on restart),
-  readable by the Operator alone, and records methods, outcomes, counts and the
-  client's self-reported label, never values, selectors, task ids, paths or tokens.
+- Agent activity is recorded per project as an evidence chain in the daemon's
+  private state (`evidence-<project>.jsonl`, 0600; at most 1500 entries, the
+  oldest dropped with the last dropped hash kept as the base). Each entry holds
+  the method kind, outcome, counts, the client's self-reported label and the work
+  session id `precept-mcp` attaches, never values, selectors, task ids, paths,
+  file contents or tokens, plus the SHA-256 of the entry before: an edit or a
+  removal in the middle is detected and reported, which is integrity, not a
+  signature (whoever can write the daemon's state can rewrite the whole file).
+  Refused handshakes, which carry no project, stay in daemon memory. Readable by
+  the Operator alone.
 - The session-start hook is read-only, uses the project's agent capability,
   stays silent outside the project root and fails open. Its entry in Claude Code's,
   Codex's or Antigravity's user configuration is added or removed by the daemon only on an

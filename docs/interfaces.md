@@ -214,10 +214,14 @@ project. A context read records only counts (preferences, contracts, documents)
 and the contract-resolution status. Never values, selectors, task ids, paths,
 tokens or response bodies. `precept-mcp` forwards the MCP client's self-reported
 `clientInfo` name and version as an optional `client` label on agent `context.get`
-and `handoff.get` (bounded, printable, never authentication). Operator-only
-`activity.list` takes optional `project` and `before` (an event id) and returns
-`daemon_started_ms`, `capacity`, up to 200 events newest first and `more`; a
-project filter includes refused handshakes. `precept activity` prints it.
+and `handoff.get` (bounded, printable, never authentication). `precept-mcp` also attaches the id of the work session it started
+(`session`), which the daemon removes from the parameters and records as
+evidence only. Operator-only `activity.list` takes optional `project` and `before`
+(an entry number). With a project it returns that project's persisted evidence
+(up to 200 entries newest first, each with `session` when known, plus recent
+refused handshakes from memory), `more`, and `chain {ok, entries, dropped,
+broken_at}` from verifying the whole chain; without one, the in-memory log since
+the daemon started. `precept activity` prints it.
 
 `precept-mcp` writes one sanitized line per failure to stderr (refused arguments,
 calls before initialization, daemon errors by code), which MCP clients show in

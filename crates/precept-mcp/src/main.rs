@@ -123,6 +123,9 @@ struct Bridge {
     /// The client's self-reported `clientInfo` name and version, passed to
     /// the daemon's activity log only (bounded, printable).
     client: Option<String>,
+    /// The work session this connection started, attached to later calls
+    /// so the daemon's evidence knows which session they belong to.
+    session: Option<String>,
 }
 /// `name version` from `clientInfo`, bounded and printable, or none.
 fn client_label(params: &Value) -> Option<String> {
@@ -143,7 +146,7 @@ fn diagnose(what: &str) {
     eprintln!("precept-mcp: {what}");
 }
 impl Bridge {
-    async fn tool(&self, name: &Value, args: &Value) -> Result<Value, Value> {
+    async fn tool(&mut self, name: &Value, args: &Value) -> Result<Value, Value> {
         let Some(args) = args.as_object() else {
             return Err(error(Value::Null, -32700, "Malformed input: ValueError"));
         };
@@ -252,6 +255,11 @@ impl Bridge {
         if let Some(client) = &self.client {
             params["client"] = json!(client);
         }
+        if let Some(session) = &self.session
+            && method != "session.start"
+        {
+            params["session"] = json!(session);
+        }
         let result = match Client::connect(&self.location, &self.credential).await {
             Ok(mut client) => client.request(method, params).await,
             Err(e) => Err(e),
@@ -263,6 +271,13 @@ impl Bridge {
             return Ok(suggestion_reply(result));
         }
         if method.starts_with("session.") {
+            match (&result, method) {
+                (Ok(v), "session.start") => {
+                    self.session = v["id"].as_str().map(str::to_owned);
+                }
+                (Ok(_), "session.close") => self.session = None,
+                _ => {}
+            }
             return Ok(session_reply(result));
         }
         Ok(match result {
@@ -390,6 +405,7 @@ async fn run(args: Args) -> precept_ipc::Result<()> {
         initialized: false,
         ready: false,
         client: None,
+        session: None,
     };
     let mut input = BufReader::new(tokio::io::stdin());
     let mut output = tokio::io::stdout();

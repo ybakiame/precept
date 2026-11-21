@@ -3,10 +3,14 @@
 //! project reads it back in context and in the session-start briefing (the
 //! continuity between agents and after compaction), and the operator lists
 //! and deletes sessions. Kept outside the Profile.
+#[path = "support/mcp.rs"]
+mod mcp;
 #[allow(dead_code)] // Shared harness; this suite uses part of it.
 mod support;
+use mcp::Mcp;
 use precept_ipc::Error;
 use serde_json::{Value, json};
+use std::fs;
 use std::io::Write;
 use std::process::{Command as Process, Stdio};
 use support::*;
@@ -141,4 +145,68 @@ fn work_moves_between_agents_through_their_sessions() {
             .join("daemon-state/sessions-alpha.json")
             .exists()
     );
+}
+
+#[test]
+fn a_sessions_calls_are_kept_as_a_chain_that_survives_restart_and_shows_edits() {
+    let mut f = Fixture::created();
+    let b = f.daemon.enable();
+    f.register(&b, "alpha");
+    f.daemon
+        .control("project.propose", json!({"name":"alpha","enabled":true}))
+        .unwrap();
+    let id = {
+        let mut mcp = Mcp::start(&f.daemon, "alpha");
+        let started = mcp.request(
+            "tools/call",
+            json!({"name":"start_session","arguments":{"goal":"Ship evidence"}}),
+        );
+        assert_eq!(started["result"]["isError"], false);
+        mcp.context(json!({}));
+        let listed = f
+            .daemon
+            .control("sessions.list", json!({"project":"alpha"}))
+            .unwrap();
+        listed["sessions"][0]["id"].as_str().unwrap().to_owned()
+    };
+    let activity = |f: &Fixture| {
+        f.daemon
+            .control("activity.list", json!({"project":"alpha"}))
+            .unwrap()
+    };
+    let a = activity(&f);
+    assert_eq!(a["chain"]["ok"], true);
+    let tagged: Vec<&Value> = a["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["session"] == id.as_str())
+        .collect();
+    let kinds: Vec<&str> = tagged.iter().map(|e| e["kind"].as_str().unwrap()).collect();
+    assert_eq!(
+        kinds,
+        ["context", "session"],
+        "newest first, both of this session"
+    );
+    // A new daemon still has it, chain intact.
+    f.daemon.kill();
+    f.daemon = Daemon::relaunch(f.temp.path(), "run-b");
+    f.daemon.ready();
+    f.daemon
+        .control("profile.select", json!({"path":f.db}))
+        .unwrap();
+    let a = activity(&f);
+    assert_eq!(a["chain"]["ok"], true);
+    assert!(a["events"].as_array().unwrap().len() >= 3);
+    // Editing an entry shows as a break.
+    let path = f.temp.path().join("daemon-state/evidence-alpha.jsonl");
+    let text = fs::read_to_string(&path).unwrap();
+    fs::write(
+        &path,
+        text.replacen("\"outcome\":\"ok\"", "\"outcome\":\"Unauthorized\"", 1),
+    )
+    .unwrap();
+    let a = activity(&f);
+    assert_eq!(a["chain"]["ok"], false);
+    assert_eq!(a["chain"]["broken_at"], 1);
 }

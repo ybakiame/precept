@@ -297,11 +297,11 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         assert!(start.elapsed() < Duration::from_secs(10));
         std::thread::sleep(Duration::from_millis(20));
     }
-    // Recent agent activity: empty until a client starts precept-mcp and reads.
-    contains(
-        &mut app,
-        "No agent has used this project since the daemon started",
-    );
+    // Agent activity lives on Sessions now: empty until a client starts
+    // precept-mcp and reads; the Agents page has setup only.
+    assert!(!app.screen().shows("Recent agent activity"));
+    app.press("Sessions").unwrap();
+    contains(&mut app, "No agent has used this project yet");
     {
         use std::io::{BufRead, BufReader, Write};
         let mut mcp = Command::new(bin("precept-mcp"))
@@ -342,6 +342,8 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         "Read context: 0 preferences, 0 contracts, 1 documents",
     );
     contains(&mut app, "Started precept-mcp");
+    contains(&mut app, "Chain intact · 2 entries");
+    app.press("Agents").unwrap();
     // Agent suggestions: off until the operator's switch, then they land in
     // Review (writes are on in this run).
     contains(&mut app, "Agents cannot suggest rules");
@@ -396,6 +398,7 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         let _ = mcp.kill();
         let _ = mcp.wait();
     }
+    app.press("Sessions").unwrap();
     app.press("Refresh activity").unwrap();
     contains(&mut app, "Suggested a rule: it waits in Review");
     // A second project, then switch from the ONE sidebar workspace switcher:

@@ -80,7 +80,10 @@ pub(crate) fn watch(model: Signal<Model>) {
             return;
         }
         if let Some(project) = project {
-            untracked(|| load(model, project));
+            untracked(|| {
+                load(model, project.clone());
+                super::agents::load_activity(model, project);
+            });
         }
     });
 }
@@ -222,6 +225,30 @@ fn detail(model: Signal<Model>) -> impl IntoElement {
                         std::slice::from_ref(sum),
                     ));
                 }
+                // The calls this session made, from the project's evidence.
+                let calls: Vec<precept_ui_core::activity::Event> = m
+                    .agents
+                    .activity
+                    .page
+                    .as_ref()
+                    .map(|p| {
+                        p.events
+                            .iter()
+                            .filter(|e| e.session.as_deref() == Some(s.id.as_str()))
+                            .take(30)
+                            .cloned()
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if !calls.is_empty() {
+                    let mut list = view().gap_1().child(
+                        text(m.word(Msg::SessionEvidence)).font_weight(FontWeight::SEMIBOLD),
+                    );
+                    for e in &calls {
+                        list = list.child(super::agents::activity_row(model, &m, e));
+                    }
+                    body = body.child(list);
+                }
                 let id = s.id.clone();
                 body.child(
                     view().items_start().child(
@@ -286,7 +313,8 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
                                 .loading(move || model.get().sessions.busy)
                                 .on_press(move || {
                                     if let Some(p) = model.get().selected_project.clone() {
-                                        load(model, p);
+                                        load(model, p.clone());
+                                        super::agents::load_activity(model, p);
                                     }
                                 }),
                         ),
@@ -314,6 +342,7 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
                         .into_element()
                 })),
         )
+        .child(super::agents::activity(model))
         .child(detail(model))
         // After the sheet, so the confirmation stacks above it.
         .child(delete_dialog(model))

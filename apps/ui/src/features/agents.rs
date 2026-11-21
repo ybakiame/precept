@@ -962,7 +962,7 @@ pub(crate) fn pointer_dialog(model: Signal<Model>) -> impl IntoElement {
 }
 
 /// One event: time, what happened, who asked and the outcome.
-fn activity_row(
+pub(crate) fn activity_row(
     model: Signal<Model>,
     m: &Model,
     e: &precept_ui_core::activity::Event,
@@ -1020,7 +1020,9 @@ fn activity_row(
 /// The most events listed (the daemon keeps more; Refresh reads the newest).
 const SHOWN: usize = 50;
 
-fn activity(model: Signal<Model>) -> impl IntoElement {
+/// Recent agent activity of the selected project, with its chain status
+/// (shown on the Sessions page).
+pub(crate) fn activity(model: Signal<Model>) -> impl IntoElement {
     let state = computed(move || {
         let m = model.get();
         (m.agents.activity.clone(), m.locale)
@@ -1035,14 +1037,26 @@ fn activity(model: Signal<Model>) -> impl IntoElement {
                 .child(
                     text(move || {
                         let m = model.get();
-                        let started = m
+                        let chain = m
                             .agents
                             .activity
                             .page
                             .as_ref()
-                            .map(|p| precept_ui_core::activity::date_time(p.daemon_started_ms))
-                            .unwrap_or_else(|| "…".into());
-                        m.word(Msg::ActivityHelp).replace("{time}", &started)
+                            .and_then(|p| p.chain.clone());
+                        let status = match chain {
+                            Some(c) if !c.ok => m
+                                .word(Msg::ChainBroken)
+                                .replace("{n}", &c.broken_at.unwrap_or(0).to_string()),
+                            Some(c) => m
+                                .word(if c.dropped > 0 {
+                                    Msg::ChainOkDropped
+                                } else {
+                                    Msg::ChainOk
+                                })
+                                .replace("{n}", &c.entries.to_string()),
+                            None => String::new(),
+                        };
+                        format!("{} {status}", m.word(Msg::ActivityHelp))
                     })
                     .flex_1()
                     .text_size(px(scale::text::CAPTION))
@@ -1057,7 +1071,7 @@ fn activity(model: Signal<Model>) -> impl IntoElement {
                         .icon(ui::icons::RESET)
                         .loading(move || model.get().agents.activity.busy)
                         .on_press(move || {
-                            if let Some(name) = model.get().agents.project.clone() {
+                            if let Some(name) = model.get().selected_project.clone() {
                                 load_activity(model, name);
                             }
                         }),
@@ -1150,7 +1164,6 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
                 )
                 .child(project_access(model))
                 .child(integrations(model))
-                .child(advanced(model))
-                .child(activity(model)),
+                .child(advanced(model)),
         )
 }

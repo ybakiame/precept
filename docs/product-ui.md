@@ -133,12 +133,14 @@ summary and **Delete session…** behind a confirmation; nothing else is editabl
 here. The page explains that sessions are agents' notes, not rules, and that
 agents write them only where agent writes are allowed.
 
-The Agents page lists the selected project's recent agent activity from the daemon's
-in-memory log: when an MCP client started `precept-mcp`, what it read (by count), who
-asked (the client's self-reported name, or how it arrived) and each outcome,
-including refused stale credentials. A headline says when the project was last
-read, or that a client started but never called a tool. Refresh is explicit; the
-log is emptied when the daemon restarts.
+The Agents page is setup only. Agent activity is on the **Sessions** page: when an
+MCP client started `precept-mcp`, what it read (by count), suggestions and work
+session calls, who asked (the client's self-reported name, or how it arrived) and
+each outcome, including refused stale credentials. A headline says when the
+project was last read, or that a client started but never called a tool; a line
+says whether the evidence chain is intact (with how many entries) or broken at
+which entry. It persists across daemon restarts. A session's sheet lists the calls
+made in that session. Refresh is explicit.
 
 ### Preferences and review
 

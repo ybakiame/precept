@@ -670,11 +670,13 @@ mod tests {
             outcome: outcome.into(),
             duration_ms: 1,
             counts: None,
+            session: None,
         };
         m.agents.activity.page = Some(crate::activity::Page {
             daemon_started_ms: 0,
             events: vec![event("started", "ok", 2)],
             more: false,
+            chain: None,
         });
         assert_eq!(
             find(&checks(&m), Msg::DoctorActivity).level,
@@ -684,6 +686,7 @@ mod tests {
             daemon_started_ms: 0,
             events: vec![event("context", "ok", 3_600_000)],
             more: false,
+            chain: None,
         });
         let a = find(&checks(&m), Msg::DoctorActivity).clone();
         assert_eq!(a.level, Level::Ok);

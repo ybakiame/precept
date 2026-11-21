@@ -14,6 +14,7 @@ use std::{
 };
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 mod activity;
+mod evidence;
 mod importer;
 mod integration;
 mod mcp_config;
@@ -49,6 +50,7 @@ struct Service {
     grants: precept_ipc::peer::Peers,
     activity: activity::Activity,
     sessions: Arc<sessions::Sessions>,
+    evidence: Arc<evidence::Evidence>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -186,7 +188,43 @@ impl Service {
             {
                 return Err(Error::InvalidRequest);
             }
-            return Ok(self.activity.list(p.project.as_deref(), p.before));
+            let Some(project) = p.project else {
+                return Ok(self.activity.list(None, p.before));
+            };
+            // A project's activity is its persisted evidence chain; refused
+            // handshakes (no project known) stay in memory and are merged in.
+            let state = self.profiles.state_dir();
+            let (entries, more) = self
+                .evidence
+                .list(state, &project, p.before, activity::PAGE)?;
+            let chain = self.evidence.status(state, &project)?;
+            let memory = self.activity.list(Some(&project), None);
+            let mut events: Vec<Value> = entries
+                .into_iter()
+                .map(|b| {
+                    json!({"id":b.seq,"at_ms":b.at_ms,"kind":b.kind,"via":b.via,"project":project,
+                        "client":b.client,"session":b.session,"outcome":b.outcome,
+                        "duration_ms":b.duration_ms,"counts":b.counts})
+                })
+                .collect();
+            if p.before.is_none() {
+                events.extend(
+                    memory["events"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter(|e| e["project"].is_null())
+                        .take(20)
+                        .cloned(),
+                );
+                events.sort_by_key(|e| std::cmp::Reverse(e["at_ms"].as_u64().unwrap_or(0)));
+            }
+            return Ok(json!({
+                "daemon_started_ms": memory["daemon_started_ms"],
+                "events": events,
+                "more": more,
+                "chain": chain,
+            }));
         }
         // The AGENTS.md pointer of a served project: status, and an explicit
         // add/remove guarded by the previewed file digest.
@@ -694,7 +732,7 @@ async fn peer(mut stream: Stream, service: Service, permit: Arc<OwnedSemaphorePe
                 return;
             }
         };
-        let request: Request = match serde_json::from_value(value) {
+        let mut request: Request = match serde_json::from_value(value) {
             Ok(r) => r,
             Err(_) => {
                 let _ =
@@ -725,6 +763,14 @@ async fn peer(mut stream: Stream, service: Service, permit: Arc<OwnedSemaphorePe
             .get("client")
             .and_then(Value::as_str)
             .and_then(activity::client_label);
+        // The work session the request belongs to (precept-mcp remembers it):
+        // evidence only, removed before the method sees its parameters.
+        let session = request
+            .params
+            .as_object_mut()
+            .and_then(|o| o.remove("session"))
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .filter(|s| s.len() <= 32 && s.bytes().all(|b| b.is_ascii_hexdigit()));
         let result = {
             let service = service.clone();
             let held = permit.clone();
@@ -764,17 +810,45 @@ async fn peer(mut stream: Stream, service: Service, permit: Arc<OwnedSemaphorePe
                 _ => None,
             };
             if let Some(kind) = kind {
+                let counts = match (&result, kind) {
+                    (Ok(v), activity::Kind::Context) => Some(activity::context_counts(v)),
+                    _ => None,
+                };
+                let outcome = activity::outcome(&result);
+                let duration_ms = began.elapsed().as_millis() as u64;
+                // The session a start opened is its own evidence's session.
+                let session = session
+                    .clone()
+                    .or_else(|| match (&result, method.as_str()) {
+                        (Ok(v), "session.start") => v["id"].as_str().map(str::to_owned),
+                        _ => None,
+                    });
+                // Persisted only for a served project (a stale credential's
+                // project may be gone); best effort, never failing the call.
+                if service.profiles.allowed(project) {
+                    let _ = service.evidence.append(
+                        service.profiles.state_dir(),
+                        project,
+                        evidence::Entry {
+                            kind,
+                            via: activity::Via::Mcp,
+                            client: client.clone(),
+                            session,
+                            outcome: outcome.clone(),
+                            duration_ms,
+                            counts: counts.clone(),
+                            at_ms: activity::now(),
+                        },
+                    );
+                }
                 service.activity.record(activity::Record {
                     kind,
                     via: activity::Via::Mcp,
                     project: Some(project.clone()),
                     client: client.clone(),
-                    outcome: activity::outcome(&result),
-                    duration_ms: began.elapsed().as_millis() as u64,
-                    counts: match (&result, kind) {
-                        (Ok(v), activity::Kind::Context) => Some(activity::context_counts(v)),
-                        _ => None,
-                    },
+                    outcome,
+                    duration_ms,
+                    counts,
                 });
             }
         }
@@ -835,6 +909,7 @@ async fn run(args: Args) -> precept_ipc::Result<()> {
         grants,
         activity: activity::Activity::default(),
         sessions: Arc::new(sessions::Sessions::new()),
+        evidence: Arc::new(evidence::Evidence::new()),
     };
     // The Profile the operator asked to select at start, if any.
     {
