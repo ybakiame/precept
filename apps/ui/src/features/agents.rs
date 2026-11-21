@@ -136,10 +136,14 @@ fn load_mcp(model: Signal<Model>, name: String) {
             }
             match r.and_then(|v| serde_json::from_value::<McpEntries>(v).map_err(|_| "Unavailable"))
             {
-                Ok(e) => m.agents.mcp = Some(e),
+                Ok(e) => {
+                    m.agents.mcp = Some(e);
+                    m.agents.mcp_error = None;
+                }
+                // Shown on the tiles, in words: never a bare code.
                 Err(code) => {
                     m.agents.mcp = None;
-                    m.agents.hooks_error = Some(code.into());
+                    m.agents.mcp_error = Some(code.into());
                 }
             }
         },
@@ -183,7 +187,13 @@ fn apply_mcp(model: Signal<Model>, client: &'static str, enabled: bool) {
 
 fn mcp_detail(m: &Model, client: &str) -> String {
     let Some(entries) = m.agents.mcp.as_ref() else {
-        return m.word(Msg::TileOff).into();
+        return m
+            .word(match m.agents.mcp_error.as_deref() {
+                Some("Unsupported") => Msg::McpNeedsDaemon,
+                Some(_) => Msg::McpReadFailed,
+                None => Msg::TileOff,
+            })
+            .into();
     };
     if !entries.available {
         return m.word(Msg::McpUnavailable).into();
@@ -776,6 +786,7 @@ fn group(
 ) -> impl IntoElement {
     view()
         .gap_2()
+        .pt_2()
         .child(text(word(model, title)).font_weight(FontWeight::SEMIBOLD))
         .child(caption(model, move |_| Some(scope)))
         .child(tiles)
@@ -810,7 +821,11 @@ fn integrations(model: Signal<Model>) -> impl IntoElement {
             model,
             Msg::PointerGroup,
             Msg::PointerScope,
-            row().child(pointer_tile(model)),
+            // One tile wide, like the tiles of the groups above.
+            row()
+                .child(pointer_tile(model))
+                .child(ui::tile_spacer())
+                .child(ui::tile_spacer()),
         ))
         .child(
             text(move || {

@@ -14,6 +14,12 @@ const THUMB: f32 = 14.0;
 /// A quick-setting tile's narrowest width; tiles in a wrapped row share it evenly.
 const TILE_MIN: f32 = 180.0;
 
+/// An empty slot the width of a quick tile, so a row with fewer tiles keeps
+/// each one tile wide.
+pub fn tile_spacer() -> impl IntoElement {
+    view().flex_1().min_w(px(TILE_MIN))
+}
+
 /// The track's look; `checked:` follows the switch's own state (NSH projects
 /// it onto the parts), so the look never lags the value.
 fn track(

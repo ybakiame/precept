@@ -61,7 +61,7 @@ pub use radio::radio_group;
 pub use sheet::sheet;
 pub use status::{Status, status_dot};
 pub use surface::{card, surface};
-pub use switch::{quick_tile, switch};
+pub use switch::{quick_tile, switch, tile_spacer};
 pub use tabs::tabs;
 pub use tag::{tag_editor, tag_list, tag_toggle};
 pub use toast::{Tone, notify, toaster};

@@ -243,6 +243,8 @@ pub struct AgentsPage {
     pub mcp: Option<McpEntries>,
     /// The client whose MCP entry is being switched.
     pub mcp_busy: Option<String>,
+    /// Why the MCP entries could not be read (a fixed code).
+    pub mcp_error: Option<String>,
     /// The project's AGENTS.md pointer (`integration.pointer`).
     pub pointer: Option<Pointer>,
     /// The pointer dialog: `Some(true)` add/update, `Some(false)` remove.

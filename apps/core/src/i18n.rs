@@ -330,6 +330,8 @@ catalog! {
     McpSpoken => ("{name} MCP server", "{name} MCP 服务器"),
     McpOn => ("Listed in every session · {file}", "每个会话可用 · {file}"),
     McpUnavailable => ("precept-mcp is not installed beside the daemon", "daemon 旁未安装 precept-mcp"),
+    McpNeedsDaemon => ("Update Precept on the daemon's system to switch this here", "请先更新 daemon 所在系统中的 Precept，才能在此切换"),
+    McpReadFailed => ("Could not read the agent's configuration", "无法读取该 Agent 的配置"),
     AdvancedSetup => ("Advanced: manual setup", "高级：手动配置"),
     AdvancedHint => ("For agents on Windows, other MCP clients, or to see exactly what is written", "用于 Windows 上的 Agent、其他 MCP 客户端，或查看写入的确切内容"),
     IntegrationsCommand => ("The hooks run:", "hook 运行的命令："),
