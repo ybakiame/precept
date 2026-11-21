@@ -2,6 +2,7 @@
 pub(crate) mod agents;
 pub mod brand_preview;
 pub(crate) mod connection;
+pub(crate) mod doctor;
 pub(crate) mod handoff;
 pub(crate) mod overview;
 pub(crate) mod preferences;

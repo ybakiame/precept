@@ -193,7 +193,7 @@ fn apply_pointer(model: Signal<Model>, add: bool) {
     );
 }
 
-fn fetch(model: Signal<Model>, name: String) {
+pub(crate) fn fetch(model: Signal<Model>, name: String) {
     model.update(|m| {
         m.agents.project = Some(name.clone());
         m.agents.busy = true;
@@ -279,12 +279,17 @@ fn set_shared(model: Signal<Model>, name: String, enabled: bool) {
     );
 }
 
-/// Keeps this page aligned with the one current project chosen in the sidebar.
+/// Keeps this page (and Doctor, which reads the same integrations and
+/// activity) aligned with the one current project chosen in the sidebar.
 pub(crate) fn watch(model: Signal<Model>) {
     let ready = computed(move || {
         let m = model.get();
+        let shown = matches!(
+            shell::current(&m),
+            shell::Destination::Agents | shell::Destination::Diagnostics
+        );
         (
-            m.agents_page && m.live && m.data.is_some(),
+            shown && m.live && m.data.is_some(),
             m.epoch,
             m.selected_project.clone(),
         )

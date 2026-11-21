@@ -592,6 +592,22 @@ mod tests {
     use super::*;
     use nsh_engine::{EngineConfig, Root};
     #[test]
+    fn doctor_lists_what_it_saw_and_copies_a_report_without_paths() {
+        let mut app = nsh_testing::Headless::start(EngineConfig::new(Root::of::<App>())).unwrap();
+        app.wait_for("Project: alpha").unwrap();
+        app.press("Diagnostics").unwrap();
+        app.wait_for("Doctor").unwrap();
+        // Demo data: nothing is claimed as working that was not read.
+        app.wait_for("Demo data: no daemon is connected").unwrap();
+        assert!(app.screen().shows("Not read"));
+        assert!(app.screen().shows("Antigravity"));
+        app.press("Copy report").unwrap();
+        let report = app.screen().clipboard().unwrap();
+        assert!(report.starts_with("Precept doctor · alpha\n"), "{report}");
+        assert!(report.contains("[Not read] Daemon: Demo data"));
+        assert!(!report.contains('/'), "no paths: {report}");
+    }
+    #[test]
     fn component_inputs_selection_empty_scope_and_explicit_copy() {
         let mut app = nsh_testing::Headless::start(EngineConfig::new(Root::of::<App>())).unwrap();
         app.wait_for("Project: alpha").unwrap();

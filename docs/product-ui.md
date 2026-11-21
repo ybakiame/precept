@@ -177,6 +177,19 @@ observer/verifier, method and limitations together. Agent-reported,
 daemon-observed and independently verified claims must not share an unexplained
 success badge. Historical PASS remains labeled historical.
 
+### Diagnostics (Doctor)
+
+Diagnostics opens with **Doctor**: one row per link an agent needs to receive the
+selected workspace's context, in the order a fix usually has to happen (daemon,
+Profile and writes, workspace registration and agent sharing, preferences
+delivered and waiting, each harness's session-start hook, the AGENTS.md section,
+agent reads since the daemon started). Each row shows what was observed and one of
+OK, Look, Problem, Off or Not read; a value that was not read is never shown as a
+pass. A row that can be fixed has **Fix…**, which opens the page where the change
+is made; Doctor itself writes nothing. **Check again** re-reads; **Copy report**
+copies the rows as text without paths, preference values, commands or
+credentials. The raw daemon and evidence lines stay below.
+
 ## Overlays and feedback
 
 Use a sheet for record detail/history beside a list, a dialog for a short focused

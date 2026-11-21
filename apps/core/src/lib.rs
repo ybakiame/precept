@@ -7,6 +7,7 @@ use std::{collections::BTreeMap, sync::Arc};
 pub mod activity;
 pub mod appearance;
 pub mod connection;
+pub mod doctor;
 pub mod i18n;
 pub mod keys;
 pub mod mcp;

@@ -3,7 +3,7 @@
 //! docs/product-ui.md). Also the shared action helpers the feature pages use.
 use crate::*;
 pub(crate) mod chrome;
-use features::{agents, connection, page, profile, projects, review, settings, setup};
+use features::{agents, connection, doctor, page, profile, projects, review, settings, setup};
 use precept_ui_core::{Section, SetupTab, i18n::Msg, operator::ReviewMode};
 use tokens::{compact, palette};
 
@@ -816,6 +816,13 @@ pub(crate) fn shell(
                                             view()
                                                 .style_when(on(Destination::Agents), |s| s.hidden())
                                                 .child(agents::page(model)),
+                                        )
+                                        .child(
+                                            view()
+                                                .style_when(on(Destination::Diagnostics), |s| {
+                                                    s.hidden()
+                                                })
+                                                .child(doctor::panel(model)),
                                         )
                                         .child(
                                             view()
