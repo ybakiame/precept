@@ -61,6 +61,29 @@ pub struct SessionsPage {
     pub open: Option<String>,
     /// The session armed for deletion (confirmation shown).
     pub delete: Option<String>,
+    /// The session being saved as a Handoff, and the task id typed for it.
+    pub handoff: Option<String>,
+    pub task: String,
+}
+/// A Handoff task id from a goal: lowercase ASCII words joined by hyphens.
+pub fn task_id(goal: &str) -> String {
+    let mut out = String::new();
+    for c in goal.chars().flat_map(char::to_lowercase) {
+        if c.is_ascii_alphanumeric() {
+            out.push(c);
+        } else if !out.is_empty() && !out.ends_with('-') {
+            out.push('-');
+        }
+        if out.len() >= 60 {
+            break;
+        }
+    }
+    let out = out.trim_end_matches('-').to_owned();
+    if out.is_empty() {
+        "handoff".into()
+    } else {
+        out
+    }
 }
 impl SessionsPage {
     pub fn opened(&self) -> Option<&WorkSession> {

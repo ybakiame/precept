@@ -160,7 +160,13 @@ updates (`InvalidTransition`); an unknown id is `NotFound`. Agent and operator
 `context.get` add `work_sessions` (at most five: open first, then recently
 closed, newest first), which the session-start briefing renders as **Work in
 progress**. Operator `sessions.list {project}` returns every session and
-`sessions.delete {project, id}` removes one. Calls are in the activity log as
+`sessions.delete {project, id}` removes one. Operator-write `sessions.handoff
+{project, id, task_id}` saves a session as a new Handoff through the ordinary
+reviewed write (`put_handoff`, expected absent, so a taken task id is `Conflict`):
+the goal as objective, done items and summary as completed, todo items as next
+action, no validation entries, and the repository's revision, branch, state and
+worktree fingerprint read by the daemon at that moment, never supplied by the
+caller. Calls are in the activity log as
 `session`.
 
 `initialize` returns `instructions` telling the agent to call

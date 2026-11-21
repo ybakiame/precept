@@ -210,3 +210,49 @@ fn a_sessions_calls_are_kept_as_a_chain_that_survives_restart_and_shows_edits() 
     assert_eq!(a["chain"]["ok"], false);
     assert_eq!(a["chain"]["broken_at"], 1);
 }
+
+#[test]
+fn a_closed_session_becomes_a_handoff_the_next_agent_resumes() {
+    let f = Fixture::created();
+    let b = f.daemon.enable();
+    f.register(&b, "alpha");
+    f.daemon
+        .control("project.propose", json!({"name":"alpha","enabled":true}))
+        .unwrap();
+    let agent = f.daemon.credential("agent-alpha.cap");
+    let call = |method: &str, params: Value| f.daemon.call(&agent, method, params);
+    let id = call("session.start", json!({"goal":"Add import from AGENTS.md"})).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    call(
+        "session.close",
+        json!({"id":id,"summary":"Scan and dialog done.","todo":["Visual check"]}),
+    )
+    .unwrap();
+    let handoff = |cap: &str, task: &str| {
+        f.daemon.call(
+            &f.daemon.credential(cap),
+            "sessions.handoff",
+            json!({"project":"alpha","id":id,"task_id":task}),
+        )
+    };
+    // The operator's write only.
+    assert_eq!(handoff("operator.cap", "import"), Err(Error::Unauthorized));
+    assert_eq!(
+        handoff("agent-alpha.cap", "import"),
+        Err(Error::Unauthorized)
+    );
+    handoff("operator-write.cap", "import").unwrap();
+    // A task id is taken once.
+    assert_eq!(
+        handoff("operator-write.cap", "import"),
+        Err(Error::Conflict)
+    );
+    // The next agent resumes it with get_handoff's daemon call.
+    let resumed = call("handoff.get", json!({"task_id":"import"})).unwrap();
+    let text = resumed.to_string();
+    assert!(text.contains("Add import from AGENTS.md"), "{text}");
+    assert!(text.contains("Scan and dialog done."));
+    assert!(text.contains("- Visual check"));
+}

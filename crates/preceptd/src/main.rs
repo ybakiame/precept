@@ -1,5 +1,5 @@
 use clap::Parser;
-use precept_core::{ContextResolver, documents::FileDocuments, operator::Scope};
+use precept_core::{ContextResolver, WorktreeInspector, documents::FileDocuments, operator::Scope};
 use precept_ipc::{
     Access, Error, Location, MAX_PEERS, MAX_REQUESTS, Request, Response, RuntimeLease, Stream,
     read_frame, write_frame,
@@ -150,6 +150,12 @@ impl Service {
             return self
                 .profiles
                 .handle(authority, &request.method, params, self);
+        }
+        // A work session becomes a Handoff: the operator's write, through the
+        // ordinary reviewed write path, with the repository snapshot taken
+        // here (never supplied by the caller).
+        if request.method == "sessions.handoff" {
+            return self.session_handoff(authority, params);
         }
         if matches!(access, Access::OperatorWrite { .. }) {
             return Err(Error::Unauthorized);
@@ -584,6 +590,97 @@ impl Service {
             }
             _ => Err(Error::InvalidRequest),
         }
+    }
+    /// Saves a work session as the project's Handoff `task_id` (absent until
+    /// now): goal as objective, done and summary as completed, todo as next
+    /// action, and the repository's current revision, branch and state.
+    fn session_handoff(
+        &self,
+        authority: &precept_ipc::peer::Peer,
+        params: Value,
+    ) -> precept_ipc::Result<Value> {
+        let Access::OperatorWrite {
+            profile_id,
+            generation,
+            owner_epoch,
+        } = authority.access()
+        else {
+            return Err(Error::Unauthorized);
+        };
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct P {
+            project: String,
+            id: String,
+            task_id: String,
+        }
+        let p: P = decode(params)?;
+        if !self.profiles.allowed(&p.project) {
+            return Err(Error::NotFound);
+        }
+        let session = self
+            .sessions
+            .list(self.profiles.state_dir(), &p.project)?
+            .into_iter()
+            .find(|s| s.id == p.id)
+            .ok_or(Error::NotFound)?;
+        let (_, roots) = self.profiles.read()?;
+        let root = roots.get(&p.project).ok_or(Error::NotFound)?.clone();
+        let tree = worktree::GitInspector
+            .inspect(
+                &precept_core::Project {
+                    name: p.project.clone(),
+                    root,
+                },
+                true,
+            )
+            .map_err(|_| Error::Unavailable)?;
+        let lines = |items: &[String]| {
+            items
+                .iter()
+                .map(|i| format!("- {i}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let mut completed = lines(&session.done);
+        if let Some(summary) = &session.summary {
+            if !completed.is_empty() {
+                completed.push_str("\n\n");
+            }
+            completed.push_str(summary);
+        }
+        let next_action = if session.todo.is_empty() {
+            "Review the completed work and decide the next step.".to_owned()
+        } else {
+            lines(&session.todo)
+        };
+        let request = json!({
+            "version": 2,
+            "binding": {"profile_id":profile_id,"generation":generation,"owner_epoch":owner_epoch},
+            "operation_id": precept_ipc::operator::operation_id()?,
+            "command": {
+                "command": "put_handoff",
+                "project": p.project,
+                "task_id": p.task_id,
+                "objective": session.goal,
+                "completed": completed,
+                "next_action": next_action,
+                "validation_json": "[]",
+                "snapshot": {
+                    "base_sha": tree.head.unwrap_or_default(),
+                    "branch": tree.branch.unwrap_or_default(),
+                    "state": match tree.dirty {
+                        Some(true) => "dirty",
+                        Some(false) => "clean",
+                        None => "unknown",
+                    },
+                    "fingerprint": tree.worktree_fingerprint,
+                },
+                "expected": {"kind":"absent"},
+            },
+        });
+        self.profiles
+            .handle(authority, "profile.mutate", request, self)
     }
     /// The project's `precept-mcp` entry in each client's user configuration in
     /// the daemon user's home: status, or one explicit add/remove guarded by

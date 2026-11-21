@@ -199,6 +199,22 @@ fn an_agents_work_session_is_shown_and_deleted() {
     app.wait_for("Doing").unwrap();
     contains(&mut app, "• daemon scan");
     contains(&mut app, "• app dialog");
+    // The session becomes a Handoff, its task id taken from the goal.
+    app.press("Save as Handoff…").unwrap();
+    app.wait_for("Save this session as a Handoff").unwrap();
+    assert_eq!(
+        app.screen().input_text("Task id").unwrap(),
+        Some("add-import-from-files")
+    );
+    app.press("Save Handoff").unwrap();
+    contains(&mut app, "Saved as Handoff add-import-from-files");
+    let saved = f
+        .call(
+            "profile.handoff.get",
+            json!({"project":"alpha","task_id":"add-import-from-files"}),
+        )
+        .unwrap();
+    assert_eq!(saved["record"]["objective"], "Add import from files");
     app.press("Delete session…").unwrap();
     app.wait_for("Delete this work session?").unwrap();
     app.press("Delete").unwrap();

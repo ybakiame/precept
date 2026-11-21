@@ -129,8 +129,9 @@ off.
 **Sessions** (in the Workspace group) lists the selected project's work sessions
 as agents recorded them: the goal, open or closed, which agent and when, and how
 many items are doing, next and done. A session opens a sheet with its lists and
-summary and **Delete session…** behind a confirmation; nothing else is editable
-here. The page explains that sessions are agents' notes, not rules, and that
+summary, **Save as Handoff…** (a task id prefilled from the goal; saving turns
+writes on for the run first when they are off, and a taken id says so) and
+**Delete session…** behind a confirmation; nothing else is editable here. The page explains that sessions are agents' notes, not rules, and that
 agents write them only where agent writes are allowed.
 
 The Agents page is setup only. Agent activity is on the **Sessions** page: when an
