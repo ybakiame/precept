@@ -18,7 +18,12 @@ const TILE_MIN: f32 = 180.0;
 /// each one tile wide.
 pub fn tile_spacer() -> impl IntoElement {
     // The tile's own padding and border, drawn in nothing.
-    view().flex_1().min_w(px(TILE_MIN)).p_3().border_1().border_color(transparent_black())
+    view()
+        .flex_1()
+        .min_w(px(TILE_MIN))
+        .p_3()
+        .border_1()
+        .border_color(transparent_black())
 }
 
 /// The track's look; `checked:` follows the switch's own state (NSH projects
