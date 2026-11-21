@@ -20,7 +20,12 @@ fn pointer_is_previewed_guarded_reversible_and_operator_only() {
         .control("integration.pointer", json!({"project":"alpha"}))
         .unwrap();
     assert_eq!(status["state"], "absent");
-    assert!(status["block"].as_str().unwrap().contains("precept-alpha"));
+    assert!(
+        status["block"]
+            .as_str()
+            .unwrap()
+            .contains("on the `precept` MCP server")
+    );
     let digest = status["sha256"].as_str().unwrap().to_owned();
 
     // Agents cannot read or write it; unknown projects and bad digests refused.

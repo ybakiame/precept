@@ -186,14 +186,18 @@ fn antigravity_hook_is_a_named_entry_that_injects_a_system_message_for_its_works
 
 #[cfg(unix)]
 #[test]
-fn mcp_entries_switch_per_client_and_the_written_command_serves_the_project() {
+fn one_mcp_entry_per_client_serves_the_project_of_the_session_folder() {
     let f = Fixture::created();
     let b = f.daemon.enable();
     f.register(&b, "alpha");
-    let status = f
-        .daemon
-        .control("integration.mcp", json!({"project":"alpha"}))
-        .unwrap();
+    f.register(&b, "beta");
+    // An older per-project entry is removed by the switch.
+    fs::write(
+        f.temp.path().join(".claude.json"),
+        r#"{"mcpServers":{"precept-alpha":{"command":"/usr/bin/precept-mcp","args":[]}}}"#,
+    )
+    .unwrap();
+    let status = f.daemon.control("integration.mcp", json!({})).unwrap();
     assert_eq!(status["available"], true);
     let files: Vec<&str> = status["clients"]
         .as_array()
@@ -209,63 +213,121 @@ fn mcp_entries_switch_per_client_and_the_written_command_serves_the_project() {
             "~/.gemini/config/mcp_config.json"
         ]
     );
+    assert_eq!(status["clients"][0]["legacy"], 1);
     let agent = f.daemon.credential("agent-alpha.cap");
     assert_eq!(
-        f.daemon
-            .call(&agent, "integration.mcp", json!({"project":"alpha"})),
+        f.daemon.call(&agent, "integration.mcp", json!({})),
         Err(Error::Unauthorized)
     );
-    for client in ["claude", "codex", "antigravity"] {
+    // The project is no longer a parameter.
+    assert_eq!(
+        f.daemon
+            .control("integration.mcp", json!({"project":"alpha"})),
+        Err(Error::InvalidRequest)
+    );
+    for (i, client) in ["claude", "codex", "antigravity"].iter().enumerate() {
         let on = f
             .daemon
             .control(
                 "integration.mcp.apply",
-                json!({"project":"alpha","client":client,"enabled":true,"expected_sha256":null}),
+                json!({"client":client,"enabled":true,"expected_sha256":status["clients"][i]["sha256"]}),
             )
             .unwrap();
         assert_eq!(on["action"], "added", "{client}");
         assert_eq!(on["current"], true, "{client}");
+        assert_eq!(on["server"], "precept");
     }
-    // The Codex entry, read back with a TOML parser, starts a working server.
+    let claude: Value =
+        serde_json::from_str(&fs::read_to_string(f.temp.path().join(".claude.json")).unwrap())
+            .unwrap();
+    assert!(claude["mcpServers"].get("precept-alpha").is_none());
+    // The Codex entry, read back with a TOML parser, starts the server.
     let text = fs::read_to_string(f.temp.path().join(".codex/config.toml")).unwrap();
     let table: toml::Table = toml::from_str(&text).unwrap();
-    let entry = &table["mcp_servers"]["precept-alpha"];
-    let args: Vec<&str> = entry["args"]
+    let entry = &table["mcp_servers"]["precept"];
+    let args: Vec<String> = entry["args"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|a| a.as_str().unwrap())
+        .map(|a| a.as_str().unwrap().to_owned())
         .collect();
-    let mut child = std::process::Command::new(entry["command"].as_str().unwrap())
+    let command = entry["command"].as_str().unwrap().to_owned();
+    // What the agent reads, started in `dir` (subfolders included).
+    let read = |dir: &std::path::Path| -> String {
+        let mut child = std::process::Command::new(&command)
+            .args(&args)
+            .current_dir(dir)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        {
+            let mut input = child.stdin.take().unwrap();
+            for m in [
+                json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}),
+                json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
+                json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_effective_context","arguments":{}}}),
+            ] {
+                writeln!(input, "{m}").unwrap();
+            }
+        }
+        String::from_utf8(child.wait_with_output().unwrap().stdout).unwrap()
+    };
+    fs::create_dir_all(f.temp.path().join("beta/src")).unwrap();
+    let alpha = read(&f.temp.path().join("alpha"));
+    assert!(alpha.contains(r#"\"project\":\"alpha\""#), "{alpha}");
+    let beta = read(&f.temp.path().join("beta/src"));
+    assert!(beta.contains(r#"\"project\":\"beta\""#), "{beta}");
+    let nowhere = read(f.temp.path());
+    assert!(nowhere.contains("not part of a project registered in Precept"));
+    assert!(!nowhere.contains("alpha") && !nowhere.contains("beta"));
+    // A client that offers roots is asked for them, and they decide.
+    let mut child = std::process::Command::new(&command)
         .args(&args)
+        .current_dir(f.temp.path())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
-    {
-        let mut input = child.stdin.take().unwrap();
-        for m in [
-            json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}),
-            json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
-            json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}),
-        ] {
-            writeln!(input, "{m}").unwrap();
-        }
-    }
-    let out = String::from_utf8(child.wait_with_output().unwrap().stdout).unwrap();
-    assert!(out.contains("get_effective_context") && out.contains("suggest_rule"));
+    let mut input = child.stdin.take().unwrap();
+    let mut output = std::io::BufReader::new(child.stdout.take().unwrap());
+    let mut next = || {
+        let mut line = String::new();
+        std::io::BufRead::read_line(&mut output, &mut line).unwrap();
+        serde_json::from_str::<Value>(&line).unwrap()
+    };
+    writeln!(input, "{}", json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{"roots":{"listChanged":true}}}})).unwrap();
+    next();
+    writeln!(
+        input,
+        "{}",
+        json!({"jsonrpc":"2.0","method":"notifications/initialized"})
+    )
+    .unwrap();
+    let ask = next();
+    assert_eq!(ask["method"], "roots/list");
+    let uri = format!("file://{}", f.temp.path().join("beta").display());
+    writeln!(
+        input,
+        "{}",
+        json!({"jsonrpc":"2.0","id":ask["id"],"result":{"roots":[{"uri":uri}]}})
+    )
+    .unwrap();
+    writeln!(input, "{}", json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_effective_context","arguments":{}}})).unwrap();
+    let answer = next().to_string();
+    assert!(answer.contains(r#"\"project\":\"beta\""#), "{answer}");
+    drop(input);
+    let _ = child.wait();
 
     // Off again, guarded by the reported digest.
-    let status = f
-        .daemon
-        .control("integration.mcp", json!({"project":"alpha"}))
-        .unwrap();
+    let status = f.daemon.control("integration.mcp", json!({})).unwrap();
     let codex = status["clients"][1].clone();
     assert_eq!(
         f.daemon.control(
             "integration.mcp.apply",
-            json!({"project":"alpha","client":"codex","enabled":false,"expected_sha256":null}),
+            json!({"client":"codex","enabled":false,"expected_sha256":null}),
         ),
         Err(Error::Conflict)
     );
@@ -273,14 +335,14 @@ fn mcp_entries_switch_per_client_and_the_written_command_serves_the_project() {
         .daemon
         .control(
             "integration.mcp.apply",
-            json!({"project":"alpha","client":"codex","enabled":false,"expected_sha256":codex["sha256"]}),
+            json!({"client":"codex","enabled":false,"expected_sha256":codex["sha256"]}),
         )
         .unwrap();
     assert_eq!(off["installed"], false);
     assert!(
         !fs::read_to_string(f.temp.path().join(".codex/config.toml"))
             .unwrap()
-            .contains("precept-alpha")
+            .contains("[mcp_servers.\"precept\"]")
     );
 }
 

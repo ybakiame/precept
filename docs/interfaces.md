@@ -116,16 +116,17 @@ path equal to, or under, one of its `paths`), else `allow`. Uncommitted rules
 never deny. Each answer is a `gate` entry in the project's evidence chain with
 outcome `allow`, `deny` or `off`.
 
-Operator-only `integration.mcp {project}` reports, for Claude Code
+Operator-only `integration.mcp {}` reports, for Claude Code
 (`~/.claude.json`, `mcpServers`), Codex (`~/.codex/config.toml`,
-`[mcp_servers."precept-<project>"]`) and Antigravity
+`[mcp_servers."precept"]`) and Antigravity
 (`~/.gemini/config/mcp_config.json`, `mcpServers`) in the daemon user's home:
 `file`, `server`, `exists`, `sha256`, `malformed`, `installed` and `current` (the
-entry starts this daemon's `precept-mcp` for the project exactly), or
-`available: false` without `precept-mcp`. `integration.mcp.apply {project,
-client, enabled, expected_sha256}` adds, updates in place or removes only the
-`precept-<project>` entry if the file still has the reported digest, otherwise
-`Conflict`; an entry already exact is left untouched. JSON files keep every other
+entry starts this daemon's `precept-mcp` exactly) and `legacy` (older per-project
+`precept-<name>` entries launching `precept-mcp`), or `available: false` without
+`precept-mcp`. `integration.mcp.apply {client, enabled, expected_sha256}` adds,
+updates in place or removes the one `precept` entry, and removes the legacy
+entries, if the file still has the reported digest, otherwise `Conflict`; an exact
+entry with no legacy entries is left untouched. JSON files keep every other
 key and their order. Codex's TOML is edited as text: only Precept's own table
 goes or comes, other tables and their comments stay, and the result must parse
 with exactly the intended entry, else nothing is written (an inline
@@ -149,8 +150,17 @@ This is how preferences move between Profile schemas: there is no migration.
 ## MCP stdio
 
 The Rust `precept-mcp` binary uses newline-delimited UTF-8 JSON-RPC; stdout contains only
-protocol output and failures are sanitized. It uses an explicit protected native
-credential and endpoint, with one bound project. Tool arguments cannot change scope.
+protocol output and failures are sanitized. One `precept` server, started with only
+the runtime directory and endpoint, serves every registered project: it binds to the
+project whose registered root holds the session's folder. The folder is the
+client's MCP roots when the client offers them in `initialize` (the server asks
+`roots/list` after `notifications/initialized` and again on
+`notifications/roots/list_changed`), else the working directory the client started
+it in; roots spanning more than one project, or none, bind nothing. To find the
+project it asks each published agent capability for its own root (agent
+`project.root`, which answers only the caller's project) and then uses only the
+matching capability. Unbound, every tool answers that the folder is not a
+registered project. Tool arguments cannot change scope.
 
 Tools: `get_effective_context` and `get_handoff` (read-only), and `suggest_rule
 {scope: project|environment|personal, key, value, tags?, applies_to?, enforcement?}`,

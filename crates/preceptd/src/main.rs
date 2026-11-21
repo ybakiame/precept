@@ -260,7 +260,7 @@ impl Service {
             let root = roots.get(&p.project).ok_or(Error::NotFound)?;
             return match (request.method.as_str(), p.enabled) {
                 ("integration.pointer", None) if p.expected_sha256.is_none() => {
-                    integration::status(root, &p.project)
+                    integration::status(root)
                 }
                 ("integration.pointer.apply", Some(enabled)) => {
                     if p.expected_sha256
@@ -269,7 +269,7 @@ impl Service {
                     {
                         return Err(Error::InvalidRequest);
                     }
-                    integration::apply(root, &p.project, enabled, p.expected_sha256.as_deref())
+                    integration::apply(root, enabled, p.expected_sha256.as_deref())
                 }
                 _ => Err(Error::InvalidRequest),
             };
@@ -431,6 +431,20 @@ impl Service {
                 }
                 _ => Err(Error::InvalidRequest),
             };
+        }
+        // Where an agent capability's own project lives: precept-mcp asks
+        // each published capability to find the one for its session's folder.
+        if request.method == "project.root" {
+            let Access::Agent { project } = access else {
+                return Err(Error::Unauthorized);
+            };
+            let _: Empty = decode(params)?;
+            if !self.profiles.allowed(&project) {
+                return Err(Error::NotFound);
+            }
+            let (_, roots) = self.profiles.read()?;
+            let root = roots.get(&project).ok_or(Error::NotFound)?;
+            return Ok(json!({"project": project, "root": root}));
         }
         // The pre-tool gate: a harness hook asks whether a tool call breaks a
         // committed hard rule's guard. Off unless the operator turned it on.
@@ -795,7 +809,6 @@ impl Service {
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]
         struct P {
-            project: String,
             #[serde(default)]
             client: Option<mcp_config::Client>,
             #[serde(default)]
@@ -804,9 +817,6 @@ impl Service {
             expected_sha256: Option<String>,
         }
         let p: P = decode(params)?;
-        if !self.profiles.allowed(&p.project) {
-            return Err(Error::NotFound);
-        }
         let home = std::env::var_os("HOME")
             .map(PathBuf::from)
             .filter(|h| h.is_absolute())
@@ -823,17 +833,13 @@ impl Service {
                 path(&location.runtime_dir),
                 "--endpoint".into(),
                 location.endpoint.clone(),
-                "--project".into(),
-                p.project.clone(),
-                "--capability-file".into(),
-                path(&location.credential_path(Some(&p.project))?),
             ],
         };
         match (method, p.client, p.enabled) {
             ("integration.mcp", None, None) if p.expected_sha256.is_none() => {
                 let clients = mcp_config::Client::ALL
                     .iter()
-                    .map(|c| mcp_config::status(&home, *c, &p.project, &launch))
+                    .map(|c| mcp_config::status(&home, *c, &launch))
                     .collect::<precept_ipc::Result<Vec<_>>>()?;
                 Ok(json!({"available": true, "clients": clients}))
             }
@@ -847,7 +853,6 @@ impl Service {
                 mcp_config::apply(
                     &home,
                     client,
-                    &p.project,
                     &launch,
                     enabled,
                     p.expected_sha256.as_deref(),
@@ -876,9 +881,13 @@ impl Service {
             "shared": shared,
             "executable": executable,
             "hook": hook,
+            // The one `precept` server, for every project.
             "args": [
                 "--runtime-dir", location.runtime_dir,
                 "--endpoint", location.endpoint,
+            ],
+            // What a project's hook command adds.
+            "project_args": [
                 "--project", p.name,
                 "--capability-file", capability,
             ],

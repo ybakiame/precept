@@ -11,7 +11,7 @@ use precept_ui_core::{
     ProjectEntry,
     connection::Target,
     i18n::Msg,
-    mcp::{Client, Hooks, Host, Launch, McpEntries, Pointer, server_name, snippet},
+    mcp::{Client, Hooks, Host, Launch, McpEntries, Pointer, SERVER, snippet},
 };
 use tokens::palette;
 use ui::{BadgeVariant, ButtonSize, ButtonVariant, badge, button, scale, surface, tabs};
@@ -130,7 +130,7 @@ fn load_mcp(model: Signal<Model>, name: String) {
     super::profile::call(
         model,
         "integration.mcp",
-        serde_json::json!({ "project": name }),
+        serde_json::json!({}),
         move |_, m, r| {
             if m.agents.project.as_deref() != Some(name.as_str()) {
                 return;
@@ -170,7 +170,7 @@ fn apply_mcp(model: Signal<Model>, client: &'static str, enabled: bool) {
     super::profile::call(
         model,
         "integration.mcp.apply",
-        serde_json::json!({ "project": name, "client": client, "enabled": enabled, "expected_sha256": expected }),
+        serde_json::json!({ "client": client, "enabled": enabled, "expected_sha256": expected }),
         move |model, m, r| {
             m.agents.mcp_busy = None;
             if let Err(code) = r {
@@ -629,8 +629,7 @@ fn configure(model: Signal<Model>) -> impl IntoElement {
     surface(model)
         .title_fn(move || {
             let m = model.get();
-            let name = m.agents.project.clone().unwrap_or_default();
-            format!("{} · {}", m.word(Msg::ConfigureFor), server_name(&name)).into()
+            format!("{} · {}", m.word(Msg::ConfigureFor), SERVER).into()
         })
         .child(
             view()

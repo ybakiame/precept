@@ -14,19 +14,46 @@ pub struct Mcp {
     reader: Option<thread::JoinHandle<()>>,
 }
 impl Mcp {
+    /// `precept-mcp` started in `project`'s root, as a client opened in that
+    /// folder would; a project without a working agent capability starts it
+    /// at `/`, outside every project.
     pub fn start(daemon: &Daemon, project: &str) -> Self {
+        // On its own thread and runtime: callers may be inside one already.
+        let location = daemon.location.clone();
+        let project = project.to_owned();
+        let root = thread::spawn(move || {
+            let credential = precept_ipc::load_credential(
+                &location,
+                &location.runtime_dir.join(format!("agent-{project}.cap")),
+            )
+            .ok()?;
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .ok()?;
+            let answer = runtime
+                .block_on(async {
+                    precept_ipc::Client::connect(&location, &credential)
+                        .await?
+                        .request("project.root", json!({}))
+                        .await
+                })
+                .ok()?;
+            answer["root"].as_str().map(std::path::PathBuf::from)
+        })
+        .join()
+        .unwrap()
+        .unwrap_or_else(|| "/".into());
+        Self::start_in(daemon, &root)
+    }
+    /// `precept-mcp` started in `dir`.
+    pub fn start_in(daemon: &Daemon, dir: &std::path::Path) -> Self {
         let mut child = Process::new(exe("precept-mcp"))
             .arg("--runtime-dir")
             .arg(&daemon.location.runtime_dir)
             .arg("--endpoint")
             .arg(&daemon.location.endpoint)
-            .args(["--project", project, "--capability-file"])
-            .arg(
-                daemon
-                    .location
-                    .runtime_dir
-                    .join(format!("agent-{project}.cap")),
-            )
+            .current_dir(dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

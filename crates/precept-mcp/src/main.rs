@@ -1,4 +1,7 @@
-//! Project-pinned stdio bridge. Only the daemon reads storage/repository data.
+//! One stdio bridge for every registered project: it serves the project whose
+//! root holds the session's folder (the client's MCP roots, else its own
+//! working directory) through that project's agent capability, and nothing
+//! anywhere else. Only the daemon reads storage/repository data.
 use clap::Parser;
 use precept_ipc::{Access, Client, Credential, Error, Location, MAX_FRAME, load_credential};
 use serde_json::{Value, json};
@@ -7,18 +10,16 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 struct Args {
     #[command(flatten)]
     location: Location,
-    #[arg(long)]
-    project: String,
-    #[arg(long)]
-    capability_file: std::path::PathBuf,
 }
+/// The id of the one request this server sends: `roots/list`.
+const ROOTS_REQUEST: &str = "precept-roots";
 const LEGACY: &str = "2025-11-25";
 const STATELESS: &str = "2026-07-28";
 fn info() -> Value {
     json!({"name":"precept","version":"0.1.0a0"})
 }
 /// Sent once in `initialize`: what the server is for and when to call it.
-const INSTRUCTIONS: &str = "Precept serves this project's confirmed engineering context: the developer's reviewed preferences and the repository's contracts. Call get_effective_context before planning or editing anything in this project, and again after your context was compacted. Treat confirmed preferences as the developer's standing instructions; current repository files and contracts outrank them, so report a conflict instead of choosing silently. Call get_handoff with a task id to resume saved work. Both are read-only. When the developer states a lasting preference or you learn a durable project convention, you may file it with suggest_rule: it only becomes a suggestion the developer reviews, never an active rule, and works only where they allowed it. Where allowed, record your work with start_session and update_work_state so the next agent (or you, after compaction) can continue.";
+const INSTRUCTIONS: &str = "Precept serves the project of this session's folder (nothing outside a registered project): its confirmed engineering context: the developer's reviewed preferences and the repository's contracts. Call get_effective_context before planning or editing anything in this project, and again after your context was compacted. Treat confirmed preferences as the developer's standing instructions; current repository files and contracts outrank them, so report a conflict instead of choosing silently. Call get_handoff with a task id to resume saved work. Both are read-only. When the developer states a lasting preference or you learn a durable project convention, you may file it with suggest_rule: it only becomes a suggestion the developer reviews, never an active rule, and works only where they allowed it. Where allowed, record your work with start_session and update_work_state so the next agent (or you, after compaction) can continue.";
 fn tools() -> Value {
     let selector = json!({"type":"object","properties":{
         "agent_id":{"type":"string"},"path":{"type":"string"},"language":{"type":"string"},
@@ -117,7 +118,11 @@ fn session_reply(result: Result<Value, Error>) -> Value {
 }
 struct Bridge {
     location: Location,
-    credential: Credential,
+    /// The served project and its agent capability, once the session's
+    /// folder resolved to one; `None` serves nothing.
+    bound: Option<(String, Credential)>,
+    /// The client offered MCP roots in `initialize`.
+    roots: bool,
     initialized: bool,
     ready: bool,
     /// The client's self-reported `clientInfo` name and version, passed to
@@ -140,6 +145,98 @@ fn client_label(params: &Value) -> Option<String> {
     let label = label.trim();
     (!label.is_empty()).then(|| label.to_owned())
 }
+/// What every tool says outside a registered project.
+const UNBOUND: &str = "This folder is not part of a project registered in Precept (or its agent access is off), so Precept has nothing for it. Continue without Precept.";
+
+/// The project whose registered root holds every one of `dirs`, through the
+/// agent capabilities published in the runtime directory: each is asked for
+/// its own root. `None` when no project or more than one matches.
+async fn resolve(location: &Location, dirs: &[std::path::PathBuf]) -> Option<(String, Credential)> {
+    let dirs: Vec<_> = dirs.iter().filter_map(|d| d.canonicalize().ok()).collect();
+    if dirs.is_empty() {
+        return None;
+    }
+    let runtime = location.root().ok()?;
+    let mut names: Vec<String> = std::fs::read_dir(&runtime)
+        .ok()?
+        .filter_map(|e| e.ok()?.file_name().into_string().ok())
+        .filter_map(|n| {
+            n.strip_prefix("agent-")?
+                .strip_suffix(".cap")
+                .map(str::to_owned)
+        })
+        .filter(|n| precept_ipc::valid_project(n))
+        .take(256)
+        .collect();
+    names.sort();
+    let mut found = None;
+    for name in names {
+        let Ok(path) = location.credential_path(Some(&name)) else {
+            continue;
+        };
+        let Ok(credential) = load_credential(location, &path) else {
+            continue;
+        };
+        if credential.access
+            != (Access::Agent {
+                project: name.clone(),
+            })
+        {
+            continue;
+        }
+        let Ok(mut client) = Client::connect(location, &credential).await else {
+            continue;
+        };
+        let Ok(answer) = client.request("project.root", json!({})).await else {
+            continue;
+        };
+        let Some(root) = answer["root"]
+            .as_str()
+            .and_then(|r| std::path::Path::new(r).canonicalize().ok())
+        else {
+            continue;
+        };
+        if dirs.iter().all(|d| d.starts_with(&root)) {
+            if found.is_some() {
+                return None;
+            }
+            found = Some((name, credential));
+        }
+    }
+    found
+}
+
+/// Local folders named by a `roots/list` result (`file://` URIs only).
+fn root_dirs(result: &Value) -> Vec<std::path::PathBuf> {
+    result["roots"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|r| r["uri"].as_str()?.strip_prefix("file://"))
+        .map(percent_decode)
+        .map(std::path::PathBuf::from)
+        .take(64)
+        .collect()
+}
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%'
+            && i + 2 < b.len()
+            && let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16)
+        {
+            out.push(v);
+            i += 3;
+        } else {
+            out.push(b[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 /// One sanitized diagnostic line on stderr (never stdout, never arguments,
 /// values or paths): MCP clients show a server's stderr in their own logs.
 fn diagnose(what: &str) {
@@ -260,7 +357,10 @@ impl Bridge {
         {
             params["session"] = json!(session);
         }
-        let result = match Client::connect(&self.location, &self.credential).await {
+        let Some((_, credential)) = &self.bound else {
+            return Ok(tool_error(UNBOUND));
+        };
+        let result = match Client::connect(&self.location, credential).await {
             Ok(mut client) => client.request(method, params).await,
             Err(e) => Err(e),
         };
@@ -288,14 +388,54 @@ impl Bridge {
             Err(_) => tool_error("IPC unavailable or request denied"),
         })
     }
+    /// Binds to the project of `dirs`; a change of project is logged.
+    async fn bind(&mut self, dirs: &[std::path::PathBuf]) {
+        let next = resolve(&self.location, dirs).await;
+        let before = self.bound.as_ref().map(|(n, _)| n.clone());
+        let after = next.as_ref().map(|(n, _)| n.clone());
+        self.bound = next;
+        if before != after {
+            self.session = None;
+            match &self.bound {
+                Some((_, credential)) => {
+                    diagnose("serving the project of this session's folder");
+                    // Recorded as the project's "started" evidence.
+                    if let Ok(mut c) = Client::connect(&self.location, credential).await {
+                        let _ = c.request("daemon.health", json!({})).await;
+                    }
+                }
+                None => diagnose("this folder is not a registered project; serving nothing"),
+            }
+        }
+    }
     async fn handle(&mut self, message: Value) -> Option<Value> {
         let id = message.get("id").cloned().unwrap_or(Value::Null);
         if !message.is_object() || message.get("jsonrpc") != Some(&json!("2.0")) {
             return Some(error(id, -32600, "Invalid JSON-RPC request"));
         }
+        // The client's answer to our roots/list: its workspace folders.
+        if id == json!(ROOTS_REQUEST) && message.get("method").is_none() {
+            if let Some(result) = message.get("result") {
+                let dirs = root_dirs(result);
+                if !dirs.is_empty() {
+                    self.bind(&dirs).await;
+                }
+            }
+            return None;
+        }
         if message.get("id").is_none() {
-            if message.get("method") == Some(&json!("notifications/initialized")) {
+            let method = message.get("method").and_then(Value::as_str);
+            if method == Some("notifications/initialized") {
                 self.ready = self.initialized;
+            }
+            // Ask for the workspace folders once ready, and again when they change.
+            if self.roots
+                && matches!(
+                    method,
+                    Some("notifications/initialized" | "notifications/roots/list_changed")
+                )
+            {
+                return Some(json!({"jsonrpc":"2.0","id":ROOTS_REQUEST,"method":"roots/list"}));
             }
             return None;
         }
@@ -319,6 +459,9 @@ impl Bridge {
                 self.initialized = true;
                 self.ready = false;
                 self.client = client_label(&params);
+                self.roots = params
+                    .pointer("/capabilities/roots")
+                    .is_some_and(Value::is_object);
                 json!({"protocolVersion":LEGACY,"serverInfo":info(),"capabilities":{"tools":{}},"instructions":INSTRUCTIONS})
             }
             Some("ping") => json!({}),
@@ -384,29 +527,20 @@ async fn line(reader: &mut BufReader<tokio::io::Stdin>) -> std::io::Result<Optio
     }
 }
 async fn run(args: Args) -> precept_ipc::Result<()> {
-    if !precept_ipc::valid_project(&args.project) {
-        return Err(Error::InvalidRequest);
-    }
-    let credential = load_credential(&args.location, &args.capability_file)?;
-    if credential.access
-        != (Access::Agent {
-            project: args.project,
-        })
-    {
-        return Err(Error::Unauthorized);
-    }
-    let mut client = Client::connect(&args.location, &credential).await?;
-    client.request("daemon.health", json!({})).await?;
-    drop(client);
-    diagnose("connected to the daemon; waiting for the MCP client");
+    args.location.root()?;
     let mut bridge = Bridge {
         location: args.location,
-        credential,
+        bound: None,
+        roots: false,
         initialized: false,
         ready: false,
         client: None,
         session: None,
     };
+    // Until the client names its workspace folders, the working directory
+    // the client started this server in decides.
+    let cwd: Vec<_> = std::env::current_dir().into_iter().collect();
+    bridge.bind(&cwd).await;
     let mut input = BufReader::new(tokio::io::stdin());
     let mut output = tokio::io::stdout();
     while let Some(raw) = line(&mut input).await.map_err(|_| Error::Unavailable)? {
@@ -457,6 +591,15 @@ mod tests {
                     .contains_key("project")
             );
         }
+    }
+    #[test]
+    fn roots_name_local_folders_only() {
+        let dirs = root_dirs(&json!({"roots":[
+            {"uri":"file:///home/u/my%20repo","name":"repo"},
+            {"uri":"https://example.invalid/x"}
+        ]}));
+        assert_eq!(dirs, vec![std::path::PathBuf::from("/home/u/my repo")]);
+        assert!(root_dirs(&json!({})).is_empty());
     }
     #[test]
     fn suggestion_replies_say_it_is_not_active_and_whether_to_retry() {

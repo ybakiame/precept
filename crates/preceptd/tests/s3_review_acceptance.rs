@@ -463,13 +463,8 @@ impl Mcp {
             .arg(&f.daemon.location.runtime_dir)
             .arg("--endpoint")
             .arg(&f.daemon.location.endpoint)
-            .args(["--project", project, "--capability-file"])
-            .arg(
-                f.daemon
-                    .location
-                    .runtime_dir
-                    .join(format!("agent-{project}.cap")),
-            )
+            // Opened in the project's folder, as a client would.
+            .current_dir(f.temp.path().join(project))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

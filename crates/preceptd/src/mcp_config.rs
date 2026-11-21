@@ -1,5 +1,8 @@
 //! MCP server entries in the agents' own user configuration, switched by the
-//! operator: one `precept-<project>` entry per client, nothing else touched.
+//! operator: one `precept` entry per client (it serves whichever registered
+//! project the session's folder is in), nothing else touched except older
+//! per-project `precept-<name>` entries of `precept-mcp`, which a switch
+//! removes.
 //! Like the hooks, a change names the digest of the file the operator saw; a
 //! file that changed since is refused. The previous file is kept as
 //! `<file>.precept.bak` and writes are atomic. Codex's TOML is edited as text
@@ -39,8 +42,42 @@ pub struct Launch {
     pub args: Vec<String>,
 }
 
-pub fn server(project: &str) -> String {
-    format!("precept-{project}")
+/// The one server name Precept writes.
+pub const SERVER: &str = "precept";
+
+/// Older per-project entries: `precept-<name>` launching `precept-mcp`.
+fn legacy(client: Client, text: Option<&str>) -> Vec<String> {
+    let Some(text) = text.filter(|t| !t.trim().is_empty()) else {
+        return vec![];
+    };
+    let mcp = |c: &str| c.trim_end_matches(".exe").ends_with("precept-mcp");
+    let names: Vec<(String, String)> = match client {
+        Client::Codex => toml::from_str::<toml::Table>(text)
+            .ok()
+            .and_then(|t| t.get("mcp_servers")?.as_table().cloned())
+            .map(|servers| {
+                servers
+                    .iter()
+                    .filter_map(|(k, v)| Some((k.clone(), v.get("command")?.as_str()?.to_owned())))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        _ => match ojson::parse(text)
+            .as_ref()
+            .and_then(|c| c.get("mcpServers"))
+        {
+            Some(J::Obj(entries)) => entries
+                .iter()
+                .filter_map(|(k, v)| Some((k.clone(), v.get("command")?.as_str()?.to_owned())))
+                .collect(),
+            _ => vec![],
+        },
+    };
+    names
+        .into_iter()
+        .filter(|(k, c)| k.starts_with("precept-") && mcp(c))
+        .map(|(k, _)| k)
+        .collect()
 }
 
 /// The command and arguments of a JSON server entry.
@@ -115,10 +152,11 @@ fn found(client: Client, text: Option<&str>, name: &str) -> Found {
     }
 }
 
-/// One client's MCP entry for `project`.
-pub fn status(home: &Path, client: Client, project: &str, launch: &Launch) -> Result<Value, Error> {
+/// One client's `precept` entry, and how many older per-project entries a
+/// switch would remove.
+pub fn status(home: &Path, client: Client, launch: &Launch) -> Result<Value, Error> {
     let current = read_config(&home.join(client.file()))?;
-    let name = server(project);
+    let name = SERVER.to_owned();
     let state = found(client, current.as_deref(), &name);
     let installed = matches!(state, Some(Some(_)));
     let current_entry = matches!(
@@ -134,6 +172,7 @@ pub fn status(home: &Path, client: Client, project: &str, launch: &Launch) -> Re
         "malformed": state.is_none(),
         "installed": installed,
         "current": current_entry,
+        "legacy": legacy(client, current.as_deref()).len(),
     }))
 }
 
@@ -217,12 +256,12 @@ fn toml_edit(text: &str, name: &str, launch: Option<&Launch>) -> String {
     next
 }
 
-/// Adds (`enabled`) or removes the project's server entry if the file is still
-/// the one the status reported (`expected` digest, `None` for absent).
+/// Adds (`enabled`) or removes the `precept` entry, and removes older
+/// per-project entries, if the file is still the one the status reported
+/// (`expected` digest, `None` for absent).
 pub fn apply(
     home: &Path,
     client: Client,
-    project: &str,
     launch: &Launch,
     enabled: bool,
     expected: Option<&str>,
@@ -233,18 +272,22 @@ pub fn apply(
     if actual.as_deref() != expected {
         return Err(Error::Conflict);
     }
-    let name = server(project);
+    let name = SERVER.to_owned();
     let present = found(client, current.as_deref(), &name).ok_or(Error::InvalidRequest)?;
     let exact = matches!(&present, Some(Some((c, a))) if *c == launch.command && *a == launch.args);
+    let old = legacy(client, current.as_deref());
     let next = match client {
         // Already exactly as written: nothing moves.
-        _ if enabled && exact => current.clone().unwrap_or_default(),
+        _ if enabled && exact && old.is_empty() => current.clone().unwrap_or_default(),
         Client::Codex => {
-            let next = toml_edit(
-                current.as_deref().unwrap_or(""),
-                &name,
-                enabled.then_some(launch),
-            );
+            let mut text = current.as_deref().unwrap_or("").to_owned();
+            for n in &old {
+                text = toml_edit(&text, n, None);
+            }
+            let next = toml_edit(&text, &name, enabled.then_some(launch));
+            if !legacy(client, Some(&next)).is_empty() {
+                return Err(Error::InvalidRequest);
+            }
             // The edit must leave exactly the intended entry, else nothing is written.
             let wanted = enabled.then(|| Some((launch.command.clone(), launch.args.clone())));
             if found(client, Some(&next), &name) != Some(wanted) {
@@ -264,6 +307,7 @@ pub fn apply(
                 return Err(Error::InvalidRequest);
             };
             let entry = json_entry(client, launch);
+            entries.retain(|(k, _)| !old.contains(k));
             match entries.iter_mut().find(|(k, _)| *k == name) {
                 // Updated in place, keeping its position.
                 Some((_, v)) if enabled => *v = entry,
@@ -294,7 +338,7 @@ pub fn apply(
         }
         if enabled { "added" } else { "removed" }
     };
-    let mut out = status(home, client, project, launch)?;
+    let mut out = status(home, client, launch)?;
     out["action"] = json!(action);
     Ok(out)
 }
@@ -306,12 +350,7 @@ mod tests {
     fn launch(root: &str) -> Launch {
         Launch {
             command: "/usr/bin/precept-mcp".into(),
-            args: vec![
-                "--project".into(),
-                "alpha".into(),
-                "--runtime-dir".into(),
-                root.into(),
-            ],
+            args: vec!["--runtime-dir".into(), root.into()],
         }
     }
     fn digest(path: &Path) -> Option<String> {
@@ -321,115 +360,80 @@ mod tests {
     }
 
     #[test]
-    fn json_clients_keep_everything_else_and_update_in_place() {
+    fn json_clients_get_one_entry_and_lose_old_per_project_ones() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
         let file = home.join(".claude.json");
-        let theirs = r#"{"numStartups": 3, "mcpServers": {"other": {"command": "x", "args": []}, "precept-alpha": {"command": "old", "args": []}}, "projects": {}}"#;
+        let theirs = r#"{"numStartups": 3, "mcpServers": {"other": {"command": "x", "args": []}, "precept-alpha": {"command": "/usr/bin/precept-mcp", "args": []}, "precept-beta": {"command": "/usr/bin/precept-mcp", "args": []}, "precept-theirs": {"command": "node", "args": []}}, "projects": {}}"#;
         fs::write(&file, theirs).unwrap();
         let l = launch("/r");
-        let s = status(home, Client::Claude, "alpha", &l).unwrap();
+        let s = status(home, Client::Claude, &l).unwrap();
         assert_eq!(s["file"], "~/.claude.json");
+        assert_eq!(s["server"], "precept");
+        assert_eq!(s["installed"], false);
+        assert_eq!(s["legacy"], 2);
         assert_eq!(
-            (s["installed"].clone(), s["current"].clone()),
-            (json!(true), json!(false))
-        );
-        assert_eq!(
-            apply(home, Client::Claude, "alpha", &l, true, None),
+            apply(home, Client::Claude, &l, true, None),
             Err(Error::Conflict)
         );
-        let on = apply(
-            home,
-            Client::Claude,
-            "alpha",
-            &l,
-            true,
-            digest(&file).as_deref(),
-        )
-        .unwrap();
+        let on = apply(home, Client::Claude, &l, true, digest(&file).as_deref()).unwrap();
         assert_eq!(on["current"], true);
+        assert_eq!(on["legacy"], 0);
         let v: Value = serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
-        assert_eq!(v["mcpServers"]["precept-alpha"]["type"], "stdio");
+        assert_eq!(v["mcpServers"]["precept"]["type"], "stdio");
+        assert!(v["mcpServers"].get("precept-alpha").is_none());
+        assert!(v["mcpServers"].get("precept-beta").is_none());
+        // Someone else's server that happens to share the prefix stays.
+        assert_eq!(v["mcpServers"]["precept-theirs"]["command"], "node");
         assert_eq!(v["mcpServers"]["other"]["command"], "x");
         assert_eq!(v["numStartups"], 3);
-        let text = fs::read_to_string(&file).unwrap();
-        assert!(text.find("\"other\"") < text.find("precept-alpha"));
-        assert!(text.find("precept-alpha") < text.find("\"projects\""));
         assert!(home.join(".claude.json.precept.bak").exists());
-        let off = apply(
-            home,
-            Client::Claude,
-            "alpha",
-            &l,
-            false,
-            digest(&file).as_deref(),
-        )
-        .unwrap();
+        let again = apply(home, Client::Claude, &l, true, digest(&file).as_deref()).unwrap();
+        assert_eq!(again["action"], "unchanged");
+        let off = apply(home, Client::Claude, &l, false, digest(&file).as_deref()).unwrap();
         assert_eq!(off["installed"], false);
         let v: Value = serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
-        assert_eq!(v["mcpServers"], json!({"other":{"command":"x","args":[]}}));
+        assert_eq!(
+            v["mcpServers"],
+            json!({"other":{"command":"x","args":[]},"precept-theirs":{"command":"node","args":[]}})
+        );
 
         // A new file for Antigravity, without the `type` key.
-        let ag = apply(home, Client::Antigravity, "alpha", &l, true, None).unwrap();
+        let ag = apply(home, Client::Antigravity, &l, true, None).unwrap();
         assert_eq!(ag["action"], "added");
         let v: Value = serde_json::from_str(
             &fs::read_to_string(home.join(".gemini/config/mcp_config.json")).unwrap(),
         )
         .unwrap();
         assert_eq!(
-            v["mcpServers"]["precept-alpha"],
-            json!({"command":"/usr/bin/precept-mcp","args":["--project","alpha","--runtime-dir","/r"]})
+            v["mcpServers"]["precept"],
+            json!({"command":"/usr/bin/precept-mcp","args":["--runtime-dir","/r"]})
         );
         // Not JSON: reported, never written.
         fs::write(&file, "{nope").unwrap();
+        assert_eq!(status(home, Client::Claude, &l).unwrap()["malformed"], true);
         assert_eq!(
-            status(home, Client::Claude, "alpha", &l).unwrap()["malformed"],
-            true
-        );
-        assert_eq!(
-            apply(
-                home,
-                Client::Claude,
-                "alpha",
-                &l,
-                true,
-                digest(&file).as_deref()
-            ),
+            apply(home, Client::Claude, &l, true, digest(&file).as_deref()),
             Err(Error::InvalidRequest)
         );
     }
 
     #[test]
-    fn codex_toml_changes_only_precepts_table() {
+    fn codex_toml_changes_only_precepts_tables() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
         fs::create_dir_all(home.join(".codex")).unwrap();
         let file = home.join(".codex/config.toml");
-        let theirs = "model = \"gpt\"\n\n[mcp_servers.node]\ncommand = \"node\"\n\n[mcp_servers.\"precept-alpha\"]\ncommand = \"old\"\nargs = []\n\n# their comment\n[profiles.fast]\nmodel = \"mini\"\n";
+        let theirs = "model = \"gpt\"\n\n[mcp_servers.node]\ncommand = \"node\"\n\n[mcp_servers.\"precept-alpha\"]\ncommand = \"/usr/bin/precept-mcp\"\nargs = []\n\n# their comment\n[profiles.fast]\nmodel = \"mini\"\n";
         fs::write(&file, theirs).unwrap();
         let l = launch("/home/u/it's here");
-        let on = apply(
-            home,
-            Client::Codex,
-            "alpha",
-            &l,
-            true,
-            digest(&file).as_deref(),
-        )
-        .unwrap();
+        assert_eq!(status(home, Client::Codex, &l).unwrap()["legacy"], 1);
+        let on = apply(home, Client::Codex, &l, true, digest(&file).as_deref()).unwrap();
         assert_eq!(on["current"], true);
         let text = fs::read_to_string(&file).unwrap();
-        assert!(text.starts_with("model = \"gpt\"\n\n[mcp_servers.node]\ncommand = \"node\"\n\n# their comment\n[profiles.fast]\nmodel = \"mini\"\n\n[mcp_servers.\"precept-alpha\"]\n"), "{text}");
-        assert_eq!(text.matches("precept-alpha").count(), 1);
-        let off = apply(
-            home,
-            Client::Codex,
-            "alpha",
-            &l,
-            false,
-            digest(&file).as_deref(),
-        )
-        .unwrap();
+        assert!(text.starts_with("model = \"gpt\"\n\n[mcp_servers.node]\ncommand = \"node\"\n\n# their comment\n[profiles.fast]\nmodel = \"mini\"\n\n[mcp_servers.\"precept\"]\n"), "{text}");
+        assert!(!text.contains("precept-alpha"));
+        let off = apply(home, Client::Codex, &l, false, digest(&file).as_deref()).unwrap();
         assert_eq!(off["installed"], false);
         assert_eq!(
             fs::read_to_string(&file).unwrap(),
@@ -439,14 +443,7 @@ mod tests {
         let inline = "mcp_servers = { node = { command = \"node\" } }\n";
         fs::write(&file, inline).unwrap();
         assert_eq!(
-            apply(
-                home,
-                Client::Codex,
-                "alpha",
-                &l,
-                true,
-                digest(&file).as_deref()
-            ),
+            apply(home, Client::Codex, &l, true, digest(&file).as_deref()),
             Err(Error::InvalidRequest)
         );
         assert_eq!(fs::read_to_string(&file).unwrap(), inline);

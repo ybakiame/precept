@@ -145,7 +145,8 @@ verification or a complete provenance engine.
 
 ## Trust
 
-MCP is project-bound and read-only. Local IPC separates operator, operator-write
+MCP is project-bound: one server binds to the registered project of the session's
+folder and serves nothing elsewhere. Local IPC separates operator, operator-write
 and project-bound agent capabilities; OS user identity alone does not grant an
 operator role. Unix sockets and Windows named pipes remain local, without a browser
 gateway.

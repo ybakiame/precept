@@ -262,11 +262,17 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     app.press("Agents").unwrap();
     app.wait_for("MCP tools · on demand").unwrap();
     contains(&mut app, "Session-start briefing · automatic");
-    assert!(!app.screen().shows("Configure · precept-gamma"), "folded");
+    assert!(!app.screen().shows("Configure · precept"), "folded");
     app.press("Advanced: manual setup").unwrap();
-    app.wait_for("Configure · precept-gamma").unwrap();
-    contains(&mut app, "claude mcp add --scope user precept-gamma -- ");
-    contains(&mut app, "--project gamma --capability-file ");
+    app.wait_for("Configure · precept").unwrap();
+    contains(&mut app, "claude mcp add --scope user precept -- ");
+    assert!(
+        !app.screen()
+            .texts()
+            .iter()
+            .any(|t| t.contains("claude mcp add") && t.contains("--project")),
+        "one server for every project"
+    );
     let token = std::fs::read_to_string(f.location.runtime_dir.join("agent-gamma.cap")).unwrap();
     assert!(
         !app.screen()
@@ -276,13 +282,13 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         "never a token on screen"
     );
     app.press("Codex").unwrap();
-    contains(&mut app, "[mcp_servers.\"precept-gamma\"]");
+    contains(&mut app, "[mcp_servers.\"precept\"]");
     app.press("Copy").unwrap();
     app.wait_for("Copied").unwrap();
     assert!(
         app.screen()
             .clipboard()
-            .is_some_and(|c| c.contains("[mcp_servers.\"precept-gamma\"]"))
+            .is_some_and(|c| c.contains("[mcp_servers.\"precept\"]"))
     );
     app.press("Share gamma with agents").unwrap();
     let start = Instant::now();
@@ -309,8 +315,8 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
             .arg(&f.location.runtime_dir)
             .arg("--endpoint")
             .arg(&f.location.endpoint)
-            .args(["--project", "gamma", "--capability-file"])
-            .arg(f.location.runtime_dir.join("agent-gamma.cap"))
+            // Started in gamma's folder, as a client opened there.
+            .current_dir(&gamma)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -373,8 +379,8 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
             .arg(&f.location.runtime_dir)
             .arg("--endpoint")
             .arg(&f.location.endpoint)
-            .args(["--project", "gamma", "--capability-file"])
-            .arg(f.location.runtime_dir.join("agent-gamma.cap"))
+            // Started in gamma's folder, as a client opened there.
+            .current_dir(&gamma)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -450,11 +456,19 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     }
     // The Agents page follows the same sidebar workspace switcher.
     app.press("Agents").unwrap();
-    app.wait_for("Configure · precept-gamma").unwrap();
+    // The project row shows the selected workspace's root.
+    let root_shown = |app: &mut nsh_testing::Headless, name: &str| {
+        let suffix = format!("/{name}");
+        app.wait_until(&format!("{name} on Agents"), Duration::from_secs(10), |s| {
+            s.texts().iter().any(|t| t.ends_with(&suffix))
+        })
+        .unwrap();
+    };
+    root_shown(&mut app, "gamma");
     app.press("gamma").unwrap();
     app.press("delta").unwrap();
     settled(&mut app);
-    app.wait_for("Configure · precept-delta").unwrap();
+    root_shown(&mut app, "delta");
     // One switch adds the Claude Code hook to the user config (HOME is the
     // test root), another takes it out again; the rest of the file stays.
     let settings = f.root.path().join(".claude/settings.json");
@@ -496,12 +510,12 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     contains(&mut app, "Listed in every session · ~/.claude.json");
     let v: Value = serde_json::from_str(&std::fs::read_to_string(&claude_json).unwrap()).unwrap();
     assert_eq!(v["numStartups"], 7);
-    assert_eq!(v["mcpServers"]["precept-delta"]["type"], "stdio");
+    assert_eq!(v["mcpServers"]["precept"]["type"], "stdio");
     app.press("Claude Code MCP server").unwrap();
     let start = Instant::now();
     while std::fs::read_to_string(&claude_json)
         .unwrap()
-        .contains("precept-delta")
+        .contains("\"precept\"")
     {
         assert!(start.elapsed() < Duration::from_secs(10));
         std::thread::sleep(Duration::from_millis(20));
@@ -514,7 +528,7 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         .unwrap();
     contains(
         &mut app,
-        "call `get_effective_context` on the `precept-delta` MCP server",
+        "call `get_effective_context` on the `precept` MCP server",
     );
     app.press("Write to AGENTS.md").unwrap();
     contains(&mut app, "In AGENTS.md · review and commit it");

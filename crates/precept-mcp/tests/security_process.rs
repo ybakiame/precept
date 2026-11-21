@@ -185,16 +185,17 @@ struct Bridge {
     lines: mpsc::Receiver<Value>,
 }
 impl Bridge {
+    /// `precept-mcp` started in `project`'s folder, as a client opened there.
     fn new(f: &Fixture, project: &str) -> Self {
+        Self::start_in(f, &f._temp.path().join("fixture").join(project))
+    }
+    fn start_in(f: &Fixture, dir: &Path) -> Self {
         let mut proc = Command::new(env!("CARGO_BIN_EXE_precept-mcp"))
             .arg("--runtime-dir")
             .arg(&f.location.runtime_dir)
             .arg("--endpoint")
             .arg(&f.location.endpoint)
-            .arg("--project")
-            .arg(project)
-            .arg("--capability-file")
-            .arg(f.location.runtime_dir.join(format!("agent-{project}.cap")))
+            .current_dir(dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -413,21 +414,26 @@ fn unregistered_unknown_and_mutating_tools_have_no_authority() {
         f.request(None, "context.get", json!({"project":"unregistered"}))
             .is_err()
     );
-    let outcome = Command::new(env!("CARGO_BIN_EXE_precept-mcp"))
-        .arg("--runtime-dir")
-        .arg(&f.location.runtime_dir)
-        .arg("--endpoint")
-        .arg(&f.location.endpoint)
-        .arg("--project")
-        .arg("unregistered")
-        .arg("--capability-file")
-        .arg(f.location.runtime_dir.join("agent-alpha.cap"))
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .output()
-        .unwrap();
-    assert!(!outcome.status.success() && outcome.stdout.is_empty());
+    // Started outside every registered project, it serves nothing at all.
+    let outside = f._temp.path().join("fixture");
+    let mut unbound = Bridge::start_in(&f, &outside);
+    for (tool, args) in [
+        ("get_effective_context", json!({})),
+        ("get_handoff", json!({"task_id":"task-a"})),
+        (
+            "suggest_rule",
+            json!({"scope":"project","key":"k","value":"v"}),
+        ),
+    ] {
+        let r = unbound.call(tool, args);
+        assert_eq!(r["result"]["isError"], true, "{tool}");
+        assert!(
+            r["result"]["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("not part of a project registered in Precept")
+        );
+    }
     f.unchanged();
 }
 #[test]

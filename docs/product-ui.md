@@ -110,7 +110,8 @@ are never displayed.
 
 Project sharing is a switch. **Agent integrations** are grouped by mechanism, each
 group headed by what it does and where it reaches, with one quick-setting tile per
-agent: **MCP tools** (on demand; the `precept-<project>` server entry in Claude
+agent: **MCP tools** (on demand; the one `precept` server entry, for every
+registered project, in Claude
 Code's, Codex's and Antigravity's user configuration), **Session-start briefing**
 (automatic; their session-start hooks), the **Pre-tool gate** (opt-in: the
 project's gate switch, then one gate-hook tile per agent; a tile installed while

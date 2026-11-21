@@ -43,16 +43,16 @@ fn digest(current: &Option<String>) -> Value {
 }
 
 /// What the pointer looks like now and what applying would do.
-pub fn status(root: &Path, project: &str) -> Result<Value, Error> {
+pub fn status(root: &Path) -> Result<Value, Error> {
     let current = read(&path(root))?;
-    let state = pointer::state(current.as_deref(), project);
+    let state = pointer::state(current.as_deref());
     Ok(json!({
         "path": pointer::FILE,
         "exists": current.is_some(),
         "sha256": digest(&current),
         "state": state.ok(),
         "malformed": state.is_err(),
-        "block": pointer::block(project),
+        "block": pointer::block(),
     }))
 }
 
@@ -92,12 +92,7 @@ pub(crate) fn write_atomic(path: &Path, text: &str) -> Result<(), Error> {
 
 /// Adds (`enabled`) or removes the block, if the file is still the one the
 /// operator previewed (`expected` digest, `None` for absent).
-pub fn apply(
-    root: &Path,
-    project: &str,
-    enabled: bool,
-    expected: Option<&str>,
-) -> Result<Value, Error> {
+pub fn apply(root: &Path, enabled: bool, expected: Option<&str>) -> Result<Value, Error> {
     let path = path(root);
     let current = read(&path)?;
     let actual = current.as_ref().map(|t| pointer::digest(t.as_bytes()));
@@ -106,7 +101,7 @@ pub fn apply(
     }
     let malformed = |_: Malformed| Error::InvalidRequest;
     let action = if enabled {
-        let next = pointer::upsert(current.as_deref(), project).map_err(malformed)?;
+        let next = pointer::upsert(current.as_deref()).map_err(malformed)?;
         if current.as_deref() == Some(next.as_str()) {
             "unchanged"
         } else {
@@ -133,7 +128,7 @@ pub fn apply(
             },
         }
     };
-    let mut out = status(root, project)?;
+    let mut out = status(root)?;
     out["action"] = json!(action);
     Ok(out)
 }
@@ -575,33 +570,30 @@ mod tests {
     fn previewed_digest_guards_every_write_and_links_are_refused() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let s = status(root, "alpha").unwrap();
+        let s = status(root).unwrap();
         assert_eq!(s["state"], "absent");
         assert_eq!(s["sha256"], Value::Null);
-        let created = apply(root, "alpha", true, None).unwrap();
+        let created = apply(root, true, None).unwrap();
         assert_eq!(created["action"], "created");
         assert_eq!(created["state"], "current");
         let digest = created["sha256"].as_str().unwrap().to_owned();
-        assert_eq!(apply(root, "alpha", true, None), Err(Error::Conflict));
+        assert_eq!(apply(root, true, None), Err(Error::Conflict));
         assert_eq!(
-            apply(root, "alpha", true, Some(&digest)).unwrap()["action"],
+            apply(root, true, Some(&digest)).unwrap()["action"],
             "unchanged"
         );
-        let removed = apply(root, "alpha", false, Some(&digest)).unwrap();
+        let removed = apply(root, false, Some(&digest)).unwrap();
         assert_eq!(removed["action"], "deleted");
         assert!(!root.join("AGENTS.md").exists());
 
         fs::write(root.join("AGENTS.md"), "# Rules\n").unwrap();
         let d = pointer::digest(b"# Rules\n");
-        let added = apply(root, "alpha", true, Some(&d)).unwrap();
+        let added = apply(root, true, Some(&d)).unwrap();
         assert_eq!(added["action"], "updated");
         let text = fs::read_to_string(root.join("AGENTS.md")).unwrap();
         assert!(text.starts_with("# Rules\n\n<!-- precept:begin v1 -->"));
         let d = added["sha256"].as_str().unwrap().to_owned();
-        assert_eq!(
-            apply(root, "alpha", false, Some(&d)).unwrap()["action"],
-            "removed"
-        );
+        assert_eq!(apply(root, false, Some(&d)).unwrap()["action"], "removed");
         assert_eq!(
             fs::read_to_string(root.join("AGENTS.md")).unwrap(),
             "# Rules\n"
@@ -615,8 +607,8 @@ mod tests {
         {
             fs::remove_file(root.join("AGENTS.md")).unwrap();
             std::os::unix::fs::symlink("/etc/hostname", root.join("AGENTS.md")).unwrap();
-            assert_eq!(status(root, "alpha"), Err(Error::UnsafeRuntime));
-            assert_eq!(apply(root, "alpha", true, None), Err(Error::UnsafeRuntime));
+            assert_eq!(status(root), Err(Error::UnsafeRuntime));
+            assert_eq!(apply(root, true, None), Err(Error::UnsafeRuntime));
         }
     }
 

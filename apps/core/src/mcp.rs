@@ -11,7 +11,12 @@ pub struct Launch {
     pub name: String,
     pub shared: bool,
     pub executable: Option<String>,
+    /// The one `precept` server's arguments (no project: it serves the
+    /// project of the session's folder).
     pub args: Vec<String>,
+    /// What a project's hook command adds (`--project`, `--capability-file`).
+    #[serde(default)]
+    pub project_args: Vec<String>,
     /// The session-start hook beside `precept-mcp`, when installed.
     #[serde(default)]
     pub hook: Option<String>,
@@ -40,9 +45,8 @@ pub enum Host {
 }
 
 /// The MCP server name a client lists: `precept-<project>`.
-pub fn server_name(project: &str) -> String {
-    format!("precept-{project}")
-}
+/// The one server name every client lists.
+pub const SERVER: &str = "precept";
 
 /// The command and arguments the client runs.
 pub fn command(launch: &Launch, host: &Host) -> Option<(String, Vec<String>)> {
@@ -85,7 +89,7 @@ fn toml_string(s: &str) -> String {
 /// `precept-mcp` executable.
 pub fn snippet(client: Client, launch: &Launch, host: &Host) -> Option<String> {
     let (cmd, args) = command(launch, host)?;
-    let name = server_name(&launch.name);
+    let name = SERVER;
     let line = std::iter::once(cmd.as_str())
         .chain(args.iter().map(String::as_str))
         .map(word)
@@ -101,7 +105,7 @@ pub fn snippet(client: Client, launch: &Launch, host: &Host) -> Option<String> {
                 .join(", ");
             format!(
                 "# ~/.codex/config.toml\n[mcp_servers.{}]\ncommand = {}\nargs = [{args}]\n",
-                toml_string(&name),
+                toml_string(name),
                 toml_string(&cmd)
             )
         }
@@ -126,6 +130,7 @@ pub fn hook_snippet(client: Client, launch: &Launch, host: &Host) -> Option<Stri
         args: std::iter::once("--vendor".to_owned())
             .chain(std::iter::once(vendor.to_owned()))
             .chain(launch.args.iter().cloned())
+            .chain(launch.project_args.iter().cloned())
             .collect(),
         ..launch.clone()
     };
@@ -284,6 +289,10 @@ mod tests {
                 "/home/u/.local/state/precept/runtime",
                 "--endpoint",
                 "/home/u/.local/state/precept/runtime/control.sock",
+            ]
+            .map(String::from)
+            .to_vec(),
+            project_args: [
                 "--project",
                 "alpha",
                 "--capability-file",
@@ -324,13 +333,10 @@ mod tests {
     fn claude_code_gets_one_command_and_windows_wraps_wsl_exe() {
         let same = snippet(Client::ClaudeCode, &launch(), &Host::Same).unwrap();
         assert!(same.starts_with(
-            "claude mcp add --scope user precept-alpha -- /usr/bin/precept-mcp --runtime-dir "
+            "claude mcp add --scope user precept -- /usr/bin/precept-mcp --runtime-dir "
         ));
-        assert!(
-            same.ends_with(
-                "--capability-file /home/u/.local/state/precept/runtime/agent-alpha.cap"
-            )
-        );
+        assert!(same.ends_with("--endpoint /home/u/.local/state/precept/runtime/control.sock"));
+        assert!(!same.contains("--project"));
         let host = Host::WindowsToWsl {
             distribution: "archlinux".into(),
             user: "u".into(),
@@ -347,16 +353,22 @@ mod tests {
             user: "u".into(),
         };
         let toml = snippet(Client::Codex, &launch(), &host).unwrap();
-        assert!(toml.contains("[mcp_servers.\"precept-alpha\"]"));
+        assert!(toml.contains("[mcp_servers.\"precept\"]"));
         assert!(toml.contains("command = \"wsl.exe\""));
         assert!(toml.contains("\"Ubuntu 24.04\""));
         let json: serde_json::Value =
             serde_json::from_str(&snippet(Client::Json, &launch(), &Host::Same).unwrap()).unwrap();
         assert_eq!(
-            json["mcpServers"]["precept-alpha"]["command"],
+            json["mcpServers"]["precept"]["command"],
             "/usr/bin/precept-mcp"
         );
-        assert_eq!(json["mcpServers"]["precept-alpha"]["args"][5], "alpha");
+        assert_eq!(
+            json["mcpServers"]["precept"]["args"]
+                .as_array()
+                .unwrap()
+                .len(),
+            4
+        );
         // A shell word with a space is quoted.
         let claude = snippet(Client::ClaudeCode, &launch(), &host).unwrap();
         assert!(claude.contains("-d 'Ubuntu 24.04' -u u"));

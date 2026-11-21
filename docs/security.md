@@ -60,10 +60,11 @@ separate design with its own threat model.
   stays silent outside the project root and fails open. Its entry in Claude Code's,
   Codex's or Antigravity's user configuration is added or removed by the daemon only on an
   Operator request carrying the reported file digest, touching only Precept's
-  entry and keeping a backup. The same holds for the `precept-<project>` MCP
-  server entry in Claude Code's, Codex's or Antigravity's user configuration; it
-  names only `precept-mcp`, the runtime paths and the project's capability file,
-  never a token. The AGENTS.md pointer is written by the daemon only on an Operator
+  entry and keeping a backup. The same holds for the one `precept` MCP server
+  entry in Claude Code's, Codex's or Antigravity's user configuration; it names
+  only `precept-mcp` and the runtime paths, never a project or a token. The server
+  uses only the capability of the registered project that holds the session's
+  folder, so a session never sees another project's tools or context. The AGENTS.md pointer is written by the daemon only on an Operator
   request carrying the previewed file digest, only between Precept's markers, in a
   served project's root, never through links; Precept never commits.
 - The pre-tool gate is off until the Operator turns it on per project

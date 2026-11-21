@@ -419,8 +419,17 @@ fn agent_access_is_switched_per_project_and_persists_without_touching_the_profil
         .iter()
         .map(|a| a.as_str().unwrap().to_owned())
         .collect();
-    assert_eq!(args[4..6], ["--project".to_owned(), "alpha".to_owned()]);
-    assert!(args[7].ends_with("agent-alpha.cap"));
+    // One server for every project: no project in its arguments.
+    assert_eq!(args.len(), 4);
+    assert!(!args.iter().any(|a| a == "--project"));
+    assert_eq!(mcp["project_args"][0], "--project");
+    assert_eq!(mcp["project_args"][1], "alpha");
+    assert!(
+        mcp["project_args"][3]
+            .as_str()
+            .unwrap()
+            .ends_with("agent-alpha.cap")
+    );
     let token = fs::read_to_string(runtime.join("agent-alpha.cap")).unwrap();
     assert!(!mcp.to_string().contains(token.trim()));
     // Agents cannot switch or read the launch line.

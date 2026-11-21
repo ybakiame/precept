@@ -26,12 +26,13 @@ pub enum State {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Malformed;
 
-/// The block for `project` (no trailing newline).
-pub fn block(project: &str) -> String {
+/// The block (no trailing newline); the same for every project, since one
+/// `precept` server serves the project of the session's folder.
+pub fn block() -> String {
     format!(
         "{BEGIN}\n## Precept\n\nThis project's confirmed engineering context (the developer's reviewed \
 preferences and the repository's contracts) is served by Precept. Before planning or editing, call \
-`get_effective_context` on the `precept-{project}` MCP server, and again after your context is \
+`get_effective_context` on the `precept` MCP server, and again after your context is \
 compacted. Current repository files and contracts outrank those preferences: report a conflict \
 instead of choosing silently.\n{END}"
     )
@@ -56,21 +57,21 @@ fn span(text: &str) -> Result<Option<(usize, usize)>, Malformed> {
     }
 }
 
-pub fn state(existing: Option<&str>, project: &str) -> Result<State, Malformed> {
+pub fn state(existing: Option<&str>) -> Result<State, Malformed> {
     let Some(text) = existing else {
         return Ok(State::Absent);
     };
     Ok(match span(text)? {
         None => State::Absent,
-        Some((b, e)) if text[b..e] == block(project) => State::Current,
+        Some((b, e)) if text[b..e] == block() => State::Current,
         Some(_) => State::Outdated,
     })
 }
 
 /// `existing` (or a new file) with the current block in place of an old one,
 /// or appended after a blank line.
-pub fn upsert(existing: Option<&str>, project: &str) -> Result<String, Malformed> {
-    let block = block(project);
+pub fn upsert(existing: Option<&str>) -> Result<String, Malformed> {
+    let block = block();
     let Some(text) = existing else {
         return Ok(format!("{block}\n"));
     };
@@ -107,24 +108,24 @@ mod tests {
 
     #[test]
     fn upsert_is_idempotent_and_preserves_everything_else() {
-        let created = upsert(None, "alpha").unwrap();
-        assert_eq!(state(Some(&created), "alpha"), Ok(State::Current));
-        assert_eq!(upsert(Some(&created), "alpha").unwrap(), created);
+        let created = upsert(None).unwrap();
+        assert_eq!(state(Some(&created)), Ok(State::Current));
+        assert_eq!(upsert(Some(&created)).unwrap(), created);
         assert_eq!(remove(&created), Ok(None));
 
         let prose = "# Repo rules\n\nUse tabs.\n";
-        let with = upsert(Some(prose), "alpha").unwrap();
+        let with = upsert(Some(prose)).unwrap();
         assert!(with.starts_with(prose));
-        assert_eq!(upsert(Some(&with), "alpha").unwrap(), with);
+        assert_eq!(upsert(Some(&with)).unwrap(), with);
         assert_eq!(remove(&with).unwrap().unwrap(), prose);
 
-        let middle = format!("Top\n\n{}\n\nBottom\n", block("old"));
-        assert_eq!(state(Some(&middle), "alpha"), Ok(State::Outdated));
-        let updated = upsert(Some(&middle), "alpha").unwrap();
-        assert_eq!(updated, format!("Top\n\n{}\n\nBottom\n", block("alpha")));
+        let middle = format!("Top\n\n{BEGIN}\n## Precept\n\nAn older text.\n{END}\n\nBottom\n");
+        assert_eq!(state(Some(&middle)), Ok(State::Outdated));
+        let updated = upsert(Some(&middle)).unwrap();
+        assert_eq!(updated, format!("Top\n\n{}\n\nBottom\n", block()));
         assert_eq!(remove(&updated).unwrap().unwrap(), "Top\n\nBottom\n");
         let v0 = middle.replace("precept:begin v1", "precept:begin v0");
-        assert_eq!(state(Some(&v0), "old"), Ok(State::Outdated));
+        assert_eq!(state(Some(&v0)), Ok(State::Outdated));
     }
 
     #[test]
@@ -132,13 +133,13 @@ mod tests {
         for bad in [
             format!("x\n{BEGIN}\n"),
             format!("{END}\n{BEGIN}\n"),
-            format!("{}\n{}\n", block("a"), block("a")),
+            format!("{}\n{}\n", block(), block()),
         ] {
-            assert_eq!(upsert(Some(&bad), "a"), Err(Malformed));
+            assert_eq!(upsert(Some(&bad)), Err(Malformed));
             assert_eq!(remove(&bad), Err(Malformed));
-            assert_eq!(state(Some(&bad), "a"), Err(Malformed));
+            assert_eq!(state(Some(&bad)), Err(Malformed));
         }
-        assert_eq!(state(None, "a"), Ok(State::Absent));
+        assert_eq!(state(None), Ok(State::Absent));
         assert_eq!(digest(b"").len(), 64);
     }
 }
