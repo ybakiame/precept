@@ -18,7 +18,7 @@ fn info() -> Value {
     json!({"name":"precept","version":"0.1.0a0"})
 }
 /// Sent once in `initialize`: what the server is for and when to call it.
-const INSTRUCTIONS: &str = "Precept serves this project's confirmed engineering context: the developer's reviewed preferences and the repository's contracts. Call get_effective_context before planning or editing anything in this project, and again after your context was compacted. Treat confirmed preferences as the developer's standing instructions; current repository files and contracts outrank them, so report a conflict instead of choosing silently. Call get_handoff with a task id to resume saved work. Both are read-only. When the developer states a lasting preference or you learn a durable project convention, you may file it with suggest_rule: it only becomes a suggestion the developer reviews, never an active rule, and works only where they allowed it.";
+const INSTRUCTIONS: &str = "Precept serves this project's confirmed engineering context: the developer's reviewed preferences and the repository's contracts. Call get_effective_context before planning or editing anything in this project, and again after your context was compacted. Treat confirmed preferences as the developer's standing instructions; current repository files and contracts outrank them, so report a conflict instead of choosing silently. Call get_handoff with a task id to resume saved work. Both are read-only. When the developer states a lasting preference or you learn a durable project convention, you may file it with suggest_rule: it only becomes a suggestion the developer reviews, never an active rule, and works only where they allowed it. Where allowed, record your work with start_session and update_work_state so the next agent (or you, after compaction) can continue.";
 fn tools() -> Value {
     let selector = json!({"type":"object","properties":{
         "agent_id":{"type":"string"},"path":{"type":"string"},"language":{"type":"string"},
@@ -39,7 +39,22 @@ fn tools() -> Value {
                 "task_tags":{"type":"array","items":{"type":"string"}}
             },"additionalProperties":false},
             "enforcement":{"type":"string","enum":["advisory","verify","hard"]}
-        },"required":["scope","key","value"],"additionalProperties":false}}
+        },"required":["scope","key","value"],"additionalProperties":false}},
+        {"name":"start_session","description":"Start (or resume) your work session in this project and say what you are working on. Other agents of this project see open sessions at their start, so work can continue across agents and after compaction. Call it once your task is clear; pass the conversation id if you have one, so the same conversation finds its session again.","inputSchema":{"type":"object","properties":{
+            "goal":{"type":"string","maxLength":500},
+            "conversation_id":{"type":"string","maxLength":128},
+            "done":{"type":"array","items":{"type":"string","maxLength":200},"maxItems":12},"doing":{"type":"array","items":{"type":"string","maxLength":200},"maxItems":12},"todo":{"type":"array","items":{"type":"string","maxLength":200},"maxItems":12}
+        },"required":["goal"],"additionalProperties":false}},
+        {"name":"update_work_state","description":"Keep your session's work state current: what is done, what you are doing, what is next (each list replaces the previous one). Update it when a step finishes and before your context is compacted.","inputSchema":{"type":"object","properties":{
+            "session_id":{"type":"string"},
+            "goal":{"type":"string","maxLength":500},
+            "done":{"type":"array","items":{"type":"string","maxLength":200},"maxItems":12},"doing":{"type":"array","items":{"type":"string","maxLength":200},"maxItems":12},"todo":{"type":"array","items":{"type":"string","maxLength":200},"maxItems":12}
+        },"required":["session_id"],"additionalProperties":false}},
+        {"name":"close_session","description":"Close your work session when the task is finished or handed over, with a short summary of the outcome and anything left for the next agent.","inputSchema":{"type":"object","properties":{
+            "session_id":{"type":"string"},
+            "summary":{"type":"string","maxLength":1000},
+            "todo":{"type":"array","items":{"type":"string","maxLength":200},"maxItems":12}
+        },"required":["session_id"],"additionalProperties":false}}
     ])
 }
 fn error(id: Value, code: i64, message: &str) -> Value {
@@ -75,6 +90,28 @@ fn suggestion_reply(result: Result<Value, Error>) -> Value {
         Err(_) => {
             "Precept could not file the suggestion. Do not retry; mention the rule in your reply instead."
         }
+    };
+    tool_error(text)
+}
+/// What a session tool tells the agent.
+fn session_reply(result: Result<Value, Error>) -> Value {
+    let text = match result {
+        Ok(v) => {
+            return json!({"content":[{"type":"text","text":format!(
+                "Session `{}` ({}). Keep it current with update_work_state; close it with close_session when done.",
+                v.get("id").and_then(Value::as_str).unwrap_or("?"),
+                v.get("status").and_then(Value::as_str).unwrap_or("?")
+            )}],"isError":false});
+        }
+        Err(Error::Unauthorized) => {
+            "The developer has not allowed this project's agents to record work sessions (Precept, Agents page). Do not retry."
+        }
+        Err(Error::NotFound) => "No such session in this project; start one with start_session.",
+        Err(Error::InvalidTransition) => "That session is closed; start a new one.",
+        Err(Error::InvalidRequest) => {
+            "Invalid work state: a goal is required (at most 500 characters); at most 12 items per list, 200 characters each."
+        }
+        Err(_) => "Precept could not record the session. Do not retry; continue your task.",
     };
     tool_error(text)
 }
@@ -152,6 +189,49 @@ impl Bridge {
                 }
                 ("preference.suggest", Value::Object(args.clone()))
             }
+            Some(tool @ ("start_session" | "update_work_state" | "close_session")) => {
+                let allowed: &[&str] = match tool {
+                    "start_session" => &["goal", "conversation_id", "done", "doing", "todo"],
+                    "update_work_state" => &["session_id", "goal", "done", "doing", "todo"],
+                    _ => &["session_id", "summary", "todo"],
+                };
+                let lists_ok = ["done", "doing", "todo"].iter().all(|k| {
+                    args.get(*k).is_none_or(|v| {
+                        v.as_array().is_some_and(|a| a.iter().all(Value::is_string))
+                    })
+                });
+                let strings_ok = ["goal", "conversation_id", "session_id", "summary"]
+                    .iter()
+                    .all(|k| args.get(*k).is_none_or(Value::is_string));
+                let required = if tool == "start_session" {
+                    "goal"
+                } else {
+                    "session_id"
+                };
+                if args.keys().any(|k| !allowed.contains(&k.as_str()))
+                    || !lists_ok
+                    || !strings_ok
+                    || args.get(required).is_none()
+                {
+                    diagnose("session tool refused: invalid arguments");
+                    return Ok(tool_error("Invalid arguments: see the tool's schema"));
+                }
+                let mut params = serde_json::Map::new();
+                for (k, v) in args {
+                    let name = match k.as_str() {
+                        "session_id" => "id",
+                        "conversation_id" => "conversation",
+                        other => other,
+                    };
+                    params.insert(name.into(), v.clone());
+                }
+                let method = match tool {
+                    "start_session" => "session.start",
+                    "update_work_state" => "session.update",
+                    _ => "session.close",
+                };
+                (method, Value::Object(params))
+            }
             Some("get_handoff") => {
                 if args.len() != 1 || !args.get("task_id").is_some_and(Value::is_string) {
                     diagnose("get_handoff refused: invalid arguments");
@@ -181,6 +261,9 @@ impl Bridge {
         }
         if method == "preference.suggest" {
             return Ok(suggestion_reply(result));
+        }
+        if method.starts_with("session.") {
+            return Ok(session_reply(result));
         }
         Ok(match result {
             Ok(data) => {
@@ -346,9 +429,9 @@ async fn main() {
 mod tests {
     use super::*;
     #[test]
-    fn schemas_expose_two_read_tools_and_suggest_rule_none_naming_a_project() {
+    fn schemas_expose_read_suggest_and_session_tools_none_naming_a_project() {
         let v = tools();
-        assert_eq!(v.as_array().unwrap().len(), 3);
+        assert_eq!(v.as_array().unwrap().len(), 6);
         for t in v.as_array().unwrap() {
             assert_eq!(t["inputSchema"]["additionalProperties"], false);
             assert!(

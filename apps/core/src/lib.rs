@@ -17,6 +17,7 @@ pub mod profile;
 pub mod projects;
 pub mod settings;
 pub mod tag_colors;
+pub mod work;
 
 pub const PAGE_SIZE: usize = 12;
 /// Tags offered before any are in use: common kinds of working preference.
@@ -218,6 +219,9 @@ pub struct Model {
     /// The project-scoped Agents (MCP) page.
     pub agents_page: bool,
     pub agents: mcp::AgentsPage,
+    /// The project-scoped Sessions page (agents' work sessions).
+    pub sessions_page: bool,
+    pub sessions: work::SessionsPage,
     /// Registered WSL distributions (`None` until listed on this page).
     pub distributions: Option<Result<Vec<String>, &'static str>>,
     pub probe: Probe,
@@ -296,6 +300,8 @@ impl Model {
             setup_open: false,
             setup_tab: SetupTab::Connection,
             agents_page: false,
+            sessions_page: false,
+            sessions: Default::default(),
             agents: Default::default(),
             distributions: None,
             probe: Probe::Idle,

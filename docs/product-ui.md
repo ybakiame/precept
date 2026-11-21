@@ -126,6 +126,13 @@ writes on and stay inactive until confirmed in Review, where they carry the agen
 origin badge. Doctor reports the switch, and warns when it is on while writes are
 off.
 
+**Sessions** (in the Workspace group) lists the selected project's work sessions
+as agents recorded them: the goal, open or closed, which agent and when, and how
+many items are doing, next and done. A session opens a sheet with its lists and
+summary and **Delete session…** behind a confirmation; nothing else is editable
+here. The page explains that sessions are agents' notes, not rules, and that
+agents write them only where agent writes are allowed.
+
 The Agents page lists the selected project's recent agent activity from the daemon's
 in-memory log: when an MCP client started `precept-mcp`, what it read (by count), who
 asked (the client's self-reported name, or how it arrived) and each outcome,

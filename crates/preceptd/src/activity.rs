@@ -33,6 +33,8 @@ pub enum Kind {
     Handoff,
     /// `suggest_rule` (`preference.suggest`): an agent suggested a rule.
     Suggested,
+    /// An agent started, updated or closed its work session.
+    Session,
     /// The connection's credential was refused before any request.
     Refused,
 }

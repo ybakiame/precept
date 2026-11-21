@@ -31,6 +31,8 @@ pub const CONTROL_METHODS: &[&str] = &[
     "integration.mcp",
     "integration.mcp.apply",
     "import.scan",
+    "sessions.list",
+    "sessions.delete",
 ];
 /// The project-set writes, sent with the OperatorWrite credential.
 pub const PROJECT_WRITES: &[&str] = &["project.add", "project.register", "project.remove"];

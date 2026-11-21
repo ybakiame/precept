@@ -63,6 +63,7 @@ async fn revoke_closes_admissions_drains_and_preserves_admitted_committed_respon
         mcp_executable: None,
         grants,
         activity: crate::activity::Activity::default(),
+        sessions: Arc::new(crate::sessions::Sessions::new()),
     };
     profiles.select_remembered();
     let (mut operator, ack) = open(&service, &credentials[0]).await;
@@ -169,6 +170,7 @@ async fn s3_root_drift_between_initial_check_and_final_admission_refuses_review(
             mcp_executable: None,
             grants,
             activity: crate::activity::Activity::default(),
+            sessions: Arc::new(crate::sessions::Sessions::new()),
         };
         profiles.select_remembered();
         let operator = credentials

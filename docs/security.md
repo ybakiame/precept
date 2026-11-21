@@ -67,6 +67,12 @@ separate design with its own threat model.
   can create nothing but a `suggested` record with origin `agent` in its own
   project, its environment or the personal scope, bounded per run and per scope,
   with duplicates refused. Nothing is queued while writes are off.
+- Work sessions are agents' own notes (goal and done / doing / todo), written
+  only where the operator allows agent writes for the project, bounded, kept in
+  the daemon's private state directory (`sessions-<project>.json`, 0600, never
+  in the Profile or the repository) and deleted by the operator at will. They
+  are read back by the project's agents as context, never as rules, and grant
+  nothing.
 - Preference confirmation binds the exact record/revision/scope. Only confirmed
   applicable values reach effective context; repository contracts remain authoritative.
 - Document bodies are opt-in, narrowly allowlisted, bounded and contained. Native

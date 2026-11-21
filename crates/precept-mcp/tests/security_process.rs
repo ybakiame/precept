@@ -446,7 +446,7 @@ fn real_stdio_two_schema_versions_and_notifications_remain_compatible() {
             .request(json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}))
             .unwrap();
         let tools = listing["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 3);
+        assert_eq!(tools.len(), 6);
         let names: std::collections::BTreeSet<_> =
             tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert_eq!(
@@ -454,7 +454,10 @@ fn real_stdio_two_schema_versions_and_notifications_remain_compatible() {
             std::collections::BTreeSet::from([
                 "get_effective_context",
                 "get_handoff",
-                "suggest_rule"
+                "suggest_rule",
+                "start_session",
+                "update_work_state",
+                "close_session"
             ])
         );
         for tool in tools {

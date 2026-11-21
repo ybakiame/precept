@@ -3,7 +3,9 @@
 //! docs/product-ui.md). Also the shared action helpers the feature pages use.
 use crate::*;
 pub(crate) mod chrome;
-use features::{agents, connection, doctor, page, profile, projects, review, settings, setup};
+use features::{
+    agents, connection, doctor, page, profile, projects, review, sessions, settings, setup,
+};
 use precept_ui_core::{Section, SetupTab, i18n::Msg, operator::ReviewMode};
 use tokens::{compact, palette};
 
@@ -57,6 +59,8 @@ pub(crate) enum Destination {
     /// Preferences & contracts.
     Rules,
     Agents,
+    /// Agents' work sessions.
+    Sessions,
     Handoff,
     Review,
     RuntimeChecks,
@@ -71,6 +75,8 @@ pub(crate) fn current(m: &Model) -> Destination {
         Destination::RuntimeChecks
     } else if m.agents_page {
         Destination::Agents
+    } else if m.sessions_page {
+        Destination::Sessions
     } else if m.settings {
         Destination::Settings
     } else {
@@ -90,6 +96,7 @@ fn leave_workspaces(m: &mut Model) {
     m.settings = false;
     m.setup_open = false;
     m.agents_page = false;
+    m.sessions_page = false;
 }
 
 /// Opens Runtime checks directly on `tab` (Connection, Profile, or Workspaces).
@@ -125,6 +132,10 @@ pub(crate) fn go(model: Signal<Model>, destination: Destination) {
             leave_workspaces(m);
             m.agents_page = true;
         }),
+        Destination::Sessions => model.update(|m| {
+            leave_workspaces(m);
+            m.sessions_page = true;
+        }),
         Destination::Dashboard => model.update(|m| {
             leave_workspaces(m);
             m.set_section(Section::Dashboard);
@@ -149,6 +160,7 @@ fn title_key(destination: Destination) -> Msg {
         Destination::Dashboard => Msg::Dashboard,
         Destination::Rules => Msg::RulesAndContracts,
         Destination::Agents => Msg::AgentsDestination,
+        Destination::Sessions => Msg::SessionsDestination,
         Destination::Handoff => Msg::Handoff,
         Destination::Review => Msg::ReviewHub,
         Destination::RuntimeChecks => Msg::RuntimeChecks,
@@ -172,6 +184,7 @@ fn page_help(m: &Model) -> Option<String> {
             SetupTab::Workspaces => words(&[Msg::WorkspacesIntro]),
         },
         Destination::Agents => words(&[Msg::AgentsIntro]),
+        Destination::Sessions => words(&[Msg::SessionsIntro]),
         Destination::Review => words(&[
             Msg::OperatorHelp,
             Msg::ReviewProvenanceNote,
@@ -232,7 +245,11 @@ fn status_row(model: Signal<Model>) -> impl IntoElement {
 pub(crate) fn workspace_scoped(d: Destination) -> bool {
     matches!(
         d,
-        Destination::Dashboard | Destination::Rules | Destination::Agents | Destination::Handoff
+        Destination::Dashboard
+            | Destination::Rules
+            | Destination::Agents
+            | Destination::Sessions
+            | Destination::Handoff
     )
 }
 
@@ -396,6 +413,7 @@ fn sidebar(model: Signal<Model>) -> impl IntoElement {
         (Dashboard, icons::section_path(Section::Dashboard)),
         (Rules, icons::section_path(Section::Rules)),
         (Agents, icons::AGENTS),
+        (Sessions, icons::LIST),
         (Handoff, icons::section_path(Section::Handoff)),
     ];
     // Review: merged pending queue + personal preferences + project preferences.
@@ -732,6 +750,7 @@ pub(crate) fn shell(
     profile::watch(model);
     profile::watch_count(model);
     agents::watch(model);
+    sessions::watch(model);
     let on = move |d: Destination| move || current(&model.get()) != d;
     // Sibling pages cross-fade: the page's content fades in (`fast`) each
     // time the destination changes; nothing remounts, so inputs keep state.
@@ -814,6 +833,13 @@ pub(crate) fn shell(
                                             view()
                                                 .style_when(on(Destination::Agents), |s| s.hidden())
                                                 .child(agents::page(model)),
+                                        )
+                                        .child(
+                                            view()
+                                                .style_when(on(Destination::Sessions), |s| {
+                                                    s.hidden()
+                                                })
+                                                .child(sessions::page(model)),
                                         )
                                         .child(
                                             view()

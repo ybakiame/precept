@@ -345,7 +345,8 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     // Agent suggestions: off until the operator's switch, then they land in
     // Review (writes are on in this run).
     contains(&mut app, "Agents cannot suggest rules");
-    app.press("Agents may suggest rules for gamma").unwrap();
+    app.press("Agents may suggest rules and record work for gamma")
+        .unwrap();
     let start = Instant::now();
     let proposes = |f: &Fixture| {
         f.call("project.list", json!({}))
@@ -361,7 +362,7 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     }
     contains(
         &mut app,
-        "Agents may suggest rules; each waits for your review",
+        "Agents may suggest rules (each waits for your review) and record their work sessions",
     );
     {
         use std::io::{BufRead, BufReader, Write};

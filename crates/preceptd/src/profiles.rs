@@ -262,6 +262,21 @@ impl Profiles {
             .cloned()
             .collect()
     }
+    /// The daemon's private state directory.
+    pub fn state_dir(&self) -> &StateDir {
+        &self.state_dir
+    }
+    /// Whether the operator lets this served project's agents write their
+    /// own records (suggestions, work sessions).
+    pub fn can_propose(&self, project: &str) -> bool {
+        let s = self.state.lock().unwrap();
+        s.proposers.contains(project) && s.roots.contains_key(project)
+    }
+    /// Whether `project` is in the daemon's set (served or not).
+    pub fn listed(&self, project: &str) -> bool {
+        let s = self.state.lock().unwrap();
+        s.projects.contains_key(project) || s.unavailable.contains_key(project)
+    }
     pub fn location(&self) -> &Location {
         &self.location
     }

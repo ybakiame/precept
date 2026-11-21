@@ -24,6 +24,7 @@ mod ownership_tests;
 mod process_tests;
 mod profiles;
 mod scope;
+mod sessions;
 mod state;
 mod worktree;
 #[derive(Parser)]
@@ -47,6 +48,7 @@ struct Service {
     mcp_executable: Option<PathBuf>,
     grants: precept_ipc::peer::Peers,
     activity: activity::Activity,
+    sessions: Arc<sessions::Sessions>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -293,6 +295,55 @@ impl Service {
             }
             return Ok(self.profiles.list());
         }
+        // Work sessions: an agent records its own goal and work state (needs
+        // the operator's permission for agent writes); the operator lists and
+        // deletes them.
+        if matches!(
+            request.method.as_str(),
+            "session.start" | "session.update" | "session.close"
+        ) {
+            let Access::Agent { project } = access else {
+                return Err(Error::Unauthorized);
+            };
+            if !self.profiles.can_propose(&project) {
+                return Err(Error::Unauthorized);
+            }
+            let u: sessions::Update = decode(params)?;
+            let state = self.profiles.state_dir();
+            let session = match request.method.as_str() {
+                "session.start" => self.sessions.start(state, &project, u)?,
+                "session.update" => self.sessions.update(state, &project, u, false)?,
+                _ => self.sessions.update(state, &project, u, true)?,
+            };
+            return serde_json::to_value(session).map_err(|_| Error::Unavailable);
+        }
+        if matches!(request.method.as_str(), "sessions.list" | "sessions.delete") {
+            if access != Access::Operator {
+                return Err(Error::Unauthorized);
+            }
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct P {
+                project: String,
+                #[serde(default)]
+                id: Option<String>,
+            }
+            let p: P = decode(params)?;
+            if !precept_ipc::valid_project(&p.project) || !self.profiles.listed(&p.project) {
+                return Err(Error::NotFound);
+            }
+            let state = self.profiles.state_dir();
+            return match (request.method.as_str(), p.id) {
+                ("sessions.list", None) => Ok(json!({
+                    "sessions": self.sessions.list(state, &p.project)?
+                })),
+                ("sessions.delete", Some(id)) => {
+                    self.sessions.delete(state, &p.project, &id)?;
+                    Ok(json!({"deleted": id}))
+                }
+                _ => Err(Error::InvalidRequest),
+            };
+        }
         if request.method == "preference.suggest" {
             let Access::Agent { project } = access else {
                 return Err(Error::Unauthorized);
@@ -395,12 +446,21 @@ impl Service {
             }
             prepared.finish(current.as_ref().ok_or(Error::UnsafeRuntime)?)
         };
-        result.map_err(|e| match e {
+        let mut result = result.map_err(|e| match e {
             precept_core::Error::HandoffNotFound | precept_core::Error::UnknownProject => {
                 Error::NotFound
             }
             _ => Error::Unavailable,
-        })
+        })?;
+        // Context carries the project's recent work sessions: where other
+        // agents left the work (agents' own records, not reviewed rules).
+        if request.method == "context.get" && result.is_object() {
+            let work = self
+                .sessions
+                .for_context(self.profiles.state_dir(), &project);
+            result["work_sessions"] = serde_json::to_value(work).unwrap_or(Value::Array(vec![]));
+        }
+        Ok(result)
     }
 }
 impl Service {
@@ -700,6 +760,9 @@ async fn peer(mut stream: Stream, service: Service, permit: Arc<OwnedSemaphorePe
                 "context.get" => Some(activity::Kind::Context),
                 "handoff.get" => Some(activity::Kind::Handoff),
                 "preference.suggest" => Some(activity::Kind::Suggested),
+                "session.start" | "session.update" | "session.close" => {
+                    Some(activity::Kind::Session)
+                }
                 _ => None,
             };
             if let Some(kind) = kind {
@@ -773,6 +836,7 @@ async fn run(args: Args) -> precept_ipc::Result<()> {
         mcp_executable: args.mcp_executable,
         grants,
         activity: activity::Activity::default(),
+        sessions: Arc::new(sessions::Sessions::new()),
     };
     // The Profile the operator asked to select at start, if any.
     {

@@ -53,6 +53,7 @@ pub(crate) fn open_mode(model: Signal<Model>, mode: ReviewMode) {
         m.settings = false;
         m.setup_open = false;
         m.agents_page = false;
+        m.sessions_page = false;
         m.operator.review = None;
         m.operator.delete_arm = None;
     });

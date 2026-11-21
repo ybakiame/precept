@@ -150,6 +150,22 @@ agent suggestions in a scope is `Capacity`. The tool's reply says the rule is no
 active until the operator confirms it, and whether to retry. Each call is in the
 activity log as `suggested` with its outcome.
 
+Work sessions: `start_session {goal, conversation_id?, done?, doing?, todo?}`,
+`update_work_state {session_id, goal?, done?, doing?, todo?}` (each given list
+replaces the previous one) and `close_session {session_id, summary?, todo?}` call
+agent `session.start` / `session.update` / `session.close`. They are accepted
+only where the operator allows the project's agents to write
+(`project.propose`), need no write grant and never touch the Profile. A start
+with a conversation id returns the agent's open session for it, if any. Bounds:
+goal 500 characters, 12 items of 200 characters per list, summary 1000, 20
+sessions per project (closed ones are dropped first). A closed session takes no
+updates (`InvalidTransition`); an unknown id is `NotFound`. Agent and operator
+`context.get` add `work_sessions` (at most five: open first, then recently
+closed, newest first), which the session-start briefing renders as **Work in
+progress**. Operator `sessions.list {project}` returns every session and
+`sessions.delete {project, id}` removes one. Calls are in the activity log as
+`session`.
+
 `initialize` returns `instructions` telling the agent to call
 `get_effective_context` before planning or editing and again after compaction,
 and that repository files and contracts outrank preferences.

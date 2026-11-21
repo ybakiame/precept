@@ -73,7 +73,7 @@ impl StateDir {
     pub fn path(&self) -> &Path {
         &self.dir
     }
-    fn read(&self, name: &str) -> Result<Option<String>> {
+    pub(crate) fn read(&self, name: &str) -> Result<Option<String>> {
         let path = self.dir.join(name);
         match std::fs::symlink_metadata(&path) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -91,7 +91,7 @@ impl StateDir {
             .map_err(|_| Error::InvalidRequest)?;
         Ok(Some(text))
     }
-    fn write(&self, name: &str, body: &[u8]) -> Result<()> {
+    pub(crate) fn write(&self, name: &str, body: &[u8]) -> Result<()> {
         let temporary = self.dir.join(format!(".{name}.{}.tmp", std::process::id()));
         let _ = std::fs::remove_file(&temporary);
         let written = new_private(&temporary).and_then(|mut f| {

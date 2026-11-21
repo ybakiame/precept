@@ -52,6 +52,73 @@ fn applies(p: &Value) -> Option<String> {
     (!parts.is_empty()).then(|| parts.join("; "))
 }
 
+/// `YYYY-MM-DD HH:MM UTC` of a Unix millisecond time.
+fn when(ms: u64) -> String {
+    let days = (ms / 86_400_000) as i64;
+    // Civil date from days since the epoch (Howard Hinnant's algorithm).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!(
+        "{y:04}-{m:02}-{d:02} {:02}:{:02} UTC",
+        (ms / 3_600_000) % 24,
+        (ms / 60_000) % 60
+    )
+}
+
+/// The project's work sessions (agents' own notes, not rules): where the
+/// work stands, so it continues across agents and compaction.
+fn work(context: &Value) -> String {
+    let sessions = context
+        .get("work_sessions")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    if sessions.is_empty() {
+        return String::new();
+    }
+    let list = |s: &Value, field: &str| -> Vec<String> {
+        s.get(field)
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(|t| cut(t, 200).0.to_owned())
+            .collect()
+    };
+    let mut out = String::from(
+        "\n## Work in progress\n\nAgents' own notes on this project's work (not rules). Continue an open one where it fits, and keep yours current with `update_work_state`.\n",
+    );
+    for s in &sessions {
+        let open = s.get("status").and_then(Value::as_str) == Some("open");
+        let goal = cut(s.get("goal").and_then(Value::as_str).unwrap_or(""), 300).0;
+        let agent = s.get("agent").and_then(Value::as_str).unwrap_or("an agent");
+        let updated = s.get("updated_ms").and_then(Value::as_u64).unwrap_or(0);
+        out.push_str(&format!(
+            "\n- **{goal}** ({}, {agent}, {}; session `{}`)\n",
+            if open { "open" } else { "closed" },
+            when(updated),
+            s.get("id").and_then(Value::as_str).unwrap_or("?")
+        ));
+        for (field, label) in [("doing", "Doing"), ("todo", "Next"), ("done", "Done")] {
+            let items = list(s, field);
+            if !items.is_empty() {
+                out.push_str(&format!("  - {label}: {}\n", items.join("; ")));
+            }
+        }
+        if let Some(sum) = s.get("summary").and_then(Value::as_str) {
+            out.push_str(&format!("  - Summary: {}\n", cut(sum, 400).0));
+        }
+    }
+    out
+}
+
 /// Renders `context` (the `context.get` projection) for `project`.
 pub fn render(project: &str, context: &Value, moment: Moment) -> String {
     let mut out = String::new();
@@ -154,6 +221,14 @@ pub fn render(project: &str, context: &Value, moment: Moment) -> String {
             out.push_str(&line);
         }
     }
+    if !truncated {
+        let work = work(context);
+        if out.len() + work.len() > MAX_BYTES - 200 {
+            truncated = true;
+        } else {
+            out.push_str(&work);
+        }
+    }
     if let Some(status) = context
         .pointer("/contract_resolution/status")
         .and_then(Value::as_str)
@@ -214,5 +289,18 @@ mod tests {
             b.contains("## Work environment (this machine)\n\n- **shell**: Agents run inside WSL.")
         );
         assert!(!b.contains("### shell"));
+        let with_work = json!({"work_sessions":[
+            {"id":"ab12","status":"open","agent":"claude-code 2.1","updated_ms":1_763_640_000_000u64,
+             "goal":"Add import","doing":["tests"],"todo":["docs","ship"],"done":[]},
+            {"id":"cd34","status":"closed","updated_ms":0,"goal":"Rename","doing":[],"todo":[],"done":["all"],"summary":"Renamed."}
+        ]});
+        let b = render("alpha", &with_work, Moment::Compact);
+        assert!(b.contains("## Work in progress"));
+        assert!(b.contains(
+            "- **Add import** (open, claude-code 2.1, 2025-11-20 12:00 UTC; session `ab12`)"
+        ));
+        assert!(b.contains("  - Next: docs; ship"));
+        assert!(b.contains("  - Summary: Renamed."));
+        assert!(!render("alpha", &json!({}), Moment::Start).contains("Work in progress"));
     }
 }
