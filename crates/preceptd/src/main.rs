@@ -113,7 +113,11 @@ impl Service {
         if request.method.starts_with("profile.")
             || matches!(
                 request.method.as_str(),
-                "project.check" | "project.add" | "project.remove" | "project.agents"
+                "project.check"
+                    | "project.add"
+                    | "project.register"
+                    | "project.remove"
+                    | "project.agents"
             )
         {
             return self

@@ -439,20 +439,97 @@ impl Profiles {
             publish_selection
         }
     }
+    /// Records `name` at the canonical `root` in the selected Profile through
+    /// the owner, re-checking the write grant and the root at admission.
+    fn register_root(
+        s: &State,
+        grant: &Grant,
+        access: &Access,
+        name: &str,
+        root: &Path,
+    ) -> Result<Value> {
+        let Access::OperatorWrite {
+            profile_id,
+            generation,
+            owner_epoch,
+        } = access
+        else {
+            return Err(Error::Unauthorized);
+        };
+        let request = precept_write::Request::from_json(
+            &serde_json::to_vec(&json!({
+                "version": 2,
+                "binding": {"profile_id":profile_id,"generation":generation,"owner_epoch":owner_epoch},
+                "operation_id": precept_ipc::operator::operation_id()?,
+                "command": {"command":"register_project","name":name,"root":root,"expected":{"kind":"absent"}},
+            }))
+            .map_err(|_| Error::InvalidRequest)?,
+        )
+        .map_err(storage_error)?;
+        let owner = s.owner.as_ref().ok_or(Error::Unauthorized)?;
+        let receipt = owner
+            .execute(&request, &|| {
+                grant
+                    .check()
+                    .map_err(|_| precept_write::Error::Unauthorized)?;
+                // The root must still be the same directory at admission.
+                match root.canonicalize() {
+                    Ok(current) if current == root && current.is_dir() => Ok(()),
+                    _ => Err(precept_write::Error::UnsafeWorkspace),
+                }
+            })
+            .map_err(storage_error)?;
+        serde_json::to_value(receipt).map_err(|_| Error::Unavailable)
+    }
+    /// `project.register`: an operator write. A project already in the daemon's
+    /// set but not in the selected Profile (a new Profile, or one made before
+    /// the project was added) is recorded there at its pinned root. Nothing
+    /// else changes: the set, sharing and credentials stay as they are.
+    fn register(&self, authority: &Peer, params: Value) -> Result<Value> {
+        let access = authority.access();
+        if !matches!(access, Access::OperatorWrite { .. }) {
+            return Err(Error::Unauthorized);
+        }
+        let p: NameParams = super::decode(params)?;
+        let mut s = self.state.lock().unwrap();
+        authority.check()?;
+        let grant = s.grant.as_ref().ok_or(Error::Unauthorized)?.clone();
+        if grant.access() != access || grant.check().is_err() {
+            return Err(Error::Unauthorized);
+        }
+        let root = s.projects.get(&p.name).cloned().ok_or(Error::NotFound)?;
+        if s.roots.contains_key(&p.name) {
+            return Err(Error::Conflict);
+        }
+        match root.canonicalize() {
+            Ok(current) if current == root && current.is_dir() => {}
+            _ => return Err(Error::UnsafeRuntime),
+        }
+        let reader = s
+            .selected
+            .as_ref()
+            .ok_or(Error::Unavailable)?
+            .reader()
+            .map_err(storage_error)?;
+        // A Profile that names this project at another root keeps it unserved.
+        match reader.read_project(&p.name) {
+            Ok(_) => return Err(Error::Conflict),
+            Err(precept_store::Error::UnknownProject) => {}
+            Err(_) => return Err(Error::Unavailable),
+        }
+        let receipt = Self::register_root(&s, &grant, &access, &p.name, &root)?;
+        s.roots.insert(p.name.clone(), root.clone());
+        Ok(json!({"registered":p.name,"root":root,"receipt":receipt}))
+    }
     /// `project.add`: an operator write. Validates the root with the scope
     /// rules and the session checks, registers it in the Profile unless the
     /// Profile already has exactly this name at this root, then persists the
     /// set, applies it and publishes the agent credential, without a restart.
     fn add(&self, authority: &Peer, params: Value, hooks: &dyn Hooks) -> Result<Value> {
         let access = authority.access();
-        let Access::OperatorWrite {
-            profile_id,
-            generation,
-            owner_epoch,
-        } = access.clone()
-        else {
+        if !matches!(access, Access::OperatorWrite { .. }) {
             return Err(Error::Unauthorized);
-        };
+        }
         let p: AddParams = super::decode(params)?;
         let mut s = self.state.lock().unwrap();
         authority.check()?;
@@ -498,30 +575,7 @@ impl Profiles {
         let receipt = if registered {
             Value::Null
         } else {
-            let request = precept_write::Request::from_json(
-                &serde_json::to_vec(&json!({
-                    "version": 2,
-                    "binding": {"profile_id":profile_id,"generation":generation,"owner_epoch":owner_epoch},
-                    "operation_id": precept_ipc::operator::operation_id()?,
-                    "command": {"command":"register_project","name":p.name,"root":root,"expected":{"kind":"absent"}},
-                }))
-                .map_err(|_| Error::InvalidRequest)?,
-            )
-            .map_err(storage_error)?;
-            let owner = s.owner.as_ref().ok_or(Error::Unauthorized)?;
-            let receipt = owner
-                .execute(&request, &|| {
-                    grant
-                        .check()
-                        .map_err(|_| precept_write::Error::Unauthorized)?;
-                    // The root must still be the same directory at admission.
-                    match root.canonicalize() {
-                        Ok(current) if current == root && current.is_dir() => Ok(()),
-                        _ => Err(precept_write::Error::UnsafeWorkspace),
-                    }
-                })
-                .map_err(storage_error)?;
-            serde_json::to_value(receipt).map_err(|_| Error::Unavailable)?
+            Self::register_root(&s, &grant, &access, &p.name, &root)?
         };
         // Persist, then apply, then publish the credential. A failure here
         // leaves at most a registered but unlisted project: inert, and adding
@@ -695,6 +749,9 @@ impl Profiles {
         }
         if method == "project.add" {
             return self.add(authority, params, hooks);
+        }
+        if method == "project.register" {
+            return self.register(authority, params);
         }
         if method == "project.remove" {
             // An operator write: the current Profile's write grant, exactly.

@@ -29,7 +29,7 @@ pub const CONTROL_METHODS: &[&str] = &[
     "integration.hooks.apply",
 ];
 /// The project-set writes, sent with the OperatorWrite credential.
-pub const PROJECT_WRITES: &[&str] = &["project.add", "project.remove"];
+pub const PROJECT_WRITES: &[&str] = &["project.add", "project.register", "project.remove"];
 
 pub async fn control(location: &Location, method: &str, params: Value) -> Result<Value> {
     // Internal fixed operator surface; never a helper for shell/remote dispatch.

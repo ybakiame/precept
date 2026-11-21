@@ -258,6 +258,9 @@ pub enum Project {
     Check { root: PathBuf },
     /// Add a project (a Git repository root inside your home).
     Add { name: String, root: PathBuf },
+    /// Record a listed project in the selected Profile (one that is listed as
+    /// not in this Profile, e.g. after creating a new Profile).
+    Register { name: String },
     /// Remove a project from the set; its Profile records are kept.
     Remove { name: String },
     /// Let external agents (MCP) read this project's context again.
@@ -291,6 +294,10 @@ pub async fn project(location: &Location, command: Project) -> Result<Value> {
                 json!({"name":name,"root":root}),
             )
             .await
+        }
+        Project::Register { name } => {
+            precept_ipc::operator::project_write(location, "project.register", json!({"name":name}))
+                .await
         }
         Project::Remove { name } => {
             precept_ipc::operator::project_write(location, "project.remove", json!({"name":name}))

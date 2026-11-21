@@ -227,6 +227,17 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         std::thread::sleep(Duration::from_millis(20));
     }
     assert_eq!(f.info()["write_enabled"], true);
+    // alpha came from the daemon's set, not this new Profile: one click
+    // records it here, and only its row offers that.
+    contains(&mut app, "Not in this Profile");
+    assert!(!app.screen().shows("Register in this Profile: gamma"));
+    app.press("Register in this Profile: alpha").unwrap();
+    let start = Instant::now();
+    while f.call("project.list", json!({})).unwrap()[0]["state"] != "ready" {
+        assert!(start.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    contains(&mut app, "Registered in this Profile: alpha");
     // Each row's Remove names its project for screen readers.
     app.press("Remove alpha").unwrap();
     app.wait_for("Remove this project?").unwrap();

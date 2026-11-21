@@ -362,10 +362,13 @@ fn checks(model: Signal<Model>) -> impl IntoElement {
         let m = model.get();
         let unchosen =
             m.connection_draft.target == Target::Wsl && m.connection_draft.distribution.is_empty();
-        (m.probe.clone(), unchosen)
+        // The probe is a snapshot; a Profile selected since it ran (observed
+        // by the live `profile.info` read) must not still read "None selected".
+        let selected = m.profile_info.as_ref().map(|i| i.selected);
+        (m.probe.clone(), unchosen, selected)
     });
     let rows = dynamic(move || {
-        let (probe, unchosen) = state.get();
+        let (probe, unchosen, selected) = state.get();
         // Each new outcome arrives (fades in rising), once.
         let reveal = ui::motion::reveal();
         let outcome = match &probe {
@@ -381,7 +384,7 @@ fn checks(model: Signal<Model>) -> impl IntoElement {
                 })
                 .into_element()
             }
-            Probe::Found(d) => found(model, d),
+            Probe::Found(d) => found(model, d, selected),
         };
         view().bind_motion(&reveal).child(outcome).into_element()
     });
@@ -397,7 +400,7 @@ fn checks(model: Signal<Model>) -> impl IntoElement {
     )
 }
 
-fn found(model: Signal<Model>, d: &Discovery) -> AnyElement {
+fn found(model: Signal<Model>, d: &Discovery, observed: Option<bool>) -> AnyElement {
     use BadgeVariant::{Danger, Neutral, Success, Warning};
     let systemd = if d.systemd {
         row(
@@ -470,7 +473,13 @@ fn found(model: Signal<Model>, d: &Discovery) -> AnyElement {
             }),
         ),
     };
-    let profile = match d.daemon {
+    let observed_daemon = match d.daemon {
+        DaemonStatus::Ready { profile_selected } => DaemonStatus::Ready {
+            profile_selected: observed.unwrap_or(profile_selected),
+        },
+        other => other,
+    };
+    let profile = match observed_daemon {
         DaemonStatus::Ready {
             profile_selected: true,
         } => row(

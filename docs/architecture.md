@@ -72,7 +72,7 @@ evidence.
 | --- | --- | --- |
 | Personal preferences, including project-scoped choices | Human-reviewed user-local SQLite | Explicit operator action; never tracked Profile files |
 | Project contracts | Repository-owned AGENTS/docs and reviewed engineering configuration | Bounded live reads; no automatic prose interpretation or file creation |
-| Project registration | User-local Profile plus daemon-private project state | Operator-write `project.add` / `project.remove` after checking one chosen path |
+| Project registration | User-local Profile plus daemon-private project state | Operator-write `project.add` / `project.remove` after checking one chosen path; `project.register` records a listed project in a newly selected Profile at its pinned root |
 | Suggestions and reviews | User-local SQLite proposal/review records | Approval binds exact content, revision and scope; repository changes still need repository review |
 | Effective context | Derived from current sources and review state | Any cache requires source versions and invalidation; never outranks sources |
 | Session constraints and Handoff | Historical local records | Frozen references/content versions describe history, not live policy or execution authority |

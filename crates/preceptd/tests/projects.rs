@@ -347,6 +347,40 @@ fn the_project_set_is_listed_before_any_profile_is_selected() {
 }
 
 #[test]
+fn a_listed_project_is_registered_in_a_new_profile_by_the_operator_only() {
+    let f = Fixture::created();
+    let register = |cap: &str, name: &str| {
+        f.daemon.call(
+            &f.daemon.credential(cap),
+            "project.register",
+            json!({"name":name}),
+        )
+    };
+    // A fresh Profile knows none of the daemon's projects.
+    assert!(names(&f).contains(&("alpha".into(), "unregistered".into())));
+    assert_eq!(register("operator.cap", "alpha"), Err(Error::Unauthorized));
+    f.daemon.enable();
+    assert_eq!(
+        register("operator-write.cap", "gamma"),
+        Err(Error::NotFound)
+    );
+    let done = register("operator-write.cap", "alpha").unwrap();
+    assert_eq!(done["registered"], "alpha");
+    assert!(names(&f).contains(&("alpha".into(), "ready".into())));
+    assert!(names(&f).contains(&("beta".into(), "unregistered".into())));
+    // Once is enough; the Profile now names it.
+    assert_eq!(
+        register("operator-write.cap", "alpha"),
+        Err(Error::Conflict)
+    );
+    assert!(
+        f.daemon
+            .control("context.get", json!({"project":"alpha"}))
+            .is_ok()
+    );
+}
+
+#[test]
 fn an_unselected_daemon_suggests_a_profile_in_its_state_directory_and_never_creates_it() {
     let f = Fixture::unselected();
     let info = f.daemon.control("profile.info", json!({})).unwrap();

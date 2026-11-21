@@ -166,6 +166,38 @@ fn add_now(model: Signal<Model>) {
     reload_after(model);
 }
 
+/// Records a listed project in the selected Profile; with writes off, the
+/// one click turns them on for this run first, as Add does.
+fn register(model: Signal<Model>, name: String) {
+    if writes_on(model) {
+        register_now(model, name);
+    } else {
+        super::profile::enable_writes(model, move |model| register_now(model, name));
+    }
+}
+fn register_now(model: Signal<Model>, name: String) {
+    model.update(|m| {
+        m.project_add.busy = true;
+        m.project_add.error = None;
+    });
+    call(
+        model,
+        "project.register",
+        serde_json::json!({"name": name}),
+        move |m, r| {
+            m.project_add.busy = false;
+            match r {
+                Ok(_) => ui::notify(
+                    ui::Tone::Success,
+                    m.word(Msg::ToastProjectRegistered).replace("{name}", &name),
+                ),
+                Err(code) => m.project_add.error = Some(code.into()),
+            }
+        },
+    );
+    reload_after(model);
+}
+
 fn remove(model: Signal<Model>) {
     if model.get().project_remove.is_none() {
         return;
@@ -290,6 +322,26 @@ fn list(model: Signal<Model>) -> impl IntoElement {
                             info
                         })
                         .child(state_badge(model, &entry.state));
+                    if live && entry.state == "unregistered" {
+                        let name = entry.name.clone();
+                        row = row.child(
+                            button(model, "")
+                                .label_fn(word(model, Msg::RegisterProject))
+                                .spoken({
+                                    let name = entry.name.clone();
+                                    move || {
+                                        format!(
+                                            "{} {name}",
+                                            model.get().word(Msg::RegisterProjectSpoken)
+                                        )
+                                        .into()
+                                    }
+                                })
+                                .size(ButtonSize::Small)
+                                .disabled(move || model.get().project_add.busy)
+                                .on_press(move || register(model, name.clone())),
+                        );
+                    }
                     if live {
                         row = row.child(
                             button(model, "")
