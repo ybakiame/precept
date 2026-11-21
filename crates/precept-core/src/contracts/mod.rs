@@ -10,8 +10,8 @@ mod snapshot;
 pub use bridge::{Projection, SelectorQuery, project};
 pub use checks::{MAX_CHECKED_BYTES, evaluate};
 pub use parser::{
-    Check, DIR, Guard, GuardTool, InvalidSource, MAX_BYTES, MAX_FILES, RuleFile, id_for, parse,
-    relative_path, render, valid_id, valid_key,
+    Check, DIR, Guard, GuardTool, InvalidSource, MAX_BYTES, MAX_FILES, RuleFile, heading_title,
+    id_for, parse, relative_path, render, valid_id, valid_key,
 };
 pub use snapshot::Snapshot;
 

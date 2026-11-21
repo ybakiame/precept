@@ -192,8 +192,10 @@ the current check result (checks pass n/m, check failing with the file, or check
 could not run), declared enforcement and guard count, and for guarded rules whether
 the gate is on; uncommitted and invalid files
 are named below them. In Review → Project conventions, a confirmed record offers
-**Write to repository…**: a dialog previews the exact file and path and writes it
-only to an absent path; the operator reviews and commits it. A row's **Details** opens a dialog that renders the rule's
+**Write to repository…**: a dialog previews the exact file and path and writes it;
+when the file exists and differs it shows the change as a diff and **Update file**
+keeps the checks, guards and allowed values written in the file. The operator
+reviews and commits it. A row's **Details** opens a dialog that renders the rule's
 Markdown, with where it applies and its tags, **Copy text** and **Close** (the
 terminal keeps the paged inline detail). Review rows put the origin icon in its own
 column, then the title (key, number and revision; it wraps, and its accessible name

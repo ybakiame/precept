@@ -263,10 +263,13 @@ raw typed explanations. No repository files are
 created or modified by this read path.
 
 Operator `rules.export` previews writing one confirmed convention of a served
-project as `.precept/rules/<id>.md` (path, exact text, `absent` / `same` /
-`different`, current digest); `rules.export.apply` with `enabled` writes it only
-to an absent path, guarded by the previewed digest, or takes back a file still
-exactly as Precept wrote it. Nothing is committed; agents cannot call either.
+project as `.precept/rules/<id>.md`: path, exact text (key, `title` from the text's
+first heading, tags, options, the text), the current text, its digest, and
+`absent`, `same`, `different` (an update) or `invalid` (a file that does not parse).
+`rules.export.apply` with `enabled` writes it, guarded by the previewed digest: a
+new file, or an update of a file that parses, keeping the allowed values, checks
+and guards only the file declares; an invalid file is never touched. Disabled, it
+takes back a file still exactly as Precept would write it. Nothing is committed; agents cannot call either.
 
 ### Agent activity
 

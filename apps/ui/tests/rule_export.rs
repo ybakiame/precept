@@ -247,4 +247,25 @@ fn a_confirmed_convention_is_written_after_its_preview() {
     app.press("Write to repository…").unwrap();
     app.wait_for("This file is already in the repository with this text.")
         .unwrap();
+    app.press("Close").unwrap();
+    // The file drifted from the record: the preview offers an update.
+    std::fs::write(&file, text.replace("Small commits.", "Big commits.")).unwrap();
+    app.press("Write to repository…").unwrap();
+    app.wait_for("Update file").unwrap();
+    contains_text(
+        &mut app,
+        "The file in the repository differs; this updates it.",
+    );
+    app.press("Update file").unwrap();
+    app.wait_until("updated", Duration::from_secs(10), |s| {
+        !s.shows("Update file")
+    })
+    .unwrap();
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), text);
+}
+fn contains_text(app: &mut nsh_testing::Headless, needle: &str) {
+    app.wait_until(needle, Duration::from_secs(10), |s| {
+        s.texts().iter().any(|t| t.contains(needle))
+    })
+    .unwrap();
 }

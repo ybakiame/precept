@@ -136,7 +136,11 @@ pub struct RuleExport {
     pub path: String,
     /// The file text Precept writes.
     pub text: String,
-    /// `absent`, `same` (already written) or `different` (refused).
+    /// The file's current text, when it exists.
+    #[serde(default)]
+    pub current: Option<String>,
+    /// `absent`, `same` (already written), `different` (an update) or
+    /// `invalid` (not a rule file Precept can update).
     pub state: String,
     pub valid: bool,
     /// The current file's digest (none when absent): the write's guard.

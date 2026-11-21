@@ -1161,9 +1161,16 @@ fn write_export(model: Signal<Model>) {
         move |model, m, r| {
             m.operator.export_busy = false;
             match r {
-                Ok(_) => {
+                Ok(v) => {
                     m.operator.export = None;
-                    ui::notify(ui::Tone::Success, m.word(Msg::ToastExported));
+                    ui::notify(
+                        ui::Tone::Success,
+                        m.word(if v["action"] == "updated" {
+                            Msg::ToastExportUpdated
+                        } else {
+                            Msg::ToastExported
+                        }),
+                    );
                     // The new file shows as pending on Preferences & contracts.
                     // Not inside this update: the loader updates the model itself.
                     spawn(async move { crate::load(model) });
@@ -1196,7 +1203,8 @@ pub(crate) fn export_dialog(model: Signal<Model>) -> impl IntoElement {
             let state = match (p.valid, p.state.as_str()) {
                 (false, _) => Some((Msg::ExportInvalid, palette(model).danger)),
                 (_, "same") => Some((Msg::ExportSame, palette(model).muted)),
-                (_, "different") => Some((Msg::ExportDifferent, palette(model).danger)),
+                (_, "different") => Some((Msg::ExportDifferent, palette(model).muted)),
+                (_, "invalid") => Some((Msg::ExportInvalidFile, palette(model).danger)),
                 _ => None,
             };
             let mut body = view().gap_3().w_full().child(
@@ -1210,6 +1218,15 @@ pub(crate) fn export_dialog(model: Signal<Model>) -> impl IntoElement {
                         .text_size(px(ui::scale::text::CAPTION))
                         .text_color(move || color),
                 );
+            }
+            // An update shows the change; a new file, its text.
+            if p.state == "different"
+                && let Some(current) = p.current.clone()
+                && !ui::terminal()
+            {
+                return body
+                    .child(ui::text_diff(model, current, p.text))
+                    .into_element();
             }
             body.child(
                 scroll()
@@ -1228,10 +1245,19 @@ pub(crate) fn export_dialog(model: Signal<Model>) -> impl IntoElement {
             .into_element()
         })
         .cancel_fn(move || model.get().word(Msg::CloseDialog).into())
-        .confirm_fn(move || model.get().word(Msg::ExportWrite).into())
+        .confirm_fn(move || {
+            let m = model.get();
+            m.word(if preview().is_some_and(|p| p.state == "different") {
+                Msg::ExportUpdate
+            } else {
+                Msg::ExportWrite
+            })
+            .into()
+        })
         .confirm_disabled(move || {
             model.get().operator.export_busy
-                || preview().is_none_or(|p| !p.valid || p.state != "absent")
+                || preview()
+                    .is_none_or(|p| !p.valid || !matches!(p.state.as_str(), "absent" | "different"))
         })
         .open(move || preview().is_some())
         .on_cancel(move || model.update(|m| m.operator.export = None))

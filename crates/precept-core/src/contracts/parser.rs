@@ -227,52 +227,94 @@ pub fn parse(id: &str, raw: &[u8]) -> Result<RuleFile, InvalidSource> {
     })
 }
 
-/// The file Precept writes for a confirmed convention: key, tags, where it
-/// applies, priority and enforcement in the front matter, the text below.
-/// Parsing the result yields the same rule.
-pub fn render(
-    key: &str,
-    tags: &[String],
-    applies_to: &AppliesTo,
-    priority: i64,
-    enforcement: Enforcement,
-    body: &str,
-) -> String {
+/// The text of a rule file: its front matter (only what differs from the
+/// defaults) and its Markdown below. Parsing the result yields the same rule.
+pub fn render(r: &RuleFile) -> String {
+    fn quote(s: &str) -> String {
+        toml::Value::String(s.to_owned()).to_string()
+    }
     fn list(v: &[String]) -> String {
         let items: Vec<String> = v.iter().map(|s| quote(s)).collect();
         format!("[{}]", items.join(", "))
     }
-    fn quote(s: &str) -> String {
-        toml::Value::String(s.to_owned()).to_string()
-    }
     let mut out = String::from("+++\n");
-    out.push_str(&format!("key = {}\n", quote(key)));
-    if !tags.is_empty() {
-        out.push_str(&format!("tags = {}\n", list(tags)));
+    out.push_str(&format!("key = {}\n", quote(&r.key)));
+    if let Some(title) = &r.title {
+        out.push_str(&format!("title = {}\n", quote(title)));
     }
-    if priority != 0 {
-        out.push_str(&format!("priority = {priority}\n"));
+    if !r.allowed.is_empty() {
+        out.push_str(&format!("allowed = {}\n", list(&r.allowed)));
     }
-    if enforcement != Enforcement::Advisory {
-        out.push_str(&format!("enforcement = \"{}\"\n", enforcement.as_str()));
+    if !r.tags.is_empty() {
+        out.push_str(&format!("tags = {}\n", list(&r.tags)));
     }
-    if !applies_to.is_empty() {
+    if r.priority != 0 {
+        out.push_str(&format!("priority = {}\n", r.priority));
+    }
+    if r.enforcement != Enforcement::Advisory {
+        out.push_str(&format!("enforcement = \"{}\"\n", r.enforcement.as_str()));
+    }
+    if !r.applies_to.is_empty() {
         out.push_str("\n[applies_to]\n");
         for (name, v) in [
-            ("agents", &applies_to.agents),
-            ("languages", &applies_to.languages),
-            ("paths", &applies_to.paths),
-            ("task_tags", &applies_to.task_tags),
+            ("agents", &r.applies_to.agents),
+            ("languages", &r.applies_to.languages),
+            ("paths", &r.applies_to.paths),
+            ("task_tags", &r.applies_to.task_tags),
         ] {
             if !v.is_empty() {
                 out.push_str(&format!("{name} = {}\n", list(v)));
             }
         }
     }
+    for c in &r.checks {
+        out.push_str(&format!("\n[[check]]\nfile = {}\n", quote(&c.file)));
+        for (name, v) in [
+            ("contains", &c.contains),
+            ("absent", &c.absent),
+            ("toml", &c.toml),
+            ("json", &c.json),
+        ] {
+            if let Some(v) = v {
+                out.push_str(&format!("{name} = {}\n", quote(v)));
+            }
+        }
+        if let Some(equals) = &c.equals
+            && let Ok(v) = toml::Value::try_from(equals)
+        {
+            out.push_str(&format!("equals = {v}\n"));
+        }
+    }
+    for g in &r.guards {
+        let tool = match g.tool {
+            GuardTool::Shell => "shell",
+            GuardTool::Write => "write",
+        };
+        out.push_str(&format!("\n[[guard]]\ntool = \"{tool}\"\n"));
+        if let Some(deny) = &g.deny {
+            out.push_str(&format!("deny = {}\n", quote(deny)));
+        }
+        if !g.paths.is_empty() {
+            out.push_str(&format!("paths = {}\n", list(&g.paths)));
+        }
+    }
     out.push_str("+++\n\n");
-    out.push_str(body.trim());
+    out.push_str(r.body.trim());
     out.push('\n');
     out
+}
+
+/// A rule text's own title: its first line when that is a Markdown heading
+/// (at most 200 characters), else none.
+pub fn heading_title(body: &str) -> Option<String> {
+    let first = body.lines().map(str::trim).find(|l| !l.is_empty())?;
+    let hashes = first.chars().take_while(|c| *c == '#').count();
+    if !(1..=6).contains(&hashes) || !first[hashes..].starts_with(' ') {
+        return None;
+    }
+    let title = first[hashes..].trim();
+    (!title.is_empty() && title.len() <= 200 && !title.chars().any(char::is_control))
+        .then(|| title.to_owned())
 }
 
 /// A rule id (file stem) for `key`: lowercase, other characters as `-`.
@@ -339,23 +381,27 @@ mod tests {
             paths: vec!["src/".into()],
             ..Default::default()
         };
-        let tags = vec!["git".into(), "style".into()];
-        let raw = render(
-            "commit \"style\"",
-            &tags,
-            &applies,
-            5,
-            Enforcement::Verify,
-            "# Small commits\n\nOne change each.",
-        );
-        let r = parse(&id_for("commit \"style\""), raw.as_bytes()).unwrap();
-        assert_eq!(r.key, "commit \"style\"");
-        assert_eq!(r.tags, tags);
-        assert_eq!(r.applies_to, applies);
-        assert_eq!(r.priority, 5);
-        assert_eq!(r.enforcement, Enforcement::Verify);
-        assert_eq!(r.body, "# Small commits\n\nOne change each.");
+        let full = parse("formatter", FULL.as_bytes()).unwrap();
+        assert_eq!(parse("formatter", render(&full).as_bytes()).unwrap(), full);
+        let simple = RuleFile {
+            id: id_for("commit \"style\""),
+            key: "commit \"style\"".into(),
+            title: heading_title("# Small commits\n\nOne change each."),
+            allowed: vec![],
+            enforcement: Enforcement::Verify,
+            priority: 5,
+            tags: vec!["git".into(), "style".into()],
+            applies_to: applies,
+            checks: vec![],
+            guards: vec![],
+            body: "# Small commits\n\nOne change each.".into(),
+        };
+        let raw = render(&simple);
+        assert!(raw.contains("title = \"Small commits\"\n"));
+        assert_eq!(parse(&simple.id, raw.as_bytes()).unwrap(), simple);
         assert_eq!(id_for("Commit Style!"), "commit-style");
         assert_eq!(id_for("???"), "rule");
+        assert_eq!(heading_title("Plain text"), None);
+        assert_eq!(heading_title("#nospace"), None);
     }
 }
