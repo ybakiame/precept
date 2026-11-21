@@ -104,17 +104,9 @@ impl Model {
             }
             Section::Handoff => lines.extend(self.handoff_lines(self.expanded)),
             Section::Diagnostics => {
-                lines.extend([
-                    "Read-only context IPC · API v1 · no daemon autostart".into(),
-                    "NSH Rust Desktop / TUI · pinned framework".into(),
-                    "Ctrl R reconnect · P project · F filter · K task · D theme · Shift H contrast"
-                        .into(),
-                    "Alt 1–5 pages · Escape blur · Alt arrows preference pages · Ctrl Q close"
-                        .into(),
-                    "Copy visible page is explicit; values are sanitized and bounded.".into(),
-                    "Health is the last query result; no continuous connection is claimed.".into(),
-                    "Project contracts — metadata only, no instruction execution".into(),
-                ]);
+                // Doctor covers the daemon and integrations; this is the
+                // project's document evidence only.
+                lines.push("Project contracts — metadata only, no instruction execution".into());
                 if self.expanded {
                     lines.extend(
                         p.context
@@ -197,17 +189,7 @@ impl Model {
                 }
             }
             Section::Diagnostics => {
-                lines.extend(
-                    [
-                        Msg::ProtocolHelp,
-                        Msg::FrameworkHelp,
-                        Msg::ConsoleHelp,
-                        Msg::CopyHelp,
-                        Msg::HealthHelp,
-                        Msg::ContractsHelp,
-                    ]
-                    .map(|k| self.word(k).into()),
-                );
+                lines.push(self.word(Msg::ContractsHelp).into());
                 if self.expanded {
                     lines.extend(
                         p.context

@@ -658,10 +658,7 @@ mod tests {
                 "alt+4",
                 "Empty — no handoff for task missing in this project",
             ),
-            (
-                "alt+5",
-                "Read-only context IPC · API v1 · no daemon autostart",
-            ),
+            ("alt+5", "Doctor"),
         ] {
             app.press_key(key).unwrap();
             app.wait_for(label).unwrap();
