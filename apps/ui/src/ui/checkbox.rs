@@ -4,6 +4,8 @@
 use super::prelude::*;
 
 const BOX: f32 = 16.0;
+/// The checkbox's outer width (its box and padding), for aligned rows.
+pub const CHECKBOX_SIZE: f32 = BOX + 8.0;
 const CHECK: &str = "M5 12L10 17L19 7";
 
 /// A checkbox named `label` (spoken), checked while `checked`.

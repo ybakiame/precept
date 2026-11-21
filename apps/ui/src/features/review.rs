@@ -561,7 +561,9 @@ fn queue_row(
                         refresh(model, "profile.review.inspect");
                     },
                 )))
-                .child(ui::badge(model, status).variant(ui::BadgeVariant::Warning))
+                .child(
+                    ui::badge(model, status_word(&m, &status)).variant(ui::BadgeVariant::Warning),
+                )
                 .child(if selected {
                     ui::badge(model, m.word(Msg::Selected))
                         .variant(ui::BadgeVariant::Info)
@@ -577,7 +579,11 @@ fn queue_row(
 /// The batch checkbox of a suggested row (nothing for other statuses).
 fn pick(model: Signal<Model>, r: &PreferenceRecord) -> AnyElement {
     if r.status != "suggested" {
-        return view().into_element();
+        // A checkbox's room, so every row's label starts at one edge.
+        return view()
+            .w(px(ui::CHECKBOX_SIZE))
+            .flex_shrink_0()
+            .into_element();
     }
     let id = r.id;
     ui::checkbox(
@@ -1676,7 +1682,15 @@ fn page_toolbar(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElemen
                 )
                 .child(
                     ui::button(model, "")
-                        .label_fn(move || model.get().word(Msg::AddPreference).into())
+                        .label_fn(move || {
+                            let m = model.get();
+                            m.word(match m.operator.mode {
+                                ReviewMode::Project => Msg::AddConvention,
+                                ReviewMode::Environment => Msg::AddEnvironment,
+                                _ => Msg::AddPreference,
+                            })
+                            .into()
+                        })
                         .icon(icons::PLUS)
                         .variant(ui::ButtonVariant::Primary)
                         .disabled(move || {
@@ -1812,7 +1826,7 @@ fn record_row(
                         "#{} · {} · {} · r{}",
                         id,
                         sanitize(&r.key, 120),
-                        r.status,
+                        row_status(&m, &r.status),
                         r.revision
                     ),
                     move || available(model),
@@ -1835,6 +1849,17 @@ fn status_word(m: &Model, status: &str) -> String {
         "confirmed" => m.word(Msg::StatusConfirmed).into(),
         "suggested" => m.word(Msg::StatusSuggested).into(),
         "deprecated" => m.word(Msg::StatusDeprecated).into(),
+        "rejected" => m.word(Msg::StatusRejected).into(),
+        other => sanitize(other, 40),
+    }
+}
+/// The status inside a row's label (lowercase in English).
+fn row_status(m: &Model, status: &str) -> String {
+    match status {
+        "confirmed" => m.word(Msg::RowConfirmed).into(),
+        "suggested" => m.word(Msg::RowSuggested).into(),
+        "rejected" => m.word(Msg::RowRejected).into(),
+        "deprecated" => m.word(Msg::RowDeprecated).into(),
         other => sanitize(other, 40),
     }
 }

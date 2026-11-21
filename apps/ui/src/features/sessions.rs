@@ -297,6 +297,8 @@ fn detail(model: Signal<Model>) -> impl IntoElement {
                                     m.word(Msg::SessionStarted)
                                         .replace("{time}", &date_time(s.started_ms))
                                 ))
+                                .flex_1()
+                                .min_w(px(160.0))
                                 .text_size(px(scale::text::CAPTION))
                                 .text_color(move || palette(model).muted),
                             ),

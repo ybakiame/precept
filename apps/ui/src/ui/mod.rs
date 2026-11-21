@@ -45,7 +45,7 @@ pub mod gallery;
 pub use alert_dialog::{DialogSize, DialogTone, alert_dialog, dialog};
 pub use badge::{BadgeVariant, badge};
 pub use button::{ButtonSize, ButtonVariant, button, copy_button, icon_button};
-pub use checkbox::checkbox;
+pub use checkbox::{CHECKBOX_SIZE, checkbox};
 pub use choice::choice_card;
 pub use color::{color_dot, color_picker, tag_color};
 pub use disclosure::disclosure;

@@ -383,9 +383,9 @@ fn manage_project(app: &mut nsh_testing::Headless) {
     app.press("Manage & add preferences").unwrap();
     writes_on(app);
 }
-/// Add preference: saved as a suggestion (prepared; Apply commits it).
+/// Add convention: saved as a suggestion (prepared; Apply commits it).
 fn add(app: &mut nsh_testing::Headless, key: &str, value: &str) {
-    app.press("Add preference").unwrap();
+    app.press("Add convention").unwrap();
     app.type_text("Preference key", key).unwrap();
     app.type_text("id:preference-value", value).unwrap();
     app.type_text("Tags", "review\n").unwrap();

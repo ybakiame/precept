@@ -222,7 +222,7 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     app.press("Manage & add preferences").unwrap();
     writes_on(&mut app);
     let add = |app: &mut nsh_testing::Headless| {
-        app.press("Add preference").unwrap();
+        app.press("Add convention").unwrap();
         app.type_text("Preference key", "editor").unwrap();
         app.type_text("id:preference-value", "synthetic-value")
             .unwrap();

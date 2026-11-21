@@ -752,15 +752,19 @@ pub(crate) fn shell(
     agents::watch(model);
     sessions::watch(model);
     let on = move |d: Destination| move || current(&model.get()) != d;
-    // Sibling pages cross-fade: the page's content fades in (`fast`) each
-    // time the destination changes; nothing remounts, so inputs keep state.
-    let page_fade = animated_value(1.0);
+    // A new destination starts at its top and its content settles in with a
+    // short rise (`fast`); nothing remounts, so inputs keep state. Movement
+    // only: an opacity cross-fade left content that changed mid-fade drawn
+    // dimmed on Windows until the next fade.
+    let page_rise = animated_value(0.0);
+    let page_scroll = element_ref();
     let destination = computed(move || current(&model.get()));
     effect(move || {
         let _ = destination.get();
+        page_scroll.scroll_to_offset(Points(0.0), false);
         if !reduce_motion() {
-            page_fade.set(0.0);
-            page_fade.timing(1.0, ui::motion::FAST, Easing::EaseOut);
+            page_rise.set(ui::motion::RISE);
+            page_rise.timing(0.0, ui::motion::FAST, Easing::EaseOut);
         }
     });
     view()
@@ -808,10 +812,11 @@ pub(crate) fn shell(
                         .child(
                             scroll()
                                 .flex_1()
-                                .bind_opacity(&page_fade)
+                                .element_ref(&page_scroll)
                                 .style_when(move || model.get().operator.open, |s| s.hidden())
                                 .child(
                                     view()
+                                        .bind_translate_y(&page_rise)
                                         .gap_4()
                                         .pb_6()
                                         .flex_shrink_0()

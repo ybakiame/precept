@@ -137,6 +137,8 @@ impl crate::Model {
             }
             ("handoff", false) => self.word(Msg::ActivityHandoffFailed).to_owned(),
             ("refused", _) => self.word(Msg::ActivityRefused).to_owned(),
+            ("session", true) => self.word(Msg::ActivitySession).to_owned(),
+            ("session", false) => self.word(Msg::ActivitySessionFailed).to_owned(),
             ("suggested", true) => self.word(Msg::ActivitySuggested).to_owned(),
             ("suggested", false) => match e.outcome.as_str() {
                 "Unauthorized" => self.word(Msg::ActivitySuggestOff),
