@@ -11,7 +11,7 @@ use precept_ui_core::{
     },
     presentation::sanitize,
 };
-use shell::{action, card, word_action};
+use shell::{card, word_action};
 use tokens::{mix, palette};
 
 pub(crate) fn open(model: Signal<Model>) {
@@ -286,21 +286,6 @@ fn origin_label(locale: Locale, origin: Origin) -> &'static str {
     )
 }
 /// A record's origin as a small badge: who, with its glyph.
-fn origin_badge(model: Signal<Model>, origin: Origin) -> AnyElement {
-    let m = model.get();
-    let glyph = match origin {
-        Origin::Operator => icons::PERSON,
-        Origin::Agent => icons::AGENT,
-    };
-    view()
-        .flex_row()
-        .items_center()
-        .gap_0p5()
-        .text_color(move || palette(model).muted)
-        .child(ui::icon::glyph(glyph, ui::scale::icon::SM))
-        .child(text(origin_label(m.locale, origin)).text_size(px(ui::scale::text::CAPTION)))
-        .into_element()
-}
 fn decision_word(locale: Locale, action: DecisionAction) -> &'static str {
     match action {
         DecisionAction::Confirm => tr(locale, Msg::DecisionConfirm),
@@ -507,8 +492,7 @@ fn queue_tab(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
     );
     body.child(list).into_element()
 }
-/// One pending suggestion: its id, key and revision (pressing it inspects the
-/// exact record), its tags and origin below, and its state.
+/// One pending suggestion: pressing its title inspects the exact record.
 fn queue_row(
     model: Signal<Model>,
     delete_open: Signal<bool>,
@@ -520,11 +504,18 @@ fn queue_row(
     let id = r.id;
     let selected = selected_id == Some(id);
     let label = format!("#{} · {} · r{}", id, sanitize(&r.key, 120), r.revision);
-    let status = r.status.clone();
+    let mut trailing = view()
+        .flex_row()
+        .items_center()
+        .gap_2()
+        .child(ui::badge(model, status_word(&m, &r.status)).variant(ui::BadgeVariant::Warning));
+    if selected {
+        trailing =
+            trailing.child(ui::badge(model, m.word(Msg::Selected)).variant(ui::BadgeVariant::Info));
+    }
     // A batch arrives as a wave: a capped index stagger, instant when reduced.
     let arrive = ui::motion::arrive(((index % 12) as f32) * 50.0);
     view()
-        .gap_1()
         .p_2()
         .rounded(px(ui::scale::radius::CONTROL))
         .transition_colors()
@@ -537,43 +528,111 @@ fn queue_row(
                 palette(model).panel
             }
         })
+        .child(record_line(
+            model,
+            r,
+            label,
+            &format!("#{id} · r{}", r.revision),
+            move || {
+                disarm(model, delete_open);
+                model.update(|m| {
+                    m.operator.selected_id = Some(id);
+                    m.operator.inspect = None;
+                    m.operator.inspect_revision = 0;
+                    m.operator.digest_expanded = false;
+                    m.operator.review_tab = ReviewTab::Detail;
+                    m.operator.review = None;
+                    m.operator.serial += 1;
+                });
+                refresh(model, "profile.review.inspect");
+            },
+            trailing.into_element(),
+        ))
+        .bind_motion(&arrive)
+        .into_element()
+}
+/// A record's row: its checkbox, its origin as an icon in a column of its
+/// own, then the title (the key, then number and revision; it wraps, and its
+/// accessible name is `label`), the value's first line and the tags beneath,
+/// with `trailing` (status) at the right.
+fn record_line(
+    model: Signal<Model>,
+    r: &PreferenceRecord,
+    label: String,
+    detail: &str,
+    on_open: impl Fn() + 'static,
+    trailing: AnyElement,
+) -> AnyElement {
+    let m = model.get_untracked();
+    let origin = origin_label(m.locale, r.origin);
+    let glyph = match r.origin {
+        Origin::Operator => icons::PERSON,
+        Origin::Agent => icons::AGENT,
+    };
+    let preview = precept_ui_core::presentation::preview_line(&r.value, 140);
+    let title = view()
+        .role(AccessibilityRole::Button)
+        .label(label)
+        .on_press(move || {
+            if available(model) {
+                on_open()
+            }
+        })
+        .px_1()
+        .rounded(px(ui::scale::radius::SMALL))
+        .transition_colors()
+        .duration(ui::motion::ms(ui::motion::FAST))
+        .hover(move |s| s.bg(mix(palette(model).panel, palette(model).text, 0.06)))
+        .focus(move |s| {
+            s.ring(px(2.0))
+                .ring_color(palette(model).primary.opacity(0.55))
+        })
         .child(
             view()
                 .flex_row()
+                .flex_wrap()
                 .items_center()
-                .gap_2()
-                .child(pick(model, r))
-                .child(view().flex_1().min_w_0().child(action(
-                    model,
-                    label,
-                    move || available(model),
-                    move || {
-                        disarm(model, delete_open);
-                        model.update(|m| {
-                            m.operator.selected_id = Some(id);
-                            m.operator.inspect = None;
-                            m.operator.inspect_revision = 0;
-                            m.operator.digest_expanded = false;
-                            m.operator.review_tab = ReviewTab::Detail;
-                            m.operator.review = None;
-                            m.operator.serial += 1;
-                        });
-                        refresh(model, "profile.review.inspect");
-                    },
-                )))
+                .gap_x_2()
                 .child(
-                    ui::badge(model, status_word(&m, &status)).variant(ui::BadgeVariant::Warning),
+                    text(sanitize(&r.key, 120))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .min_w_0(),
                 )
-                .child(if selected {
-                    ui::badge(model, m.word(Msg::Selected))
-                        .variant(ui::BadgeVariant::Info)
-                        .into_element()
-                } else {
-                    view().into_element()
-                }),
+                .child(
+                    text(detail.to_owned())
+                        .text_size(px(ui::scale::text::CAPTION))
+                        .text_color(move || palette(model).muted),
+                ),
+        );
+    view()
+        .flex_row()
+        .items_start()
+        .gap_3()
+        .child(view().pt_0p5().child(pick(model, r)))
+        .child(
+            view()
+                .w(px(ui::scale::icon::SM))
+                .pt_1()
+                .flex_shrink_0()
+                .label(origin)
+                .text_color(move || palette(model).muted)
+                .child(ui::icon::glyph(glyph, ui::scale::icon::SM)),
         )
-        .child(record_meta(model, r))
-        .bind_motion(&arrive)
+        .child(
+            view()
+                .flex_1()
+                .min_w_0()
+                .gap_1()
+                .child(title)
+                .child(
+                    text(sanitize(&preview, 140))
+                        .px_1()
+                        .text_size(px(ui::scale::text::CAPTION))
+                        .text_color(move || palette(model).muted),
+                )
+                .child(view().px_1().child(record_meta(model, r))),
+        )
+        .child(view().pt_0p5().flex_shrink_0().child(trailing))
         .into_element()
 }
 /// The batch checkbox of a suggested row (nothing for other statuses).
@@ -683,7 +742,6 @@ fn record_meta(model: Signal<Model>, r: &PreferenceRecord) -> AnyElement {
         .flex_wrap()
         .items_center()
         .gap_2()
-        .child(origin_badge(model, r.origin))
         .child(ui::tag_list(model, &r.tags));
     if r.status == "confirmed" && !r.enabled {
         row = row.child(ui::badge(model, m.word(Msg::RuleOff)).variant(ui::BadgeVariant::Warning));
@@ -1801,47 +1859,26 @@ fn record_row(
         "suggested" => ui::BadgeVariant::Warning,
         _ => ui::BadgeVariant::Neutral,
     };
-    let value: String = r
-        .value
-        .lines()
-        .next()
-        .unwrap_or_default()
-        .chars()
-        .take(80)
-        .collect();
+    let label = format!(
+        "#{} · {} · {} · r{}",
+        id,
+        sanitize(&r.key, 120),
+        row_status(&m, &r.status),
+        r.revision
+    );
     view()
-        .gap_1()
         .py_1()
         .bind_motion(&arrive)
-        .child(
-            view()
-                .flex_row()
-                .items_center()
-                .gap_3()
-                .min_h(px(ui::scale::control::LG))
-                .child(pick(model, r))
-                .child(view().flex_1().min_w_0().child(action(
-                    model,
-                    format!(
-                        "#{} · {} · {} · r{}",
-                        id,
-                        sanitize(&r.key, 120),
-                        row_status(&m, &r.status),
-                        r.revision
-                    ),
-                    move || available(model),
-                    move || open_record(model, delete_open, id),
-                )))
-                .child(
-                    text(sanitize(&value, 80))
-                        .flex_1()
-                        .min_w_0()
-                        .text_size(px(ui::scale::text::CAPTION))
-                        .text_color(move || palette(model).muted),
-                )
-                .child(ui::badge(model, status_word(&m, &r.status)).variant(variant)),
-        )
-        .child(record_meta(model, r))
+        .child(record_line(
+            model,
+            r,
+            label,
+            &format!("#{id} · r{}", r.revision),
+            move || open_record(model, delete_open, id),
+            ui::badge(model, status_word(&m, &r.status))
+                .variant(variant)
+                .into_element(),
+        ))
         .into_element()
 }
 fn status_word(m: &Model, status: &str) -> String {

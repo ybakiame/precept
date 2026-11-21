@@ -179,7 +179,12 @@ files the picks as suggestions; they are confirmed like any other.
 
 The Preferences & contracts page starts with the repository's effective contracts
 (read-only; changed in the repository), then one virtualized list of the confirmed
-effective rows, with no pages. Tag filters above it narrow to rows carrying every selected tag; the filter
+effective rows, with no pages. A row's **Details** opens a dialog that renders the rule's
+Markdown, with where it applies and its tags, **Copy text** and **Close** (the
+terminal keeps the paged inline detail). Review rows put the origin icon in its own
+column, then the title (key, number and revision; it wraps, and its accessible name
+is the full record label), the value's first line and the tags beneath it, with the
+status on the right. Tag filters above it narrow to rows carrying every selected tag; the filter
 text matches key, value, scope or tag, and a leading `#` matches tags only. Review
 lists (the queue and a scope's records) load further batches as the list nears its
 end, with a visible Load more control for keyboard and terminal use.

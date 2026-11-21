@@ -312,7 +312,12 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     app.press_key("escape").unwrap();
     // Refresh reads the list again even though the Profile did not change.
     app.press("Refresh").unwrap();
-    contains(&mut app, "#2 · tone · suggested · r1");
+    app.wait_until("row listed", Duration::from_secs(10), |s| {
+        s.count("role:button[#2 · tone · suggested · r1]")
+            .unwrap_or(0)
+            > 0
+    })
+    .unwrap();
     app.press("#2 · tone · suggested · r1").unwrap();
     app.wait_for("Edit…").unwrap();
     app.type_text("Note (optional)", "Key should say what it governs.")
@@ -381,7 +386,12 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     app.wait_for("#3 · answer-length").unwrap();
     app.press("Close detail").unwrap();
     app.press("Refresh").unwrap();
-    contains(&mut app, "#4 · review-style · suggested · r1");
+    app.wait_until("row listed", Duration::from_secs(10), |s| {
+        s.count("role:button[#4 · review-style · suggested · r1]")
+            .unwrap_or(0)
+            > 0
+    })
+    .unwrap();
     assert!(!app.screen().shows("Confirm 2…"));
     app.press("Pick #3 for a batch decision").unwrap();
     app.press("Pick #4 for a batch decision").unwrap();

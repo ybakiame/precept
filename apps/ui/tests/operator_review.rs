@@ -396,7 +396,12 @@ fn add(app: &mut nsh_testing::Headless, key: &str, value: &str) {
 /// A record row in the scope's list opens its sheet with the exact record.
 fn open_row(app: &mut nsh_testing::Headless, row: &str) {
     app.press_key("alt+shift+l").unwrap();
-    contains(app, row);
+    // The row's full label is its title's accessible name.
+    let selector = format!("role:button[{row}]");
+    app.wait_until(&format!("row {row}"), Duration::from_secs(10), |s| {
+        s.count(&selector).unwrap_or(0) > 0
+    })
+    .unwrap();
     app.press(row).unwrap();
     app.wait_for("Show full digest").unwrap();
 }

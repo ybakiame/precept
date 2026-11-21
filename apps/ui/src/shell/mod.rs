@@ -9,16 +9,6 @@ use features::{
 use precept_ui_core::{Section, SetupTab, i18n::Msg, operator::ReviewMode};
 use tokens::{compact, palette};
 
-pub(crate) fn action(
-    model: Signal<Model>,
-    label: impl Into<String>,
-    enabled: impl Fn() -> bool + 'static,
-    callback: impl Fn() + 'static,
-) -> impl IntoElement {
-    ui::button(model, label.into())
-        .disabled(move || !enabled())
-        .on_press(callback)
-}
 pub(crate) fn word_action(
     model: Signal<Model>,
     key: Msg,
@@ -808,6 +798,7 @@ pub(crate) fn shell(
                         .child(preference_input(model, filter_ref))
                         .child(review::panel(model))
                         .child(projects::remove_dialog(model))
+                        .child(features::preferences::detail_dialog(model))
                         .child(agents::pointer_dialog(model))
                         .child(
                             scroll()

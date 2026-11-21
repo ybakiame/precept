@@ -272,6 +272,15 @@ fn toolbar(model: Signal<Model>, editor: &EditorSession, revision: Signal<u64>) 
     bar.into_element()
 }
 
+/// Read-only Markdown (a rule's text): rendered with the theme's text color,
+/// selectable for copying.
+pub fn markdown_view(model: Signal<Model>, markdown: String) -> impl IntoElement {
+    view()
+        .text_color(move || palette(model).text)
+        .text_size(px(scale::text::BODY))
+        .child(nsh_base::text_view().markdown(markdown).selectable(true))
+}
+
 /// A labelled Markdown editor (`id`: its stable test id): `initial` is read
 /// once when it is made; `on_change` receives the Markdown after every edit.
 pub fn markdown_input(

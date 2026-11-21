@@ -2,6 +2,26 @@
 use crate::i18n::{Locale, Msg};
 use crate::{Model, PAGE_SIZE, Phase, Section};
 
+/// A value's first meaningful line for a one-line preview: Markdown heading
+/// marks and list bullets stripped, at most `max` characters.
+pub fn preview_line(value: &str, max: usize) -> String {
+    let line = value
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty() && !l.starts_with("```"))
+        .unwrap_or("");
+    let line = line.trim_start_matches('#').trim_start();
+    let line = line
+        .strip_prefix("- ")
+        .or_else(|| line.strip_prefix("* "))
+        .unwrap_or(line);
+    let mut out: String = line.chars().take(max).collect();
+    if line.chars().count() > max {
+        out.push('…');
+    }
+    out
+}
+
 pub fn sanitize(value: &str, limit: usize) -> String {
     let mut chars = value.chars().filter(|c| {
         !c.is_control() && !matches!(*c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')

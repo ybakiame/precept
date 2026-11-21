@@ -583,6 +583,8 @@ catalog! {
     Close => ("Close window", "关闭窗口"),
     DismissNotification => ("Dismiss notification", "关闭通知"),
     CopiedShort => ("Copied", "已复制"),
+    CopyRule => ("Copy text", "复制内容"),
+    CloseDialog => ("Close", "关闭"),
     KeysGeneral => ("General", "常规"),
     KeysSettingsHelp => ("See every shortcut and change any of them. Open it from anywhere with Ctrl+/ or the keyboard button in the sidebar.", "查看并修改所有快捷键。在任何页面按 Ctrl+/ 或点击侧栏的键盘按钮即可打开。"),
     KeysOpenPanel => ("Keyboard shortcuts…", "键盘快捷键…"),

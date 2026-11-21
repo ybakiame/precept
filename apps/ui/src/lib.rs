@@ -597,6 +597,24 @@ mod tests {
     use super::*;
     use nsh_engine::{EngineConfig, Root};
     #[test]
+    fn preference_details_open_in_a_dialog_with_copy() {
+        let mut app = nsh_testing::Headless::start(EngineConfig::new(Root::of::<App>())).unwrap();
+        app.wait_for("Project: alpha").unwrap();
+        app.press_key("alt+3").unwrap();
+        app.wait_for("Confirmed preferences and conventions")
+            .unwrap();
+        app.press("Details · commit.style").unwrap();
+        app.wait_for("Copy text").unwrap();
+        assert!(app.screen().shows("Close"));
+        app.press("Copy text").unwrap();
+        assert_eq!(app.screen().clipboard(), Some("newest"));
+        app.press("Close").unwrap();
+        app.wait_until("dialog closed", std::time::Duration::from_secs(5), |s| {
+            !s.shows("Copy text")
+        })
+        .unwrap();
+    }
+    #[test]
     fn doctor_lists_what_it_saw_and_copies_a_report_without_paths() {
         let mut app = nsh_testing::Headless::start(EngineConfig::new(Root::of::<App>())).unwrap();
         app.wait_for("Project: alpha").unwrap();

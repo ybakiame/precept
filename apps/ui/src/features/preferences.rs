@@ -81,6 +81,51 @@ fn tag_filters(model: Signal<Model>, current: &Model) -> AnyElement {
         .into_element()
 }
 
+/// The selected rule in a dialog: its Markdown rendered, where it applies and
+/// its tags; Copy puts the text on the clipboard. Mounted by the shell.
+pub(crate) fn detail_dialog(model: Signal<Model>) -> impl IntoElement {
+    let selected = move || model.get().preference_detail().cloned();
+    ui::dialog(model, "")
+        .size(ui::DialogSize::Large)
+        .title_fn(move || {
+            selected()
+                .map(|r| sanitize(&r.key, 120))
+                .unwrap_or_default()
+                .into()
+        })
+        .description_fn(move || {
+            let m = model.get();
+            selected()
+                .map(|r| {
+                    format!(
+                        "{} · {}",
+                        scope_word(&m, &r.scope),
+                        precept_ui_core::presentation::hashtags(&r.tags)
+                    )
+                })
+                .unwrap_or_default()
+                .into()
+        })
+        .content_fn(move || {
+            let value = selected().map(|r| r.value).unwrap_or_default();
+            scroll()
+                .max_h(px(440.0))
+                .w_full()
+                .child(ui::markdown_view(model, value))
+                .into_element()
+        })
+        .cancel_fn(move || model.get().word(Msg::CloseDialog).into())
+        .confirm_fn(move || model.get().word(Msg::CopyRule).into())
+        .open(move || !ui::terminal() && selected().is_some())
+        .on_cancel(move || model.update(|m| m.selected_preference = None))
+        .on_confirm(move || {
+            if let Some(r) = selected() {
+                set_clipboard(r.value);
+                ui::notify(ui::Tone::Success, model.get().word(Msg::CopiedShort));
+            }
+        })
+}
+
 /// One confirmed row: key and Details, the value's first line, then where it
 /// applies and its tags.
 fn row(model: Signal<Model>, r: &Preference, index: usize) -> AnyElement {
@@ -114,7 +159,10 @@ fn row(model: Signal<Model>, r: &Preference, index: usize) -> AnyElement {
                         .on_press(move || model.update(|m| m.select_preference(index))),
                 ),
         )
-        .child(text(sanitize(&r.value, 160)))
+        .child(text(sanitize(
+            &precept_ui_core::presentation::preview_line(&r.value, 160),
+            170,
+        )))
         .child(
             view()
                 .flex_row()
@@ -238,7 +286,10 @@ pub(crate) fn preferences(model: Signal<Model>) -> impl IntoElement {
             ],
         ));
     }
-    if let Some(selected) = current.preference_detail() {
+    // The terminal keeps the paged inline detail; windows use the dialog.
+    if ui::terminal()
+        && let Some(selected) = current.preference_detail()
+    {
         body = body
             .child(card(
                 model,
