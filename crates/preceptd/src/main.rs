@@ -146,6 +146,7 @@ impl Service {
                     | "project.remove"
                     | "project.agents"
                     | "project.propose"
+                    | "project.gate"
             )
         {
             return self
@@ -431,6 +432,56 @@ impl Service {
                 _ => Err(Error::InvalidRequest),
             };
         }
+        // The pre-tool gate: a harness hook asks whether a tool call breaks a
+        // committed hard rule's guard. Off unless the operator turned it on.
+        if request.method == "gate.check" {
+            let Access::Agent { project } = access else {
+                return Err(Error::Unauthorized);
+            };
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Gate {
+                tool: String,
+                #[serde(default)]
+                command: Option<String>,
+                #[serde(default)]
+                paths: Vec<String>,
+                #[serde(default)]
+                client: Option<String>,
+            }
+            let g: Gate = decode(params)?;
+            let _ = g.client;
+            use precept_core::contracts::gate::{ToolCall, check};
+            let call = match (g.tool.as_str(), g.command) {
+                ("shell", Some(c)) if g.paths.is_empty() => ToolCall::Shell(c),
+                ("write", None) => ToolCall::Write(g.paths),
+                _ => return Err(Error::InvalidRequest),
+            };
+            if !call.valid() {
+                return Err(Error::InvalidRequest);
+            }
+            if !self.profiles.gated(&project) {
+                return Ok(json!({"decision":"allow","gate":"off"}));
+            }
+            let (_, roots) = self.profiles.read()?;
+            let root = roots.get(&project).ok_or(Error::NotFound)?.clone();
+            let bound = precept_core::Project {
+                name: project.clone(),
+                root: root.clone(),
+            };
+            let snapshot = precept_core::contracts::Snapshot::read(&root).with_reviewed(
+                precept_core::WorktreeInspector::reviewed(
+                    &worktree::GitInspector,
+                    &bound,
+                    precept_core::contracts::DIR,
+                ),
+            );
+            return Ok(match check(&snapshot, &call) {
+                Some(d) => json!({"decision":"deny","reason":d.reason,
+                    "rule":{"id":d.id,"key":d.key,"file":d.file}}),
+                None => json!({"decision":"allow","gate":"on"}),
+            });
+        }
         if request.method == "preference.suggest" {
             let Access::Agent { project } = access else {
                 return Err(Error::Unauthorized);
@@ -580,6 +631,8 @@ impl Service {
             #[serde(default)]
             vendor: Option<integration::Vendor>,
             #[serde(default)]
+            event: integration::HookEvent,
+            #[serde(default)]
             enabled: Option<bool>,
             #[serde(default)]
             expected_sha256: Option<String>,
@@ -607,14 +660,21 @@ impl Service {
         };
         match (method, p.vendor, p.enabled) {
             ("integration.hooks", None, None) if p.expected_sha256.is_none() => {
-                let hooks = integration::Vendor::ALL
-                    .iter()
-                    .map(|v| {
-                        let cmd = integration::command(&launch, *v, &p.project);
-                        integration::hook_status(&home, *v, &p.project, &cmd)
-                    })
-                    .collect::<precept_ipc::Result<Vec<_>>>()?;
-                Ok(json!({"available": true, "hooks": hooks}))
+                let status = |event| {
+                    integration::Vendor::ALL
+                        .iter()
+                        .map(|v| {
+                            let cmd = integration::command(&launch, *v, &p.project, event);
+                            integration::hook_status(&home, *v, &p.project, &cmd, event)
+                        })
+                        .collect::<precept_ipc::Result<Vec<_>>>()
+                };
+                Ok(json!({
+                    "available": true,
+                    "hooks": status(integration::HookEvent::SessionStart)?,
+                    "gate_hooks": status(integration::HookEvent::PreTool)?,
+                    "gate": self.profiles.gated(&p.project),
+                }))
             }
             ("integration.hooks.apply", Some(vendor), Some(enabled)) => {
                 if p.expected_sha256
@@ -623,7 +683,7 @@ impl Service {
                 {
                     return Err(Error::InvalidRequest);
                 }
-                let cmd = integration::command(&launch, vendor, &p.project);
+                let cmd = integration::command(&launch, vendor, &p.project, p.event);
                 integration::hook_apply(
                     &home,
                     vendor,
@@ -631,6 +691,7 @@ impl Service {
                     &cmd,
                     enabled,
                     p.expected_sha256.as_deref(),
+                    p.event,
                 )
             }
             _ => Err(Error::InvalidRequest),
@@ -949,6 +1010,7 @@ async fn peer(mut stream: Stream, service: Service, permit: Arc<OwnedSemaphorePe
                 "session.start" | "session.update" | "session.close" => {
                     Some(activity::Kind::Session)
                 }
+                "gate.check" => Some(activity::Kind::Gate),
                 _ => None,
             };
             if let Some(kind) = kind {
@@ -956,7 +1018,17 @@ async fn peer(mut stream: Stream, service: Service, permit: Arc<OwnedSemaphorePe
                     (Ok(v), activity::Kind::Context) => Some(activity::context_counts(v)),
                     _ => None,
                 };
-                let outcome = activity::outcome(&result);
+                // A gate answer records its decision (a fixed word), not "ok".
+                let outcome = match (&result, kind) {
+                    (Ok(v), activity::Kind::Gate) => {
+                        match (v["decision"].as_str(), v["gate"].as_str()) {
+                            (Some("deny"), _) => "deny".into(),
+                            (_, Some("off")) => "off".into(),
+                            _ => "allow".into(),
+                        }
+                    }
+                    _ => activity::outcome(&result),
+                };
                 let duration_ms = began.elapsed().as_millis() as u64;
                 // The session a start opened is its own evidence's session.
                 let session = session
@@ -1117,9 +1189,7 @@ pub(crate) fn test_state(
         .iter()
         .map(|(n, r)| ((*n).to_owned(), r.canonicalize().unwrap()))
         .collect();
-    state
-        .save_projects(&set, &Default::default(), &Default::default())
-        .unwrap();
+    state.save_projects(&set, &Default::default()).unwrap();
     if let Some(profile) = profile {
         state.save_startup(profile).unwrap();
     }

@@ -3,6 +3,7 @@
 //! No writer, authorization or discovery lives here.
 mod bridge;
 mod checks;
+pub mod gate;
 mod parser;
 mod snapshot;
 
@@ -36,6 +37,30 @@ fn source(id: &str, digest: &str) -> typed::Source {
             historical_validation: vec![],
         },
     }
+}
+/// A rule text's first prose line (else its first heading), bullet marks
+/// stripped, at most 200 characters: the reason a gate denial shows.
+pub fn summary(body: &str) -> String {
+    let lines: Vec<&str> = body
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with("```"))
+        .collect();
+    let line = lines
+        .iter()
+        .find(|l| !l.starts_with('#'))
+        .or(lines.first())
+        .map(|l| l.trim_start_matches('#').trim_start())
+        .unwrap_or("");
+    let line = line
+        .strip_prefix("- ")
+        .or_else(|| line.strip_prefix("* "))
+        .unwrap_or(line);
+    let mut out: String = line.chars().take(200).collect();
+    if line.chars().count() > 200 {
+        out.push('…');
+    }
+    out
 }
 /// The repository path of rule `id`.
 pub fn file_of(id: &str) -> String {

@@ -181,11 +181,27 @@ pub struct HookState {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
 pub struct Hooks {
     pub available: bool,
+    /// Session-start entries.
     pub hooks: Vec<HookState>,
+    /// Pre-tool gate entries.
+    #[serde(default)]
+    pub gate_hooks: Vec<HookState>,
+    /// Whether the operator turned the gate on for the project.
+    #[serde(default)]
+    pub gate: bool,
 }
 impl Hooks {
     pub fn get(&self, vendor: &str) -> Option<&HookState> {
         self.hooks.iter().find(|h| h.vendor == vendor)
+    }
+    /// The entry of `vendor` for `event` (`session_start` or `pre_tool`).
+    pub fn of(&self, vendor: &str, event: &str) -> Option<&HookState> {
+        let list = if event == "pre_tool" {
+            &self.gate_hooks
+        } else {
+            &self.hooks
+        };
+        list.iter().find(|h| h.vendor == vendor)
     }
 }
 

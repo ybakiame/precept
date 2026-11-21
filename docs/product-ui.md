@@ -112,7 +112,9 @@ Project sharing is a switch. **Agent integrations** are grouped by mechanism, ea
 group headed by what it does and where it reaches, with one quick-setting tile per
 agent: **MCP tools** (on demand; the `precept-<project>` server entry in Claude
 Code's, Codex's and Antigravity's user configuration), **Session-start briefing**
-(automatic; their session-start hooks) and the **Repository pointer** (the
+(automatic; their session-start hooks), the **Pre-tool gate** (opt-in: the
+project's gate switch, then one gate-hook tile per agent; a tile installed while
+the gate is off says it asks nothing yet) and the **Repository pointer** (the
 project's AGENTS.md section, whose switch opens a dialog previewing the exact text
 before anything is written). Settings with only two states use switches, not
 button pairs. Manual setup, the configuration to paste for agents on Windows or
@@ -181,7 +183,8 @@ The Preferences & contracts page starts with the repository's effective contract
 (read-only; changed in the repository), then one virtualized list of the confirmed
 effective rows, with no pages. Repository rules (committed `.precept/rules` files) are listed with their file,
 the current check result (checks pass n/m, check failing with the file, or checks
-could not run), declared enforcement and guard count; uncommitted and invalid files
+could not run), declared enforcement and guard count, and for guarded rules whether
+the gate is on; uncommitted and invalid files
 are named below them. In Review → Project conventions, a confirmed record offers
 **Write to repository…**: a dialog previews the exact file and path and writes it
 only to an absent path; the operator reviews and commits it. A row's **Details** opens a dialog that renders the rule's
@@ -236,7 +239,9 @@ success badge. Historical PASS remains labeled historical.
 Diagnostics opens with **Doctor**: one row per link an agent needs to receive the
 selected workspace's context, in the order a fix usually has to happen (daemon,
 Profile and writes, workspace registration and agent sharing, preferences
-delivered and waiting, each harness's session-start hook, the AGENTS.md section,
+delivered and waiting, repository rules (invalid files, failing checks, files not
+committed) and the pre-tool gate (switch, gate hooks; reported as set up, never as
+enforcement achieved), each harness's session-start hook, the AGENTS.md section,
 agent reads since the daemon started). Each row shows what was observed and one of
 OK, Look, Problem, Off or Not read; a value that was not read is never shown as a
 pass. A row that can be fixed has **Fix…**, which opens the page where the change

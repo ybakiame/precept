@@ -89,8 +89,9 @@ fn load_hooks(model: Signal<Model>, name: String) {
     );
 }
 
-/// Switches one harness's hook, guarded by the digest last read.
-fn apply_hook(model: Signal<Model>, vendor: &'static str, enabled: bool) {
+/// Switches one harness's hook for `event` (`session_start` or `pre_tool`),
+/// guarded by the digest last read.
+fn apply_hook(model: Signal<Model>, vendor: &'static str, event: &'static str, enabled: bool) {
     let m = model.get();
     let Some(name) = m.agents.project.clone() else {
         return;
@@ -99,7 +100,7 @@ fn apply_hook(model: Signal<Model>, vendor: &'static str, enabled: bool) {
         .agents
         .hooks
         .as_ref()
-        .and_then(|h| h.get(vendor))
+        .and_then(|h| h.of(vendor, event))
         .and_then(|h| h.sha256.clone());
     model.update(|m| {
         m.agents.hook_busy = Some(vendor.into());
@@ -108,7 +109,7 @@ fn apply_hook(model: Signal<Model>, vendor: &'static str, enabled: bool) {
     super::profile::call(
         model,
         "integration.hooks.apply",
-        serde_json::json!({ "project": name, "vendor": vendor, "enabled": enabled, "expected_sha256": expected }),
+        serde_json::json!({ "project": name, "vendor": vendor, "event": event, "enabled": enabled, "expected_sha256": expected }),
         move |model, m, r| {
             m.agents.hook_busy = None;
             if let Err(code) = r {
@@ -361,6 +362,31 @@ pub(crate) fn load_activity(model: Signal<Model>, name: String) {
                 Ok(page) => a.page = Some(page),
                 Err(code) => a.error = Some(code.into()),
             }
+        },
+    );
+}
+
+fn set_gate(model: Signal<Model>, name: String, enabled: bool) {
+    model.update(|m| m.agents.busy = true);
+    super::profile::call(
+        model,
+        "project.gate",
+        serde_json::json!({ "name": name, "enabled": enabled }),
+        move |model, m, r| {
+            m.agents.busy = false;
+            match r {
+                Ok(_) => ui::notify(
+                    ui::Tone::Success,
+                    m.word(if enabled {
+                        Msg::ToastGateOn
+                    } else {
+                        Msg::ToastGateOff
+                    })
+                    .replace("{name}", &name),
+                ),
+                Err(code) => m.agents.error = Some(code.into()),
+            }
+            spawn(async move { load(model) });
         },
     );
 }
@@ -678,14 +704,14 @@ fn configure(model: Signal<Model>) -> impl IntoElement {
 }
 
 /// The detail line of a hook tile.
-fn hook_detail(m: &Model, vendor: &str) -> String {
+fn hook_detail(m: &Model, vendor: &str, event: &str) -> String {
     let Some(hooks) = m.agents.hooks.as_ref() else {
         return m.word(Msg::TileOff).into();
     };
     if !hooks.available {
         return m.word(Msg::HookUnavailable).into();
     }
-    let Some(h) = hooks.get(vendor) else {
+    let Some(h) = hooks.of(vendor, event) else {
         return m.word(Msg::TileOff).into();
     };
     if h.malformed {
@@ -697,6 +723,9 @@ fn hook_detail(m: &Model, vendor: &str) -> String {
     if !h.current {
         return m.word(Msg::HookOutdated).into();
     }
+    if event == "pre_tool" && !active_entry(m).is_some_and(|e| e.gate) {
+        return m.word(Msg::GateHookNeedsGate).into();
+    }
     m.word(if vendor == "codex" {
         Msg::HookOnCodex
     } else {
@@ -705,35 +734,79 @@ fn hook_detail(m: &Model, vendor: &str) -> String {
     .replace("{file}", &h.file)
 }
 
-fn hook_tile(model: Signal<Model>, vendor: &'static str, title: Msg) -> impl IntoElement {
+fn hook_tile(
+    model: Signal<Model>,
+    vendor: &'static str,
+    event: &'static str,
+    title: Msg,
+) -> impl IntoElement {
     let installed = move || {
         model
             .get()
             .agents
             .hooks
             .as_ref()
-            .and_then(|h| h.get(vendor))
+            .and_then(|h| h.of(vendor, event))
             .is_some_and(|h| h.installed)
     };
+    let spoken = if event == "pre_tool" {
+        Msg::GateHookSpoken
+    } else {
+        Msg::HookSpoken
+    };
     ui::quick_tile(model, icons::AGENT, installed, move |on| {
-        apply_hook(model, vendor, on)
+        apply_hook(model, vendor, event, on)
     })
     .title_fn(word(model, title))
     .spoken(move || {
         let m = model.get();
-        m.word(Msg::HookSpoken)
-            .replace("{name}", m.word(title))
-            .into()
+        m.word(spoken).replace("{name}", m.word(title)).into()
     })
-    .detail(move || hook_detail(&model.get(), vendor).into())
+    .detail(move || hook_detail(&model.get(), vendor, event).into())
     .disabled(move || {
         let m = model.get();
         m.agents.hook_busy.is_some()
             || m.agents
                 .hooks
                 .as_ref()
-                .is_none_or(|h| !h.available || h.get(vendor).is_none_or(|s| s.malformed))
+                .is_none_or(|h| !h.available || h.of(vendor, event).is_none_or(|s| s.malformed))
     })
+}
+
+/// Whether the pre-tool gate answers for the project (`project.gate`).
+fn gate_row(model: Signal<Model>) -> impl IntoElement {
+    let m = model.get();
+    let Some(entry) = active_entry(&m) else {
+        return view().into_element();
+    };
+    let on = entry.gate;
+    let name = entry.name.clone();
+    let spoken = entry.name.clone();
+    view()
+        .flex_row()
+        .flex_wrap()
+        .items_center()
+        .gap_3()
+        .child(
+            text(m.word(if on { Msg::GateOn } else { Msg::GateOff }))
+                .font_weight(FontWeight::MEDIUM)
+                .flex_1()
+                .min_w(px(160.0)),
+        )
+        .child(ui::switch(
+            model,
+            move || {
+                model
+                    .get()
+                    .word(Msg::GateSwitch)
+                    .replace("{name}", &spoken)
+                    .into()
+            },
+            move || on,
+            move || model.get().agents.busy || !entry_shared(&model.get()),
+            move |enabled| set_gate(model, name.clone(), enabled),
+        ))
+        .into_element()
 }
 
 fn pointer_tile(model: Signal<Model>) -> impl IntoElement {
@@ -813,9 +886,33 @@ fn integrations(model: Signal<Model>) -> impl IntoElement {
             Msg::HookGroup,
             Msg::HookScope,
             row()
-                .child(hook_tile(model, "claude", Msg::TileClaude))
-                .child(hook_tile(model, "codex", Msg::TileCodex))
-                .child(hook_tile(model, "antigravity", Msg::TileAntigravity)),
+                .child(hook_tile(model, "claude", "session_start", Msg::TileClaude))
+                .child(hook_tile(model, "codex", "session_start", Msg::TileCodex))
+                .child(hook_tile(
+                    model,
+                    "antigravity",
+                    "session_start",
+                    Msg::TileAntigravity,
+                )),
+        ))
+        .child(group(
+            model,
+            Msg::GateGroup,
+            Msg::GateScope,
+            view()
+                .gap_2()
+                .child(dynamic(move || gate_row(model)))
+                .child(
+                    row()
+                        .child(hook_tile(model, "claude", "pre_tool", Msg::TileClaude))
+                        .child(hook_tile(model, "codex", "pre_tool", Msg::TileCodex))
+                        .child(hook_tile(
+                            model,
+                            "antigravity",
+                            "pre_tool",
+                            Msg::TileAntigravity,
+                        )),
+                ),
         ))
         .child(group(
             model,

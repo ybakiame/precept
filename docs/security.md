@@ -18,10 +18,10 @@ Session-start injection and pre-tool gates run inside the agent's harness, as
 commands the harness chooses to run. They are **cooperative compliance, not a
 security boundary**: an agent or harness that skips the hook, a tool call the
 harness does not route through it, a same-user process editing files directly, or
-an operator who disables the integration is not contained. Gates fail open by
-default (an unreachable daemon allows the call); fail-closed is an explicit
-per-project choice. "Enforced" therefore means only that a hard rule was checked
-on the calls a hook actually mediated, and is reported per session, never assumed.
+an operator who disables the integration is not contained. The gate fails open
+(an unreachable daemon allows the call); there is no fail-closed mode. A denial
+means only that a hard rule's guard matched a call a hook actually mediated; each
+decision is recorded as evidence, and enforcement is never assumed from a switch.
 A proxy chokepoint that mediates tool calls outside the harness would be a
 separate design with its own threat model.
 
@@ -66,6 +66,11 @@ separate design with its own threat model.
   never a token. The AGENTS.md pointer is written by the daemon only on an Operator
   request carrying the previewed file digest, only between Precept's markers, in a
   served project's root, never through links; Precept never commits.
+- The pre-tool gate is off until the Operator turns it on per project
+  (`project.gate`). It judges only committed hard rules' guards, answers through
+  the project's agent capability, fails open (an unreachable daemon, a timeout or
+  an unknown tool allows the call) and records each decision in the evidence
+  chain. It mediates only the calls a harness routes through its hook.
 - Project-bound MCP tools: two read-only tools and `suggest_rule`; no
   administrative previews, decisions, context-driven approval or tool-supplied
   project selector. `suggest_rule` is accepted only for a project whose agents

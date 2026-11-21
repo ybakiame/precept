@@ -140,6 +140,9 @@ pub struct ProjectEntry {
     /// Agents may suggest rules for it (`suggest_rule`).
     #[serde(default)]
     pub propose: bool,
+    /// The pre-tool gate answers for its hard rules (`project.gate`).
+    #[serde(default)]
+    pub gate: bool,
 }
 impl Snapshot {
     pub fn validate(&self) -> Result<(), &'static str> {

@@ -283,3 +283,127 @@ fn mcp_entries_switch_per_client_and_the_written_command_serves_the_project() {
             .contains("precept-alpha")
     );
 }
+
+fn git(root: &std::path::Path, args: &[&str]) {
+    let hooks = root.join(".git-empty-hooks");
+    fs::create_dir_all(&hooks).unwrap();
+    assert!(
+        std::process::Command::new("git")
+            .arg("-c")
+            .arg(format!("core.hooksPath={}", hooks.display()))
+            .args([
+                "-c",
+                "init.templateDir=",
+                "-c",
+                "commit.gpgSign=false",
+                "-c",
+                "user.name=Synthetic",
+                "-c",
+                "user.email=synthetic@example.invalid",
+            ])
+            .args(args)
+            .current_dir(root)
+            .stdout(Stdio::null())
+            .status()
+            .unwrap()
+            .success()
+    );
+}
+
+/// The gate entry the daemon wrote for `vendor`.
+fn gate_command(f: &Fixture, vendor: &str) -> String {
+    let on = f
+        .daemon
+        .control(
+            "integration.hooks.apply",
+            json!({"project":"alpha","vendor":vendor,"event":"pre_tool","enabled":true,
+                "expected_sha256":null}),
+        )
+        .unwrap();
+    assert_eq!(on["installed"], true);
+    assert_eq!(on["event"], "pre_tool");
+    on["command"].as_str().unwrap().to_owned()
+}
+
+#[cfg(unix)]
+#[test]
+fn the_gate_denies_calls_that_break_a_committed_hard_rule_only_while_switched_on() {
+    let f = Fixture::created();
+    let b = f.daemon.enable();
+    f.register(&b, "alpha");
+    let root = f.temp.path().join("alpha");
+    git(&root, &["init", "-q"]);
+    fs::create_dir_all(root.join(".precept/rules")).unwrap();
+    let rule = root.join(".precept/rules/release.md");
+    fs::write(
+        &rule,
+        "+++\nkey = \"release\"\nenforcement = \"hard\"\n[[guard]]\ntool = \"shell\"\ndeny = \"git push --force\"\n[[guard]]\ntool = \"write\"\npaths = [\"Cargo.lock\"]\n+++\nNever rewrite published history.\n",
+    )
+    .unwrap();
+    git(&root, &["add", ".precept"]);
+    git(&root, &["commit", "-q", "-m", "rules"]);
+    let claude = gate_command(&f, "claude");
+    let antigravity = gate_command(&f, "antigravity");
+    let push = json!({"hook_event_name":"PreToolUse","cwd":root,"tool_name":"Bash",
+        "tool_input":{"command":"git push --force origin main"}});
+    // Off by default: the hook says nothing and the call proceeds.
+    assert_eq!(run_with(&claude, &push), "");
+    let agent = f.daemon.credential("agent-alpha.cap");
+    assert_eq!(
+        f.daemon.call(
+            &agent,
+            "project.gate",
+            json!({"name":"alpha","enabled":true})
+        ),
+        Err(Error::Unauthorized)
+    );
+    f.daemon
+        .control("project.gate", json!({"name":"alpha","enabled":true}))
+        .unwrap();
+    let denied: Value = serde_json::from_str(&run_with(&claude, &push)).unwrap();
+    assert_eq!(denied["hookSpecificOutput"]["permissionDecision"], "deny");
+    assert!(
+        denied["hookSpecificOutput"]["permissionDecisionReason"]
+            .as_str()
+            .unwrap()
+            .contains("Never rewrite published history.")
+    );
+    let fine =
+        json!({"cwd":root,"tool_name":"Bash","tool_input":{"command":"git push origin main"}});
+    assert_eq!(run_with(&claude, &fine), "");
+    let edit = json!({"cwd":root.join("src"),"tool_name":"Edit",
+        "tool_input":{"file_path":"../Cargo.lock"}});
+    fs::create_dir_all(root.join("src")).unwrap();
+    assert!(run_with(&claude, &edit).contains("\"deny\""));
+    let ag = json!({"workspacePaths":[root],"toolCall":{"name":"run_command",
+        "args":{"CommandLine":"git push --force","Cwd":root}}});
+    let v: Value = serde_json::from_str(&run_with(&antigravity, &ag)).unwrap();
+    assert_eq!(v["decision"], "deny");
+    // Outside the project the hook stays silent.
+    let elsewhere = json!({"cwd":f.temp.path(),"tool_name":"Bash",
+        "tool_input":{"command":"git push --force"}});
+    assert_eq!(run_with(&claude, &elsewhere), "");
+    // An uncommitted edit of the rule is not reviewed: nothing is denied.
+    fs::write(
+        &rule,
+        fs::read_to_string(&rule)
+            .unwrap()
+            .replace("Never", "Do not"),
+    )
+    .unwrap();
+    assert_eq!(run_with(&claude, &push), "");
+    // Each decision is evidence.
+    let log = f
+        .daemon
+        .control("activity.list", json!({"project":"alpha"}))
+        .unwrap();
+    let gates: Vec<&str> = log["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["kind"] == "gate")
+        .filter_map(|e| e["outcome"].as_str())
+        .collect();
+    assert!(gates.contains(&"deny") && gates.contains(&"off") && gates.contains(&"allow"));
+    assert_eq!(log["chain"]["ok"], true);
+}

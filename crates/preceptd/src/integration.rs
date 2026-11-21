@@ -170,6 +170,37 @@ impl Vendor {
     }
 }
 
+/// Which harness hook an entry answers: the session-start briefing, or the
+/// pre-tool gate (`--event pre-tool`, only for the tools the gate judges).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HookEvent {
+    #[default]
+    SessionStart,
+    PreTool,
+}
+impl HookEvent {
+    /// The event's key in the harness configuration.
+    fn key(self) -> &'static str {
+        match self {
+            Self::SessionStart => "SessionStart",
+            Self::PreTool => "PreToolUse",
+        }
+    }
+    /// The tool matcher a pre-tool entry carries: shell commands and file
+    /// writes, in each harness's tool names.
+    fn matcher(self, vendor: Vendor) -> Option<&'static str> {
+        match (self, vendor) {
+            (Self::SessionStart, _) => None,
+            (Self::PreTool, Vendor::Claude) => Some("Bash|Write|Edit|MultiEdit|NotebookEdit"),
+            (Self::PreTool, Vendor::Codex) => Some("Bash|apply_patch"),
+            (Self::PreTool, Vendor::Antigravity) => {
+                Some("run_command|write_to_file|replace_file_content|multi_replace_file_content")
+            }
+        }
+    }
+}
+
 /// Everything a hook command names: the hook executable and the project's
 /// launch inputs (the same as `precept-mcp`'s) plus the project root the hook
 /// stays silent outside of.
@@ -193,10 +224,10 @@ fn word(s: &str) -> String {
     }
 }
 
-/// The exact command written for `vendor` and `project`.
-pub fn command(launch: &HookLaunch, vendor: Vendor, project: &str) -> String {
+/// The exact command written for `vendor`, `project` and `event`.
+pub fn command(launch: &HookLaunch, vendor: Vendor, project: &str, event: HookEvent) -> String {
     let path = |p: &Path| p.to_string_lossy().into_owned();
-    [
+    let mut words = vec![
         word(&path(&launch.hook)),
         "--vendor".into(),
         vendor.name().into(),
@@ -210,19 +241,24 @@ pub fn command(launch: &HookLaunch, vendor: Vendor, project: &str) -> String {
         word(&launch.endpoint),
         "--capability-file".into(),
         word(&path(&launch.capability)),
-    ]
-    .join(" ")
+    ];
+    if event == HookEvent::PreTool {
+        words.extend(["--event".into(), "pre-tool".into()]);
+    }
+    words.join(" ")
 }
 
-/// Whether `cmd` is a Precept hook for `project` (any version of the command).
-fn ours(cmd: &str, project: &str) -> bool {
+/// Whether `cmd` is a Precept hook for `project` and `event` (any version
+/// of the command).
+fn ours(cmd: &str, project: &str, event: HookEvent) -> bool {
     let first = cmd.split_whitespace().next().unwrap_or("");
+    let words: Vec<&str> = cmd.split_whitespace().collect();
+    let pre_tool = words.windows(2).any(|w| w == ["--event", "pre-tool"]);
     first.trim_matches('\'').ends_with("precept-hook")
-        && cmd
-            .split_whitespace()
-            .collect::<Vec<_>>()
+        && words
             .windows(2)
             .any(|w| w[0] == "--project" && w[1].trim_matches('\'') == project)
+        && pre_tool == (event == HookEvent::PreTool)
 }
 
 fn config_file(home: &Path, vendor: Vendor) -> PathBuf {
@@ -230,10 +266,10 @@ fn config_file(home: &Path, vendor: Vendor) -> PathBuf {
     home.join(dir).join(file)
 }
 
-/// The commands of `SessionStart` handlers in a Claude-shaped hooks object.
-fn session_start_commands(config: &crate::ojson::J) -> Vec<String> {
+/// The commands of `event` handlers in a Claude-shaped hooks object.
+fn grouped_commands(config: &crate::ojson::J, event: HookEvent) -> Vec<String> {
     use crate::ojson::J;
-    let Some(J::Arr(groups)) = config.get("hooks").and_then(|h| h.get("SessionStart")) else {
+    let Some(J::Arr(groups)) = config.get("hooks").and_then(|h| h.get(event.key())) else {
         return vec![];
     };
     groups
@@ -247,17 +283,17 @@ fn session_start_commands(config: &crate::ojson::J) -> Vec<String> {
         .collect()
 }
 
-/// The commands of `SessionStart` handlers in Antigravity's named hooks: each
-/// top-level value's `SessionStart` list holds handlers directly or, as tool
-/// events do, groups with `hooks`.
-fn named_session_start_commands(config: &crate::ojson::J) -> Vec<String> {
+/// The commands of `event` handlers in Antigravity's named hooks: each
+/// top-level value's event list holds handlers directly or, as tool events
+/// do, groups with `hooks`.
+fn named_commands(config: &crate::ojson::J, event: HookEvent) -> Vec<String> {
     use crate::ojson::J;
     let J::Obj(entries) = config else {
         return vec![];
     };
     let mut out = Vec::new();
     for (_, hook) in entries {
-        let Some(J::Arr(items)) = hook.get("SessionStart") else {
+        let Some(J::Arr(items)) = hook.get(event.key()) else {
             continue;
         };
         for item in items {
@@ -275,26 +311,31 @@ fn named_session_start_commands(config: &crate::ojson::J) -> Vec<String> {
     out
 }
 
-/// Removes `project`'s Precept handlers from Antigravity's named hooks (any
-/// version, under any name), drops what that empties, then adds Precept's own
-/// named hook when `enabled`.
-fn edit_named(config: &mut crate::ojson::J, project: &str, cmd: &str, enabled: bool) {
+/// Removes `project`'s Precept handlers of `event` from Antigravity's named
+/// hooks (any version, under any name), drops what that empties, then adds
+/// the handler to Precept's own named hook when `enabled`.
+fn edit_named(
+    config: &mut crate::ojson::J,
+    project: &str,
+    cmd: &str,
+    enabled: bool,
+    event: HookEvent,
+) {
     use crate::ojson::J;
     let mine = |h: &J| {
         h.get("command")
             .and_then(J::as_str)
-            .is_some_and(|c| ours(c, project))
+            .is_some_and(|c| ours(c, project, event))
     };
     let name = format!("precept-{project}");
     let J::Obj(entries) = config else {
         return;
     };
-    entries.retain(|(k, _)| *k != name);
     for (_, hook) in entries.iter_mut() {
         let J::Obj(events) = hook else {
             continue;
         };
-        let Some((_, J::Arr(items))) = events.iter_mut().find(|(k, _)| k == "SessionStart") else {
+        let Some((_, J::Arr(items))) = events.iter_mut().find(|(k, _)| k == event.key()) else {
             continue;
         };
         let before = items.len();
@@ -313,22 +354,30 @@ fn edit_named(config: &mut crate::ojson::J, project: &str, cmd: &str, enabled: b
             items.retain(|i| !matches!(i.get("hooks"), Some(J::Arr(hs)) if hs.is_empty()));
         }
         if (touched || items.len() != before) && items.is_empty() {
-            events.retain(|(k, _)| k != "SessionStart");
+            events.retain(|(k, _)| k != event.key());
         }
     }
     entries.retain(|(_, hook)| !matches!(hook, J::Obj(events) if events.is_empty()));
     if enabled {
-        entries.push((
-            name,
-            J::Obj(vec![(
-                "SessionStart".into(),
-                J::Arr(vec![J::Obj(vec![
-                    ("type".into(), J::str("command")),
-                    ("command".into(), J::str(cmd)),
-                    ("timeout".into(), J::Num(10.into())),
-                ])]),
-            )]),
-        ));
+        let handler = J::Obj(vec![
+            ("type".into(), J::str("command")),
+            ("command".into(), J::str(cmd)),
+            ("timeout".into(), J::Num(10.into())),
+        ]);
+        // Tool events take matcher groups; SessionStart lists handlers.
+        let item = match event.matcher(Vendor::Antigravity) {
+            Some(m) => J::Obj(vec![
+                ("matcher".into(), J::str(m)),
+                ("hooks".into(), J::Arr(vec![handler])),
+            ]),
+            None => handler,
+        };
+        if !entries.iter().any(|(k, _)| *k == name) {
+            entries.push((name.clone(), J::Obj(vec![])));
+        }
+        if let Some((_, J::Obj(events))) = entries.iter_mut().find(|(k, _)| *k == name) {
+            events.push((event.key().into(), J::Arr(vec![item])));
+        }
     }
 }
 
@@ -338,6 +387,7 @@ pub fn hook_status(
     vendor: Vendor,
     project: &str,
     expected: &str,
+    event: HookEvent,
 ) -> Result<Value, Error> {
     let (dir, file) = vendor.file();
     let current = read_config(&config_file(home, vendor))?;
@@ -356,13 +406,17 @@ pub fn hook_status(
     let commands = parsed
         .flatten()
         .map(|j| match vendor {
-            Vendor::Antigravity => named_session_start_commands(&j),
-            _ => session_start_commands(&j),
+            Vendor::Antigravity => named_commands(&j, event),
+            _ => grouped_commands(&j, event),
         })
         .unwrap_or_default();
-    let mine: Vec<&String> = commands.iter().filter(|c| ours(c, project)).collect();
+    let mine: Vec<&String> = commands
+        .iter()
+        .filter(|c| ours(c, project, event))
+        .collect();
     Ok(json!({
         "vendor": vendor,
+        "event": event,
         "file": format!("~/{dir}/{file}"),
         "exists": current.is_some(),
         "sha256": digest(&current),
@@ -392,12 +446,15 @@ pub(crate) fn read_config(path: &Path) -> Result<Option<String>, Error> {
         .map_err(|_| Error::InvalidRequest)
 }
 
-/// Claude Code's and Codex's shape: `hooks.SessionStart` groups of handlers.
+/// Claude Code's and Codex's shape: `hooks.<Event>` groups of handlers (a
+/// tool event's group names its matcher).
 fn edit_grouped(
     config: &mut crate::ojson::J,
+    vendor: Vendor,
     project: &str,
     cmd: &str,
     enabled: bool,
+    event: HookEvent,
 ) -> Result<(), Error> {
     use crate::ojson::J;
     let hooks = config
@@ -407,7 +464,7 @@ fn edit_grouped(
         return Err(Error::InvalidRequest);
     }
     let start = hooks
-        .entry("SessionStart", J::Arr(vec![]))
+        .entry(event.key(), J::Arr(vec![]))
         .ok_or(Error::InvalidRequest)?;
     let J::Arr(groups) = start else {
         return Err(Error::InvalidRequest);
@@ -420,28 +477,33 @@ fn edit_grouped(
             hs.retain(|h| {
                 !h.get("command")
                     .and_then(J::as_str)
-                    .is_some_and(|c| ours(c, project))
+                    .is_some_and(|c| ours(c, project, event))
             });
         }
     }
     groups.retain(|g| !matches!(g.get("hooks"), Some(J::Arr(hs)) if hs.is_empty()));
     if enabled {
-        groups.push(J::Obj(vec![(
+        let mut group = vec![];
+        if let Some(m) = event.matcher(vendor) {
+            group.push(("matcher".into(), J::str(m)));
+        }
+        group.push((
             "hooks".into(),
             J::Arr(vec![J::Obj(vec![
                 ("type".into(), J::str("command")),
                 ("command".into(), J::str(cmd)),
                 ("timeout".into(), J::Num(10.into())),
             ])]),
-        )]));
+        ));
+        groups.push(J::Obj(group));
     }
     if groups.is_empty() {
-        hooks.remove("SessionStart");
+        hooks.remove(event.key());
     }
     Ok(())
 }
 
-/// Adds (`enabled`) or removes the Precept `SessionStart` entry for `project`
+/// Adds (`enabled`) or removes the Precept entry of `event` for `project`
 /// if the file is still the one the status reported (`expected` digest).
 /// Every other key and hook is kept in place; the previous file is kept as
 /// `<file>.precept.bak`.
@@ -452,6 +514,7 @@ pub fn hook_apply(
     cmd: &str,
     enabled: bool,
     expected: Option<&str>,
+    event: HookEvent,
 ) -> Result<Value, Error> {
     use crate::ojson::J;
     let path = config_file(home, vendor);
@@ -469,9 +532,9 @@ pub fn hook_apply(
         return Err(Error::InvalidRequest);
     }
     if vendor == Vendor::Antigravity {
-        edit_named(&mut config, project, cmd, enabled);
+        edit_named(&mut config, project, cmd, enabled, event);
     } else {
-        edit_grouped(&mut config, project, cmd, enabled)?;
+        edit_grouped(&mut config, vendor, project, cmd, enabled, event)?;
     }
     let next = crate::ojson::pretty(&config);
     let action = if current.as_deref() == Some(next.as_str()) || (current.is_none() && !enabled) {
@@ -499,7 +562,7 @@ pub fn hook_apply(
         }
         if enabled { "added" } else { "removed" }
     };
-    let mut out = hook_status(home, vendor, project, cmd)?;
+    let mut out = hook_status(home, vendor, project, cmd, event)?;
     out["action"] = json!(action);
     Ok(out)
 }
@@ -575,15 +638,25 @@ mod tests {
             &launch(Path::new("/home/u/my repo")),
             Vendor::Claude,
             "alpha",
+            HookEvent::SessionStart,
         );
         assert!(cmd.starts_with(
             "/usr/bin/precept-hook --vendor claude --project alpha --root '/home/u/my repo'"
         ));
-        let s = hook_status(home, Vendor::Claude, "alpha", &cmd).unwrap();
+        let s = hook_status(home, Vendor::Claude, "alpha", &cmd, HookEvent::SessionStart).unwrap();
         assert_eq!(s["installed"], false);
         assert_eq!(s["file"], "~/.claude/settings.json");
         // Absent file: created owner-only with just our entry.
-        let added = hook_apply(home, Vendor::Claude, "alpha", &cmd, true, None).unwrap();
+        let added = hook_apply(
+            home,
+            Vendor::Claude,
+            "alpha",
+            &cmd,
+            true,
+            None,
+            HookEvent::SessionStart,
+        )
+        .unwrap();
         assert_eq!(added["action"], "added");
         assert_eq!(added["current"], true);
         let file = home.join(".claude/settings.json");
@@ -597,7 +670,16 @@ mod tests {
         }
         let d = added["sha256"].as_str().unwrap().to_owned();
         assert_eq!(
-            hook_apply(home, Vendor::Claude, "alpha", &cmd, true, Some(&d)).unwrap()["action"],
+            hook_apply(
+                home,
+                Vendor::Claude,
+                "alpha",
+                &cmd,
+                true,
+                Some(&d),
+                HookEvent::SessionStart
+            )
+            .unwrap()["action"],
             "unchanged"
         );
         // An existing file: other keys, order and hooks stay.
@@ -611,11 +693,21 @@ mod tests {
                 "alpha",
                 &cmd,
                 true,
-                Some("0".repeat(64).as_str())
+                Some("0".repeat(64).as_str()),
+                HookEvent::SessionStart
             ),
             Err(Error::Conflict)
         );
-        let added = hook_apply(home, Vendor::Claude, "alpha", &cmd, true, Some(&d)).unwrap();
+        let added = hook_apply(
+            home,
+            Vendor::Claude,
+            "alpha",
+            &cmd,
+            true,
+            Some(&d),
+            HookEvent::SessionStart,
+        )
+        .unwrap();
         let text = fs::read_to_string(&file).unwrap();
         assert!(text.find("model").unwrap() < text.find("hooks").unwrap());
         assert!(text.find("hooks").unwrap() < text.find("theme").unwrap());
@@ -625,11 +717,34 @@ mod tests {
             theirs
         );
         // Another project's entry stays when alpha is removed.
-        let beta = command(&launch(Path::new("/b")), Vendor::Claude, "beta");
+        let beta = command(
+            &launch(Path::new("/b")),
+            Vendor::Claude,
+            "beta",
+            HookEvent::SessionStart,
+        );
         let d = added["sha256"].as_str().unwrap().to_owned();
-        let both = hook_apply(home, Vendor::Claude, "beta", &beta, true, Some(&d)).unwrap();
+        let both = hook_apply(
+            home,
+            Vendor::Claude,
+            "beta",
+            &beta,
+            true,
+            Some(&d),
+            HookEvent::SessionStart,
+        )
+        .unwrap();
         let d = both["sha256"].as_str().unwrap().to_owned();
-        let removed = hook_apply(home, Vendor::Claude, "alpha", &cmd, false, Some(&d)).unwrap();
+        let removed = hook_apply(
+            home,
+            Vendor::Claude,
+            "alpha",
+            &cmd,
+            false,
+            Some(&d),
+            HookEvent::SessionStart,
+        )
+        .unwrap();
         assert_eq!(removed["installed"], false);
         let text = fs::read_to_string(&file).unwrap();
         assert!(text.contains("--project beta") && !text.contains("--project alpha"));
@@ -641,11 +756,19 @@ mod tests {
         let _ = fs::remove_file(&codex);
         fs::create_dir_all(&codex).unwrap();
         fs::write(codex.join("hooks.json"), "{nope").unwrap();
-        let s = hook_status(home, Vendor::Codex, "alpha", &cmd).unwrap();
+        let s = hook_status(home, Vendor::Codex, "alpha", &cmd, HookEvent::SessionStart).unwrap();
         assert_eq!(s["malformed"], true);
         let d = s["sha256"].as_str().unwrap().to_owned();
         assert_eq!(
-            hook_apply(home, Vendor::Codex, "alpha", &cmd, true, Some(&d)),
+            hook_apply(
+                home,
+                Vendor::Codex,
+                "alpha",
+                &cmd,
+                true,
+                Some(&d),
+                HookEvent::SessionStart
+            ),
             Err(Error::InvalidRequest)
         );
         assert_eq!(
@@ -658,7 +781,12 @@ mod tests {
     fn antigravity_named_hooks_keep_others_and_own_only_precept_entries() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
-        let cmd = command(&launch(Path::new("/r")), Vendor::Antigravity, "alpha");
+        let cmd = command(
+            &launch(Path::new("/r")),
+            Vendor::Antigravity,
+            "alpha",
+            HookEvent::SessionStart,
+        );
         assert!(cmd.contains("--vendor antigravity --project alpha"));
         let file = home.join(".gemini/config/hooks.json");
         fs::create_dir_all(file.parent().unwrap()).unwrap();
@@ -667,12 +795,27 @@ mod tests {
   "session-init": {"SessionStart": [{"type": "command", "command": "./init.sh"}], "enabled": true}
 }"#;
         fs::write(&file, theirs).unwrap();
-        let s = hook_status(home, Vendor::Antigravity, "alpha", &cmd).unwrap();
+        let s = hook_status(
+            home,
+            Vendor::Antigravity,
+            "alpha",
+            &cmd,
+            HookEvent::SessionStart,
+        )
+        .unwrap();
         assert_eq!(s["file"], "~/.gemini/config/hooks.json");
         assert_eq!(s["installed"], false);
         let d = s["sha256"].as_str().map(str::to_owned);
-        let added =
-            hook_apply(home, Vendor::Antigravity, "alpha", &cmd, true, d.as_deref()).unwrap();
+        let added = hook_apply(
+            home,
+            Vendor::Antigravity,
+            "alpha",
+            &cmd,
+            true,
+            d.as_deref(),
+            HookEvent::SessionStart,
+        )
+        .unwrap();
         assert_eq!(added["action"], "added");
         assert_eq!(added["current"], true);
         let written: Value = serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
@@ -695,13 +838,29 @@ mod tests {
         let old = cmd.replace("--root /r", "--root /old");
         let stale = text.replace(&cmd, &old);
         fs::write(&file, &stale).unwrap();
-        let s = hook_status(home, Vendor::Antigravity, "alpha", &cmd).unwrap();
+        let s = hook_status(
+            home,
+            Vendor::Antigravity,
+            "alpha",
+            &cmd,
+            HookEvent::SessionStart,
+        )
+        .unwrap();
         assert_eq!(
             (s["installed"].clone(), s["current"].clone()),
             (json!(true), json!(false))
         );
         let d = s["sha256"].as_str().map(str::to_owned);
-        hook_apply(home, Vendor::Antigravity, "alpha", &cmd, true, d.as_deref()).unwrap();
+        hook_apply(
+            home,
+            Vendor::Antigravity,
+            "alpha",
+            &cmd,
+            true,
+            d.as_deref(),
+            HookEvent::SessionStart,
+        )
+        .unwrap();
         assert_eq!(
             fs::read_to_string(&file)
                 .unwrap()
@@ -711,11 +870,85 @@ mod tests {
         );
         // Off: only Precept's entry goes; the user's hooks stay as they were.
         let d = pointer::digest(fs::read_to_string(&file).unwrap().as_bytes());
-        let removed =
-            hook_apply(home, Vendor::Antigravity, "alpha", &cmd, false, Some(&d)).unwrap();
+        let removed = hook_apply(
+            home,
+            Vendor::Antigravity,
+            "alpha",
+            &cmd,
+            false,
+            Some(&d),
+            HookEvent::SessionStart,
+        )
+        .unwrap();
         assert_eq!(removed["action"], "removed");
         let after: Value = serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
         assert!(after.get("precept-alpha").is_none());
         assert_eq!(after, serde_json::from_str::<Value>(theirs).unwrap());
+    }
+
+    #[test]
+    fn gate_entries_sit_beside_session_start_and_leave_independently() {
+        for vendor in Vendor::ALL {
+            let dir = tempfile::tempdir().unwrap();
+            let home = dir.path();
+            let l = launch(Path::new("/r"));
+            let start = command(&l, vendor, "alpha", HookEvent::SessionStart);
+            let gate = command(&l, vendor, "alpha", HookEvent::PreTool);
+            assert!(gate.ends_with("--event pre-tool"));
+            let digest = |e| {
+                hook_status(home, vendor, "alpha", "", e).unwrap()["sha256"]
+                    .as_str()
+                    .map(str::to_owned)
+            };
+            hook_apply(
+                home,
+                vendor,
+                "alpha",
+                &start,
+                true,
+                None,
+                HookEvent::SessionStart,
+            )
+            .unwrap();
+            let d = digest(HookEvent::SessionStart);
+            let added = hook_apply(
+                home,
+                vendor,
+                "alpha",
+                &gate,
+                true,
+                d.as_deref(),
+                HookEvent::PreTool,
+            )
+            .unwrap();
+            assert_eq!(added["installed"], true, "{vendor:?}");
+            assert_eq!(added["current"], true);
+            let raw = fs::read_to_string(config_file(home, vendor)).unwrap();
+            assert!(raw.contains("PreToolUse") && raw.contains("SessionStart"));
+            let matcher = HookEvent::PreTool.matcher(vendor).unwrap();
+            assert!(raw.contains(matcher), "{vendor:?}");
+            let start_status =
+                hook_status(home, vendor, "alpha", &start, HookEvent::SessionStart).unwrap();
+            assert_eq!(start_status["current"], true, "{vendor:?}");
+            // Removing the gate keeps the briefing.
+            let d = digest(HookEvent::PreTool);
+            hook_apply(
+                home,
+                vendor,
+                "alpha",
+                &gate,
+                false,
+                d.as_deref(),
+                HookEvent::PreTool,
+            )
+            .unwrap();
+            let raw = fs::read_to_string(config_file(home, vendor)).unwrap();
+            assert!(!raw.contains("PreToolUse"), "{vendor:?}");
+            assert!(!raw.contains("pre-tool"));
+            assert_eq!(
+                hook_status(home, vendor, "alpha", &start, HookEvent::SessionStart).unwrap()["current"],
+                true
+            );
+        }
     }
 }

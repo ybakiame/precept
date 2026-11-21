@@ -35,6 +35,9 @@ pub enum Kind {
     Suggested,
     /// An agent started, updated or closed its work session.
     Session,
+    /// A harness's pre-tool hook asked the gate (outcome `allow`, `deny` or
+    /// `off`).
+    Gate,
     /// The connection's credential was refused before any request.
     Refused,
 }

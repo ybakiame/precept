@@ -474,12 +474,175 @@ fn preferences(m: &Model) -> Check {
     }
 }
 
+fn rules(m: &Model) -> Vec<Check> {
+    let Some(p) = m.project() else {
+        return vec![check(
+            Msg::DoctorRules,
+            Level::Unknown,
+            m.word(Msg::DoctorNotRead),
+            None,
+        )];
+    };
+    let c = &p.context;
+    let rules = &c.repository_rules;
+    let status = c
+        .contract_resolution
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
+    let first = match status {
+        "invalid_source" => {
+            let files: Vec<&str> = c
+                .contract_resolution
+                .get("invalid_files")
+                .and_then(serde_json::Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(serde_json::Value::as_str)
+                .collect();
+            check(
+                Msg::DoctorRules,
+                Level::Problem,
+                m.word(Msg::RulesInvalid)
+                    .replace("{files}", &files.join(", ")),
+                None,
+            )
+        }
+        "source_unavailable" => check(
+            Msg::DoctorRules,
+            Level::Problem,
+            m.word(Msg::RulesUnreadable),
+            None,
+        ),
+        _ if rules.is_empty() && c.pending_rules.is_empty() => check(
+            Msg::DoctorRules,
+            Level::Off,
+            m.word(Msg::DoctorRulesNone),
+            None,
+        ),
+        _ => {
+            let status_of = |r: &crate::RepositoryRule| {
+                r.checks
+                    .get("status")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
+                    .to_owned()
+            };
+            let failing: Vec<&str> = rules
+                .iter()
+                .filter(|r| status_of(r) == "failing")
+                .map(|r| r.key.as_str())
+                .collect();
+            if failing.is_empty() {
+                check(
+                    Msg::DoctorRules,
+                    if c.pending_rules.is_empty() {
+                        Level::Ok
+                    } else {
+                        Level::Attention
+                    },
+                    m.word(Msg::DoctorRulesOk)
+                        .replace("{n}", &rules.len().to_string())
+                        .replace(
+                            "{v}",
+                            &rules
+                                .iter()
+                                .filter(|r| status_of(r) == "verified")
+                                .count()
+                                .to_string(),
+                        )
+                        .replace("{p}", &c.pending_rules.len().to_string()),
+                    None,
+                )
+            } else {
+                check(
+                    Msg::DoctorRules,
+                    Level::Attention,
+                    m.word(Msg::DoctorRulesFailing)
+                        .replace("{f}", &failing.len().to_string())
+                        .replace("{n}", &rules.len().to_string())
+                        .replace(
+                            "{keys}",
+                            &crate::presentation::sanitize(&failing.join(", "), 160),
+                        ),
+                    None,
+                )
+            }
+        }
+    };
+    // The gate: reported as set up, never as enforcement achieved.
+    let guarded = rules
+        .iter()
+        .filter(|r| r.guards > 0 && r.enforcement.as_deref() == Some("hard"))
+        .count();
+    let gate_on = m
+        .data
+        .as_ref()
+        .and_then(|d| d.directory.iter().find(|e| e.name == p.name))
+        .is_some_and(|e| e.gate);
+    let gate = if guarded == 0 {
+        check(
+            Msg::DoctorGate,
+            Level::Off,
+            m.word(Msg::DoctorGateNoGuards),
+            None,
+        )
+    } else if !gate_on {
+        check(
+            Msg::DoctorGate,
+            Level::Off,
+            m.word(Msg::DoctorGateOff)
+                .replace("{n}", &guarded.to_string()),
+            Some(Fix::Agents),
+        )
+    } else {
+        let current = for_project(m, m.selected_project.as_deref());
+        match m.agents.hooks.as_ref().filter(|_| current) {
+            None => check(
+                Msg::DoctorGate,
+                Level::Unknown,
+                m.word(Msg::DoctorNotRead),
+                Some(Fix::Agents),
+            ),
+            Some(h) => {
+                let names: Vec<&str> = [
+                    ("claude", Msg::TileClaude),
+                    ("codex", Msg::TileCodex),
+                    ("antigravity", Msg::TileAntigravity),
+                ]
+                .iter()
+                .filter(|(v, _)| h.of(v, "pre_tool").is_some_and(|s| s.installed))
+                .map(|(_, t)| m.word(*t))
+                .collect();
+                if names.is_empty() {
+                    check(
+                        Msg::DoctorGate,
+                        Level::Attention,
+                        m.word(Msg::DoctorGateNoHook),
+                        Some(Fix::Agents),
+                    )
+                } else {
+                    check(
+                        Msg::DoctorGate,
+                        Level::Ok,
+                        m.word(Msg::DoctorGateOn)
+                            .replace("{hooks}", &names.join(", ")),
+                        None,
+                    )
+                }
+            }
+        }
+    };
+    vec![first, gate]
+}
+
 /// Every check, in the order a fix usually has to happen.
 pub fn checks(m: &Model) -> Vec<Check> {
     let mut out = vec![daemon(m)];
     out.extend(profile(m));
     out.extend(workspace(m));
     out.push(preferences(m));
+    out.extend(rules(m));
     out.extend(mcp(m));
     out.extend(hooks(m));
     out.push(pointer(m));
@@ -538,6 +701,7 @@ mod tests {
             state: "ready".into(),
             agents: true,
             propose: false,
+            gate: false,
         }];
         m.data = Some(std::sync::Arc::new(data));
         m.phase = Phase::Ready;
@@ -547,6 +711,64 @@ mod tests {
     }
     fn find(cs: &[Check], title: Msg) -> &Check {
         cs.iter().find(|c| c.title == title).unwrap()
+    }
+
+    #[test]
+    fn repository_rules_and_the_gate_report_what_was_observed() {
+        let mut m = ready();
+        let cs = checks(&m);
+        // The fixture: one verified rule, one uncommitted file, no guards.
+        let r = find(&cs, Msg::DoctorRules);
+        assert_eq!(r.level, Level::Attention);
+        assert!(r.detail.contains("1 applying"), "{}", r.detail);
+        assert!(r.detail.contains("1 not committed"));
+        assert_eq!(find(&cs, Msg::DoctorGate).level, Level::Off);
+        // A guarded hard rule with a failing check, the gate on, no hooks read.
+        let data = std::sync::Arc::make_mut(m.data.as_mut().unwrap());
+        let ctx = &mut data
+            .projects
+            .iter_mut()
+            .find(|p| p.name == "alpha")
+            .unwrap()
+            .context;
+        ctx.pending_rules.clear();
+        ctx.repository_rules[0].enforcement = Some("hard".into());
+        ctx.repository_rules[0].guards = 1;
+        ctx.repository_rules[0].checks =
+            serde_json::json!({"status":"failing","passed":0,"total":1});
+        data.directory[0].gate = true;
+        let cs = checks(&m);
+        let r = find(&cs, Msg::DoctorRules);
+        assert_eq!(r.level, Level::Attention);
+        assert!(r.detail.contains("formatter"));
+        assert_eq!(find(&cs, Msg::DoctorGate).level, Level::Unknown);
+        m.agents.project = Some("alpha".into());
+        m.agents.hooks = Some(Hooks {
+            available: true,
+            hooks: vec![],
+            gate_hooks: vec![HookState {
+                vendor: "codex".into(),
+                installed: true,
+                current: true,
+                ..Default::default()
+            }],
+            gate: true,
+        });
+        let g = find(&checks(&m), Msg::DoctorGate).clone();
+        assert_eq!(g.level, Level::Ok, "{}", g.detail);
+        assert!(g.detail.contains("Codex"));
+        // An invalid rule file is a problem, named.
+        let data = std::sync::Arc::make_mut(m.data.as_mut().unwrap());
+        data.projects
+            .iter_mut()
+            .find(|p| p.name == "alpha")
+            .unwrap()
+            .context
+            .contract_resolution = serde_json::json!({"status":"invalid_source",
+                "invalid_files":[".precept/rules/x.md"]});
+        let r = find(&checks(&m), Msg::DoctorRules).clone();
+        assert_eq!(r.level, Level::Problem);
+        assert!(r.detail.contains(".precept/rules/x.md"));
     }
 
     #[test]
@@ -594,6 +816,7 @@ mod tests {
                     ..Default::default()
                 },
             ],
+            ..Default::default()
         });
         m.agents.pointer = Some(Pointer {
             state: Some("absent".into()),

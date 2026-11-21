@@ -35,6 +35,28 @@ struct ProjectEntry {
     /// as off.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     propose: bool,
+    /// The pre-tool gate answers for it (the operator's switch). Absent
+    /// reads as off.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    gate: bool,
+}
+/// The operator's per-project switches kept with the project set.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Switches {
+    /// External agents off (agent credential not published).
+    pub withheld: BTreeSet<String>,
+    /// Agents may suggest rules.
+    pub proposers: BTreeSet<String>,
+    /// The pre-tool gate answers for the project's hard rules.
+    pub gated: BTreeSet<String>,
+}
+impl Switches {
+    /// A project (re)joins or leaves: shared with agents, no suggestions, no gate.
+    pub fn reset(&mut self, name: &str) {
+        self.withheld.remove(name);
+        self.proposers.remove(name);
+        self.gated.remove(name);
+    }
 }
 fn shared() -> bool {
     true
@@ -114,13 +136,7 @@ impl StateDir {
     /// The project set, the projects withheld from agents, and those whose
     /// agents may suggest rules.
     #[allow(clippy::type_complexity)]
-    pub fn load_projects(
-        &self,
-    ) -> Result<(
-        BTreeMap<String, PathBuf>,
-        BTreeSet<String>,
-        BTreeSet<String>,
-    )> {
+    pub fn load_projects(&self) -> Result<(BTreeMap<String, PathBuf>, Switches)> {
         let Some(text) = self.read(PROJECTS)? else {
             return Ok(Default::default());
         };
@@ -130,8 +146,7 @@ impl StateDir {
         }
         let mut seen = HashSet::new();
         let mut projects = BTreeMap::new();
-        let mut withheld = BTreeSet::new();
-        let mut proposers = BTreeSet::new();
+        let mut switches = Switches::default();
         for entry in file.projects {
             // Names collide case-insensitively, like their credential files.
             if !precept_ipc::valid_project(&entry.name)
@@ -142,20 +157,22 @@ impl StateDir {
                 return Err(Error::InvalidRequest);
             }
             if !entry.agents {
-                withheld.insert(entry.name.clone());
+                switches.withheld.insert(entry.name.clone());
             }
             if entry.propose {
-                proposers.insert(entry.name.clone());
+                switches.proposers.insert(entry.name.clone());
+            }
+            if entry.gate {
+                switches.gated.insert(entry.name.clone());
             }
             projects.insert(entry.name, entry.root);
         }
-        Ok((projects, withheld, proposers))
+        Ok((projects, switches))
     }
     pub fn save_projects(
         &self,
         projects: &BTreeMap<String, PathBuf>,
-        withheld: &BTreeSet<String>,
-        proposers: &BTreeSet<String>,
+        switches: &Switches,
     ) -> Result<()> {
         if projects.len() > MAX_PROJECTS {
             return Err(Error::Capacity);
@@ -167,8 +184,9 @@ impl StateDir {
                 .map(|(name, root)| ProjectEntry {
                     name: name.clone(),
                     root: root.clone(),
-                    agents: !withheld.contains(name),
-                    propose: proposers.contains(name),
+                    agents: !switches.withheld.contains(name),
+                    propose: switches.proposers.contains(name),
+                    gate: switches.gated.contains(name),
                 })
                 .collect(),
         };
@@ -225,14 +243,16 @@ mod tests {
         assert!(s.load_projects().unwrap().0.is_empty());
         let mut p = BTreeMap::new();
         p.insert("alpha".to_string(), PathBuf::from("/home/u/alpha"));
-        let withheld = BTreeSet::from(["alpha".to_string()]);
-        let proposers = BTreeSet::from(["alpha".to_string()]);
-        s.save_projects(&p, &withheld, &proposers).unwrap();
-        assert_eq!(s.load_projects().unwrap(), (p.clone(), withheld, proposers));
-        s.save_projects(&p, &BTreeSet::new(), &BTreeSet::new())
-            .unwrap();
-        let (_, withheld, proposers) = s.load_projects().unwrap();
-        assert!(withheld.is_empty() && proposers.is_empty());
+        let all = BTreeSet::from(["alpha".to_string()]);
+        let switches = Switches {
+            withheld: all.clone(),
+            proposers: all.clone(),
+            gated: all,
+        };
+        s.save_projects(&p, &switches).unwrap();
+        assert_eq!(s.load_projects().unwrap(), (p.clone(), switches));
+        s.save_projects(&p, &Switches::default()).unwrap();
+        assert_eq!(s.load_projects().unwrap().1, Switches::default());
         let mode = std::fs::metadata(s.path().join(PROJECTS))
             .unwrap()
             .permissions()
@@ -292,8 +312,7 @@ mod tests {
             big.insert(format!("p{i}"), PathBuf::from(format!("/p{i}")));
         }
         assert_eq!(
-            s.save_projects(&big, &BTreeSet::new(), &BTreeSet::new())
-                .err(),
+            s.save_projects(&big, &Switches::default()).err(),
             Some(Error::Capacity)
         );
     }

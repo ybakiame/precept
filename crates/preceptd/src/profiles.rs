@@ -34,10 +34,8 @@ struct State {
     unavailable: Roots,
     /// Why the remembered startup Profile was not selected, if it was not.
     startup_failure: Option<&'static str>,
-    /// Projects whose agent credential is not published (external agents off).
-    withheld: BTreeSet<String>,
-    /// Projects whose agents may suggest rules (the operator's switch).
-    proposers: BTreeSet<String>,
+    /// The operator's per-project switches (agents, suggestions, gate).
+    switches: crate::state::Switches,
     /// Agent suggestions accepted this daemon run, per project.
     suggested: BTreeMap<String, u32>,
 }
@@ -180,7 +178,7 @@ impl Profiles {
         .map_err(|_| Error::UnsafeRuntime)?;
         let mut projects = Roots::new();
         let mut unavailable = Roots::new();
-        let (listed, withheld, proposers) = state_dir.load_projects()?;
+        let (listed, switches) = state_dir.load_projects()?;
         for (name, root) in listed {
             match root.canonicalize() {
                 Ok(c) if c == root && c.is_dir() => {
@@ -211,8 +209,7 @@ impl Profiles {
                 projects,
                 unavailable,
                 startup_failure: None,
-                withheld,
-                proposers,
+                switches,
                 suggested: BTreeMap::new(),
             }),
             location,
@@ -258,7 +255,7 @@ impl Profiles {
         let s = self.state.lock().unwrap();
         s.projects
             .keys()
-            .filter(|n| !s.withheld.contains(*n))
+            .filter(|n| !s.switches.withheld.contains(*n))
             .cloned()
             .collect()
     }
@@ -270,7 +267,7 @@ impl Profiles {
     /// own records (suggestions, work sessions).
     pub fn can_propose(&self, project: &str) -> bool {
         let s = self.state.lock().unwrap();
-        s.proposers.contains(project) && s.roots.contains_key(project)
+        s.switches.proposers.contains(project) && s.roots.contains_key(project)
     }
     /// Whether `project` is in the daemon's set (served or not).
     pub fn listed(&self, project: &str) -> bool {
@@ -289,8 +286,9 @@ impl Profiles {
             .map(|(name, root)| {
                 // Without a selected Profile nothing is registered; a missing
                 // root still reads as unavailable.
-                let agents = !s.withheld.contains(name);
-                let propose = s.proposers.contains(name);
+                let agents = !s.switches.withheld.contains(name);
+                let propose = s.switches.proposers.contains(name);
+                let gate = s.switches.gated.contains(name);
                 let state = if s.roots.contains_key(name) {
                     "ready"
                 } else if root.is_dir() {
@@ -298,14 +296,14 @@ impl Profiles {
                 } else {
                     "unavailable"
                 };
-                json!({"name":name,"root":root,"state":state,"agents":agents,"propose":propose})
+                json!({"name":name,"root":root,"state":state,"agents":agents,"propose":propose,"gate":gate})
             })
             .collect();
         out.extend(
             s.unavailable
                 .iter()
                 .map(|(name, root)| {
-                    json!({"name":name,"root":root,"state":"unavailable","agents":!s.withheld.contains(name),"propose":s.proposers.contains(name)})
+                    json!({"name":name,"root":root,"state":"unavailable","agents":!s.switches.withheld.contains(name),"propose":s.switches.proposers.contains(name),"gate":s.switches.gated.contains(name)})
                 }),
         );
         Value::Array(out)
@@ -612,27 +610,22 @@ impl Profiles {
         next.insert(p.name.clone(), root.clone());
         let mut file = next.clone();
         file.extend(s.unavailable.clone());
-        // A project (re)joins shared with agents.
-        let mut withheld = s.withheld.clone();
-        withheld.remove(&p.name);
-        // ...and without agent suggestions until the operator allows them.
-        let mut proposers = s.proposers.clone();
-        proposers.remove(&p.name);
+        // A project (re)joins shared with agents, without agent suggestions
+        // or the gate until the operator turns them on.
+        let mut switches = s.switches.clone();
+        switches.reset(&p.name);
         self.state_dir
-            .save_projects(&file, &withheld, &proposers)
+            .save_projects(&file, &switches)
             .map_err(|_| Error::OutcomeUnknown)?;
         s.projects = next;
-        s.withheld = withheld;
-        s.proposers = proposers;
+        s.switches = switches;
         s.roots.insert(p.name.clone(), root.clone());
         if hooks.added(&p.name).is_err() {
             s.projects.remove(&p.name);
             s.roots.remove(&p.name);
             let mut file = s.projects.clone();
             file.extend(s.unavailable.clone());
-            let _ = self
-                .state_dir
-                .save_projects(&file, &s.withheld, &s.proposers);
+            let _ = self.state_dir.save_projects(&file, &s.switches);
             return Err(Error::OutcomeUnknown);
         }
         Ok(json!({"added":p.name,"root":root,"registered":!registered,"receipt":receipt}))
@@ -647,18 +640,17 @@ impl Profiles {
         if !s.projects.contains_key(&p.name) && !s.unavailable.contains_key(&p.name) {
             return Err(Error::NotFound);
         }
-        let mut withheld = s.withheld.clone();
+        let mut switches = s.switches.clone();
         let changed = if p.enabled {
-            withheld.remove(&p.name)
+            switches.withheld.remove(&p.name)
         } else {
-            withheld.insert(p.name.clone())
+            switches.withheld.insert(p.name.clone())
         };
         if changed {
             let mut file = s.projects.clone();
             file.extend(s.unavailable.clone());
-            self.state_dir
-                .save_projects(&file, &withheld, &s.proposers)?;
-            s.withheld = withheld;
+            self.state_dir.save_projects(&file, &switches)?;
+            s.switches = switches;
             let served = s.projects.contains_key(&p.name);
             drop(s);
             if !p.enabled {
@@ -674,24 +666,43 @@ impl Profiles {
     /// daemon accepts.
     fn set_propose(&self, params: Value) -> Result<Value> {
         let p: AgentsParams = super::decode(params)?;
+        self.set_switch(&p, |s| &mut s.proposers)?;
+        Ok(json!({"name":p.name,"propose":p.enabled}))
+    }
+    /// The operator lets the pre-tool gate answer for a project's hard rules,
+    /// or stops it (then every call is allowed). No Profile write.
+    fn set_gate(&self, params: Value) -> Result<Value> {
+        let p: AgentsParams = super::decode(params)?;
+        self.set_switch(&p, |s| &mut s.gated)?;
+        Ok(json!({"name":p.name,"gate":p.enabled}))
+    }
+    fn set_switch(
+        &self,
+        p: &AgentsParams,
+        set: impl Fn(&mut crate::state::Switches) -> &mut BTreeSet<String>,
+    ) -> Result<()> {
         let mut s = self.state.lock().unwrap();
         if !s.projects.contains_key(&p.name) && !s.unavailable.contains_key(&p.name) {
             return Err(Error::NotFound);
         }
-        let mut proposers = s.proposers.clone();
+        let mut switches = s.switches.clone();
         let changed = if p.enabled {
-            proposers.insert(p.name.clone())
+            set(&mut switches).insert(p.name.clone())
         } else {
-            proposers.remove(&p.name)
+            set(&mut switches).remove(&p.name)
         };
         if changed {
             let mut file = s.projects.clone();
             file.extend(s.unavailable.clone());
-            self.state_dir
-                .save_projects(&file, &s.withheld, &proposers)?;
-            s.proposers = proposers;
+            self.state_dir.save_projects(&file, &switches)?;
+            s.switches = switches;
         }
-        Ok(json!({"name":p.name,"propose":p.enabled}))
+        Ok(())
+    }
+    /// Whether the operator turned the pre-tool gate on for `project`.
+    pub fn gated(&self, project: &str) -> bool {
+        let s = self.state.lock().unwrap();
+        s.switches.gated.contains(project) && s.roots.contains_key(project)
     }
     /// An agent of `project` suggests a rule. Accepted only while the operator
     /// allows suggestions for the project and has writes on for this run;
@@ -707,7 +718,7 @@ impl Profiles {
         rule: precept_core::operator::RuleOptions,
     ) -> Result<Value> {
         let mut s = self.state.lock().unwrap();
-        if !s.proposers.contains(project) || !s.roots.contains_key(project) {
+        if !s.switches.proposers.contains(project) || !s.roots.contains_key(project) {
             return Err(Error::Unauthorized);
         }
         // Agents reach their own project, its environment, or personal scope.
@@ -937,15 +948,12 @@ impl Profiles {
             }
             let mut file = next.clone();
             file.extend(gone.clone());
-            let mut withheld = s.withheld.clone();
-            withheld.remove(&p.name);
-            let mut proposers = s.proposers.clone();
-            proposers.remove(&p.name);
-            self.state_dir.save_projects(&file, &withheld, &proposers)?;
+            let mut switches = s.switches.clone();
+            switches.reset(&p.name);
+            self.state_dir.save_projects(&file, &switches)?;
             s.projects = next;
             s.unavailable = gone;
-            s.withheld = withheld;
-            s.proposers = proposers;
+            s.switches = switches;
             s.roots.remove(&p.name);
             drop(s);
             hooks.removed(&p.name);
@@ -956,6 +964,9 @@ impl Profiles {
         }
         if method == "project.propose" {
             return self.set_propose(params);
+        }
+        if method == "project.gate" {
+            return self.set_gate(params);
         }
         if method == "project.agents" {
             return self.set_agents(params, hooks);

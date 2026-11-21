@@ -1,9 +1,11 @@
 //! `precept-hook`: the command an agent harness runs at session start (and
-//! when it resumes after compacting its conversation). It reads the project's
-//! effective context through the agent capability, as `precept-mcp` does, and
-//! prints a short briefing in the harness's own output shape. Read-only and
-//! fail-open: any problem prints nothing the harness would act on, exits 0
-//! and leaves one sanitized line on stderr.
+//! when it resumes after compacting its conversation), and, with
+//! `--event pre-tool`, before a tool call. At session start it prints a short
+//! briefing of the project's effective context; before a tool call it asks
+//! the daemon's gate whether the call breaks a committed hard rule and, if
+//! so, denies it in the harness's own output shape. Fail-open: any problem
+//! prints nothing the harness would act on, exits 0 and leaves one sanitized
+//! line on stderr. Hooks are cooperative compliance, not a sandbox.
 use clap::{Parser, ValueEnum};
 use precept_core::briefing::{Moment, render};
 use precept_ipc::{Access, Client, Location, load_credential};
@@ -31,6 +33,12 @@ impl Vendor {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum Event {
+    SessionStart,
+    PreTool,
+}
+
 #[derive(Parser)]
 struct Args {
     #[command(flatten)]
@@ -45,6 +53,144 @@ struct Args {
     /// this root it prints nothing at all.
     #[arg(long)]
     root: Option<std::path::PathBuf>,
+    /// Which hook this run answers.
+    #[arg(long, value_enum, default_value = "session-start")]
+    event: Event,
+}
+
+/// What the gate is asked about: a shell command, or written paths as the
+/// harness named them (absolute, or relative to `cwd`).
+#[derive(Debug, PartialEq, Eq)]
+enum Call {
+    Shell(String),
+    Write(Vec<String>),
+}
+
+/// The tool call in a PreToolUse input. Claude Code and Codex send
+/// `tool_name` / `tool_input`; Antigravity sends `toolCall.name` /
+/// `toolCall.args` (PascalCase). Tools the gate does not judge are `None`.
+fn tool_call(stdin: &[u8]) -> Option<Call> {
+    let v: Value = serde_json::from_slice(stdin).ok()?;
+    let s = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).map(str::to_owned);
+    if let Some(call) = v.get("toolCall") {
+        let args = call.get("args")?;
+        return match call.get("name")?.as_str()? {
+            "run_command" => s(args, "CommandLine").map(Call::Shell),
+            "write_to_file" | "replace_file_content" | "multi_replace_file_content" => {
+                s(args, "TargetFile").map(|p| Call::Write(vec![p]))
+            }
+            _ => None,
+        };
+    }
+    let input = v.get("tool_input")?;
+    match v.get("tool_name")?.as_str()? {
+        "Bash" | "shell" | "exec_command" => s(input, "command").map(Call::Shell),
+        "Write" | "Edit" | "MultiEdit" => s(input, "file_path").map(|p| Call::Write(vec![p])),
+        "NotebookEdit" => s(input, "notebook_path").map(|p| Call::Write(vec![p])),
+        // Codex's file edits: the patch names its files.
+        "apply_patch" => {
+            let patch = s(input, "command")?;
+            let paths: Vec<String> = patch
+                .lines()
+                .filter_map(|l| {
+                    [
+                        "*** Add File: ",
+                        "*** Update File: ",
+                        "*** Delete File: ",
+                        "*** Move to: ",
+                    ]
+                    .iter()
+                    .find_map(|p| l.strip_prefix(p))
+                })
+                .map(|p| p.trim().to_owned())
+                .filter(|p| !p.is_empty())
+                .collect();
+            (!paths.is_empty()).then_some(Call::Write(paths))
+        }
+        _ => None,
+    }
+}
+
+/// `path` relative to `root` (lexically: `.` and `..` resolved), or `None`
+/// when it is outside. A relative path is taken from `cwd`.
+fn repo_relative(root: &std::path::Path, cwd: &std::path::Path, path: &str) -> Option<String> {
+    use std::path::Component;
+    let joined = cwd.join(path);
+    let mut parts: Vec<std::ffi::OsString> = Vec::new();
+    let mut prefix = std::path::PathBuf::new();
+    for c in joined.components() {
+        match c {
+            Component::Prefix(_) | Component::RootDir => prefix.push(c.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                parts.pop()?;
+            }
+            Component::Normal(p) => parts.push(p.to_owned()),
+        }
+    }
+    let mut full = prefix;
+    full.extend(&parts);
+    let rest = full.strip_prefix(root).ok()?;
+    let text: Vec<&str> = rest
+        .components()
+        .map(|c| c.as_os_str().to_str())
+        .collect::<Option<_>>()?;
+    (!text.is_empty()).then(|| text.join("/"))
+}
+
+/// The gate's denial in `vendor`'s PreToolUse shape (`None`: say nothing).
+fn deny_output(vendor: Vendor, reason: &str) -> Option<Value> {
+    match vendor {
+        Vendor::Claude | Vendor::Codex => Some(json!({
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": reason
+            }
+        })),
+        Vendor::Antigravity => Some(json!({"decision": "deny", "reason": reason})),
+        Vendor::Cursor => None,
+    }
+}
+
+/// Asks the gate about the call in `stdin`; `Some(reason)` to deny.
+async fn gate(args: &Args, stdin: &[u8]) -> precept_ipc::Result<Option<String>> {
+    let Some(call) = tool_call(stdin) else {
+        return Ok(None);
+    };
+    let mut client = connect(args).await?;
+    let params = match call {
+        Call::Shell(command) => {
+            json!({"tool":"shell","command":command,"client":args.vendor.label()})
+        }
+        Call::Write(paths) => {
+            // Only paths inside the project are judged.
+            let Some(root) = args.root.as_ref().and_then(|r| r.canonicalize().ok()) else {
+                return Ok(None);
+            };
+            let cwd = session_dirs(stdin)
+                .into_iter()
+                .next()
+                .and_then(|d| d.canonicalize().ok())
+                .unwrap_or_else(|| root.clone());
+            let paths: Vec<String> = paths
+                .iter()
+                .filter_map(|p| repo_relative(&root, &cwd, p))
+                .take(32)
+                .collect();
+            if paths.is_empty() {
+                return Ok(None);
+            }
+            json!({"tool":"write","paths":paths,"client":args.vendor.label()})
+        }
+    };
+    let answer = client.request("gate.check", params).await?;
+    Ok((answer["decision"] == "deny").then(|| {
+        answer["reason"]
+            .as_str()
+            .unwrap_or("Blocked by a repository rule.")
+            .to_owned()
+    }))
 }
 
 /// The session's directories from the hook input: `cwd` (Claude Code, Codex,
@@ -118,7 +264,7 @@ fn output(vendor: Vendor, briefing: &str) -> Value {
     }
 }
 
-async fn briefing(args: &Args, moment: Moment) -> precept_ipc::Result<String> {
+async fn connect(args: &Args) -> precept_ipc::Result<Client> {
     if !precept_ipc::valid_project(&args.project) {
         return Err(precept_ipc::Error::InvalidRequest);
     }
@@ -130,7 +276,11 @@ async fn briefing(args: &Args, moment: Moment) -> precept_ipc::Result<String> {
     {
         return Err(precept_ipc::Error::Unauthorized);
     }
-    let mut client = Client::connect(&args.location, &credential).await?;
+    Client::connect(&args.location, &credential).await
+}
+
+async fn briefing(args: &Args, moment: Moment) -> precept_ipc::Result<String> {
+    let mut client = connect(args).await?;
     let context = client
         .request(
             "context.get",
@@ -150,6 +300,21 @@ async fn main() {
     {
         return;
     }
+    if args.event == Event::PreTool {
+        let run =
+            tokio::time::timeout(std::time::Duration::from_secs(4), gate(&args, &stdin)).await;
+        match run {
+            Ok(Ok(Some(reason))) => {
+                if let Some(out) = deny_output(args.vendor, &reason) {
+                    println!("{out}");
+                }
+            }
+            Ok(Ok(None)) => {}
+            Ok(Err(e)) => eprintln!("precept-hook: gate not asked ({e})"),
+            Err(_) => eprintln!("precept-hook: gate not asked (timeout)"),
+        }
+        return;
+    }
     let run = tokio::time::timeout(
         std::time::Duration::from_secs(4),
         briefing(&args, moment(&stdin)),
@@ -166,6 +331,80 @@ async fn main() {
 mod tests {
     use super::*;
     use std::path::Path;
+
+    #[test]
+    fn tool_calls_are_read_from_each_harness_shape() {
+        let call = |v: Value| tool_call(v.to_string().as_bytes());
+        assert_eq!(
+            call(json!({"tool_name":"Bash","tool_input":{"command":"git push --force"}})),
+            Some(Call::Shell("git push --force".into()))
+        );
+        assert_eq!(
+            call(json!({"tool_name":"Edit","tool_input":{"file_path":"/r/Cargo.lock"}})),
+            Some(Call::Write(vec!["/r/Cargo.lock".into()]))
+        );
+        assert_eq!(
+            call(json!({"tool_name":"apply_patch","tool_input":{"command":
+                "*** Begin Patch\n*** Update File: src/a.rs\n@@\n*** Add File: Cargo.lock\n*** End Patch"}})),
+            Some(Call::Write(vec!["src/a.rs".into(), "Cargo.lock".into()]))
+        );
+        assert_eq!(
+            call(
+                json!({"toolCall":{"name":"run_command","args":{"CommandLine":"rm -rf x","Cwd":"/r"}}})
+            ),
+            Some(Call::Shell("rm -rf x".into()))
+        );
+        assert_eq!(
+            call(json!({"toolCall":{"name":"write_to_file","args":{"TargetFile":"/r/a"}}})),
+            Some(Call::Write(vec!["/r/a".into()]))
+        );
+        assert_eq!(
+            call(json!({"tool_name":"Read","tool_input":{"file_path":"a"}})),
+            None
+        );
+        assert_eq!(
+            call(json!({"toolCall":{"name":"view_file","args":{}}})),
+            None
+        );
+        assert_eq!(tool_call(b"not json"), None);
+    }
+
+    #[test]
+    fn paths_are_made_repository_relative_or_dropped() {
+        let root = Path::new("/w/repo");
+        let cwd = Path::new("/w/repo/src");
+        assert_eq!(
+            repo_relative(root, cwd, "lib.rs").as_deref(),
+            Some("src/lib.rs")
+        );
+        assert_eq!(
+            repo_relative(root, cwd, "../Cargo.lock").as_deref(),
+            Some("Cargo.lock")
+        );
+        assert_eq!(
+            repo_relative(root, cwd, "/w/repo/./vendor/x").as_deref(),
+            Some("vendor/x")
+        );
+        assert_eq!(repo_relative(root, cwd, "../../other/x"), None);
+        assert_eq!(repo_relative(root, cwd, "/etc/passwd"), None);
+        assert_eq!(repo_relative(root, cwd, ".."), None);
+    }
+
+    #[test]
+    fn denials_match_each_vendor() {
+        let claude = deny_output(Vendor::Claude, "no").unwrap();
+        assert_eq!(claude["hookSpecificOutput"]["permissionDecision"], "deny");
+        assert_eq!(
+            claude["hookSpecificOutput"]["permissionDecisionReason"],
+            "no"
+        );
+        assert_eq!(deny_output(Vendor::Codex, "no"), Some(claude));
+        assert_eq!(
+            deny_output(Vendor::Antigravity, "no"),
+            Some(json!({"decision":"deny","reason":"no"}))
+        );
+        assert_eq!(deny_output(Vendor::Cursor, "no"), None);
+    }
     #[test]
     fn compact_is_read_and_shapes_match_each_vendor() {
         assert_eq!(moment(br#"{"source":"compact"}"#), Moment::Compact);

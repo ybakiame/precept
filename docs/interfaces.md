@@ -97,6 +97,25 @@ writes are atomic, a new file is owner-only. The command passes `--root`, so the
 hook prints nothing in sessions outside the project. Codex asks the user to
 approve a new hook once.
 
+The same methods take `event: "pre_tool"` (default `session_start`) for the
+pre-tool gate entry: its command adds `--event pre-tool`, and it sits under
+`PreToolUse` in a group with a tool matcher (Claude Code
+`Bash|Write|Edit|MultiEdit|NotebookEdit`, Codex `Bash|apply_patch`, Antigravity
+`run_command|write_to_file|replace_file_content|multi_replace_file_content`).
+Session-start and gate entries are added and removed independently. The status
+lists them under `gate_hooks`, with `gate`, the project's switch. Operator-only
+`project.gate {name, enabled}` turns the gate on or off (off by default; persisted
+in daemon state; a project rejoins with it off).
+
+Agent `gate.check {tool: "shell", command}` or `{tool: "write", paths}`
+(repository-relative, at most 32) answers `{decision: "allow", gate: "off"}`
+while the gate is off. Otherwise it reads the committed rule files and answers
+`deny` with `reason` and `rule {id, key, file}` when a hard rule's guard matches
+(a shell command containing its `deny` text, whitespace-normalized, or a written
+path equal to, or under, one of its `paths`), else `allow`. Uncommitted rules
+never deny. Each answer is a `gate` entry in the project's evidence chain with
+outcome `allow`, `deny` or `off`.
+
 Operator-only `integration.mcp {project}` reports, for Claude Code
 (`~/.claude.json`, `mcpServers`), Codex (`~/.codex/config.toml`,
 `[mcp_servers."precept-<project>"]`) and Antigravity
@@ -185,6 +204,17 @@ for Antigravity. With `--root`, a session whose working directory (the input's
 root gets nothing at all. Any
 refusal or a 4 s timeout prints nothing on stdout, exits 0 and writes one
 sanitized line to stderr (fail-open).
+
+`precept-hook --event pre-tool` reads the PreToolUse input (Claude Code and Codex:
+`tool_name` / `tool_input` with `Bash` `command`, `Write`/`Edit`/`MultiEdit`
+`file_path`, `NotebookEdit` `notebook_path`, Codex `apply_patch` file headers;
+Antigravity: `toolCall.name` / `toolCall.args` with `run_command` `CommandLine` and
+`write_to_file` / `replace_file_content` / `multi_replace_file_content`
+`TargetFile`), makes written paths relative to the project root (dropping paths
+outside it) and asks `gate.check`. A denial prints
+`hookSpecificOutput.permissionDecision: "deny"` with the reason for Claude Code and
+Codex, and `{decision: "deny", reason}` for Antigravity; anything else prints
+nothing (fail-open).
 
 | Tool | Inputs | Outputs | Side effects |
 | --- | --- | --- | --- |

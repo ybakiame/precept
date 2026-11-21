@@ -137,6 +137,13 @@ impl crate::Model {
             }
             ("handoff", false) => self.word(Msg::ActivityHandoffFailed).to_owned(),
             ("refused", _) => self.word(Msg::ActivityRefused).to_owned(),
+            ("gate", _) => match e.outcome.as_str() {
+                "deny" => self.word(Msg::ActivityGateDeny),
+                "allow" => self.word(Msg::ActivityGateAllow),
+                "off" => self.word(Msg::ActivityGateOff),
+                _ => self.word(Msg::ActivityOther),
+            }
+            .to_owned(),
             ("session", true) => self.word(Msg::ActivitySession).to_owned(),
             ("session", false) => self.word(Msg::ActivitySessionFailed).to_owned(),
             ("suggested", true) => self.word(Msg::ActivitySuggested).to_owned(),

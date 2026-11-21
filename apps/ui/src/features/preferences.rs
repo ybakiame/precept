@@ -297,6 +297,28 @@ fn rule_row(model: Signal<Model>, r: &precept_ui_core::RepositoryRule, index: us
             .text_size(px(ui::scale::text::CAPTION))
             .text_color(move || palette(model).muted),
         );
+        // Whether the gate is switched on, never a claim that it enforced.
+        let gate_on = m.project().is_some_and(|p| {
+            m.data
+                .as_ref()
+                .and_then(|d| d.directory.iter().find(|e| e.name == p.name))
+                .is_some_and(|e| e.gate)
+        });
+        meta = meta.child(
+            ui::badge(
+                model,
+                m.word(if gate_on {
+                    Msg::RuleGateOn
+                } else {
+                    Msg::RuleGateOff
+                }),
+            )
+            .variant(if gate_on {
+                ui::BadgeVariant::Info
+            } else {
+                ui::BadgeVariant::Neutral
+            }),
+        );
     }
     view()
         .p_3()
