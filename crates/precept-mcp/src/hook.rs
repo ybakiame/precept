@@ -38,6 +38,9 @@ impl Vendor {
 enum Event {
     SessionStart,
     PreTool,
+    /// After the agent read a file: warn when committed rules' claims about
+    /// it fail (the document may be stale).
+    PostRead,
 }
 
 #[derive(Parser)]
@@ -112,6 +115,92 @@ fn tool_call(stdin: &[u8]) -> Option<Call> {
                 .collect();
             (!paths.is_empty()).then_some(Call::Write(paths))
         }
+        _ => None,
+    }
+}
+
+/// The file a read tool call read (Claude Code's `Read`), as named.
+fn read_path(stdin: &[u8]) -> Option<String> {
+    let v: Value = serde_json::from_slice(stdin).ok()?;
+    if v.get("tool_name")?.as_str()? != "Read" {
+        return None;
+    }
+    v.get("tool_input")?
+        .get("file_path")?
+        .as_str()
+        .map(str::to_owned)
+}
+
+/// The warning shown to the agent after it read a file whose claims fail.
+fn stale_warning(path: &str, stale: &[Value]) -> Option<String> {
+    if stale.is_empty() {
+        return None;
+    }
+    let mut out = format!(
+        "Precept: committed rules make claims about `{path}` that do not hold in the repository now, so this file may be out of date. Check it against the code before relying on it:\n"
+    );
+    for s in stale.iter().take(5) {
+        let f = &s["failure"];
+        let what = match f["kind"].as_str() {
+            Some("exists") => "the file is missing".to_owned(),
+            Some("contains") => format!(
+                "expected to contain \"{}\"",
+                f["expected"].as_str().unwrap_or("")
+            ),
+            Some("absent") => format!(
+                "expected not to contain \"{}\"",
+                f["expected"].as_str().unwrap_or("")
+            ),
+            Some("equals") => format!(
+                "`{}` expected {} but is {}",
+                f["path"].as_str().unwrap_or("?"),
+                f["expected"].as_str().unwrap_or("?"),
+                f["found"].as_str().unwrap_or("absent")
+            ),
+            _ => "a check fails".to_owned(),
+        };
+        out.push_str(&format!(
+            "- rule `{}` ({}): {what}\n",
+            s["key"].as_str().unwrap_or("?"),
+            s["file"].as_str().unwrap_or("?")
+        ));
+    }
+    Some(out)
+}
+
+/// Asks which committed claims about the file in `stdin` fail.
+async fn read_check(args: &Args, stdin: &[u8]) -> precept_ipc::Result<Option<String>> {
+    let Some(path) = read_path(stdin) else {
+        return Ok(None);
+    };
+    let Some(root) = args.root.as_ref().and_then(|r| r.canonicalize().ok()) else {
+        return Ok(None);
+    };
+    let cwd = session_dirs(stdin)
+        .into_iter()
+        .next()
+        .and_then(|d| d.canonicalize().ok())
+        .unwrap_or_else(|| root.clone());
+    let Some(relative) = repo_relative(&root, &cwd, &path) else {
+        return Ok(None);
+    };
+    let mut client = connect(args).await?;
+    let answer = client
+        .request(
+            "doc.check",
+            json!({"paths":[relative],"client":args.vendor.label()}),
+        )
+        .await?;
+    let stale = answer["stale"].as_array().cloned().unwrap_or_default();
+    Ok(stale_warning(&relative, &stale))
+}
+
+/// The post-read warning in `vendor`'s shape (`None`: say nothing).
+fn read_output(vendor: Vendor, warning: &str) -> Option<Value> {
+    match vendor {
+        Vendor::Claude => Some(json!({
+            "hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": warning}
+        })),
         _ => None,
     }
 }
@@ -341,6 +430,22 @@ async fn main() {
         return;
     }
     if outside {
+        return;
+    }
+    if args.event == Event::PostRead {
+        let run =
+            tokio::time::timeout(std::time::Duration::from_secs(4), read_check(&args, &stdin))
+                .await;
+        match run {
+            Ok(Ok(Some(warning))) => {
+                if let Some(out) = read_output(args.vendor, &warning) {
+                    println!("{out}");
+                }
+            }
+            Ok(Ok(None)) => {}
+            Ok(Err(e)) => eprintln!("precept-hook: read not checked ({e})"),
+            Err(_) => eprintln!("precept-hook: read not checked (timeout)"),
+        }
         return;
     }
     let run = tokio::time::timeout(

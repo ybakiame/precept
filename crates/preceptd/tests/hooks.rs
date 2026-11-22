@@ -519,3 +519,89 @@ fn the_gate_denies_calls_that_break_a_committed_hard_rule_only_while_switched_on
     assert_eq!(why["rules"][0]["source"], "repository");
     assert_eq!(why["rules"][0]["reason"], "uncommitted", "{why}");
 }
+
+#[test]
+fn reading_a_document_whose_committed_claims_fail_warns_the_agent() {
+    let f = Fixture::created();
+    let b = f.daemon.enable();
+    f.register(&b, "alpha");
+    let root = f.temp.path().join("alpha");
+    git(&root, &["init", "-q"]);
+    fs::create_dir_all(root.join(".precept/rules")).unwrap();
+    fs::create_dir_all(root.join("docs")).unwrap();
+    fs::write(root.join("docs/testing.md"), "Run `cargo test`.\n").unwrap();
+    fs::write(
+        root.join(".precept/rules/testing.md"),
+        "+++\nkey = \"testing\"\n[[check]]\nfile = \"docs/testing.md\"\ncontains = \"cargo nextest\"\n+++\nTests run with nextest.\n",
+    )
+    .unwrap();
+    git(&root, &["add", "."]);
+    git(&root, &["commit", "-q", "-m", "rules"]);
+    let on = f
+        .daemon
+        .control(
+            "integration.hooks.apply",
+            json!({"project":"alpha","vendor":"claude","event":"post_read","enabled":true,
+                "expected_sha256":null}),
+        )
+        .unwrap();
+    assert_eq!(on["installed"], true);
+    let cmd = on["command"].as_str().unwrap().to_owned();
+    assert!(cmd.ends_with("--event post-read"));
+    let raw = fs::read_to_string(f.temp.path().join(".claude/settings.json")).unwrap();
+    let v: Value = serde_json::from_str(&raw).unwrap();
+    assert_eq!(v["hooks"]["PostToolUse"][0]["matcher"], "Read");
+    // Other harnesses have no read hook that passes context.
+    assert_eq!(
+        f.daemon
+            .control(
+                "integration.hooks.apply",
+                json!({"project":"alpha","vendor":"codex","event":"post_read","enabled":true,
+                    "expected_sha256":null}),
+            )
+            .err(),
+        Some(Error::Unsupported)
+    );
+    let read = |path: &std::path::Path| {
+        run_with(
+            &cmd,
+            &json!({"hook_event_name":"PostToolUse","cwd":root,"tool_name":"Read",
+                "tool_input":{"file_path":path}}),
+        )
+    };
+    let out: Value = serde_json::from_str(&read(&root.join("docs/testing.md"))).unwrap();
+    let text = out["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert_eq!(out["hookSpecificOutput"]["hookEventName"], "PostToolUse");
+    assert!(
+        text.contains("`docs/testing.md` that do not hold"),
+        "{text}"
+    );
+    assert!(text.contains(
+        "rule `testing` (.precept/rules/testing.md): expected to contain \"cargo nextest\""
+    ));
+    // A file nothing claims about, or a claim that holds: silence.
+    assert_eq!(read(&root.join(".precept/rules/testing.md")), "");
+    fs::write(root.join("docs/testing.md"), "Run `cargo nextest run`.\n").unwrap();
+    assert_eq!(read(&root.join("docs/testing.md")), "");
+    // Outside the project: silence; agents only, and bounded paths.
+    assert_eq!(read(&f.temp.path().join("x.md")), "");
+    let agent = f.daemon.credential("agent-alpha.cap");
+    for bad in [
+        json!({"paths":[]}),
+        json!({"paths":["../x"]}),
+        json!({"paths":["/etc/passwd"]}),
+    ] {
+        assert_eq!(
+            f.daemon.call(&agent, "doc.check", bad),
+            Err(Error::InvalidRequest)
+        );
+    }
+    assert_eq!(
+        f.daemon
+            .control("doc.check", json!({"paths":["docs/testing.md"]}))
+            .err(),
+        Some(Error::Unauthorized)
+    );
+}

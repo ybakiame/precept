@@ -41,6 +41,12 @@ pub fn evaluate(root: &Path, checks: &[Check]) -> Value {
     out
 }
 
+/// The failure of one check, `None` when it passes (an unreadable file is
+/// not a failure: nothing is claimed about it).
+pub(super) fn failure(root: &Path, check: &Check) -> Option<Value> {
+    one(root, check).ok().flatten()
+}
+
 fn short(s: &str) -> String {
     let mut out: String = s.chars().take(120).collect();
     if s.chars().count() > 120 {

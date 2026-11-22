@@ -191,6 +191,9 @@ pub struct Hooks {
     /// Pre-tool gate entries.
     #[serde(default)]
     pub gate_hooks: Vec<HookState>,
+    /// Stale-document warning entries (after a file read; Claude Code only).
+    #[serde(default)]
+    pub read_hooks: Vec<HookState>,
     /// Whether the operator turned the gate on for the project.
     #[serde(default)]
     pub gate: bool,
@@ -199,12 +202,13 @@ impl Hooks {
     pub fn get(&self, vendor: &str) -> Option<&HookState> {
         self.hooks.iter().find(|h| h.vendor == vendor)
     }
-    /// The entry of `vendor` for `event` (`session_start` or `pre_tool`).
+    /// The entry of `vendor` for `event` (`session_start`, `pre_tool` or
+    /// `post_read`).
     pub fn of(&self, vendor: &str, event: &str) -> Option<&HookState> {
-        let list = if event == "pre_tool" {
-            &self.gate_hooks
-        } else {
-            &self.hooks
+        let list = match event {
+            "pre_tool" => &self.gate_hooks,
+            "post_read" => &self.read_hooks,
+            _ => &self.hooks,
         };
         list.iter().find(|h| h.vendor == vendor)
     }

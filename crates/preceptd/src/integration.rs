@@ -184,6 +184,9 @@ pub enum HookEvent {
     #[default]
     SessionStart,
     PreTool,
+    /// After a file read: warn when committed claims about it fail (Claude
+    /// Code only; other harnesses document no read hook that passes context).
+    PostRead,
 }
 impl HookEvent {
     /// The event's key in `vendor`'s configuration.
@@ -193,6 +196,7 @@ impl HookEvent {
             (Self::PreTool, Vendor::Cursor) => "beforeShellExecution",
             (Self::SessionStart, _) => "SessionStart",
             (Self::PreTool, _) => "PreToolUse",
+            (Self::PostRead, _) => "PostToolUse",
         }
     }
     /// The tool matcher a pre-tool entry carries: shell commands and file
@@ -207,6 +211,7 @@ impl HookEvent {
             }
             // beforeShellExecution judges every command.
             (Self::PreTool, Vendor::Cursor) => None,
+            (Self::PostRead, _) => Some("Read"),
         }
     }
 }
@@ -252,8 +257,10 @@ pub fn command(launch: &HookLaunch, vendor: Vendor, project: &str, event: HookEv
         "--capability-file".into(),
         word(&path(&launch.capability)),
     ];
-    if event == HookEvent::PreTool {
-        words.extend(["--event".into(), "pre-tool".into()]);
+    match event {
+        HookEvent::SessionStart => {}
+        HookEvent::PreTool => words.extend(["--event".into(), "pre-tool".into()]),
+        HookEvent::PostRead => words.extend(["--event".into(), "post-read".into()]),
     }
     words.join(" ")
 }
@@ -263,12 +270,20 @@ pub fn command(launch: &HookLaunch, vendor: Vendor, project: &str, event: HookEv
 fn ours(cmd: &str, project: &str, event: HookEvent) -> bool {
     let first = cmd.split_whitespace().next().unwrap_or("");
     let words: Vec<&str> = cmd.split_whitespace().collect();
-    let pre_tool = words.windows(2).any(|w| w == ["--event", "pre-tool"]);
+    let named = words
+        .windows(2)
+        .find(|w| w[0] == "--event")
+        .map_or("session-start", |w| w[1]);
+    let wanted = match event {
+        HookEvent::SessionStart => "session-start",
+        HookEvent::PreTool => "pre-tool",
+        HookEvent::PostRead => "post-read",
+    };
     first.trim_matches('\'').ends_with("precept-hook")
         && words
             .windows(2)
             .any(|w| w[0] == "--project" && w[1].trim_matches('\'') == project)
-        && pre_tool == (event == HookEvent::PreTool)
+        && named == wanted
 }
 
 fn config_file(home: &Path, vendor: Vendor) -> PathBuf {

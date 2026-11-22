@@ -111,7 +111,10 @@ pre-tool gate entry: its command adds `--event pre-tool`, and it sits under
 `run_command|write_to_file|replace_file_content|multi_replace_file_content`);
 Cursor's gate entry sits under `beforeShellExecution` without a matcher, so Cursor
 is asked about shell commands only (it documents no hook before a file write).
-Session-start and gate entries are added and removed independently. The status
+`event: "post_read"` (Claude Code only; other vendors are `Unsupported`) adds the
+stale-document warning: `--event post-read` under `PostToolUse` with matcher
+`Read`, listed under `read_hooks`. Session-start, gate and read entries are added
+and removed independently. The status
 lists them under `gate_hooks`, with `gate`, the project's switch. Operator-only
 `project.gate {name, enabled}` turns the gate on or off (off by default; persisted
 in daemon state; a project rejoins with it off).
@@ -296,6 +299,16 @@ Codex, `{decision: "deny", reason}` for Antigravity and `{permission: "deny",
 user_message, agent_message}` for Cursor; anything else prints nothing
 (fail-open), except for Cursor, which blocks on empty output and is answered
 `{permission: "allow"}`, also outside the project and when Precept cannot answer.
+
+`precept-hook --event post-read` reads a PostToolUse input for `Read`
+(`tool_input.file_path`), makes the path relative to the project root (dropping
+paths outside it) and asks agent `doc.check {paths}` (1–32 repository-relative
+paths, no `..`, not absolute; not recorded in the evidence chain): the checks of
+committed, unchanged rule files on those files that fail now, each `{rule, key,
+file, failure}`. When there are any, it prints
+`hookSpecificOutput.additionalContext` (event `PostToolUse`): the file may be
+out of date, with each failing claim. Otherwise, and on any error, it prints
+nothing.
 
 | Tool | Inputs | Outputs | Side effects |
 | --- | --- | --- | --- |

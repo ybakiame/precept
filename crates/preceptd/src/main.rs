@@ -701,6 +701,48 @@ impl Service {
                 None => json!({"decision":"allow","gate":"on"}),
             });
         }
+        // Claims of committed rules about files an agent reads that do not
+        // hold now: the read hook warns that such a document may be stale.
+        if request.method == "doc.check" {
+            let Access::Agent { project } = access else {
+                return Err(Error::Unauthorized);
+            };
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Doc {
+                paths: Vec<String>,
+                #[serde(default)]
+                client: Option<String>,
+            }
+            let d: Doc = decode(params)?;
+            let _ = d.client;
+            if d.paths.is_empty()
+                || d.paths.len() > 32
+                || d.paths.iter().any(|p| {
+                    p.is_empty()
+                        || p.len() > 512
+                        || p.starts_with('/')
+                        || p.split('/').any(|c| c == ".." || c.is_empty())
+                })
+            {
+                return Err(Error::InvalidRequest);
+            }
+            let (_, roots) = self.profiles.read()?;
+            let root = roots.get(&project).ok_or(Error::NotFound)?.clone();
+            let bound = precept_core::Project {
+                name: project.clone(),
+                root: root.clone(),
+            };
+            let snapshot = precept_core::contracts::Snapshot::read(&root).with_reviewed(
+                precept_core::WorktreeInspector::reviewed(
+                    &worktree::GitInspector,
+                    &bound,
+                    precept_core::contracts::DIR,
+                ),
+            );
+            let stale = precept_core::contracts::gate::stale(&snapshot, &d.paths);
+            return Ok(json!({"stale": stale}));
+        }
         if request.method == "preference.suggest" {
             let Access::Agent { project } = access else {
                 return Err(Error::Unauthorized);
@@ -932,6 +974,19 @@ impl Service {
                     "available": true,
                     "hooks": status(integration::HookEvent::SessionStart)?,
                     "gate_hooks": status(integration::HookEvent::PreTool)?,
+                    // The stale-document warning after a read: Claude Code only.
+                    "read_hooks": [integration::hook_status(
+                        &home,
+                        integration::Vendor::Claude,
+                        &p.project,
+                        &integration::command(
+                            &launch,
+                            integration::Vendor::Claude,
+                            &p.project,
+                            integration::HookEvent::PostRead,
+                        ),
+                        integration::HookEvent::PostRead,
+                    )?],
                     "gate": self.profiles.gated(&p.project),
                 }))
             }
@@ -941,6 +996,11 @@ impl Service {
                     .is_some_and(|d| d.len() != 64 || !d.bytes().all(|b| b.is_ascii_hexdigit()))
                 {
                     return Err(Error::InvalidRequest);
+                }
+                if p.event == integration::HookEvent::PostRead
+                    && vendor != integration::Vendor::Claude
+                {
+                    return Err(Error::Unsupported);
                 }
                 let cmd = integration::command(&launch, vendor, &p.project, p.event);
                 integration::hook_apply(

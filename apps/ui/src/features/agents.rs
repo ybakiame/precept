@@ -729,6 +729,8 @@ fn hook_detail(m: &Model, vendor: &str, event: &str) -> String {
     }
     m.word(if vendor == "codex" {
         Msg::HookOnCodex
+    } else if event == "post_read" {
+        Msg::ReadHookOn
     } else if event == "pre_tool" {
         Msg::GateHookOn
     } else {
@@ -752,10 +754,10 @@ fn hook_tile(
             .and_then(|h| h.of(vendor, event))
             .is_some_and(|h| h.installed)
     };
-    let spoken = if event == "pre_tool" {
-        Msg::GateHookSpoken
-    } else {
-        Msg::HookSpoken
+    let spoken = match event {
+        "pre_tool" => Msg::GateHookSpoken,
+        "post_read" => Msg::ReadHookSpoken,
+        _ => Msg::HookSpoken,
     };
     ui::quick_tile(model, icons::AGENT, installed, move |on| {
         apply_hook(model, vendor, event, on)
@@ -986,6 +988,13 @@ fn integrations(model: Signal<Model>) -> impl IntoElement {
                         ))
                         .child(hook_tile(model, "cursor", "pre_tool", Msg::TileCursor)),
                 ),
+        ))
+        .child(group(
+            model,
+            Msg::ReadGroup,
+            Msg::ReadSummary,
+            Msg::ReadScope,
+            row().child(hook_tile(model, "claude", "post_read", Msg::TileClaude)),
         ))
         .child(group(
             model,

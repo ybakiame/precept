@@ -849,6 +849,7 @@ mod tests {
         m.agents.hooks = Some(Hooks {
             available: true,
             hooks: vec![],
+            read_hooks: vec![],
             gate_hooks: vec![HookState {
                 vendor: "codex".into(),
                 installed: true,

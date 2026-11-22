@@ -87,6 +87,30 @@ pub fn check(snapshot: &Snapshot, call: &ToolCall) -> Option<Denial> {
     })
 }
 
+/// What committed rules claim about `paths` (repository-relative) that does
+/// not hold now: one entry per failing check, `{rule, key, file, failure}`.
+/// A document whose claims fail may be stale; the agent reading it is told so.
+pub fn stale(snapshot: &Snapshot, paths: &[String]) -> Vec<serde_json::Value> {
+    let Some(root) = snapshot.root() else {
+        return vec![];
+    };
+    let mut out = vec![];
+    for (rule, _) in snapshot.rules().unwrap_or_default() {
+        if !snapshot.reviewed(&rule.id) {
+            continue;
+        }
+        for check in rule.checks.iter().filter(|c| paths.contains(&c.file)) {
+            if let Some(failure) = super::checks::failure(root, check) {
+                out.push(serde_json::json!({
+                    "rule": rule.id, "key": rule.key,
+                    "file": super::file_of(&rule.id), "failure": failure,
+                }));
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

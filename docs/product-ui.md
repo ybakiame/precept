@@ -121,7 +121,9 @@ group headed by what it does and where it reaches, with one quick-setting tile p
 agent: **MCP tools** (on demand; the one `precept` server entry, for every
 registered project, in Claude
 Code's, Codex's, Antigravity's and Cursor's user configuration), **Session-start briefing**
-(automatic; their session-start hooks), the **Pre-tool gate** (opt-in: the
+(automatic; their session-start hooks), the **Stale-document warning** (Claude
+Code's read hook: after a read, a note when committed claims about that file
+fail), the **Pre-tool gate** (opt-in: the
 project's gate switch, then one gate-hook tile per agent; a tile installed while
 the gate is off says it asks nothing yet) and the **Repository pointer** (the
 project's AGENTS.md section, whose switch opens a dialog previewing the exact text

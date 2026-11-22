@@ -26,6 +26,9 @@ data between schemas with the versioned Profile export and import.
 - **Cursor joins.** The Agents page sets up Cursor's MCP entry, its
   session-start briefing and the gate for its shell commands (Cursor offers no
   hook before a file write).
+- **Stale documents are flagged when read.** In Claude Code, after the agent
+  reads a file whose committed rule checks fail, it is told the file may be out
+  of date and which claims no longer hold.
 - **The terminal UI and the offline web preview are gone.** The desktop app is
   the operator interface; the `precept` CLI covers headless use. Review
   decisions record the `cli` or `desktop` channel only (the Profile schema
