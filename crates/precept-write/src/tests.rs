@@ -38,7 +38,7 @@ fn proposal(scope: &Scope) -> String {
     precept_core::operator::digest_hex(&precept_core::operator::proposal_digest(
         scope,
         match scope {
-            Scope::Project { name } | Scope::Environment { name } => Some(name.as_str()),
+            Scope::Project { name } => Some(name.as_str()),
             Scope::Global => None,
         },
         "formatter",

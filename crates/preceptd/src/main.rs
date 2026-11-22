@@ -72,8 +72,7 @@ struct OperatorContext {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AgentSuggest {
-    /// `project` (this project), `environment` (this machine, for this
-    /// project) or `personal` (every project).
+    /// `project` (this project) or `personal` (every project).
     scope: String,
     #[serde(default)]
     key: String,
@@ -165,11 +164,6 @@ impl Service {
         // here (never supplied by the caller).
         if request.method == "sessions.handoff" {
             return self.session_handoff(authority, params);
-        }
-        // Environment notes move to project memory: copied, then retired in
-        // one reviewed write of exactly the previewed records.
-        if request.method == "memories.move_environment" {
-            return self.move_environment(authority, params);
         }
         if matches!(access, Access::OperatorWrite { .. }) {
             return Err(Error::Unauthorized);
@@ -500,6 +494,18 @@ impl Service {
                 pinned: Option<bool>,
                 #[serde(default)]
                 index: Option<usize>,
+                #[serde(default)]
+                entries: Option<Vec<ImportedNote>>,
+            }
+            /// A note carried by a Profile export.
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct ImportedNote {
+                kind: memory::Kind,
+                title: String,
+                body: String,
+                #[serde(default)]
+                pinned: bool,
             }
             let p: P = decode(params)?;
             if !precept_ipc::valid_project(&p.project) || !self.profiles.listed(&p.project) {
@@ -534,10 +540,38 @@ impl Service {
                     Ok(json!({"deleted": id}))
                 }
                 "memories.clear" => Ok(json!({"cleared": self.memory.clear(state, &p.project)?})),
-                // The confirmed environment notes of the Profile, as the
-                // move to memory would take them (its preview).
-                "memories.environment" => {
-                    Ok(json!({"records": self.environment_notes(&p.project)?}))
+                // Notes from a Profile export: each kept as `remember` would
+                // (the same kind and title updates that note), pins kept.
+                "memories.import" => {
+                    let entries = p.entries.ok_or(Error::InvalidRequest)?;
+                    if entries.len() > memory::MAX_ENTRIES {
+                        return Err(Error::InvalidRequest);
+                    }
+                    let mut counts = serde_json::Map::new();
+                    for e in entries {
+                        let (entry, what) = self.memory.remember(
+                            state,
+                            &p.project,
+                            e.kind,
+                            &e.title,
+                            &e.body,
+                            Some("import".into()),
+                            None,
+                        )?;
+                        if e.pinned && !entry.pinned {
+                            self.memory.edit(
+                                state,
+                                &p.project,
+                                &entry.id,
+                                None,
+                                None,
+                                Some(true),
+                            )?;
+                        }
+                        let n = counts.entry(what.as_str()).or_insert(json!(0));
+                        *n = json!(n.as_u64().unwrap_or(0) + 1);
+                    }
+                    Ok(Value::Object(counts))
                 }
                 _ => Err(Error::Unsupported),
             };
@@ -642,9 +676,6 @@ impl Service {
                 "project" => Scope::Project {
                     name: project.clone(),
                 },
-                "environment" => Scope::Environment {
-                    name: project.clone(),
-                },
                 "personal" => Scope::Global,
                 _ => return Err(Error::InvalidRequest),
             };
@@ -681,7 +712,7 @@ impl Service {
                 priority: target.as_ref().map_or(0, |t| t.rule.priority),
                 enforcement,
             };
-            if !rule.valid_for(&scope) {
+            if !rule.valid() {
                 return Err(Error::InvalidRequest);
             }
             return self
@@ -868,127 +899,6 @@ impl Service {
     /// Saves a work session as the project's Handoff `task_id` (absent until
     /// now): goal as objective, done and summary as completed, todo as next
     /// action, and the repository's current revision, branch and state.
-    /// The project's confirmed environment notes (exact identities).
-    fn environment_notes(&self, project: &str) -> precept_ipc::Result<Vec<Value>> {
-        let (store, _) = self.profiles.read()?;
-        let scope = precept_core::operator::Scope::Environment {
-            name: project.to_owned(),
-        };
-        let mut records = vec![];
-        let mut after = 0;
-        loop {
-            let page = store
-                .operator_preferences(&scope, after)
-                .map_err(|_| Error::Unavailable)?;
-            records.extend(page.records);
-            match page.next_after_id {
-                Some(n) if records.len() < 1000 => after = n,
-                _ => break,
-            }
-        }
-        Ok(records
-            .into_iter()
-            .filter(|r| r.status == "confirmed")
-            .map(|r| {
-                json!({"id":r.id,"revision":r.revision,"proposal_digest":r.proposal_digest,
-                    "key":r.key,"value":r.value})
-            })
-            .collect())
-    }
-    fn move_environment(
-        &self,
-        authority: &precept_ipc::peer::Peer,
-        params: Value,
-    ) -> precept_ipc::Result<Value> {
-        let Access::OperatorWrite {
-            profile_id,
-            generation,
-            owner_epoch,
-        } = authority.access()
-        else {
-            return Err(Error::Unauthorized);
-        };
-        #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct Item {
-            id: i64,
-            revision: i64,
-            proposal_digest: String,
-        }
-        #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct P {
-            project: String,
-            items: Vec<Item>,
-        }
-        let p: P = decode(params)?;
-        if !self.profiles.allowed(&p.project) {
-            return Err(Error::NotFound);
-        }
-        if p.items.is_empty() || p.items.len() > precept_core::operator::MAX_BATCH {
-            return Err(Error::InvalidRequest);
-        }
-        let current = self.environment_notes(&p.project)?;
-        // Exactly the previewed records, each still at its revision.
-        let mut picked = vec![];
-        for item in &p.items {
-            let r = current
-                .iter()
-                .find(|r| r["id"] == item.id)
-                .ok_or(Error::Conflict)?;
-            if r["revision"] != item.revision
-                || r["proposal_digest"] != item.proposal_digest.as_str()
-            {
-                return Err(Error::Conflict);
-            }
-            picked.push(r.clone());
-        }
-        // Copied first: a failed write leaves the notes in both places, never
-        // in neither (copying again only reaffirms).
-        let state = self.profiles.state_dir();
-        for r in &picked {
-            let take = |f: &str, n: usize| -> String {
-                r[f].as_str().unwrap_or("").chars().take(n).collect()
-            };
-            self.memory.remember(
-                state,
-                &p.project,
-                memory::Kind::Environment,
-                &take("key", memory::MAX_TITLE),
-                &take("value", memory::MAX_BODY),
-                Some("operator".into()),
-                None,
-            )?;
-        }
-        use precept_core::operator as op;
-        let command = op::Command::DecideBatch {
-            decision: op::BatchDecision::Deprecate,
-            items: p
-                .items
-                .iter()
-                .map(|i| op::BatchItem {
-                    id: i.id,
-                    scope: op::Scope::Environment {
-                        name: p.project.clone(),
-                    },
-                    proposal_digest: i.proposal_digest.clone(),
-                    expected: op::Expected::Revision(i.revision),
-                })
-                .collect(),
-            channel: op::Channel::Desktop,
-            note: Some("Moved to project memory.".into()),
-        };
-        let request = json!({
-            "version": 2,
-            "binding": {"profile_id":profile_id,"generation":generation,"owner_epoch":owner_epoch},
-            "operation_id": precept_ipc::operator::operation_id()?,
-            "command": command,
-        });
-        let receipt = self
-            .profiles
-            .handle(authority, "profile.mutate", request, self)?;
-        Ok(json!({"moved": picked.len(), "receipt": receipt}))
-    }
     fn session_handoff(
         &self,
         authority: &precept_ipc::peer::Peer,

@@ -28,7 +28,7 @@ pub const PROJECTS: &str = r#"CREATE TABLE projects (
 )"#;
 pub const PREFERENCES: &str = r#"CREATE TABLE preferences (
     id INTEGER PRIMARY KEY CHECK (id > 0),
-    scope TEXT NOT NULL CHECK (scope IN ('global', 'project', 'environment')),
+    scope TEXT NOT NULL CHECK (scope IN ('global', 'project')),
     project TEXT REFERENCES projects(name) ON DELETE RESTRICT,
     pref_key TEXT NOT NULL CHECK (length(pref_key) BETWEEN 1 AND 120),
     value TEXT NOT NULL CHECK (length(value) BETWEEN 1 AND 4096),
@@ -47,9 +47,8 @@ pub const PREFERENCES: &str = r#"CREATE TABLE preferences (
     enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
     CHECK (
       (scope = 'global' AND project IS NULL) OR
-      (scope IN ('project', 'environment') AND project IS NOT NULL)
-    ),
-    CHECK (scope <> 'environment' OR enforcement = 'advisory')
+      (scope = 'project' AND project IS NOT NULL)
+    )
 )"#;
 /// Stored rule options: the canonical `applies_to` JSON the writer produces,
 /// a bounded priority and a known enforcement word.
@@ -116,7 +115,7 @@ pub const DDL: [&str; 8] = [
 ];
 pub const REVIEW_DECISIONS: &str = r#"CREATE TABLE acp_review_decisions (
     id INTEGER PRIMARY KEY CHECK (id > 0),
-    scope TEXT NOT NULL CHECK (scope IN ('global', 'project', 'environment')),
+    scope TEXT NOT NULL CHECK (scope IN ('global', 'project')),
     project TEXT REFERENCES projects(name) ON DELETE RESTRICT,
     preference_id INTEGER NOT NULL CHECK (preference_id > 0),
     action TEXT NOT NULL
@@ -133,7 +132,7 @@ pub const REVIEW_DECISIONS: &str = r#"CREATE TABLE acp_review_decisions (
     CHECK (note IS NULL OR action IN ('confirm', 'reject', 'deprecate', 'replace')),
     CHECK (
       (scope = 'global' AND project IS NULL) OR
-      (scope IN ('project', 'environment') AND project IS NOT NULL)
+      (scope = 'project' AND project IS NOT NULL)
     )
 )"#;
 pub const REVIEW_LOOKUP: &str = r#"CREATE INDEX review_lookup
@@ -445,7 +444,7 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
         let scope = string(&r[1])?;
         valid(
             (scope == "global" && r[2] == Value::Null)
-                || ((scope == "project" || scope == "environment") && name_valid(string(&r[2])?)),
+                || (scope == "project" && name_valid(string(&r[2])?)),
         )?;
         str_valid(&r[3], 120, true)?;
         str_valid(&r[4], 4096, true)?;
@@ -460,10 +459,7 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
         };
         let scope_enum = match scope {
             "global" => precept_core::operator::Scope::Global,
-            "project" => precept_core::operator::Scope::Project {
-                name: string(&r[2])?.to_owned(),
-            },
-            _ => precept_core::operator::Scope::Environment {
+            _ => precept_core::operator::Scope::Project {
                 name: string(&r[2])?.to_owned(),
             },
         };
@@ -472,7 +468,7 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
             _ => return Err(Error::InvalidRecord),
         };
         let rule = stored_rule(str_valid(&r[12], 16384, true)?, priority, string(&r[14])?)
-            .filter(|rule| rule.valid_for(&scope_enum))
+            .filter(|rule| rule.valid())
             .ok_or(Error::InvalidRecord)?;
         valid(matches!(&r[15], Value::Integer(0 | 1)))?;
         pref_enabled.insert(id, r[15] == Value::Integer(1));
@@ -631,8 +627,7 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
         };
         valid(
             (scope == "global" && project.is_none())
-                || ((scope == "project" || scope == "environment")
-                    && project.is_some_and(name_valid)),
+                || (scope == "project" && project.is_some_and(name_valid)),
         )?;
         let pref_id = positive(&r[3])?;
         valid(pref_digests.contains_key(&pref_id))?;

@@ -1,7 +1,7 @@
 //! The rule model through a real daemon: applies_to narrows delivery only on a
-//! definite mismatch, priority decides inside a key, environment notes stand
-//! apart, the operator's switch takes a rule out of context and back, and the
-//! Profile still verifies after every write.
+//! definite mismatch, priority decides inside a key, the operator's switch
+//! takes a rule out of context and back, and the Profile still verifies after
+//! every write.
 #[allow(dead_code)] // Shared harness; this suite uses part of it.
 mod support;
 use precept_core::operator::{AppliesTo, Channel, Enforcement, Origin, RuleOptions};
@@ -85,14 +85,11 @@ fn values(prefs: &[Value]) -> Vec<String> {
 }
 
 #[test]
-fn applies_to_priority_environment_and_the_switch_shape_what_agents_receive() {
+fn applies_to_priority_and_the_switch_shape_what_agents_receive() {
     let f = Fixture::created();
     let b = f.daemon.enable();
     f.register(&b, "alpha");
     let alpha = Scope::Project {
-        name: "alpha".into(),
-    };
-    let env = Scope::Environment {
         name: "alpha".into(),
     };
     let rust_only = RuleOptions {
@@ -132,47 +129,15 @@ fn applies_to_priority_environment_and_the_switch_shape_what_agents_receive() {
     confirm(&f, &b, "c2", alpha.clone(), high, d);
     let (rust, d) = suggest(&f, &b, "s3", Scope::Global, "fmt", "rustfmt", rust_only).unwrap();
     confirm(&f, &b, "c3", Scope::Global, rust, d);
-    let (note, d) = suggest(
-        &f,
-        &b,
-        "s4",
-        env.clone(),
-        "shell",
-        "agents run inside WSL",
-        RuleOptions::default(),
-    )
-    .unwrap();
-    confirm(&f, &b, "c4", env.clone(), note, d);
-    // Environment notes are advisory only.
-    assert_eq!(
-        suggest(
-            &f,
-            &b,
-            "s5",
-            env.clone(),
-            "x",
-            "y",
-            RuleOptions {
-                enforcement: Enforcement::Hard,
-                ..Default::default()
-            }
-        )
-        .err(),
-        Some(Error::InvalidRequest)
-    );
 
     let all = context(&f, json!({}));
-    assert_eq!(values(&all), ["rustfmt", "high", "agents run inside WSL"]);
+    assert_eq!(values(&all), ["rustfmt", "high"]);
     let fmt = &all[0];
     assert_eq!(fmt["applies_to"]["languages"], json!(["rust"]));
     assert_eq!(all[1]["priority"], 10);
     assert_eq!(all[1]["enforcement"], "verify");
-    assert_eq!(all[2]["scope"], "environment");
     // A definite mismatch drops the rule; a match keeps it.
-    assert_eq!(
-        values(&context(&f, json!({"language":"python"}))),
-        ["high", "agents run inside WSL"]
-    );
+    assert_eq!(values(&context(&f, json!({"language":"python"}))), ["high"]);
     assert_eq!(
         values(&context(&f, json!({"language":"rust"})))[0],
         "rustfmt"
@@ -213,10 +178,7 @@ fn applies_to_priority_environment_and_the_switch_shape_what_agents_receive() {
         )
         .unwrap();
     assert_eq!(record["record"]["enabled"], false);
-    assert_eq!(
-        values(&context(&f, json!({"language":"rust"}))),
-        ["high", "agents run inside WSL"]
-    );
+    assert_eq!(values(&context(&f, json!({"language":"rust"}))), ["high"]);
     assert_eq!(
         switch("off-again", rust, Scope::Global, false, r + 1).err(),
         Some(Error::InvalidTransition)

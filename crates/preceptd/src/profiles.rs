@@ -709,7 +709,7 @@ impl Profiles {
     /// bounded per run and per scope, duplicates refused. The record lands as
     /// `suggested` with origin `agent`: confirming it stays the operator's.
     /// A confirmed record of `scope` an agent of `project` may propose an
-    /// update to (its own project, its environment, or personal).
+    /// update to (its own project, or personal).
     pub fn confirmed_record(
         &self,
         project: &str,
@@ -719,7 +719,7 @@ impl Profiles {
         let s = self.state.lock().unwrap();
         match scope {
             Scope::Global => {}
-            Scope::Project { name } | Scope::Environment { name } if name == project => {}
+            Scope::Project { name } if name == project => {}
             _ => return Err(Error::ScopeMismatch),
         }
         if !s.switches.proposers.contains(project) || !s.roots.contains_key(project) {
@@ -756,10 +756,10 @@ impl Profiles {
         if !s.switches.proposers.contains(project) || !s.roots.contains_key(project) {
             return Err(Error::Unauthorized);
         }
-        // Agents reach their own project, its environment, or personal scope.
+        // Agents reach their own project or the personal scope.
         match &scope {
             Scope::Global => {}
-            Scope::Project { name } | Scope::Environment { name } if name == project => {}
+            Scope::Project { name } if name == project => {}
             _ => return Err(Error::ScopeMismatch),
         }
         if value.trim().is_empty() || value.len() > MAX_AGENT_VALUE {
@@ -881,7 +881,7 @@ impl Profiles {
                         .into_iter()
                         .filter_map(|scope| match scope {
                             Scope::Global => None,
-                            Scope::Project { name } | Scope::Environment { name } => Some(name),
+                            Scope::Project { name } => Some(name),
                         })
                         .collect();
                     if names.iter().any(|n| !s.projects.contains_key(*n)) {
@@ -897,7 +897,7 @@ impl Profiles {
                 | Command::DeprecatePreference { scope, .. }
                 | Command::DeletePreference { scope, .. } => match scope {
                     Scope::Global => None,
-                    Scope::Project { name } | Scope::Environment { name } => Some(name),
+                    Scope::Project { name } => Some(name),
                 },
             };
             if name.is_some_and(|name| !s.projects.contains_key(name)) {

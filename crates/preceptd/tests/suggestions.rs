@@ -59,13 +59,14 @@ fn agents_suggest_only_where_allowed_while_writes_are_on_and_never_confirm() {
     let context = f.daemon.call(&agent, "context.get", json!({})).unwrap();
     assert!(!context.to_string().contains("cargo fmt"));
 
-    // The same rule again is refused; personal and environment scopes work;
-    // environment notes stay advisory; other projects cannot be named.
+    // The same rule again is refused; the personal scope works; there is no
+    // environment scope (machine facts are project memory); other projects
+    // cannot be named.
     assert_eq!(suggest(&f, rule("fmt")), Err(Error::Conflict));
     let personal = json!({"scope":"personal","key":"tone","value":"Short answers."});
     assert_eq!(suggest(&f, personal).map(|_| ()), Ok(()));
-    let hard_env = json!({"scope":"environment","key":"shell","value":"WSL","enforcement":"hard"});
-    assert_eq!(suggest(&f, hard_env), Err(Error::InvalidRequest));
+    let env = json!({"scope":"environment","key":"shell","value":"WSL"});
+    assert_eq!(suggest(&f, env), Err(Error::InvalidRequest));
     let other = json!({"scope":"project","key":"x","value":"y","project":"beta"});
     assert_eq!(suggest(&f, other), Err(Error::InvalidRequest));
     assert_eq!(
@@ -123,10 +124,10 @@ fn an_agent_proposes_an_update_of_a_confirmed_rule_for_review() {
     let b = f.daemon.enable();
     f.register(&b, "alpha");
     propose(&f, true);
-    let env = json!({"kind":"environment","name":"alpha"});
+    let env = json!({"kind":"project","name":"alpha"});
     let filed = suggest(
         &f,
-        json!({"scope":"environment","key":"toolchain","value":"Rust 1.98 via rustup.","tags":["rust"]}),
+        json!({"scope":"project","key":"toolchain","value":"Rust 1.98 via rustup.","tags":["rust"]}),
     )
     .unwrap();
     let old: i64 = filed["id"].as_str().unwrap().parse().unwrap();
@@ -145,7 +146,7 @@ fn an_agent_proposes_an_update_of_a_confirmed_rule_for_review() {
             "confirm-old",
             precept_write::Command::ConfirmPreference {
                 id: old,
-                scope: precept_write::Scope::Environment {
+                scope: precept_write::Scope::Project {
                     name: "alpha".into(),
                 },
                 proposal_digest: digest.as_str().unwrap().into(),
@@ -167,19 +168,16 @@ fn an_agent_proposes_an_update_of_a_confirmed_rule_for_review() {
     );
     // A wrong id, or one of another scope, is refused.
     assert_eq!(
-        suggest(
-            &f,
-            json!({"scope":"environment","value":"x","replaces":9999})
-        ),
+        suggest(&f, json!({"scope":"project","value":"x","replaces":9999})),
         Err(Error::NotFound)
     );
     assert_eq!(
-        suggest(&f, json!({"scope":"project","value":"x","replaces":old})),
+        suggest(&f, json!({"scope":"personal","value":"x","replaces":old})),
         Err(Error::NotFound)
     );
     let update = suggest(
         &f,
-        json!({"scope":"environment","value":"Rust 1.99 via rustup.","replaces":old}),
+        json!({"scope":"project","value":"Rust 1.99 via rustup.","replaces":old}),
     )
     .unwrap();
     let new: i64 = update["id"].as_str().unwrap().parse().unwrap();

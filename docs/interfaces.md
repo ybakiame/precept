@@ -27,12 +27,12 @@ at most 16, labels lowercase without spaces, paths relative without `..`, `*`, `
 or `\\`, a trailing `/` covering a folder; empty lists apply everywhere),
 `priority` (−100..100, higher wins among one key's rules of one scope) and
 `enforcement` (`advisory`, `verify`, `hard`; a declaration, never an achieved
-level). All three are part of the proposal digest. Scope `environment` (with a
-project) holds this machine's notes for that project: advisory only, never
-competing with preferences or contracts, listed after them. `set_preference_enabled
+level). All three are part of the proposal digest. Scopes are `global` and
+`project`; facts about this machine are project memory, not rules.
+`set_preference_enabled
 {id, scope, enabled, channel, expected}` switches a confirmed rule off or on
 without a new review; it records an `enable`/`disable` decision, and an off rule is
-never delivered. The CLI exposes `--scope environment`, `--agent`, `--language`,
+never delivered. The CLI exposes `--agent`, `--language`,
 `--path`, `--task-tag` (repeatable), `--priority`, `--enforcement` and
 `preference-enable` / `preference-disable`.
 
@@ -68,7 +68,7 @@ Effective context keeps a confirmed, enabled rule unless the request's selector
 definitely mismatches its `applies_to` (a dimension the request does not name
 keeps it); each projected preference carries `applies_to`, `priority` and
 `enforcement` when they are not the defaults. The session-start briefing says where
-a rule applies and lists environment notes under "Work environment".
+a rule applies.
 
 ### AGENTS.md pointer
 
@@ -141,15 +141,22 @@ with exactly the intended entry, else nothing is written (an inline
 
 `precept profile export --out FILE` writes every preference of the selected Profile
 (personal scope and each served project) to a new owner-only file (never
-overwritten): versioned JSON `precept-profile-export` v2 with scope, key, value,
+overwritten): versioned JSON `precept-profile-export` v3 with scope, key, value,
 rule options, enabled state,
-tags, origin and source status per record. Handoffs are not carried. `precept
+tags, origin and source status per record. With `--with-memory` it also carries
+the served projects' memory (project, kind, title, body, pinned), cautions,
+lessons and attempts only; `--with-environment` adds this machine's environment
+notes. Handoffs are not carried. `precept
 profile import FILE --operation-prefix P` needs writes on and only ever creates
 suggestions through the ordinary reviewed write path (`<P>-<index>` operation
 ids, so an uncertain write can be retried exactly). It skips other statuses, records
 the Profile already holds (same scope, key, value and tags) and project records
 whose project is not served; the operator confirms imported suggestions again.
-Version 1 files (before rule options) still import, with the defaults.
+Records of the retired `environment` scope are skipped (`file_index`, reason
+`environment`). Memory notes go to the projects the daemon serves through
+`memories.import` (reported per project; a project it does not serve is
+`not_served`), never through review. Version 1 files (before rule options) still
+import, with the defaults.
 This is how preferences move between Profile schemas: there is no migration.
 
 ## MCP stdio
@@ -169,7 +176,7 @@ registered project. Tool arguments cannot change scope.
 
 Tools: `get_effective_context` and `get_handoff` (read-only), and `suggest_rule
 {scope: project|personal, key, value, tags?, applies_to?, enforcement?,
-replaces?}` (scope `environment` is refused with a pointer to `remember`), which calls agent `preference.suggest`. With `replaces` (the id of a
+replaces?}`, which calls agent `preference.suggest`. With `replaces` (the id of a
 confirmed rule of that scope, from `get_effective_context`; else `NotFound`) the
 suggestion is an update of that rule: it takes its key and, when not given, its
 tags, where it applies, priority and enforcement; `key` may be left out.
@@ -178,8 +185,7 @@ operator allowed suggestions for the project (`project.propose {name, enabled}`,
 Operator; `precept project suggestions NAME on|off`; off by default, listed as
 `propose` in `project.list`) and writes are on for this run; otherwise
 `Unauthorized` or `Unavailable`, and nothing is queued. The record is created as
-`suggested` with origin `agent` (an untagged one is tagged `agent`; environment
-notes advisory only; priority 0). The same scope, key and value already suggested
+`suggested` with origin `agent` (an untagged one is tagged `agent`; priority 0). The same scope, key and value already suggested
 or confirmed is `Conflict`; more than 20 per project per daemon run or 30 waiting
 agent suggestions in a scope is `Capacity`. The tool's reply says the rule is not
 active until the operator confirms it, and whether to retry. Each call is in the
@@ -233,13 +239,9 @@ memory** in its own budget of at most 3 KiB after the rules. Operator
 `memories.edit {project, id, title?, body?, pinned?}` (a body change is the
 operator's correction; a taken title is `Conflict`), `memories.restore
 {project, id, index}`, `memories.delete {project, id}` and `memories.clear
-{project}` change it. Operator `memories.environment {project}` lists the
-project's confirmed environment notes of the Profile (id, revision, proposal
-digest, key, value); operator-write `memories.move_environment {project,
-items:[{id, revision, proposal_digest}]}` copies exactly those into memory and
-then retires them in one reviewed write (`decide_batch` with decision
-`deprecate`); a changed or unconfirmed item is `Conflict` and nothing is
-retired. Agent calls are in the activity log as `memory`.
+{project}` change it; `memories.import {project, entries:[{kind, title, body,
+pinned?}]}` (at most 300) keeps each note as `remember` would, author `import`,
+pins kept. Agent calls are in the activity log as `memory`.
 
 `initialize` returns `instructions` telling the agent to call
 `get_effective_context` before planning or editing and again after compaction,

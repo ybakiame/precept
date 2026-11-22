@@ -283,3 +283,101 @@ fn export_then_import_moves_preferences_as_suggestions_and_replays() {
         .0
     );
 }
+
+#[test]
+fn project_memory_travels_only_when_asked_and_environment_only_when_asked_too() {
+    let src = Fixture::created();
+    let b = src.daemon.enable();
+    src.register(&b, "alpha");
+    src.daemon
+        .control("project.propose", json!({"name":"alpha","enabled":true}))
+        .unwrap();
+    let agent = src.daemon.credential("agent-alpha.cap");
+    for (kind, title) in [
+        ("environment", "Node"),
+        ("lesson", "Run tests"),
+        ("caution", "WSL"),
+    ] {
+        src.daemon
+            .call(
+                &agent,
+                "memory.remember",
+                json!({"kind":kind,"title":title,"body":format!("{title} body")}),
+            )
+            .unwrap();
+    }
+    let lesson = src
+        .daemon
+        .control("memories.list", json!({"project":"alpha"}))
+        .unwrap()["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["title"] == "Run tests")
+        .unwrap()["id"]
+        .clone();
+    src.daemon
+        .control(
+            "memories.edit",
+            json!({"project":"alpha","id":lesson,"pinned":true}),
+        )
+        .unwrap();
+    let export = |name: &str, flags: &[&str]| {
+        let file = src.temp.path().join(name);
+        let mut args = vec!["profile", "export", "--out", file.to_str().unwrap()];
+        args.extend_from_slice(flags);
+        let (ok, out) = cli(&src, &args);
+        assert!(ok, "{out}");
+        (file, out)
+    };
+    let (_, plain) = export("plain.json", &[]);
+    assert_eq!(plain["memory"], 0);
+    let (notes, out) = export("notes.json", &["--with-memory"]);
+    assert_eq!(out["memory"], 2, "environment stays on this machine");
+    let (_, all) = export("all.json", &["--with-memory", "--with-environment"]);
+    assert_eq!(all["memory"], 3);
+
+    let dst = Fixture::created();
+    let db = dst.daemon.enable();
+    dst.register(&db, "alpha");
+    for round in 0..2 {
+        let (ok, out) = cli(
+            &dst,
+            &[
+                "profile",
+                "import",
+                notes.to_str().unwrap(),
+                "--operation-prefix",
+                "mem",
+            ],
+        );
+        assert!(ok, "{out}");
+        if round == 0 {
+            assert_eq!(out["memory"]["alpha"], json!({"added":2}));
+        } else {
+            assert_eq!(out["memory"]["alpha"], json!({"reaffirmed":2}));
+        }
+    }
+    let entries = dst
+        .daemon
+        .control("memories.list", json!({"project":"alpha"}))
+        .unwrap()["entries"]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert_eq!(entries.len(), 2);
+    let pinned = entries.iter().find(|e| e["title"] == "Run tests").unwrap();
+    assert_eq!(pinned["pinned"], true);
+    assert_eq!(pinned["by"], "import");
+    assert!(entries.iter().all(|e| e["kind"] != "environment"));
+    // Agents cannot import memory.
+    let agent = dst.daemon.credential("agent-alpha.cap");
+    assert_eq!(
+        dst.daemon.call(
+            &agent,
+            "memories.import",
+            json!({"project":"alpha","entries":[]})
+        ),
+        Err(precept_ipc::Error::Unauthorized)
+    );
+}

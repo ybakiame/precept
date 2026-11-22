@@ -1,8 +1,7 @@
 //! Memory: the selected project's memory, as agents keep it (environment,
 //! cautions, lessons, attempts), heaviest first within each kind, with why
 //! each note weighs what it does. The operator pins, edits (a correction
-//! kept in history), restores, deletes or clears notes, and moves the
-//! project's confirmed environment notes from the Profile in.
+//! kept in history), restores, deletes or clears notes.
 use crate::*;
 use precept_ui_core::{
     activity::date_time,
@@ -16,26 +15,24 @@ fn word(model: Signal<Model>, key: Msg) -> impl Fn() -> SharedString + 'static {
     move || model.get().word(key).into()
 }
 
-/// Reads the project's memory and the environment notes still to move.
+/// Reads the project's memory.
 pub(crate) fn load(model: Signal<Model>, project: String) {
     model.update(|m| {
         let s = &mut m.memory;
         if s.project.as_deref() != Some(project.as_str()) {
             s.list = None;
             s.open = None;
-            s.environment.clear();
         }
         s.project = Some(project.clone());
         s.busy = true;
         s.error = None;
     });
-    let p = project.clone();
     super::profile::call(
         model,
         "memories.list",
         serde_json::json!({ "project": project }),
         move |_, m, r| {
-            if m.memory.project.as_deref() != Some(p.as_str()) {
+            if m.memory.project.as_deref() != Some(project.as_str()) {
                 return;
             }
             m.memory.busy = false;
@@ -43,19 +40,6 @@ pub(crate) fn load(model: Signal<Model>, project: String) {
                 Ok(list) => m.memory.list = Some(list),
                 Err(code) => m.memory.error = Some(code.into()),
             }
-        },
-    );
-    super::profile::call(
-        model,
-        "memories.environment",
-        serde_json::json!({ "project": project }),
-        move |_, m, r| {
-            if m.memory.project.as_deref() != Some(project.as_str()) {
-                return;
-            }
-            m.memory.environment = r
-                .and_then(precept_ui_core::memory::parse_environment)
-                .unwrap_or_default();
         },
     );
 }
@@ -170,39 +154,24 @@ fn clear(model: Signal<Model>) {
     });
 }
 
-/// Moves exactly the listed environment notes (writes are turned on first
-/// when off, as Add does).
-fn move_environment(model: Signal<Model>) {
-    if model.get().project_add.write_enabled == Some(true) {
-        move_now(model);
-    } else {
-        super::profile::enable_writes(model, move_now);
-    }
-}
-fn move_now(model: Signal<Model>) {
-    let items: Vec<serde_json::Value> = model
-        .get()
-        .memory
-        .environment
-        .iter()
-        .map(|r| {
-            serde_json::json!({"id": r.id, "revision": r.revision, "proposal_digest": r.proposal_digest})
-        })
-        .collect();
-    let n = items.len();
-    change(
-        model,
-        "memories.move_environment",
-        serde_json::json!({ "items": items }),
-        move |m| {
-            m.memory.moving = false;
-            m.memory.environment.clear();
-            ui::notify(
-                ui::Tone::Success,
-                m.word(Msg::ToastMemoryMoved).replace("{n}", &n.to_string()),
-            );
-        },
+/// Opens Review on this project's conventions with a new draft taken from
+/// the note: its title as the key, its text as the value, its kind as the
+/// tag. Saving files an ordinary suggestion to confirm; the note stays.
+fn propose_rule(model: Signal<Model>, e: &Entry) {
+    crate::shell::go_review(model, precept_ui_core::operator::ReviewMode::Project);
+    let (key, value, tag) = (
+        precept_ui_core::memory::rule_key(&e.title),
+        e.body.clone(),
+        e.kind.tag().to_owned(),
     );
+    model.update(|m| {
+        m.memory.open = None;
+        m.operator.start_draft();
+        m.operator.key = key;
+        m.operator.value = value;
+        m.operator.tags = vec![tag];
+        m.operator.adding = true;
+    });
 }
 
 fn caption(model: Signal<Model>, t: String) -> AnyElement {
@@ -292,44 +261,6 @@ fn row(model: Signal<Model>, e: &Entry) -> AnyElement {
         .into_element()
 }
 
-/// The move of the Profile's confirmed environment notes, shown while any
-/// remain: the notes it takes, and one button.
-fn move_card(model: Signal<Model>, m: &Model) -> AnyElement {
-    {
-        let notes = m.memory.environment.clone();
-        let mut card = surface(model)
-            .title(m.word(Msg::MemoryMoveTitle))
-            .child(caption(
-                model,
-                m.word(Msg::MemoryMoveBody)
-                    .replace("{n}", &notes.len().to_string()),
-            ));
-        for n in &notes {
-            let first: String = n
-                .value
-                .lines()
-                .next()
-                .unwrap_or("")
-                .chars()
-                .take(160)
-                .collect();
-            card =
-                card.child(text(format!("{} — {first}", n.key)).text_size(px(scale::text::BODY)));
-        }
-        card.child(
-            view().flex_row().child(
-                button(model, "")
-                    .label_fn(word(model, Msg::MemoryMove))
-                    .variant(ButtonVariant::Primary)
-                    .size(ButtonSize::Small)
-                    .loading(move || model.get().memory.busy)
-                    .on_press(move || move_environment(model)),
-            ),
-        )
-        .into_element()
-    }
-}
-
 /// The open note's detail, in a sheet.
 fn detail(model: Signal<Model>) -> impl IntoElement {
     ui::sheet(model)
@@ -357,6 +288,7 @@ fn detail(model: Signal<Model>) -> impl IntoElement {
                 let pin_id = e.id.clone();
                 let edit = e.clone();
                 let delete_id = e.id.clone();
+                let propose = e.clone();
                 let mut body = view()
                     .gap_4()
                     .child(
@@ -407,6 +339,13 @@ fn detail(model: Signal<Model>) -> impl IntoElement {
                                             m.memory.edit = Some(e.id.clone());
                                         })
                                     }),
+                            )
+                            .child(
+                                button(model, "")
+                                    .label_fn(word(model, Msg::MemoryPropose))
+                                    .size(ButtonSize::Small)
+                                    .disabled(move || model.get().memory.busy)
+                                    .on_press(move || propose_rule(model, &propose)),
                             )
                             .child(
                                 button(model, "")
@@ -544,12 +483,7 @@ fn clear_dialog(model: Signal<Model>) -> impl IntoElement {
 pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
     let state = computed(move || {
         let m = model.get();
-        (
-            m.memory.list.clone(),
-            m.memory.error.clone(),
-            m.memory.environment.clone(),
-            m.locale,
-        )
+        (m.memory.list.clone(), m.memory.error.clone(), m.locale)
     });
     view()
         .gap_6()
@@ -607,7 +541,7 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
                 ),
         )
         .child(dynamic(move || {
-            let (list, error, environment, _) = state.get();
+            let (list, error, _) = state.get();
             let m = model.get_untracked();
             if let Some(code) = error
                 && m.memory.edit.is_none()
@@ -620,22 +554,16 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
             let Some(list) = list else {
                 return view().into_element();
             };
-            // One column: an absent move card leaves no gap behind.
-            let mut groups = view().gap_6();
-            if !environment.is_empty() {
-                groups = groups.child(move_card(model, &m));
-            }
             if list.is_empty() {
-                return groups
+                return surface(model)
                     .child(
-                        surface(model).child(
-                            ui::empty(model, m.word(Msg::MemoryEmpty))
-                                .description(m.word(Msg::MemoryEmptyHelp))
-                                .icon(icons::MEMORY),
-                        ),
+                        ui::empty(model, m.word(Msg::MemoryEmpty))
+                            .description(m.word(Msg::MemoryEmptyHelp))
+                            .icon(icons::MEMORY),
                     )
                     .into_element();
             }
+            let mut groups = view().gap_6();
             for kind in Kind::ALL {
                 let entries: Vec<&Entry> = list.iter().filter(|e| e.kind == kind).collect();
                 if entries.is_empty() {

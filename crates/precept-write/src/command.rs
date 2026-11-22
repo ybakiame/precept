@@ -81,7 +81,7 @@ impl Request {
                 if !text(key, 120, true)
                     || !text(value, 4096, true)
                     || !precept_core::operator::tags_canonical(tags)
-                    || !rule.valid_for(scope)
+                    || !rule.valid()
                     || *expected != Expected::Absent
                 {
                     return Err(Error::InvalidCommand);
@@ -152,7 +152,7 @@ impl Request {
                     || !text(key, 120, true)
                     || !text(value, 4096, true)
                     || !precept_core::operator::tags_canonical(tags)
-                    || !rule.valid_for(scope)
+                    || !rule.valid()
                 {
                     return Err(Error::InvalidCommand);
                 }
@@ -165,8 +165,8 @@ impl Request {
                         !text(&i.key, 120, true)
                             || !text(&i.value, 4096, true)
                             || !precept_core::operator::tags_canonical(&i.tags)
-                            || !i.rule.valid_for(&i.scope)
-                            || matches!(&i.scope, Scope::Project { name } | Scope::Environment { name } if !name_valid(name))
+                            || !i.rule.valid()
+                            || matches!(&i.scope, Scope::Project { name } if !name_valid(name))
                     })
                 {
                     return Err(Error::InvalidCommand);
@@ -182,7 +182,7 @@ impl Request {
                             || !ids.insert(i.id)
                             || !digest(&i.proposal_digest)
                             || !matches!(i.expected, Expected::Revision(n) if n > 0)
-                            || matches!(&i.scope, Scope::Project { name } | Scope::Environment { name } if !name_valid(name))
+                            || matches!(&i.scope, Scope::Project { name } if !name_valid(name))
                     })
                 {
                     return Err(Error::InvalidCommand);
@@ -222,7 +222,7 @@ impl Request {
             return Err(Error::InvalidCommand);
         }
         if matches!(expected, Expected::Revision(n) if *n<=0)
-            || matches!(scope, Some(Scope::Project{name} | Scope::Environment{name}) if !name_valid(name))
+            || matches!(scope, Some(Scope::Project{name}) if !name_valid(name))
         {
             return Err(Error::InvalidCommand);
         }

@@ -1,7 +1,9 @@
 //! Profile export and import: how preferences move between Profiles (a new
 //! schema, a new machine) without migration code. Built on the ordinary
 //! operator reads and the reviewed write path: import only ever creates
-//! suggestions, which the operator confirms again. Handoffs are not carried.
+//! suggestions, which the operator confirms again. Project memory travels only
+//! when asked for (this machine's environment notes only when asked for too).
+//! Handoffs are not carried.
 use precept_ipc::{Error, Location, Result, operator::*};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -9,8 +11,9 @@ use std::{io::Write, path::Path};
 
 pub const FORMAT: &str = "precept-profile-export";
 /// The version written. Version 1 files (no rule options) still import, with
-/// the defaults (everywhere, priority 0, advisory).
-pub const VERSION: u32 = 2;
+/// the defaults (everywhere, priority 0, advisory); version 3 may carry
+/// project memory.
+pub const VERSION: u32 = 3;
 /// The most preferences one export or import carries.
 pub const MAX_RECORDS: usize = 10_000;
 /// The largest export file read back.
@@ -37,12 +40,40 @@ fn on() -> bool {
     true
 }
 
+/// One project-memory note (v3).
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExportedNote {
+    pub project: String,
+    pub kind: String,
+    pub title: String,
+    pub body: String,
+    #[serde(default)]
+    pub pinned: bool,
+}
+
+/// Which project memory an export carries.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum MemoryChoice {
+    None,
+    /// Cautions, lessons and attempts.
+    Notes,
+    /// Those and this machine's environment notes.
+    WithEnvironment,
+}
+
 #[derive(PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Export {
     pub format: String,
     pub version: u32,
     pub preferences: Vec<Exported>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub memory: Vec<ExportedNote>,
+    /// Indexes of records in the file whose scope no longer exists
+    /// (`environment`: machine facts are project memory now); skipped.
+    #[serde(skip)]
+    pub dropped: Vec<usize>,
 }
 
 async fn page(location: &Location, scope: &Scope, after_id: i64) -> Result<PreferencePage> {
@@ -55,18 +86,28 @@ async fn page(location: &Location, scope: &Scope, after_id: i64) -> Result<Prefe
     serde_json::from_value(v).map_err(|_| Error::InvalidRequest)
 }
 
-/// Every preference of the selected Profile: personal scope and each project
-/// the daemon serves.
-pub async fn collect(location: &Location) -> Result<Export> {
+/// The projects the daemon serves.
+async fn served(location: &Location) -> Result<Vec<String>> {
     let projects = control(location, "project.list", json!({})).await?;
+    Ok(projects
+        .as_array()
+        .ok_or(Error::Unavailable)?
+        .iter()
+        .filter(|p| p.get("state").and_then(Value::as_str) == Some("ready"))
+        .filter_map(|p| p.get("name").and_then(Value::as_str).map(str::to_owned))
+        .collect())
+}
+
+/// Every preference of the selected Profile (personal scope and each project
+/// the daemon serves) and, when chosen, those projects' memory.
+pub async fn collect(location: &Location, memory: MemoryChoice) -> Result<Export> {
+    let projects = served(location).await?;
     let mut scopes = vec![Scope::Global];
-    for p in projects.as_array().ok_or(Error::Unavailable)? {
-        if p.get("state").and_then(Value::as_str) == Some("ready")
-            && let Some(name) = p.get("name").and_then(Value::as_str)
-        {
-            scopes.push(Scope::Project { name: name.into() });
-        }
-    }
+    scopes.extend(
+        projects
+            .iter()
+            .map(|name| Scope::Project { name: name.clone() }),
+    );
     let mut preferences = Vec::new();
     for scope in scopes {
         let mut after = 0;
@@ -93,10 +134,31 @@ pub async fn collect(location: &Location) -> Result<Export> {
             }
         }
     }
+    let mut notes = Vec::new();
+    if memory != MemoryChoice::None {
+        for project in &projects {
+            let list = control(location, "memories.list", json!({"project":project})).await?;
+            for e in list["entries"].as_array().ok_or(Error::Unavailable)? {
+                let kind = e["kind"].as_str().ok_or(Error::Unavailable)?;
+                if kind == "environment" && memory != MemoryChoice::WithEnvironment {
+                    continue;
+                }
+                notes.push(ExportedNote {
+                    project: project.clone(),
+                    kind: kind.into(),
+                    title: e["title"].as_str().ok_or(Error::Unavailable)?.into(),
+                    body: e["body"].as_str().ok_or(Error::Unavailable)?.into(),
+                    pinned: e["pinned"] == json!(true),
+                });
+            }
+        }
+    }
     Ok(Export {
         format: FORMAT.into(),
         version: VERSION,
         preferences,
+        memory: notes,
+        dropped: vec![],
     })
 }
 
@@ -122,14 +184,39 @@ pub fn read(path: &Path) -> Result<Export> {
         return Err(Error::InvalidRequest);
     }
     let raw = std::fs::read(path).map_err(|_| Error::Unavailable)?;
-    let export: Export = serde_json::from_slice(&raw).map_err(|_| Error::InvalidRequest)?;
-    if export.format != FORMAT
-        || !(1..=VERSION).contains(&export.version)
-        || export.preferences.len() > MAX_RECORDS
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct File {
+        format: String,
+        version: u32,
+        preferences: Vec<Value>,
+        #[serde(default)]
+        memory: Vec<ExportedNote>,
+    }
+    let file: File = serde_json::from_slice(&raw).map_err(|_| Error::InvalidRequest)?;
+    if file.format != FORMAT
+        || !(1..=VERSION).contains(&file.version)
+        || file.preferences.len() > MAX_RECORDS
+        || file.memory.len() > MAX_RECORDS
     {
         return Err(Error::Version);
     }
-    Ok(export)
+    let mut preferences = Vec::with_capacity(file.preferences.len());
+    let mut dropped = vec![];
+    for (index, p) in file.preferences.into_iter().enumerate() {
+        if p.pointer("/scope/kind") == Some(&json!("environment")) {
+            dropped.push(index);
+            continue;
+        }
+        preferences.push(serde_json::from_value(p).map_err(|_| Error::InvalidRequest)?);
+    }
+    Ok(Export {
+        format: file.format,
+        version: file.version,
+        preferences,
+        memory: file.memory,
+        dropped,
+    })
 }
 
 /// Whether `prefix` makes valid operation ids (`<prefix>-<index>`).
@@ -158,14 +245,18 @@ pub async fn import(location: &Location, export: &Export, prefix: &str) -> Resul
     let binding: Binding =
         serde_json::from_value(info["binding"].clone()).map_err(|_| Error::Unavailable)?;
     // What the Profile already holds (any status): never suggested twice.
-    let existing: Vec<(Scope, String, String, Vec<String>)> = collect(location)
+    let existing: Vec<(Scope, String, String, Vec<String>)> = collect(location, MemoryChoice::None)
         .await?
         .preferences
         .into_iter()
         .map(|e| (e.scope, e.key, e.value, e.tags))
         .collect();
     let mut suggested = 0;
-    let mut skipped = Vec::new();
+    let mut skipped: Vec<Value> = export
+        .dropped
+        .iter()
+        .map(|i| json!({"file_index":i,"reason":"environment"}))
+        .collect();
     for (index, p) in export.preferences.iter().enumerate() {
         if !matches!(p.status.as_str(), "confirmed" | "suggested") {
             skipped.push(json!({"index":index,"reason":"status"}));
@@ -205,7 +296,37 @@ pub async fn import(location: &Location, export: &Export, prefix: &str) -> Resul
             Err(e) => skipped.push(json!({"index":index,"reason":e})),
         }
     }
-    Ok(json!({"suggested":suggested,"skipped":skipped,"total":export.preferences.len()}))
+    // Memory notes go to the projects this daemon serves, grouped per
+    // project; a project it does not serve is skipped.
+    let projects = served(location).await?;
+    let mut memory = serde_json::Map::new();
+    let mut by_project: std::collections::BTreeMap<&str, Vec<Value>> = Default::default();
+    for n in &export.memory {
+        by_project
+            .entry(n.project.as_str())
+            .or_default()
+            .push(json!({"kind":n.kind,"title":n.title,"body":n.body,"pinned":n.pinned}));
+    }
+    for (project, entries) in by_project {
+        let outcome = if !projects.iter().any(|p| p == project) {
+            json!("not_served")
+        } else {
+            match control(
+                location,
+                "memories.import",
+                json!({"project":project,"entries":entries}),
+            )
+            .await
+            {
+                Ok(v) => v,
+                Err(e) => json!({"error":e}),
+            }
+        };
+        memory.insert(project.to_owned(), outcome);
+    }
+    Ok(
+        json!({"suggested":suggested,"skipped":skipped,"total":export.preferences.len() + export.dropped.len(),"memory":memory}),
+    )
 }
 
 #[cfg(test)]
@@ -231,6 +352,14 @@ mod tests {
                 rule: Default::default(),
                 enabled: true,
             }],
+            memory: vec![ExportedNote {
+                project: "alpha".into(),
+                kind: "lesson".into(),
+                title: "t".into(),
+                body: "b".into(),
+                pinned: true,
+            }],
+            dropped: vec![],
         };
         write_new(&path, &export).unwrap();
         assert_eq!(write_new(&path, &export), Err(Error::Conflict));
@@ -249,6 +378,20 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(read(&path), Err(Error::InvalidRequest)));
+        // Environment records of older files are skipped, not refused.
+        std::fs::write(
+            &path,
+            r#"{"format":"precept-profile-export","version":2,"preferences":[
+              {"scope":{"kind":"environment","name":"alpha"},"key":"shell","value":"WSL",
+               "tags":["setup"],"origin":"agent","status":"confirmed"},
+              {"scope":{"kind":"global"},"key":"k","value":"v","tags":["style"],
+               "origin":"operator","status":"confirmed"}]}"#,
+        )
+        .unwrap();
+        let read_back = read(&path).unwrap();
+        assert_eq!(read_back.dropped, vec![0]);
+        assert_eq!(read_back.preferences.len(), 1);
+        assert_eq!(read_back.preferences[0].key, "k");
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(valid_prefix("move-2026"));
         assert!(!valid_prefix("bad prefix") && !valid_prefix("") && !valid_prefix(&"x".repeat(41)));

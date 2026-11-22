@@ -100,8 +100,8 @@ fn served(r: &RuleFile, digest: &str, root: Option<&std::path::Path>) -> Value {
 
 /// Resolve the Profile's confirmed rules against the repository's rules.
 /// A committed rule that applies masks Profile preferences of its key; one
-/// with allowed values keeps those whose value it allows. Environment notes
-/// never compete. Uncommitted rule files are listed as pending only.
+/// with allowed values keeps those whose value it allows. Uncommitted rule
+/// files are listed as pending only.
 pub fn project(
     project: &str,
     preferences: Vec<Preference>,
@@ -109,15 +109,15 @@ pub fn project(
     query: &SelectorQuery,
 ) -> Result<Projection> {
     query.validate()?;
-    let (environment, candidates): (Vec<_>, Vec<_>) = confirmed_preferences(project, preferences)
+    let candidates: Vec<_> = confirmed_preferences(project, preferences)
         .into_iter()
         .filter(|p| applicable(p, query))
-        .partition(|p| p.scope == Scope::Environment);
+        .collect();
     let mut legacy = legacy_preferences(candidates.clone());
     let Some(rules) = snapshot.rules() else {
         return Ok(if snapshot.status() == "not_configured" {
             Projection {
-                preferences: legacy.into_iter().chain(environment).collect(),
+                preferences: legacy,
                 contract_resolution: json!({"status":"not_configured"}),
                 repository_rules: vec![],
                 pending_rules: vec![],
@@ -168,7 +168,7 @@ pub fn project(
                 kind: typed::RuleKind::Preference,
                 scope: match p.scope {
                     Scope::Global => typed::Scope::Global,
-                    Scope::Project | Scope::Environment => typed::Scope::Project {
+                    Scope::Project => typed::Scope::Project {
                         binding: binding(project),
                     },
                 },
@@ -205,7 +205,7 @@ pub fn project(
         .map(|(r, digest)| served(r, digest, snapshot.root()))
         .collect();
     Ok(Projection {
-        preferences: legacy.into_iter().chain(environment).collect(),
+        preferences: legacy,
         contract_resolution: json!({"status":if unresolved.is_empty() { "ready" } else { "partial" }, "unresolved_keys":unresolved}),
         repository_rules,
         pending_rules,

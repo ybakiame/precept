@@ -47,9 +47,6 @@ pub enum ReviewMode {
     Personal,
     /// Project preferences: records scoped to the currently selected project.
     Project,
-    /// Environment notes of the selected project: this machine's facts,
-    /// never committed, never competing, always advisory.
-    Environment,
 }
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct Operator {
@@ -73,6 +70,8 @@ pub struct Operator {
     pub path: String,
     /// Create/select also remembers the Profile for every daemon start.
     pub remember: bool,
+    /// The add dialog is open (a new draft; an edit opens with `revising`).
+    pub adding: bool,
     pub key: String,
     pub value: String,
     /// The draft's tags (canonical, one to five) and the tag being typed.
@@ -350,7 +349,7 @@ impl Operator {
         self.enforcement = Default::default();
     }
     /// The draft's rule options, or `None` when a value is invalid.
-    pub fn draft_rule(&self, scope: &Scope) -> Option<precept_core::operator::RuleOptions> {
+    pub fn draft_rule(&self) -> Option<precept_core::operator::RuleOptions> {
         let split = |s: &str| -> Vec<String> {
             s.split(',')
                 .map(str::trim)
@@ -371,13 +370,9 @@ impl Operator {
             }
             .canonical()?,
             priority,
-            enforcement: if matches!(scope, Scope::Environment { .. }) {
-                Default::default()
-            } else {
-                self.enforcement
-            },
+            enforcement: self.enforcement,
         };
-        rule.valid_for(scope).then_some(rule)
+        rule.valid().then_some(rule)
     }
     pub fn record(&self) -> Option<&PreferenceRecord> {
         self.selected().map(|(r, _)| r)
@@ -423,10 +418,6 @@ impl Model {
     pub fn operator_scope(&self) -> Option<Scope> {
         if self.operator.global {
             Some(Scope::Global)
-        } else if self.operator.mode == ReviewMode::Environment {
-            Some(Scope::Environment {
-                name: self.selected_project.clone()?,
-            })
         } else {
             Some(Scope::Project {
                 name: self.selected_project.clone()?,
@@ -659,7 +650,7 @@ impl Model {
                     {
                         return false;
                     }
-                    let Some(rule) = self.operator.draft_rule(&scope) else {
+                    let Some(rule) = self.operator.draft_rule() else {
                         self.operator.error = Some("InvalidRule".into());
                         return false;
                     };
@@ -735,7 +726,7 @@ impl Model {
                         {
                             return false;
                         }
-                        let Some(rule) = self.operator.draft_rule(&scope) else {
+                        let Some(rule) = self.operator.draft_rule() else {
                             self.operator.error = Some("InvalidRule".into());
                             return false;
                         };

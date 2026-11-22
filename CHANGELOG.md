@@ -12,8 +12,13 @@ data between schemas with the versioned Profile export and import.
   model. Unreviewed and below rules, weighted (environment first, pins,
   confirmations, fading), carried in the session briefing, and yours to pin,
   edit, restore or delete on the new Memory page.
-- Environment notes belong to memory: agents no longer suggest them as rules,
-  and confirmed ones move in with one previewed write.
+- **Environment notes are project memory.** The Profile's `environment` scope,
+  its Review tab and `--scope environment` are gone (the Profile schema
+  changes: export with the previous version, import with this one; environment
+  records in an export are skipped).
+- A memory note can be proposed as a project convention from the Memory page.
+- `precept profile export --with-memory [--with-environment]` carries project
+  memory (export format v3); import adds it to the served projects.
 
 ## 0.4.0
 

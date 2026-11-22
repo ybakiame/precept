@@ -22,7 +22,6 @@ fn preference(row: &rusqlite::Row<'_>) -> rusqlite::Result<PreferenceRecord> {
     let scope = match (kind.as_str(), project) {
         ("global", None) => Scope::Global,
         ("project", Some(name)) => Scope::Project { name },
-        ("environment", Some(name)) => Scope::Environment { name },
         _ => return Err(malformed(11, "scope")),
     };
     let applies: String = row.get(12)?;
@@ -68,9 +67,7 @@ fn decision(row: &rusqlite::Row<'_>) -> rusqlite::Result<ReviewDecisionRecord> {
 fn scoped<'a>(store: &SqliteStore, scope: &'a Scope) -> Result<(&'static str, Option<&'a str>)> {
     match scope {
         Scope::Global => Ok(("global", None)),
-        Scope::Project { name } | Scope::Environment { name }
-            if crate::profile::name_valid(name) =>
-        {
+        Scope::Project { name } if crate::profile::name_valid(name) => {
             super::project_record(&store.db, name)?;
             Ok((scope.kind(), Some(name.as_str())))
         }

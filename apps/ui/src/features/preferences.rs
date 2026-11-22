@@ -16,7 +16,6 @@ fn scope_word(m: &Model, scope: &str) -> String {
     match scope {
         "global" => m.word(Msg::ScopePersonal).to_owned(),
         "project" => m.word(Msg::ScopeThisProject).to_owned(),
-        "environment" => m.word(Msg::ReviewTabEnvironment).to_owned(),
         other => sanitize(other, 64),
     }
 }

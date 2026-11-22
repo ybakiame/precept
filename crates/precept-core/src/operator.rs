@@ -130,21 +130,14 @@ pub enum Expected {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Scope {
     Global,
-    Project {
-        name: String,
-    },
-    /// Descriptive notes about this machine for one project (never committed,
-    /// never competing with preferences or contracts, always advisory).
-    Environment {
-        name: String,
-    },
+    Project { name: String },
 }
 impl Scope {
     /// The project a scoped record belongs to.
     pub fn project(&self) -> Option<&str> {
         match self {
             Scope::Global => None,
-            Scope::Project { name } | Scope::Environment { name } => Some(name),
+            Scope::Project { name } => Some(name),
         }
     }
     /// The stored scope word.
@@ -152,7 +145,6 @@ impl Scope {
         match self {
             Scope::Global => "global",
             Scope::Project { .. } => "project",
-            Scope::Environment { .. } => "environment",
         }
     }
 }
@@ -164,12 +156,10 @@ impl<'de> Deserialize<'de> for Scope {
         enum Wire {
             Global {},
             Project { name: String },
-            Environment { name: String },
         }
         Ok(match Wire::deserialize(deserializer)? {
             Wire::Global {} => Self::Global,
             Wire::Project { name } => Self::Project { name },
-            Wire::Environment { name } => Self::Environment { name },
         })
     }
 }
@@ -289,12 +279,9 @@ pub struct RuleOptions {
     pub enforcement: Enforcement,
 }
 impl RuleOptions {
-    /// Canonical and in bounds; environment notes are always advisory.
-    pub fn valid_for(&self, scope: &Scope) -> bool {
-        self.applies_to.is_canonical()
-            && (PRIORITY_MIN..=PRIORITY_MAX).contains(&self.priority)
-            && (!matches!(scope, Scope::Environment { .. })
-                || self.enforcement == Enforcement::Advisory)
+    /// Canonical and in bounds.
+    pub fn valid(&self) -> bool {
+        self.applies_to.is_canonical() && (PRIORITY_MIN..=PRIORITY_MAX).contains(&self.priority)
     }
 }
 
@@ -383,10 +370,9 @@ pub enum Command {
     /// Files several suggestions in one write (an import the operator
     /// picked): each is an ordinary `suggested` record, none is confirmed.
     SuggestBatch { items: Vec<SuggestItem> },
-    /// Confirms or rejects several exact suggestions, or deprecates several
-    /// confirmed records, in one write, each as its own decision: every item
-    /// must still be the reviewed revision and proposal, or nothing is
-    /// written.
+    /// Confirms or rejects several exact suggestions in one write, each as
+    /// its own decision: every item must still be the reviewed revision and
+    /// proposal, or nothing is written.
     DecideBatch {
         decision: BatchDecision,
         items: Vec<BatchItem>,
@@ -419,8 +405,6 @@ pub enum Command {
 pub enum BatchDecision {
     Confirm,
     Reject,
-    /// Retires confirmed records (moving environment notes to memory).
-    Deprecate,
 }
 /// One exact suggestion of a batch.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -775,20 +759,17 @@ mod tests {
             ..Default::default()
         };
         assert!(many.canonical().is_none());
-        let env = Scope::Environment {
-            name: "alpha".into(),
-        };
         let hard = RuleOptions {
             enforcement: Enforcement::Hard,
             ..Default::default()
         };
-        assert!(hard.valid_for(&Scope::Global) && !hard.valid_for(&env));
+        assert!(hard.valid());
         assert!(
             !RuleOptions {
                 priority: 101,
                 ..Default::default()
             }
-            .valid_for(&Scope::Global)
+            .valid()
         );
         let tags = vec!["style".to_owned()];
         let base = proposal_digest(
@@ -828,7 +809,9 @@ mod tests {
         assert_ne!(
             base,
             proposal_digest(
-                &env,
+                &Scope::Project {
+                    name: "alpha".into()
+                },
                 Some("alpha"),
                 "k",
                 "v",

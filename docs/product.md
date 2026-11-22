@@ -55,13 +55,13 @@ origin and a review history.
 | Personal | The user-local Profile | Operator review |
 | Project preference | The Profile, keyed by project | Operator review |
 | Project contract | The repository (reviewed rule files) | Repository review |
-| Environment | The Profile, keyed by project and machine; never committed | Operator review |
+| Project memory (this machine's environment, cautions, lessons, attempts) | The daemon's private state, per project; never committed | Agents keep it; the operator edits or deletes it; unreviewed |
 
 Current repository facts and project contracts outrank personal preferences,
-environment notes and Handoffs. A code/contract disagreement is surfaced for human
+project memory and Handoffs. A code/contract disagreement is surfaced for human
 resolution, never silently resolved. Session constraints may narrow work but never
-override contracts or grant permissions. Environment notes are descriptive context:
-they never supersede a contract or preference.
+override contracts or grant permissions. Project memory is descriptive context:
+it never supersedes a contract or preference.
 
 Repository-owned contract files and reviewed engineering configuration remain the
 source of truth. The Profile never holds a hidden authoritative copy of repository
@@ -122,7 +122,7 @@ revocably:
   through their own review.
 
 It never commits, pushes, rewrites other content, scans for repositories or
-installs integrations on its own. Environment notes never enter a committed file.
+installs integrations on its own. Project memory never enters a committed file.
 
 ## Assurance and honesty
 
@@ -153,7 +153,7 @@ the truth.
 
 ## Ownership and platform
 
-Personal Profiles, review state, environment notes and session records belong in
+Personal Profiles, review state, project memory and session records belong in
 user-local storage owned by the native daemon, the only writer. Project contracts
 belong to the repository. Rust implements domain logic, the daemon and local IPC;
 NSH Rust provides the shared Desktop/TUI operator experience. Precept does not

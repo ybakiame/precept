@@ -50,8 +50,6 @@ pub enum Status {
 pub enum Scope {
     Global,
     Project,
-    /// Machine notes for one project: listed apart, never competing.
-    Environment,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Preference {
@@ -251,12 +249,10 @@ impl<'a> ContextResolver<'a> {
     }
     pub fn resolve_preferences(&self) -> Result<Vec<Preference>> {
         self.bound_project()?;
-        Ok(legacy_preferences(
-            confirmed_preferences(&self.project, self.preferences.preferences(&self.project)?)
-                .into_iter()
-                .filter(|p| p.scope != Scope::Environment)
-                .collect(),
-        ))
+        Ok(legacy_preferences(confirmed_preferences(
+            &self.project,
+            self.preferences.preferences(&self.project)?,
+        )))
     }
     pub fn context(&self, include_documents: bool) -> Result<Value> {
         self.prepare_context(include_documents, &contracts::SelectorQuery::default())?
@@ -393,8 +389,7 @@ impl PreparedContext {
         Ok(self.response)
     }
 }
-/// Confirmed, enabled rules of this project's scopes (personal, project and
-/// environment notes).
+/// Confirmed, enabled rules of this project's scopes (personal and project).
 fn confirmed_preferences(project: &str, preferences: Vec<Preference>) -> Vec<Preference> {
     preferences
         .into_iter()
@@ -403,7 +398,7 @@ fn confirmed_preferences(project: &str, preferences: Vec<Preference>) -> Vec<Pre
                 && p.enabled
                 && match p.scope {
                     Scope::Global => p.project.is_none(),
-                    Scope::Project | Scope::Environment => p.project.as_deref() == Some(project),
+                    Scope::Project => p.project.as_deref() == Some(project),
                 }
         })
         .collect()

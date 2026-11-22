@@ -18,7 +18,7 @@ pub struct Authority {
 }
 #[derive(Args)]
 pub struct ScopeArgs {
-    #[arg(long, value_parser=["global","project","environment"])]
+    #[arg(long, value_parser=["global","project"])]
     pub scope: String,
     #[arg(long)]
     pub project: Option<String>,
@@ -29,9 +29,6 @@ impl ScopeArgs {
             ("global", None) => Ok(Scope::Global),
             ("project", Some(name)) if precept_ipc::valid_project(name) => {
                 Ok(Scope::Project { name: name.clone() })
-            }
-            ("environment", Some(name)) if precept_ipc::valid_project(name) => {
-                Ok(Scope::Environment { name: name.clone() })
             }
             _ => Err(Error::InvalidRequest),
         }
@@ -59,6 +56,13 @@ pub enum Profile {
     Export {
         #[arg(long)]
         out: PathBuf,
+        /// Also carry the served projects' memory (cautions, lessons,
+        /// attempts).
+        #[arg(long)]
+        with_memory: bool,
+        /// With --with-memory, carry this machine's environment notes too.
+        #[arg(long, requires = "with_memory")]
+        with_environment: bool,
     },
     /// Suggest every confirmed or pending preference of an export into the
     /// selected Profile (writes must be on). Each arrives as a suggestion to
@@ -215,11 +219,21 @@ struct HandoffInput {
 }
 pub async fn profile(location: &Location, command: Profile) -> Result<Value> {
     let (method, params) = match command {
-        Profile::Export { out } => {
-            let export = crate::transfer::collect(location).await?;
+        Profile::Export {
+            out,
+            with_memory,
+            with_environment,
+        } => {
+            use crate::transfer::MemoryChoice;
+            let memory = match (with_memory, with_environment) {
+                (false, _) => MemoryChoice::None,
+                (true, false) => MemoryChoice::Notes,
+                (true, true) => MemoryChoice::WithEnvironment,
+            };
+            let export = crate::transfer::collect(location, memory).await?;
             crate::transfer::write_new(&out, &export)?;
             return Ok(
-                json!({"exported":export.preferences.len(),"format":crate::transfer::FORMAT,"version":crate::transfer::VERSION}),
+                json!({"exported":export.preferences.len(),"memory":export.memory.len(),"format":crate::transfer::FORMAT,"version":crate::transfer::VERSION}),
             );
         }
         Profile::Import {
@@ -429,7 +443,7 @@ pub async fn suggest(location: &Location, p: Suggest) -> Result<Value> {
         priority: p.priority,
         enforcement: Enforcement::parse(&p.enforcement).ok_or(Error::InvalidRequest)?,
     };
-    if !rule.valid_for(&scope) {
+    if !rule.valid() {
         return Err(Error::InvalidRequest);
     }
     submit(

@@ -106,7 +106,7 @@ fn suggestion_reply(result: Result<Value, Error>) -> Value {
             "replaces names no confirmed rule of that scope. Check the id and scope in get_effective_context, or file a new rule without replaces."
         }
         Err(Error::ScopeMismatch | Error::InvalidRequest | Error::InvalidTransition) => {
-            "Invalid suggestion: check the key (short, kebab-case), value, tags, applies_to and enforcement (environment notes are advisory only)."
+            "Invalid suggestion: check the key (short, kebab-case), value, tags, applies_to and enforcement."
         }
         Err(_) => {
             "Precept could not file the suggestion. Do not retry; mention the rule in your reply instead."
@@ -372,11 +372,6 @@ impl Bridge {
                     diagnose("suggest_rule refused: invalid arguments");
                     return Ok(tool_error(
                         "scope and value are required strings, and key unless replaces names the rule to update; only tags, applies_to, enforcement and replaces may be added",
-                    ));
-                }
-                if args.get("scope") == Some(&json!("environment")) {
-                    return Ok(tool_error(
-                        "Facts about this machine go to project memory: use remember with kind environment.",
                     ));
                 }
                 ("preference.suggest", Value::Object(args.clone()))

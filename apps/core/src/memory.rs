@@ -1,7 +1,7 @@
 //! Project memory as the daemon reports it (`memories.list`): agents' notes
 //! on one project (environment, cautions, lessons, attempts), weighted.
 //! Parsed and bounded here; the Memory page shows, edits, pins, restores and
-//! deletes them, and moves confirmed environment notes of the Profile in.
+//! deletes them.
 use crate::i18n::{Locale, Msg, tr};
 use crate::presentation::sanitize;
 use serde::Deserialize;
@@ -113,29 +113,38 @@ pub fn parse(v: serde_json::Value) -> Result<Vec<Entry>, &'static str> {
     Ok(list)
 }
 
-/// A confirmed environment note of the Profile, as the move takes it.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
-pub struct EnvironmentNote {
-    pub id: i64,
-    pub revision: i64,
-    pub proposal_digest: String,
-    pub key: String,
-    pub value: String,
-}
-#[derive(Deserialize)]
-struct EnvironmentReply {
-    records: Vec<EnvironmentNote>,
-}
-pub fn parse_environment(v: serde_json::Value) -> Result<Vec<EnvironmentNote>, &'static str> {
-    let mut list = serde_json::from_value::<EnvironmentReply>(v)
-        .map_err(|_| "Unavailable")?
-        .records;
-    list.truncate(100);
-    for r in &mut list {
-        r.key = sanitize(&r.key, 120);
-        r.value = block(&r.value, 2000);
+impl Kind {
+    /// The tag a rule proposed from a note of this kind carries.
+    pub fn tag(self) -> &'static str {
+        match self {
+            Kind::Environment => "environment",
+            Kind::Caution => "caution",
+            Kind::Lesson => "lesson",
+            Kind::Attempt => "attempt",
+        }
     }
-    Ok(list)
+}
+
+/// A rule key from a note's title: lowercase ASCII words joined by hyphens,
+/// at most 60 characters; `memory-note` when nothing is left.
+pub fn rule_key(title: &str) -> String {
+    let mut out = String::new();
+    for c in title.chars().flat_map(char::to_lowercase) {
+        if c.is_ascii_alphanumeric() {
+            out.push(c);
+        } else if !out.is_empty() && !out.ends_with('-') {
+            out.push('-');
+        }
+        if out.len() >= 60 {
+            break;
+        }
+    }
+    let out = out.trim_end_matches('-').to_owned();
+    if out.is_empty() {
+        "memory-note".into()
+    } else {
+        out
+    }
 }
 
 /// Who wrote it, in words: an agent's label, "you", or "an agent".
@@ -196,10 +205,6 @@ pub struct MemoryPage {
     /// The entry armed for deletion; the clear-all confirmation.
     pub delete: Option<String>,
     pub clear: bool,
-    /// Confirmed environment notes of the Profile still to move, and the
-    /// move's confirmation.
-    pub environment: Vec<EnvironmentNote>,
-    pub moving: bool,
 }
 impl MemoryPage {
     pub fn opened(&self) -> Option<&Entry> {
@@ -229,5 +234,7 @@ mod tests {
         let text = why(Locale::En, e);
         assert!(text.starts_with("Weight 1064: Lessons 40 · pinned +1000 · 3 confirmations +12 · 2 recalls +2 · edited by you +10"), "{text}");
         assert!(parse(json!({"entries":"x"})).is_err());
+        assert_eq!(rule_key("Run  the Tests!"), "run-the-tests");
+        assert_eq!(rule_key("构建路径"), "memory-note");
     }
 }

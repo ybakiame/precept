@@ -70,8 +70,8 @@ Organize navigation around three clear operational paths plus utilities:
   effective confirmed rows), **Agents** (MCP
   access and recent activity) and **Handoff** for that active project. There is one workspace switcher in the app; workspace-scoped headers
   display a calm read-only scope badge rather than a second switcher.
-- **Review:** one unified **Review & rules** hub (To review, Personal, Project
-  conventions and **Environment** — the selected project's notes about this machine) combining the pending
+- **Review:** one unified **Review & rules** hub (To review, Personal and Project
+  conventions) combining the pending
   review queue (`To review`, with personal vs current-project scope toggle),
   **Personal** preferences (global scope) and **Project conventions** (active
   project scope: the repository's shared conventions, not anyone's personal taste). Its sidebar item carries the live count pill of waiting
@@ -155,9 +155,10 @@ the reasons (kind, pin, confirmations, recalls, your edit, fading) and badges
 for pinned, changed often lately, fading and edited by you. A note opens a sheet
 with its text, a **Pinned** switch, **Edit…** (title and text; kept as your
 correction), **Delete…** (confirmed) and its earlier versions, each as a diff
-against the current text with **Restore**. While the project has confirmed
-environment notes in the Profile, a card lists them with **Move to memory**,
-which turns writes on for the run first when they are off.
+against the current text with **Restore**, and **Propose as a rule…**, which
+opens Review on the project's conventions with a new draft from the note (its
+title as a kebab-case key, its text as the value, its kind as the tag); saving
+it files an ordinary suggestion to confirm, and the note stays.
 
 The Agents page is setup only. Agent activity is on the **Sessions** page: when an
 MCP client started `precept-mcp`, what it read (by count), suggestions and work
@@ -172,8 +173,8 @@ made in that session. Refresh is explicit.
 
 Adding a preference is two explicit steps: save it as suggested, then inspect and
 confirm the exact new record. The add dialog also takes the rule's options: where it
-applies (languages, paths, agents, task tags; optional), its priority and, except for
-environment notes, its declared enforcement. Record rows show them; a confirmed
+applies (languages, paths, agents, task tags; optional), its priority and its
+declared enforcement. Record rows show them; a confirmed
 rule's sheet has a **Delivered to agents** switch that takes it out of what agents
 receive without a new review. A preference carries one to five tags (lowercase
 letters of any script, digits and inner hyphens, up to 32 characters) and an origin

@@ -230,6 +230,32 @@ fn agents_notes_are_shown_restored_pinned_and_deleted() {
         e.iter()
             .any(|x| x["title"] == "Node" && x["pinned"] == true)
     });
+    // A note becomes a project convention to confirm; the note stays.
+    app.press("Propose as a rule…").unwrap();
+    app.wait_for("Add a project convention").unwrap();
+    app.press("Save as suggestion").unwrap();
+    app.wait_for("Check before writing").unwrap();
+    app.press("Apply").unwrap();
+    let start = Instant::now();
+    loop {
+        let page = f
+            .call(
+                "profile.preferences.list",
+                json!({"scope":{"kind":"project","name":"alpha"},"after_id":0}),
+            )
+            .unwrap();
+        let records = page["records"].as_array().unwrap();
+        if let Some(r) = records.iter().find(|r| r["key"] == "node") {
+            assert_eq!(r["status"], "suggested");
+            assert_eq!(r["value"], "Node 22 via mise");
+            assert_eq!(r["tags"], json!(["environment"]));
+            break;
+        }
+        assert!(start.elapsed() < Duration::from_secs(10), "suggested");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    app.press("Memory").unwrap();
+    app.press("Open memory note Node").unwrap();
     app.press("Delete…").unwrap();
     app.wait_for("Delete this note?").unwrap();
     app.press("Delete").unwrap();

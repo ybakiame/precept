@@ -342,13 +342,11 @@ pub fn render(project: &str, context: &Value, moment: Moment) -> String {
             "\n{pending} rule file(s) under `.precept/rules/` are not committed yet; they apply once committed.\n"
         ));
     }
-    let (environment, preferences): (Vec<Value>, Vec<Value>) = context
+    let preferences: Vec<Value> = context
         .get("preferences")
         .and_then(Value::as_array)
         .cloned()
-        .unwrap_or_default()
-        .into_iter()
-        .partition(|p| p.get("scope").and_then(Value::as_str) == Some("environment"));
+        .unwrap_or_default();
     if !truncated {
         out.push_str("\n## Preferences\n");
         if preferences.is_empty() {
@@ -397,22 +395,6 @@ pub fn render(project: &str, context: &Value, moment: Moment) -> String {
             break;
         }
         out.push_str(&entry);
-    }
-    if !environment.is_empty() && !truncated {
-        out.push_str("\n## Work environment (this machine)\n\n");
-        for e in &environment {
-            let key = e.get("key").and_then(Value::as_str).unwrap_or("?");
-            let (value, _) = cut(
-                e.get("value").and_then(Value::as_str).unwrap_or("").trim(),
-                MAX_VALUE,
-            );
-            let line = format!("- **{key}**: {value}\n");
-            if out.len() + line.len() > MAX_BYTES - 200 {
-                truncated = true;
-                break;
-            }
-            out.push_str(&line);
-        }
     }
     if !truncated {
         let work = work(context);
@@ -515,16 +497,11 @@ mod tests {
         assert!(render("alpha", &json!({}), Moment::Start).contains("No confirmed preferences"));
         let scoped = json!({"preferences":[
             {"key":"fmt","scope":"global","tags":[],"value":"rustfmt","enforcement":"hard",
-             "applies_to":{"agents":[],"languages":["rust"],"paths":["apps/"],"task_tags":[]}},
-            {"key":"shell","scope":"environment","tags":[],"value":"Agents run inside WSL."}
+             "applies_to":{"agents":[],"languages":["rust"],"paths":["apps/"],"task_tags":[]}}
         ]});
         let b = render("alpha", &scoped, Moment::Start);
         assert!(b.contains("_personal · hard_"));
         assert!(b.contains("Applies to languages rust; paths apps/ only."));
-        assert!(
-            b.contains("## Work environment (this machine)\n\n- **shell**: Agents run inside WSL.")
-        );
-        assert!(!b.contains("### shell"));
         let with_work = json!({"work_sessions":[
             {"id":"ab12","status":"open","agent":"claude-code 2.1","updated_ms":1_763_640_000_000u64,
              "goal":"Add import","doing":["tests"],"todo":["docs","ship"],"done":[]},

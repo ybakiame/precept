@@ -26,7 +26,7 @@ pub(crate) fn open_mode(model: Signal<Model>, mode: ReviewMode) {
             // The inbox keeps its scope, but a project scope needs a project.
             ReviewMode::Inbox => m.operator.global || m.selected_project.is_none(),
             ReviewMode::Personal => true,
-            ReviewMode::Project | ReviewMode::Environment => false,
+            ReviewMode::Project => false,
         };
         if global != m.operator.global
             || mode != m.operator.mode
@@ -284,9 +284,6 @@ fn scope_label(locale: Locale, scope: &Scope) -> String {
     match scope {
         Scope::Global => tr(locale, Msg::ReviewScopeGlobal).into(),
         Scope::Project { name } => tr(locale, Msg::ReviewScopeProject).replace("{name}", name),
-        Scope::Environment { name } => {
-            tr(locale, Msg::ReviewScopeEnvironment).replace("{name}", name)
-        }
     }
 }
 /// Who a record comes from, in the operator's words.
@@ -1631,7 +1628,6 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
     });
     // Display-none removes layout; visibility also removes native Win32 focus
     // stops. A concealed pane must not leave its retained fields/actions tabbable.
-    let add_open = signal(false);
     let offline_view = dynamic(move || {
         let m = model.get();
         if matches!(m.connection.target, Target::Local | Target::Wsl) {
@@ -1661,7 +1657,7 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
         )
         .child(mode_tabs(model))
         .child(writes_notice(model))
-        .child(page_toolbar(model, add_open))
+        .child(page_toolbar(model))
         .child(batch_bar(model))
         .child(
             view()
@@ -1903,7 +1899,7 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
         .child(record_sheet(model, delete_open))
         .child(apply_dialog(model, false))
         .child(apply_dialog(model, true))
-        .child(add_dialog(model, add_open))
+        .child(add_dialog(model))
         .child(import_dialog(model))
         .child(delete_dialog(model, delete_open, retype_ref))
 }
@@ -1937,11 +1933,6 @@ fn mode_tabs(model: Signal<Model>) -> impl IntoElement {
             },
             move || model.get().operator.mode == ReviewMode::Project,
             move || open_mode(model, ReviewMode::Project),
-        )
-        .add_fn(
-            move || model.get().word(Msg::ReviewTabEnvironment).into(),
-            move || model.get().operator.mode == ReviewMode::Environment,
-            move || open_mode(model, ReviewMode::Environment),
         )
 }
 
@@ -1984,7 +1975,7 @@ fn writes_notice(model: Signal<Model>) -> impl IntoElement {
 
 /// The page's commands: the scope switch (To review), Add preference (Personal
 /// and Project tabs), and Refresh.
-fn page_toolbar(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElement {
+fn page_toolbar(model: Signal<Model>) -> impl IntoElement {
     let scope = |global: bool| {
         ui::button(model, "")
             .label_fn(move || {
@@ -2046,7 +2037,6 @@ fn page_toolbar(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElemen
                             let m = model.get();
                             m.word(match m.operator.mode {
                                 ReviewMode::Project => Msg::AddConvention,
-                                ReviewMode::Environment => Msg::AddEnvironment,
                                 _ => Msg::AddPreference,
                             })
                             .into()
@@ -2061,8 +2051,10 @@ fn page_toolbar(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElemen
                                     && m.selected_project.is_none())
                         })
                         .on_press(move || {
-                            model.update(|m| m.operator.start_draft());
-                            add_open.set(true);
+                            model.update(|m| {
+                                m.operator.start_draft();
+                                m.operator.adding = true;
+                            });
                         }),
                 ),
         )
@@ -2552,10 +2544,9 @@ fn applies_field(
     )
     .into_element()
 }
-/// The draft's rule options: where it applies, its priority and (not for
-/// environment notes) its declared enforcement.
+/// The draft's rule options: where it applies, its priority and its declared
+/// enforcement.
 fn rule_options(model: Signal<Model>) -> AnyElement {
-    let environment = move || model.get().operator.mode == ReviewMode::Environment;
     let pick = |e: precept_ui_core::operator::Enforcement| {
         move || model.update(|m| m.operator.enforcement = e)
     };
@@ -2611,42 +2602,38 @@ fn rule_options(model: Signal<Model>) -> AnyElement {
                     |o, v| o.priority = v,
                 )))
                 .child(
-                    view()
-                        .flex_1()
-                        .style_when(environment, |s| s.hidden())
-                        .child(ui::field(
-                            model,
-                            move || model.get().word(Msg::EnforcementLabel).into(),
-                            ui::radio_group(model, move || {
-                                model.get().word(Msg::EnforcementLabel).into()
-                            })
-                            .option(
-                                model.get().word(Msg::EnforcementAdvisory),
-                                is(precept_ui_core::operator::Enforcement::Advisory),
-                                pick(precept_ui_core::operator::Enforcement::Advisory),
-                            )
-                            .option(
-                                model.get().word(Msg::EnforcementVerify),
-                                is(precept_ui_core::operator::Enforcement::Verify),
-                                pick(precept_ui_core::operator::Enforcement::Verify),
-                            )
-                            .option(
-                                model.get().word(Msg::EnforcementHard),
-                                is(precept_ui_core::operator::Enforcement::Hard),
-                                pick(precept_ui_core::operator::Enforcement::Hard),
-                            ),
-                        )),
+                    view().flex_1().child(ui::field(
+                        model,
+                        move || model.get().word(Msg::EnforcementLabel).into(),
+                        ui::radio_group(model, move || {
+                            model.get().word(Msg::EnforcementLabel).into()
+                        })
+                        .option(
+                            model.get().word(Msg::EnforcementAdvisory),
+                            is(precept_ui_core::operator::Enforcement::Advisory),
+                            pick(precept_ui_core::operator::Enforcement::Advisory),
+                        )
+                        .option(
+                            model.get().word(Msg::EnforcementVerify),
+                            is(precept_ui_core::operator::Enforcement::Verify),
+                            pick(precept_ui_core::operator::Enforcement::Verify),
+                        )
+                        .option(
+                            model.get().word(Msg::EnforcementHard),
+                            is(precept_ui_core::operator::Enforcement::Hard),
+                            pick(precept_ui_core::operator::Enforcement::Hard),
+                        ),
+                    )),
                 ),
         )
         .child(
             text(move || model.get().word(Msg::EnforcementHelp))
-                .style_when(environment, |s| s.hidden())
                 .text_size(px(ui::scale::text::CAPTION))
                 .text_color(move || palette(model).muted),
         )
         .into_element()
 }
-fn add_dialog(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElement {
+fn add_dialog(model: Signal<Model>) -> impl IntoElement {
     let ready = move || {
         let o = model.get().operator;
         !o.key.trim().is_empty()
@@ -2672,8 +2659,6 @@ fn add_dialog(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElement 
             }
             m.word(if m.operator.global {
                 Msg::AddPersonalPreference
-            } else if m.operator.mode == ReviewMode::Environment {
-                Msg::AddEnvironmentNote
             } else {
                 Msg::AddProjectConvention
             })
@@ -2792,14 +2777,16 @@ fn add_dialog(model: Signal<Model>, add_open: Signal<bool>) -> impl IntoElement 
         .confirm_disabled(move || !ready() || !available(model) || !write_grant(model))
         .open(move || {
             let m = model.get();
-            (add_open.get() || m.operator.revising.is_some()) && m.operator.open
+            (m.operator.adding || m.operator.revising.is_some()) && m.operator.open
         })
         .on_cancel(move || {
-            add_open.set(false);
-            model.update(|m| m.operator.revising = None);
+            model.update(|m| {
+                m.operator.adding = false;
+                m.operator.revising = None;
+            });
         })
         .on_confirm(move || {
-            add_open.set(false);
+            model.update(|m| m.operator.adding = false);
             if model.get().operator.revising.is_some() {
                 review(model, "revise");
             } else {
