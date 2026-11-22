@@ -56,6 +56,11 @@ pub(crate) fn open_mode(model: Signal<Model>, mode: ReviewMode) {
         m.sessions_page = false;
         m.operator.review = None;
         m.operator.delete_arm = None;
+        // The pending queue loads with the page, as the record lists do; the
+        // page's Refresh reads it again.
+        if mode == ReviewMode::Inbox && m.operator.queue.is_none() {
+            m.operator.follow_up = Some("profile.review.queue");
+        }
     });
     refresh(model, "profile.info");
 }
@@ -436,20 +441,6 @@ fn literal(s: &str) -> Vec<String> {
 fn queue_tab(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
     let m = model.get();
     let mut body = view().gap_2().flex_shrink_0();
-    body = body.child(view().flex_row().flex_wrap().gap_2().child(word_action(
-        model,
-        Msg::ReviewQueueLoad,
-        move || {
-            available(model)
-                && model
-                    .get()
-                    .operator
-                    .info
-                    .as_ref()
-                    .is_some_and(|i| i.selected)
-        },
-        move || refresh(model, "profile.review.queue"),
-    )));
     let Some(queue) = &m.operator.queue else {
         return body
             .child(ui::empty(model, m.word(Msg::ReviewQueueUnobserved)))
@@ -3462,8 +3453,7 @@ mod tests {
     #[test]
     fn unloaded_queue_does_not_claim_no_pending_suggestions() {
         let mut app = start::<UnobservedQueueConsole>();
-        app.wait_for("Inspect the queue to load pending suggestions")
-            .unwrap();
+        app.wait_for("Loading pending suggestions…").unwrap();
         assert!(!app.screen().shows("No pending suggestions"));
     }
 
@@ -3471,14 +3461,12 @@ mod tests {
     fn empty_later_queue_page_still_discloses_drift() {
         let mut app = start::<DriftedEmptyQueueConsole>();
         app.wait_for("No pending suggestions").unwrap();
-        app.wait_for(
-            "The Profile changed 3 time(s) since this list loaded; inspect the review queue again to see it.",
-        )
-        .unwrap();
+        app.wait_for("The Profile changed 3 time(s) since this list loaded; refresh to see it.")
+            .unwrap();
         // Implementation detail stays out of the page.
         assert!(!app.screen().texts().iter().any(|t| t.contains("watermark")));
         app.press_key("mod+l").unwrap();
-        app.wait_for("此列表加载后 Profile 又变化了 3 次；请重新检查待审队列查看。")
+        app.wait_for("此列表加载后 Profile 又变化了 3 次；请刷新查看。")
             .unwrap();
     }
 

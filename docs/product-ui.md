@@ -213,14 +213,25 @@ is the full record label), the value's first line and the tags beneath it, with 
 status on the right. Tag filters above it narrow to rows carrying every selected tag; the filter
 text matches key, value, scope or tag, and a leading `#` matches tags only. Review
 lists (the queue and a scope's records) load further batches as the list nears its
-end, with a visible Load more control for keyboard and terminal use.
+end, with a visible Load more control for keyboard and terminal use. The queue
+loads when To review opens, like the record lists, and the page's Refresh reads it
+again; a Profile change since it loaded is named ("The Profile changed N time(s)…").
+
+The Dashboard keeps one line per fact: the effective context (what it promises and
+does not is behind its info button, in the operator's language), the daemon's
+target, state and last read (transport, versions and timing are in Diagnostics),
+each agent's connection level, the task to resume and the suggestions waiting. The
+Handoff page shows the task (objective, next action), **Before you continue** (the
+daemon's resume warnings in the operator's language and a short worktree
+fingerprint) and **Recorded checks** (each check's result and name, never raw
+records). Diagnostics lists the repository's documents as path, state and size.
 
 Each tag has one color wherever it appears, kept per tag in the private
 `settings.toml` (never in the Profile, never sent to agents). A tag without a
 chosen color shows a color generated from its name as CSS `oklch()`; a tag first
 used by a suggestion keeps that generated color. The operator changes a color in the
 Tag colors sheet with the color picker. A color is a dot and a light tint behind
-theme text; the tag's name carries its meaning. Queue absence means not inspected, not an empty queue. The
+theme text; the tag's name carries its meaning. Queue absence means not yet read, not an empty queue. The
 sidebar's count of suggestions waiting is the daemon's exact count for the personal
 scope and the selected project; an unknown or refused count is hidden, never shown
 as zero.

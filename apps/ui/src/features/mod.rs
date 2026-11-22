@@ -54,35 +54,6 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
     if current.section == Section::Rules {
         return body.child(preferences(model));
     }
-    if matches!(current.section, Section::Handoff | Section::Diagnostics) {
-        body = body.child(
-            view()
-                .flex_row()
-                .flex_wrap()
-                .gap_1()
-                .child(control(model, Msg::ExpandCollapse, move || {
-                    model.update(|m| m.expanded = !m.expanded)
-                }))
-                .child(word_action(
-                    model,
-                    Msg::EarlierEvidence,
-                    move || model.get().evidence_page > 0,
-                    move || model.update(|m| m.evidence_by(-1)),
-                ))
-                .child(word_action(
-                    model,
-                    Msg::LaterEvidence,
-                    move || model.get().evidence_page + 1 < model.get().evidence_pages(),
-                    move || model.update(|m| m.evidence_by(1)),
-                ))
-                .child(text(format!(
-                    "{} {}/{}",
-                    current.word(Msg::EvidencePage),
-                    current.evidence_page + 1,
-                    current.evidence_pages()
-                ))),
-        );
-    }
     if current.section == Section::Handoff {
         return body.child(handoff(model));
     }

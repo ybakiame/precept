@@ -109,6 +109,29 @@ pub(crate) fn daemon(model: Signal<Model>) -> impl IntoElement {
         ))
 }
 
+/// The daemon at a glance: where, its state, the last read; the transport,
+/// versions and timing are in Diagnostics.
+fn connection(model: Signal<Model>) -> impl IntoElement {
+    let m = model.get();
+    surface(model)
+        .title(m.word(Msg::Daemon))
+        .child(
+            properties(model)
+                .row(m.word(Msg::TargetLabel), target_words(&m))
+                .row(m.word(Msg::StateLabel), m.read_label())
+                .row(m.word(Msg::LastReadLabel), m.read_time()),
+        )
+        .child(
+            view().items_start().child(
+                button(model, "")
+                    .label_fn(move || model.get().word(Msg::ConnectionDetails).into())
+                    .size(ButtonSize::Small)
+                    .variant(ButtonVariant::Ghost)
+                    .on_press(move || shell::go(model, shell::Destination::Diagnostics)),
+            ),
+        )
+}
+
 pub(crate) fn dashboard(model: Signal<Model>) -> impl IntoElement {
     let m = model.get();
     let p = m.project().expect("ready project");
@@ -139,20 +162,33 @@ pub(crate) fn dashboard(model: Signal<Model>) -> impl IntoElement {
                 p.context.documents.len().to_string(),
             ),
     );
-    context = context.child(note(model, m.word(Msg::ContextHelp)));
-    for warning in p.context.warnings.iter().take(8) {
-        context = context.child(note(
-            model,
-            precept_ui_core::presentation::warning(m.locale, warning),
-        ));
-    }
+    // What the context promises and does not, behind its info button.
+    let about = std::iter::once(m.word(Msg::ContextHelp).to_owned())
+        .chain(
+            p.context
+                .warnings
+                .iter()
+                .take(8)
+                .map(|w| precept_ui_core::presentation::warning(m.locale, w)),
+        )
+        .collect::<Vec<_>>()
+        .join("\n\n");
     context = context.child(
-        view().items_start().child(
-            button(model, "")
-                .label_fn(move || model.get().word(Msg::OpenPreferences).into())
-                .size(ButtonSize::Small)
-                .on_press(move || shell::go(model, shell::Destination::Rules)),
-        ),
+        view()
+            .flex_row()
+            .items_center()
+            .gap_2()
+            .child(
+                button(model, "")
+                    .label_fn(move || model.get().word(Msg::OpenPreferences).into())
+                    .size(ButtonSize::Small)
+                    .on_press(move || shell::go(model, shell::Destination::Rules)),
+            )
+            .child(ui::info(
+                model,
+                move || model.get().word(Msg::AboutContext).into(),
+                move || about.clone().into(),
+            )),
     );
 
     let mut resume = surface(model).title(m.word(Msg::ResumeSummary));
@@ -192,9 +228,7 @@ pub(crate) fn dashboard(model: Signal<Model>) -> impl IntoElement {
 
     let agent = surface(model)
         .title(m.word(Msg::ClientAccess))
-        .child(text(m.word(Msg::Tools)))
-        .child(text(m.word(Msg::ClientPresence)))
-        .child(note(model, m.word(Msg::ClientHelp)))
+        .child(super::agents::level_rows(model))
         .child(
             view().items_start().child(
                 button(model, "")
@@ -226,13 +260,13 @@ pub(crate) fn dashboard(model: Signal<Model>) -> impl IntoElement {
     );
 
     let top = if compact() {
-        view().gap_4().child(daemon(model)).child(agent)
+        view().gap_4().child(connection(model)).child(agent)
     } else {
         view()
             .flex_row()
             .items_start()
             .gap_4()
-            .child(view().flex_1().min_w_0().child(daemon(model)))
+            .child(view().flex_1().min_w_0().child(connection(model)))
             .child(view().flex_1().min_w_0().child(agent))
     };
     view()

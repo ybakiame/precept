@@ -196,6 +196,16 @@ impl PermissionEvaluator for ReadOnlyPermissions {
 }
 
 pub const AUTHORITY: &str = "Current repository files and contracts outrank preferences and task handoffs; verify conflicts.";
+/// The fixed warnings a Handoff read may carry, in this order of checks.
+pub const RESUME_WARNINGS: [&str; 7] = [
+    "HEAD changed or cannot be verified; re-evaluate all prior checks",
+    "Branch differs from handoff; inspect worktree before proceeding",
+    "Current worktree has changes or cannot be inspected; preserve user edits",
+    "Handoff has no worktree fingerprint; uncommitted changes cannot be compared",
+    "Worktree fingerprint unavailable; inspect differences manually",
+    "Worktree fingerprint changed since handoff; inspect uncommitted edits",
+    "Earlier validation is scoped to its recorded revision and environment",
+];
 pub const WARNINGS: [&str; 3] = [
     "Only confirmed preferences are included.",
     "Documents are live references, not a complete project audit.",
@@ -316,18 +326,17 @@ impl<'a> ContextResolver<'a> {
             .as_deref()
             .is_none_or(|s| s.is_empty() || s != handoff.base_sha)
         {
-            warnings.push("HEAD changed or cannot be verified; re-evaluate all prior checks");
+            warnings.push(RESUME_WARNINGS[0]);
         }
         if current
             .branch
             .as_deref()
             .is_none_or(|s| s.is_empty() || s != handoff.branch)
         {
-            warnings.push("Branch differs from handoff; inspect worktree before proceeding");
+            warnings.push(RESUME_WARNINGS[1]);
         }
         if current.dirty != Some(false) {
-            warnings
-                .push("Current worktree has changes or cannot be inspected; preserve user edits");
+            warnings.push(RESUME_WARNINGS[2]);
         }
         match (
             handoff
@@ -339,17 +348,12 @@ impl<'a> ContextResolver<'a> {
                 .as_deref()
                 .filter(|s| !s.is_empty()),
         ) {
-            (None, _) => warnings.push(
-                "Handoff has no worktree fingerprint; uncommitted changes cannot be compared",
-            ),
-            (_, None) => {
-                warnings.push("Worktree fingerprint unavailable; inspect differences manually")
-            }
-            (Some(a), Some(b)) if a != b => warnings
-                .push("Worktree fingerprint changed since handoff; inspect uncommitted edits"),
+            (None, _) => warnings.push(RESUME_WARNINGS[3]),
+            (_, None) => warnings.push(RESUME_WARNINGS[4]),
+            (Some(a), Some(b)) if a != b => warnings.push(RESUME_WARNINGS[5]),
             _ => (),
         }
-        warnings.push("Earlier validation is scoped to its recorded revision and environment");
+        warnings.push(RESUME_WARNINGS[6]);
         let mut obj = serde_json::to_value(handoff).map_err(|_| Error::InvalidRecord)?;
         let mut snapshot = serde_json::to_value(&current).map_err(|_| Error::InvalidRecord)?;
         snapshot["worktree_fingerprint"] = json!(current.worktree_fingerprint);

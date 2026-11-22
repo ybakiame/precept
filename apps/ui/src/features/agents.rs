@@ -451,7 +451,9 @@ pub(crate) fn watch(model: Signal<Model>) {
         let m = model.get();
         let shown = matches!(
             shell::current(&m),
-            shell::Destination::Agents | shell::Destination::Diagnostics
+            shell::Destination::Agents
+                | shell::Destination::Diagnostics
+                | shell::Destination::Dashboard
         );
         (
             shown && m.live && m.data.is_some(),
@@ -887,6 +889,11 @@ fn group(
 /// Each agent's connection level (hooks, MCP, both) with what it means;
 /// the recommended setup and the add-ons in one line under it.
 fn levels(model: Signal<Model>) -> impl IntoElement {
+    level_rows(model).child(caption(model, |_| Some(Msg::LevelHelp)))
+}
+/// The heading and one row per agent with its level badge (also the
+/// Dashboard's agent card).
+pub(crate) fn level_rows(model: Signal<Model>) -> View {
     use precept_ui_core::mcp::Level;
     let row = move |agent: &'static str, name: Msg| {
         view()
@@ -917,7 +924,6 @@ fn levels(model: Signal<Model>) -> impl IntoElement {
         .child(row("claude", Msg::TileClaude))
         .child(row("codex", Msg::TileCodex))
         .child(row("antigravity", Msg::TileAntigravity))
-        .child(caption(model, |_| Some(Msg::LevelHelp)))
 }
 
 /// The integrations, by mechanism: MCP tools, the session-start briefing and

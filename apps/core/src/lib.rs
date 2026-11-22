@@ -290,8 +290,6 @@ pub struct Model {
     pub project_names: Vec<String>,
     pub last_read_ms: Option<u64>,
     pub section: Section,
-    pub expanded: bool,
-    pub evidence_page: usize,
     pub high_contrast: bool,
     /// The sidebar is hidden (desktop; the operator's choice, saved).
     pub sidebar_collapsed: bool,
@@ -361,8 +359,6 @@ impl Model {
             project_names: Vec::new(),
             last_read_ms: None,
             section: Section::Dashboard,
-            expanded: false,
-            evidence_page: 0,
             high_contrast: false,
             sidebar_collapsed: false,
             selected_preference: None,
@@ -484,11 +480,9 @@ impl Model {
         self.queried_task.clear();
         self.filter.clear();
         self.page = 0;
-        self.evidence_page = 0;
         self.detail_page = 0;
         self.selected_preference = None;
         self.selected_rule = None;
-        self.expanded = false;
         self.copied = false;
         self.last_read_ms = None;
         self.last_duration_ms = None;
@@ -609,8 +603,6 @@ impl Model {
             self.selected_preference = None;
             self.selected_rule = None;
             self.detail_page = 0;
-            self.evidence_page = 0;
-            self.expanded = false;
         }
     }
     pub fn next(&mut self) {
@@ -999,18 +991,14 @@ mod tests {
         m.set_section(Section::Handoff);
         assert!(!m.visible_lines().join("\n").contains("\u{1b}"));
         assert!(!m.visible_lines().join("\n").contains("\"index\""));
-        m.expanded = true;
-        m.evidence_by(isize::MAX);
-        assert_eq!(m.evidence_page, 16);
-        assert!(m.visible_lines().len() <= 16);
+        // At most 20 checks, each one bounded line, never raw JSON.
+        assert!(m.visible_lines().len() <= 48);
         assert!(
             m.visible_lines()
                 .iter()
                 .all(|line| line.chars().count() < 550)
         );
         m.set_section(Section::Diagnostics);
-        assert!(!m.expanded);
-        assert_eq!(m.evidence_page, 0);
         for section in Section::ALL {
             m.set_section(section);
             assert!(m.visible_lines()[0].contains("alpha"));
@@ -1282,11 +1270,11 @@ mod target_tests {
         let mut m = Model::fixture();
         m.locale = i18n::Locale::ZhCn;
         m.section = Section::Handoff;
-        m.expanded = true;
         let lines = m.visible_lines().join("\n");
         let h = m.project().unwrap().handoff.as_ref().unwrap();
         assert!(lines.contains(&h.objective));
-        assert!(lines.contains(&h.validation[0].to_string()));
+        let check = h.validation[0]["check"].as_str().unwrap();
+        assert!(lines.contains(check));
         assert!(lines.contains("并非当前会话验证"));
         m.section = Section::Rules;
         assert!(m.visible_lines().join("\n").contains(&m.rows()[0].value));

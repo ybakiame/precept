@@ -36,6 +36,25 @@ pub fn preview_after_title(value: &str, title: &str, max: usize) -> String {
     preview_line(&rest.join("\n"), max)
 }
 
+/// A recorded check as one line: its result, then its name.
+fn check_line(v: &serde_json::Value) -> String {
+    let status = v.get("status").and_then(|s| s.as_str()).unwrap_or("?");
+    match v.get("check").and_then(|c| c.as_str()) {
+        Some(check) => format!("{status} · {check}"),
+        None => format!("{status} · —"),
+    }
+}
+
+/// A repository document as one line: its path, state and size.
+fn document_line(d: &serde_json::Value) -> String {
+    let path = d.get("path").and_then(|v| v.as_str()).unwrap_or("?");
+    let status = d.get("status").and_then(|v| v.as_str()).unwrap_or("?");
+    match d.get("bytes").and_then(|v| v.as_u64()) {
+        Some(bytes) => format!("{path} · {status} · {bytes} B"),
+        None => format!("{path} · {status}"),
+    }
+}
+
 /// An RFC 3339 UTC time (`2026-11-21T16:52:27Z`) as `2026-11-21 16:52 UTC`;
 /// anything else as it is (sanitized).
 pub fn utc_minute(raw: &str) -> String {
@@ -61,6 +80,27 @@ pub fn warning(locale: crate::i18n::Locale, raw: &str) -> String {
         "Documents are live references, not a complete project audit." => Some(Msg::WarnDocuments),
         "This context does not authorize filesystem edits or external actions." => {
             Some(Msg::WarnNoAuthority)
+        }
+        "HEAD changed or cannot be verified; re-evaluate all prior checks" => {
+            Some(Msg::WarnHeadChanged)
+        }
+        "Branch differs from handoff; inspect worktree before proceeding" => {
+            Some(Msg::WarnBranchDiffers)
+        }
+        "Current worktree has changes or cannot be inspected; preserve user edits" => {
+            Some(Msg::WarnWorktreeChanges)
+        }
+        "Handoff has no worktree fingerprint; uncommitted changes cannot be compared" => {
+            Some(Msg::WarnNoFingerprint)
+        }
+        "Worktree fingerprint unavailable; inspect differences manually" => {
+            Some(Msg::WarnFingerprintUnavailable)
+        }
+        "Worktree fingerprint changed since handoff; inspect uncommitted edits" => {
+            Some(Msg::WarnFingerprintChanged)
+        }
+        "Earlier validation is scoped to its recorded revision and environment" => {
+            Some(Msg::WarnValidationScoped)
         }
         _ => None,
     };
@@ -144,7 +184,7 @@ impl Model {
                     "{} confirmed preferences · Open Preferences to inspect",
                     p.context.preferences.len()
                 ));
-                lines.extend(self.handoff_lines(false));
+                lines.extend(self.handoff_lines());
                 lines.extend(p.context.warnings.iter().take(8).cloned());
             }
             Section::Projects => {
@@ -167,26 +207,12 @@ impl Model {
                     lines.push(self.detail_chunk());
                 }
             }
-            Section::Handoff => lines.extend(self.handoff_lines(self.expanded)),
+            Section::Handoff => lines.extend(self.handoff_lines()),
             Section::Diagnostics => {
                 // Doctor covers the daemon and integrations; this is the
                 // project's document evidence only.
                 lines.push("Project contracts — metadata only, no instruction execution".into());
-                if self.expanded {
-                    lines.extend(
-                        p.context
-                            .documents
-                            .iter()
-                            .skip(self.evidence_page * 6)
-                            .take(6)
-                            .map(|d| d.to_string()),
-                    );
-                } else {
-                    lines.push(format!(
-                        "{} contract references · collapsed",
-                        p.context.documents.len()
-                    ));
-                }
+                lines.extend(p.context.documents.iter().take(20).map(document_line));
             }
         }
         lines
@@ -226,22 +252,13 @@ impl Model {
                         self.word(Msg::HistoricalEvidence).into(),
                         self.word(Msg::EarlierNotCurrent).into(),
                     ]);
-                    lines.extend(h.resume_warnings.iter().take(8).cloned());
-                    if self.expanded {
-                        lines.extend(
-                            h.validation
-                                .iter()
-                                .skip(self.evidence_page * 6)
-                                .take(6)
-                                .map(|v| v.to_string()),
-                        );
-                    } else {
-                        lines.push(format!(
-                            "{} {}",
-                            h.validation.len(),
-                            self.word(Msg::HistoricalEntries)
-                        ));
-                    }
+                    lines.extend(
+                        h.resume_warnings
+                            .iter()
+                            .take(8)
+                            .map(|w| warning(self.locale, w)),
+                    );
+                    lines.extend(h.validation.iter().take(20).map(check_line));
                 } else if self.queried_task.is_empty() {
                     lines.push(self.word(Msg::HandoffEmpty).into());
                 } else {
@@ -255,22 +272,7 @@ impl Model {
             }
             Section::Diagnostics => {
                 lines.push(self.word(Msg::ContractsHelp).into());
-                if self.expanded {
-                    lines.extend(
-                        p.context
-                            .documents
-                            .iter()
-                            .skip(self.evidence_page * 6)
-                            .take(6)
-                            .map(|v| v.to_string()),
-                    );
-                } else {
-                    lines.push(format!(
-                        "{} {}",
-                        p.context.documents.len(),
-                        self.word(Msg::ContractEntries)
-                    ));
-                }
+                lines.extend(p.context.documents.iter().take(20).map(document_line));
             }
             Section::Rules => {
                 lines.push(self.word(Msg::PreferencesHeading).into());
@@ -327,7 +329,6 @@ impl Model {
                 ));
                 let mut handoff = self.clone();
                 handoff.section = Section::Handoff;
-                handoff.expanded = false;
                 lines.extend(handoff.chinese_lines().into_iter().skip(1));
                 lines.extend(p.context.warnings.iter().take(8).cloned());
             }
@@ -363,7 +364,7 @@ impl Model {
         );
         lines
     }
-    fn handoff_lines(&self, expanded: bool) -> Vec<String> {
+    fn handoff_lines(&self) -> Vec<String> {
         let Some(p) = self.project() else {
             return Vec::new();
         };
@@ -394,47 +395,11 @@ impl Model {
             "Recorded validation evidence (not current session verification)".into(),
         ];
         lines.extend(h.resume_warnings.iter().take(8).cloned());
-        if expanded {
-            lines.extend(
-                h.validation
-                    .iter()
-                    .skip(self.evidence_page * 6)
-                    .take(6)
-                    .map(|v| v.to_string()),
-            );
-        } else {
-            lines.push(format!(
-                "{} historical evidence entries · collapsed",
-                h.validation.len()
-            ));
-        }
+        lines.extend(h.validation.iter().take(20).map(check_line));
         lines
-    }
-    pub fn evidence_pages(&self) -> usize {
-        let count = self
-            .project()
-            .map(|p| match self.section {
-                Section::Diagnostics => p.context.documents.len(),
-                Section::Handoff => p
-                    .handoff
-                    .as_ref()
-                    .filter(|h| h.task_id == self.queried_task)
-                    .map_or(0, |h| h.validation.len()),
-                _ => 0,
-            })
-            .unwrap_or(0);
-        count.div_ceil(6).max(1)
-    }
-    pub fn evidence_by(&mut self, delta: isize) {
-        self.evidence_page = self
-            .evidence_page
-            .saturating_add_signed(delta)
-            .min(self.evidence_pages() - 1);
     }
     pub fn set_section(&mut self, section: Section) {
         self.section = section;
-        self.expanded = false;
-        self.evidence_page = 0;
     }
 }
 
@@ -473,12 +438,19 @@ mod tests {
 
     #[test]
     fn every_fixed_daemon_warning_is_translated() {
-        for raw in precept_core::WARNINGS {
+        for &raw in precept_core::WARNINGS
+            .iter()
+            .chain(precept_core::RESUME_WARNINGS.iter())
+        {
             let zh = warning(crate::i18n::Locale::ZhCn, raw);
             assert_ne!(zh, raw, "untranslated daemon warning: {raw}");
-            assert_eq!(warning(crate::i18n::Locale::En, raw), raw);
+            assert!(!warning(crate::i18n::Locale::En, raw).is_empty());
         }
         assert_eq!(warning(crate::i18n::Locale::ZhCn, "Other"), "Other");
+        // The context's own notes read the same in English.
+        for raw in precept_core::WARNINGS {
+            assert_eq!(warning(crate::i18n::Locale::En, raw), raw);
+        }
     }
 
     #[test]

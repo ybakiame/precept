@@ -699,8 +699,8 @@ mod tests {
         app.press_key("mod+k").unwrap();
         app.type_text("Task ID", "shared").unwrap();
         app.press("Lookup").unwrap();
-        app.wait_for("Recorded validation evidence (not current session verification)")
-            .unwrap();
+        app.wait_for("Recorded checks").unwrap();
+        app.wait_for("Before you continue").unwrap();
         app.press("Copy visible page").unwrap();
         assert!(app.screen().clipboard().unwrap().contains("Handoff shared"));
         // The project menu: its trigger shows the current project.
@@ -741,7 +741,6 @@ mod tests {
             app.press_key(key).unwrap();
             app.wait_for(label).unwrap();
         }
-        app.press("Expand / collapse").unwrap();
         app.set_viewport(Size::new(px(640.0), px(480.0))).unwrap();
         app.wait_for("Project: beta").unwrap();
         app.set_viewport(Size::new(px(1080.0), px(760.0))).unwrap();
