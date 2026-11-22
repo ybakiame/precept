@@ -71,6 +71,9 @@ pub struct Entry {
     pub unstable: bool,
     #[serde(default)]
     pub fading: bool,
+    /// The suggested rule this note was filed as (it kept holding).
+    #[serde(default)]
+    pub proposed: Option<String>,
 }
 
 /// Text that keeps its line breaks: no other control or bidi characters,

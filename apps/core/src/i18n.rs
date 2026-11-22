@@ -269,6 +269,7 @@ catalog! {
     MemoryPinned => ("Pinned", "已置顶"),
     MemoryUnstable => ("Changed often lately", "近期多次变动"),
     MemoryFading => ("Fading", "逐渐淡出"),
+    MemoryProposed => ("Suggested as a rule", "已提为规则建议"),
     MemoryEditedByYou => ("Edited by you", "你编辑过"),
     MemoryByYou => ("you", "你"),
     MemoryByAgent => ("an agent", "某个 agent"),

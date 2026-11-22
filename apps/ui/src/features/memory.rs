@@ -193,6 +193,11 @@ fn badges(model: Signal<Model>, m: &Model, e: &Entry) -> AnyElement {
             Msg::MemoryEditedByYou,
             BadgeVariant::Neutral,
         ),
+        (
+            e.proposed.is_some(),
+            Msg::MemoryProposed,
+            BadgeVariant::Info,
+        ),
     ] {
         if on {
             row = row.child(badge(model, m.word(msg)).variant(variant));

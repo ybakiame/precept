@@ -255,8 +255,14 @@ Weight: environment 100, caution 60, lesson 40, attempt 20; pinned +1000; +4
 per confirmation (at most 10); +1 per recall (at most 20); +10 while the last
 correction is the operator's; after 60 days without confirmation, −0.5 per day
 down to nothing. Three changes in seven days mark a note `unstable` (shown, never
-weighted). `recall` matches words in the title or body (case-insensitive, any
-script), heaviest first, at most 20, and counts a recall for each returned note.
+weighted). `recall` splits the query into terms (its words, lowercase; a run of
+more than two CJK characters also gives its overlapping pairs; at most 32),
+returns notes matching at least one term, ranked by matched terms (a title match
+counting double) and then weight, at most 20, and counts a recall for each
+returned note. A caution, lesson or attempt confirmed three times is filed once
+as a suggested project rule through the agent-suggestion path (key from its
+title, its text as the value, tags `<kind>` and `memory`; only where agents may
+suggest and writes are on; never confirmed); the note records it as `proposed`.
 Agent and operator `context.get` add `memory`: counts by kind, every
 environment note (at most 8) and the five heaviest others that are not fading,
 at most 2.5 KiB of text; the session-start briefing renders it as **Project

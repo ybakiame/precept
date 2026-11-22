@@ -27,6 +27,9 @@ pub const BRIEF_BYTES: usize = 2560;
 const DAY_MS: u64 = 86_400_000;
 /// Days after the last confirmation before an entry starts to fade.
 pub const FADE_AFTER_DAYS: u64 = 60;
+/// Confirmations after which a caution, lesson or attempt is filed once as a
+/// suggested project rule (it held in that many more sessions).
+pub const PROPOSE_AFTER: u32 = 3;
 /// Changes within this window that make an entry unstable.
 const UNSTABLE_WINDOW_MS: u64 = 7 * DAY_MS;
 const UNSTABLE_CHANGES: usize = 3;
@@ -105,6 +108,9 @@ pub struct Entry {
     /// When the body last changed (within the unstable window).
     #[serde(default)]
     pub changes: Vec<u64>,
+    /// The suggested rule this note was filed as, once.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proposed: Option<String>,
 }
 
 impl Entry {
@@ -204,6 +210,35 @@ fn new_id() -> Result<String, Error> {
 }
 fn valid_id(id: &str) -> bool {
     id.len() == 16 && id.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// A query's search terms: its words, lowercase; a run of CJK characters
+/// longer than two also gives its overlapping pairs, so a phrase finds notes
+/// that use its parts. At most 32 terms.
+fn terms(query: &str) -> Vec<String> {
+    let cjk = |c: char| matches!(c as u32, 0x3040..=0x30FF | 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xAC00..=0xD7AF);
+    let mut out: Vec<String> = Vec::new();
+    for word in query.split_whitespace() {
+        let word = word.to_lowercase();
+        out.push(word.clone());
+        let mut run = Vec::new();
+        for c in word.chars().chain(std::iter::once(' ')) {
+            if cjk(c) {
+                run.push(c);
+                continue;
+            }
+            if run.len() > 2 {
+                for pair in run.windows(2) {
+                    out.push(pair.iter().collect());
+                }
+            }
+            run.clear();
+        }
+    }
+    out.sort();
+    out.dedup();
+    out.truncate(32);
+    out
 }
 
 /// What `remember` did.
@@ -312,6 +347,7 @@ impl Memory {
                     session,
                     history: vec![],
                     changes: vec![],
+                    proposed: None,
                 };
                 all.push(e.clone());
                 (e, Remembered::Added)
@@ -335,6 +371,25 @@ impl Memory {
         self.change(state, project, id, |e, now| {
             e.confirmations = e.confirmations.saturating_add(1);
             e.confirmed_ms = now;
+            Ok(())
+        })
+    }
+    /// Whether `e` should now be filed as a suggested rule: a caution, lesson
+    /// or attempt confirmed [`PROPOSE_AFTER`] times, not filed before.
+    pub fn ripe(e: &Entry) -> bool {
+        e.kind != Kind::Environment && e.confirmations >= PROPOSE_AFTER && e.proposed.is_none()
+    }
+    /// Records the suggestion a note was filed as.
+    pub fn mark_proposed(
+        &self,
+        state: &StateDir,
+        project: &str,
+        id: &str,
+        rule: &str,
+    ) -> Result<Entry, Error> {
+        let rule = rule.to_owned();
+        self.change(state, project, id, move |e, _| {
+            e.proposed = Some(rule);
             Ok(())
         })
     }
@@ -459,19 +514,36 @@ impl Memory {
         let _held = self.lock.lock().unwrap();
         let mut all = Self::load(state, project)?;
         let now = now_ms();
-        let mut hits: Vec<usize> = all
+        let terms = query.as_deref().map(terms).unwrap_or_default();
+        // Each entry's score: matched terms, a title match counting double;
+        // with a query, an entry must match at least one term.
+        let mut hits: Vec<(usize, usize)> = all
             .iter()
             .enumerate()
             .filter(|(_, e)| kind.is_none_or(|k| e.kind == k))
-            .filter(|(_, e)| {
-                query.as_ref().is_none_or(|q| {
-                    e.title.to_lowercase().contains(q.as_str())
-                        || e.body.to_lowercase().contains(q.as_str())
-                })
+            .filter_map(|(i, e)| {
+                if terms.is_empty() {
+                    return Some((i, 0));
+                }
+                let (title, body) = (e.title.to_lowercase(), e.body.to_lowercase());
+                let score: usize = terms
+                    .iter()
+                    .map(|t| {
+                        if title.contains(t.as_str()) {
+                            2
+                        } else {
+                            usize::from(body.contains(t.as_str()))
+                        }
+                    })
+                    .sum();
+                (score > 0).then_some((i, score))
             })
-            .map(|(i, _)| i)
             .collect();
-        hits.sort_by(|a, b| all[*b].weight(now).total_cmp(&all[*a].weight(now)));
+        hits.sort_by(|a, b| {
+            b.1.cmp(&a.1)
+                .then(all[b.0].weight(now).total_cmp(&all[a.0].weight(now)))
+        });
+        let mut hits: Vec<usize> = hits.into_iter().map(|(i, _)| i).collect();
         hits.truncate(limit.clamp(1, 20));
         for i in &hits {
             all[*i].recalls = all[*i].recalls.saturating_add(1);
@@ -612,6 +684,7 @@ mod tests {
             session: None,
             history: vec![],
             changes: vec![],
+            proposed: None,
         };
         let env = entry(Kind::Environment, 0);
         let lesson = entry(Kind::Lesson, 0);
@@ -672,6 +745,26 @@ mod tests {
             m.recall(&s, "alpha", Some("很慢"), None, 5).unwrap().len(),
             1
         );
+        // Words in any order; a phrase finds notes using its parts; the
+        // better match first.
+        let hits = m
+            .recall(&s, "alpha", Some("lockfile pnpm"), None, 5)
+            .unwrap();
+        assert_eq!(hits[0].title, "Tried pnpm");
+        assert_eq!(
+            m.recall(&s, "alpha", Some("构建很慢吗"), None, 5)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(
+            m.recall(&s, "alpha", Some("nothing-here"), None, 5)
+                .unwrap()
+                .is_empty()
+        );
+        let mut want = vec!["wsl", "构建很慢", "构建", "建很", "很慢"];
+        want.sort();
+        assert_eq!(terms("WSL 构建很慢"), want);
         assert_eq!(m.list(&s, "alpha").unwrap()[0].kind, Kind::Environment);
         let ctx = m.for_context(&s, "alpha");
         assert_eq!(ctx["counts"]["environment"], 1);
@@ -679,7 +772,8 @@ mod tests {
         assert_eq!(ctx["relevant"][0]["kind"], "caution");
         assert_eq!(
             m.recall(&s, "alpha", None, Some(Kind::Attempt), 5).unwrap()[0].recalls,
-            1
+            2,
+            "the pnpm query above counted one"
         );
     }
 

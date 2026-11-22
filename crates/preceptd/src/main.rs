@@ -463,11 +463,14 @@ impl Service {
                     let (entry, what) = self
                         .memory
                         .remember(state, &project, kind, &title, &body, by, None)?;
+                    let entry = self.promote(&project, entry);
                     Ok(json!({"status": what.as_str(), "entry": entry.view(now)}))
                 }
                 "memory.reaffirm" => {
                     let id = p.id.ok_or(Error::InvalidRequest)?;
-                    Ok(json!({"entry": self.memory.reaffirm(state, &project, &id)?.view(now)}))
+                    let entry = self.memory.reaffirm(state, &project, &id)?;
+                    let entry = self.promote(&project, entry);
+                    Ok(json!({"entry": entry.view(now)}))
                 }
                 "memory.forget" => {
                     let id = p.id.ok_or(Error::InvalidRequest)?;
@@ -1019,6 +1022,48 @@ impl Service {
     /// Saves a work session as the project's Handoff `task_id` (absent until
     /// now): goal as objective, done and summary as completed, todo as next
     /// action, and the repository's current revision, branch and state.
+    /// A note that held in [`memory::PROPOSE_AFTER`] more sessions is filed
+    /// once as a suggested project rule (the agent-suggestion path: only
+    /// where agents may suggest and writes are on; never confirmed). Best
+    /// effort: a refusal leaves the note as it is, to try at its next
+    /// confirmation.
+    fn promote(&self, project: &str, entry: memory::Entry) -> memory::Entry {
+        if !memory::Memory::ripe(&entry) {
+            return entry;
+        }
+        let mut key = String::new();
+        for c in entry.title.chars().flat_map(char::to_lowercase) {
+            if c.is_ascii_alphanumeric() {
+                key.push(c);
+            } else if !key.is_empty() && !key.ends_with('-') {
+                key.push('-');
+            }
+        }
+        let mut key: String = key.trim_end_matches('-').chars().take(60).collect();
+        if key.is_empty() {
+            key = format!("memory-{}", &entry.id[..8]);
+        }
+        let tags = vec![entry.kind.as_str().to_owned(), "memory".to_owned()];
+        let filed = self.profiles.agent_suggest(
+            project,
+            Scope::Project {
+                name: project.to_owned(),
+            },
+            key,
+            entry.body.clone(),
+            tags,
+            Default::default(),
+        );
+        let rule = match filed {
+            Ok(v) => v["id"].as_str().map(str::to_owned).unwrap_or_default(),
+            // Already suggested or confirmed with this exact text.
+            Err(Error::Conflict) => "existing".to_owned(),
+            Err(_) => return entry,
+        };
+        self.memory
+            .mark_proposed(self.profiles.state_dir(), project, &entry.id, &rule)
+            .unwrap_or(entry)
+    }
     fn session_handoff(
         &self,
         authority: &precept_ipc::peer::Peer,

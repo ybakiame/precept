@@ -127,3 +127,55 @@ fn agents_keep_project_memory_and_the_operator_governs_it() {
             .exists()
     );
 }
+
+#[test]
+fn a_note_that_keeps_holding_is_filed_once_as_a_suggested_rule() {
+    let f = Fixture::created();
+    let b = f.daemon.enable();
+    f.register(&b, "alpha");
+    f.daemon
+        .control("project.propose", json!({"name":"alpha","enabled":true}))
+        .unwrap();
+    let agent = f.daemon.credential("agent-alpha.cap");
+    let call = |method: &str, params: Value| f.daemon.call(&agent, method, params);
+    let lesson = json!({"kind":"lesson","title":"Run nextest","body":"Use cargo nextest run; cargo test misses the doctests split."});
+    let id = call("memory.remember", lesson.clone()).unwrap()["entry"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let suggested = || {
+        f.daemon
+            .control(
+                "profile.preferences.list",
+                json!({"scope":{"kind":"project","name":"alpha"},"after_id":0}),
+            )
+            .unwrap()["records"]
+            .as_array()
+            .unwrap()
+            .clone()
+    };
+    call("memory.reaffirm", json!({"id":id})).unwrap();
+    call("memory.remember", lesson.clone()).unwrap();
+    assert!(suggested().is_empty(), "two confirmations are not enough");
+    let third = call("memory.reaffirm", json!({"id":id})).unwrap();
+    assert!(third["entry"]["proposed"].is_string());
+    let records = suggested();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["key"], "run-nextest");
+    assert_eq!(records[0]["status"], "suggested");
+    assert_eq!(records[0]["origin"], "agent");
+    assert_eq!(records[0]["tags"], json!(["lesson", "memory"]));
+    // Once: more confirmations file nothing more.
+    call("memory.reaffirm", json!({"id":id})).unwrap();
+    assert_eq!(suggested().len(), 1);
+    // Environment notes stay memory.
+    let env = json!({"kind":"environment","title":"Node","body":"Node 22"});
+    let env_id = call("memory.remember", env).unwrap()["entry"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    for _ in 0..4 {
+        call("memory.reaffirm", json!({"id":env_id})).unwrap();
+    }
+    assert_eq!(suggested().len(), 1);
+}

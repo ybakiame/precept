@@ -29,6 +29,11 @@ data between schemas with the versioned Profile export and import.
 - **Stale documents are flagged when read.** In Claude Code, after the agent
   reads a file whose committed rule checks fail, it is told the file may be out
   of date and which claims no longer hold.
+- **Experience becomes suggestions.** A caution, lesson or attempt that held in
+  three more sessions is filed once as a suggested project rule for you to
+  review; the Memory page marks it.
+- **Better recall.** Memory search matches words in any order and parts of
+  Chinese phrases, best matches first.
 - **The terminal UI and the offline web preview are gone.** The desktop app is
   the operator interface; the `precept` CLI covers headless use. Review
   decisions record the `cli` or `desktop` channel only (the Profile schema
