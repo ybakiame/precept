@@ -4,6 +4,7 @@ Layout
   bin\preceptd.exe        local daemon; the only Profile write owner
   bin\precept.exe         operator CLI
   bin\precept-mcp.exe           MCP stdio server with project-bound tools
+  bin\precept-hook.exe          harness hook: session-start briefing, pre-tool gate, stale-document warning
   bin\precept-desktop.exe    native Desktop (HWND)
   runtime\manifest.json     provenance, prerequisites and SHA-256 of every other file
   notices\                  NOTICE.txt, third-party dependency ledger and license texts

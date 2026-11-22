@@ -14,7 +14,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { noticeLedger, NoticeError } from './notices.mjs';
 
-export const binaries = ['preceptd.exe', 'precept.exe', 'precept-mcp.exe', 'precept-desktop.exe'];
+export const binaries = ['preceptd.exe', 'precept.exe', 'precept-mcp.exe', 'precept-hook.exe', 'precept-desktop.exe'];
 export const product = 'Precept';
 export const pin = '554163758e30d2f62f814096a6327937dcb4fe49';
 export const target = 'x86_64-pc-windows-msvc';
@@ -184,7 +184,7 @@ export function verifyInventory(root, expected) {
 
 // Explicit removal of an owned extracted prototype, never product-data cleanup.
 // Paths are relative to the extraction root, so they start with `Precept/`.
-const removable = /^Precept\/(bin\/(preceptd|precept|precept-(mcp|desktop))\.exe|runtime\/manifest\.json|notices\/(NOTICE\.txt|dependency-notices\.json|[a-f0-9]{64}\.txt)|README\.txt|LICENSE\.txt)$/;
+const removable = /^Precept\/(bin\/(preceptd|precept|precept-(mcp|hook|desktop))\.exe|runtime\/manifest\.json|notices\/(NOTICE\.txt|dependency-notices\.json|[a-f0-9]{64}\.txt)|README\.txt|LICENSE\.txt)$/;
 const productDirectories = ['Precept/bin', 'Precept/runtime', 'Precept/notices', 'Precept'];
 /// `allowed`/`required` default to the Windows layout; the Linux recipe passes its own.
 export function removeOwnedProduct(root, files, allowed = removable, required = binaries) {
@@ -258,9 +258,9 @@ export function build(repo, parent, name, cargoProgram, release = null) {
     license: 'Apache-2.0', locks: {}, build_commands: [], binaries: [], prerequisites: [], files: [],
     limitations: [release === null
       ? 'Unsigned product executables; not a release or reproducible-binary claim'
-      : 'Unsigned product executables; not a reproducible-binary claim',
+      : 'Unsigned product executables (Windows may warn on first start); not a reproducible-binary claim',
       'OS minimum and clean-target acceptance unverified',
-      'Third-party notices reviewed against a permissive-license policy; the ledger is not a linker-derived SBOM; signing and publication undecided'] };
+      'Third-party notices reviewed against a permissive-license policy; the ledger is not a linker-derived SBOM'] };
   for (const file of ['Cargo.lock', 'apps/Cargo.lock']) manifest.locks[file] = digest(fs.readFileSync(path.join(repo, file)));
   requireValue(fs.readFileSync(path.join(repo, 'apps/ui/Cargo.toml'), 'utf8').includes(pin), 'NSH pin mismatch');
 
