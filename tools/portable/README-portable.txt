@@ -69,9 +69,12 @@ In a second console:
 The GUI uses native operator read credentials. Write-enable is a separate explicit
 Profile-scoped operator action; read authority does not grant write access.
 
-For a separately selected synthetic Profile and registered allowlisted project only:
- .\bin\precept-mcp.exe --runtime-dir <same-runtime> --endpoint <same-name> --project synthetic --capability-file <same-runtime>\agent-synthetic.cap
-This is an MCP stdio process, not an interactive shell or network service. Its tools
+To connect an agent, from a registered project folder (its MCP client starts this):
+ cd <the registered project folder>
+ <Precept>\bin\precept-mcp.exe --runtime-dir <same-runtime> --endpoint <same-name>
+One server serves every registered project: it binds to the folder it starts in
+(or the folders the MCP client names) and serves nothing outside a registered
+project. This is an MCP stdio process, not an interactive shell or network service. Its tools
 read context, explain rules and Handoffs; suggestions, work sessions and memory need
 the operator's per-project permission. Never substitute operator/write credentials.
 Agents and authentication remain external; no agent/model needs to be launched.

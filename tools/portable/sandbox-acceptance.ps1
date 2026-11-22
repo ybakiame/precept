@@ -160,7 +160,9 @@ $acl.SetOwner($me); $acl.SetAccessRuleProtection($true, $false)
 $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($me, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
 Set-Acl -LiteralPath $d.FullName -AclObject $acl
 Log "state $(Owner $state)"
-$synthetic = Join-Path $state 'synthetic'
+# The project lives in the home, apart from the state directory: a project may
+# not overlap the daemon's state or the Profile's directory.
+$synthetic = Join-Path $env:USERPROFILE 'precept-synthetic'
 New-Item -ItemType Directory -Path $synthetic | Out-Null
 Set-Content -LiteralPath (Join-Path $synthetic 'AGENTS.md') -Value 'Synthetic sandbox acceptance only.'
 # A project is a Git repository root inside the daemon user's home.
@@ -171,7 +173,7 @@ $endpoint = 'precept-sandbox-' + [guid]::NewGuid().ToString('N').Substring(0, 12
 $loc = @('--runtime-dir', $runtime, '--endpoint', $endpoint)
 $query = Join-Path $bin 'precept.exe'
 function Q([string[]]$a) { Run $query ($loc + $a) }
-function Why($r) { "exit $($r.code) error=$($r.json.error) stderr=$(($r.err -split "`n" | Select-Object -First 2) -join ' | ')" }
+function Why($r) { "exit $($r.code) error=$($r.json.error) reason=$($r.json.reason) stderr=$(($r.err -split "`n" | Select-Object -First 2) -join ' | ')" }
 
 
 Cell 'daemon-start-no-implicit-profile' {
@@ -205,13 +207,15 @@ Cell 'explicit-synthetic-profile-grant-register' {
     Need (Test-Path (Join-Path $runtime 'agent-synthetic.cap')) 'agent credential missing'
     "created, repeat refused, write enabled, registered $canonical"
 }
-Cell 'mcp-exactly-two-read-tools-and-context' {
+Cell 'mcp-folder-bound-tools-and-context' {
     # .NET Framework writes Console.InputEncoding's preamble to child stdin on start; on a
     # UTF-8 (65001) console that is a BOM. Record it, then use BOM-less UTF-8.
     Log "console input encoding $([Console]::InputEncoding.WebName) cp=$([Console]::InputEncoding.CodePage) preamble=$([Console]::InputEncoding.GetPreamble().Length)"
     [Console]::InputEncoding = New-Object Text.UTF8Encoding $false
     $psi = New-Object Diagnostics.ProcessStartInfo (Join-Path $bin 'precept-mcp.exe')
-    $psi.Arguments = '--runtime-dir "' + $runtime + '" --endpoint ' + $endpoint + ' --project synthetic --capability-file "' + (Join-Path $runtime 'agent-synthetic.cap') + '"'
+    # One server for every project, bound to the folder it starts in (README).
+    $psi.Arguments = '--runtime-dir "' + $runtime + '" --endpoint ' + $endpoint
+    $psi.WorkingDirectory = $synthetic
     $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true; $psi.RedirectStandardInput = $true; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
     $p = [Diagnostics.Process]::Start($psi); $mcpErr = $p.StandardError.ReadToEndAsync()
     $meta = @{ 'io.modelcontextprotocol/protocolVersion' = '2026-07-28' }
@@ -226,11 +230,12 @@ Cell 'mcp-exactly-two-read-tools-and-context' {
         $t.Result | ConvertFrom-Json
     }
     $tools = @((Ask 'tools/list' @{}).result.tools | ForEach-Object { $_.name })
-    Need (($tools -join ',') -eq 'get_effective_context,get_handoff') "tools: $($tools -join ',')"
+    foreach ($t in 'get_effective_context', 'explain_rule', 'get_handoff') { Need ($tools -contains $t) "missing $t in: $($tools -join ',')" }
+    Need (-not ($tools | Where-Object { $_ -match '^(confirm|reject|delete|enable|disable|deprecate)' })) "decision tool exposed: $($tools -join ',')"
     Need ((Ask 'tools/call' @{ name = 'get_effective_context'; arguments = @{} }).result.isError -eq $false) 'context failed'
     Need ($null -ne (Ask 'tools/call' @{ name = 'confirm_preference'; arguments = @{} }).error) 'write tool not refused'
     $p.StandardInput.Close(); if (-not $p.WaitForExit(10000)) { $p.Kill(); throw 'MCP did not exit on EOF' }
-    "tools=$($tools -join ','); context ok; write tool refused"
+    "tools=$($tools.Count) ($($tools -join ',')); context ok; decision tool refused"
 }
 Cell 'write-grant-revoked' {
     Need ((Q @('profile', 'write', 'disable')).code -eq 0) 'disable failed'
@@ -252,7 +257,10 @@ Cell 'hwnd-desktop-render-close-daemon-survives' {
     $g = [Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($r.Left, $r.Top, 0, 0, $bmp.Size); $g.Dispose()
     $bmp.Save((Join-Path $out 'hwnd.png'), [Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose()
     $vc = VcModules $p
-    Need (($vc -join ',') -eq 'VCRUNTIME140.dll@System32,VCRUNTIME140_1.dll@System32') "VC modules: $($vc -join ',')"
+    # Exactly the VC++ runtime DLLs the desktop imports (from the manifest), each from System32.
+    $want = @(($manifest.binaries | Where-Object { $_.file -eq 'bin/precept-desktop.exe' }).imports |
+        Where-Object { $_.name -match '^vcruntime140' } | ForEach-Object { "$($_.name.ToUpper().Replace('.DLL', '.dll'))@System32" } | Sort-Object -Unique)
+    Need ((($vc | Sort-Object) -join ',') -eq ($want -join ',')) "VC modules: $($vc -join ',') expected $($want -join ',')"
     $title = $p.MainWindowTitle
     [void]$p.CloseMainWindow()
     Need ($p.WaitForExit(15000)) 'window close did not exit'
