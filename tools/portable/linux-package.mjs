@@ -17,11 +17,11 @@ import { apacheLicenseSha256, builderPathScan, cargoEnvironment, digest, freshDi
 import { ElfError, elfInfo, minimumVersions } from './elf.mjs';
 import { noticeLedger, NoticeError } from './notices.mjs';
 
-export const binaries = ['preceptd', 'precept', 'precept-mcp', 'precept-desktop', 'precept-tui', 'precept-bridge'];
+export const binaries = ['preceptd', 'precept', 'precept-mcp', 'precept-desktop', 'precept-bridge'];
 export const target = 'x86_64-unknown-linux-gnu';
 export const interpreter = '/lib64/ld-linux-x86-64.so.2';
 const need = (ok, message) => { if (!ok) throw new PolicyError(message); };
-export const removable = /^Precept\/(bin\/(preceptd|precept|precept-(mcp|desktop|tui|bridge))|runtime\/manifest\.json|notices\/(NOTICE\.txt|dependency-notices\.json|[a-f0-9]{64}\.txt)|README\.txt|LICENSE\.txt)$/;
+export const removable = /^Precept\/(bin\/(preceptd|precept|precept-(mcp|desktop|bridge))|runtime\/manifest\.json|notices\/(NOTICE\.txt|dependency-notices\.json|[a-f0-9]{64}\.txt)|README\.txt|LICENSE\.txt)$/;
 
 /// Every shipped ELF must use the system loader and carry no RPATH/RUNPATH:
 /// libraries always come from the user distribution, never from the archive.
@@ -110,7 +110,7 @@ export function build(repo, parent, name, cargoProgram) {
   const workspaces = [
     ['core', 'Cargo.toml', ['preceptd', 'precept', 'precept-mcp'], []],
     ['operator', 'apps/Cargo.toml', ['precept-ui', 'precept-ui-client'],
-      ['--features', 'precept-ui/native,precept-ui/tui']]];
+      ['--features', 'precept-ui/native']]];
   for (const [label, manifestFile, packages, features] of workspaces) {
     const args = ['build', '--manifest-path', manifestFile, '--release', '--locked', '--target', target,
       '--target-dir', targetDir, '--message-format=json', ...packages.flatMap(p => ['-p', p]), '--bins', ...features];

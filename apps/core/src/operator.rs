@@ -1,4 +1,4 @@
-//! One ephemeral operator workflow for Desktop and TUI, never a second Writer.
+//! One ephemeral operator workflow for the desktop, never a second Writer.
 use crate::{
     Model,
     connection::{Connection, Target},
@@ -15,7 +15,7 @@ pub enum Pane {
     Preferences,
     Handoff,
 }
-/// Review navigation shared by Desktop and TUI; rendering stays per-surface.
+/// Review navigation of the operator workspace.
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub enum ReviewTab {
     #[default]
@@ -1881,7 +1881,7 @@ mod tests {
         m.operator.inspect.as_mut().unwrap().record.status = "confirmed".into();
         m.operator.inspect.as_mut().unwrap().record.revision = 2;
         m.operator.inspect_revision = 2;
-        m.operator.channel = Channel::Tui;
+        m.operator.channel = Channel::Desktop;
         let record = m.operator.record().unwrap().clone();
         assert!(complete_inspect(
             &mut m,
@@ -1903,7 +1903,7 @@ mod tests {
                 assert_eq!(*id, 1);
                 assert!(*scope == Scope::Global);
                 assert_eq!(*proposal_digest, digest);
-                assert_eq!(*channel, Channel::Tui);
+                assert_eq!(*channel, Channel::Desktop);
                 assert!(*expected == Expected::Revision(2));
             }
             _ => panic!("expected DeprecatePreference"),

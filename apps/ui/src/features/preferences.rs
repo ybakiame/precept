@@ -1,8 +1,6 @@
 //! Preferences: the project's confirmed effective preferences, narrowed by
-//! tag filters and the filter text above them. On Desktop one virtualized
-//! list in the page's scroll (no pages); in a terminal, whose surface does
-//! not draw a list in its parent's scroll, pages of rows with Previous and
-//! Next (keyboard-first, whole cells).
+//! tag filters and the filter text above them, in one virtualized list in the
+//! page's scroll.
 use crate::*;
 use precept_ui_core::i18n::Msg;
 use precept_ui_core::presentation::sanitize;
@@ -128,7 +126,7 @@ pub(crate) fn detail_dialog(model: Signal<Model>) -> impl IntoElement {
         })
         .cancel_fn(move || model.get().word(Msg::CloseDialog).into())
         .confirm_fn(move || model.get().word(Msg::CopyRule).into())
-        .open(move || !ui::terminal() && selected().is_some())
+        .open(move || selected().is_some())
         .on_cancel(move || {
             model.update(|m| {
                 m.selected_preference = None;
@@ -487,94 +485,6 @@ pub(crate) fn preferences(model: Signal<Model>) -> impl IntoElement {
                 current.word(Msg::FilterRecovery).into(),
             ],
         ));
-    }
-    // The terminal keeps the paged inline detail; windows use the dialog.
-    if ui::terminal()
-        && let Some(selected) = current.preference_detail()
-    {
-        body = body
-            .child(card(
-                model,
-                current.word(Msg::SelectedPreference),
-                vec![
-                    sanitize(&selected.key, 120),
-                    current.detail_chunk(),
-                    format!(
-                        "{} {}/{} · {} · {}",
-                        current.word(Msg::ValueDetail),
-                        current.detail_page + 1,
-                        current.detail_pages(),
-                        scope_word(&current, &selected.scope),
-                        precept_ui_core::presentation::hashtags(&selected.tags)
-                    ),
-                ],
-            ))
-            .child(
-                view()
-                    .flex_row()
-                    .flex_wrap()
-                    .gap_1()
-                    .child(word_action(
-                        model,
-                        Msg::EarlierValue,
-                        move || model.get().detail_page > 0,
-                        move || model.update(|m| m.detail_by(-1)),
-                    ))
-                    .child(word_action(
-                        model,
-                        Msg::LaterValue,
-                        move || model.get().detail_page + 1 < model.get().detail_pages(),
-                        move || model.update(|m| m.detail_by(1)),
-                    ))
-                    .child(ui::copy_button(
-                        model,
-                        move || model.get().word(Msg::CopyDetail).into(),
-                        move || model.get().word(Msg::CopiedShort).into(),
-                        move || {
-                            set_clipboard(model.get().detail_chunk());
-                            model.update(|m| m.copied = true);
-                            true
-                        },
-                    ))
-                    .child(control(model, Msg::CloseDetail, move || {
-                        model.update(|m| m.selected_preference = None)
-                    })),
-            );
-    }
-    if ui::terminal() {
-        let page = current.page;
-        let mut list = view().gap_2();
-        for (offset, r) in rows
-            .iter()
-            .enumerate()
-            .skip(page * precept_ui_core::PAGE_SIZE)
-            .take(precept_ui_core::PAGE_SIZE)
-        {
-            list = list.child(row(model, r, offset));
-        }
-        return body.child(list).child(
-            view()
-                .flex_row()
-                .flex_wrap()
-                .items_center()
-                .gap_2()
-                .child(word_action(
-                    model,
-                    Msg::PreviousPage,
-                    move || model.get().page > 0,
-                    move || model.update(|m| m.page_by(-1)),
-                ))
-                .child(word_action(
-                    model,
-                    Msg::NextPage,
-                    move || {
-                        (model.get().page + 1) * precept_ui_core::PAGE_SIZE
-                            < model.get().rows().len()
-                    },
-                    move || model.update(|m| m.page_by(1)),
-                ))
-                .child(text(current.page_label())),
-        );
     }
     let count = rows.len();
     body.child(

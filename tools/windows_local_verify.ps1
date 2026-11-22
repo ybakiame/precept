@@ -59,9 +59,9 @@ try {
         } else { Invoke-Gate 'process-binaries' @('cargo','build','--workspace','--bins','--locked') }
         if ($Suite -ne 'Core') {
             Invoke-Gate 'apps-fmt' @('cargo','fmt','--manifest-path','apps/Cargo.toml','--all','--','--check')
-            Invoke-Gate 'apps-build' @('cargo','build','--manifest-path','apps/Cargo.toml','--workspace','--features','precept-ui/native,precept-ui/tui','--bins','--locked')
-            Invoke-Gate 'apps-clippy' @('cargo','clippy','--manifest-path','apps/Cargo.toml','--workspace','--all-targets','--features','precept-ui/native,precept-ui/tui','--locked','--','-D','warnings')
-            Invoke-Gate 'apps-tests' @('cargo','test','--manifest-path','apps/Cargo.toml','--workspace','--all-targets','--features','precept-ui/native,precept-ui/tui','--locked')
+            Invoke-Gate 'apps-build' @('cargo','build','--manifest-path','apps/Cargo.toml','--workspace','--features','precept-ui/native','--bins','--locked')
+            Invoke-Gate 'apps-clippy' @('cargo','clippy','--manifest-path','apps/Cargo.toml','--workspace','--all-targets','--features','precept-ui/native','--locked','--','-D','warnings')
+            Invoke-Gate 'apps-tests' @('cargo','test','--manifest-path','apps/Cargo.toml','--workspace','--all-targets','--features','precept-ui/native','--locked')
         }
         Invoke-Gate 'diff' @('git','diff','--check')
     } finally { $metadata | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $report.FullName 'report.json') }

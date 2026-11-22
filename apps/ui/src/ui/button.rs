@@ -51,7 +51,6 @@ pub struct Button {
     trailing: Option<AnyElement>,
     spoken: Option<LabelFn>,
     // Explicit native-acceptance observer only; never a control or authority.
-    #[cfg(not(target_arch = "wasm32"))]
     probe: Option<(std::path::PathBuf, String)>,
 }
 
@@ -74,7 +73,6 @@ pub fn button(model: Signal<Model>, label: impl Into<SharedString>) -> Button {
         leading: None,
         trailing: None,
         spoken: None,
-        #[cfg(not(target_arch = "wasm32"))]
         probe: None,
     }
 }
@@ -155,7 +153,6 @@ impl Button {
     /// Observe this existing focus stop in an explicitly owned acceptance run.
     /// The caller supplies a closed catalog key, never a label or user content.
     pub fn probe_key(self, key: impl FnOnce() -> String) -> Self {
-        #[cfg(not(target_arch = "wasm32"))]
         {
             let mut button = self;
             static SINK: std::sync::LazyLock<Option<std::path::PathBuf>> =
@@ -169,15 +166,9 @@ impl Button {
             }
             button
         }
-        #[cfg(target_arch = "wasm32")]
-        {
-            let _ = key;
-            self
-        }
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn safe_probe_file(path: &std::path::Path, additional: usize) -> bool {
     std::fs::symlink_metadata(path).is_ok_and(|m| {
         #[cfg(target_os = "windows")]
@@ -191,7 +182,6 @@ fn safe_probe_file(path: &std::path::Path, additional: usize) -> bool {
     })
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn emit_focus_probe(probe: &(std::path::PathBuf, String)) {
     use std::io::Write;
     let (path, key) = probe;
@@ -344,7 +334,7 @@ impl IntoElement for Button {
             });
             reference
         };
-        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "windows")))]
+        #[cfg(not(target_os = "windows"))]
         let probe_ref = self.probe.map(|probe| {
             let reference = element_ref();
             reference.on_focus_in(move || emit_focus_probe(&probe));
@@ -387,7 +377,7 @@ impl IntoElement for Button {
             });
         #[cfg(target_os = "windows")]
         let b = b.element_ref(&keyboard_ref);
-        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "windows")))]
+        #[cfg(not(target_os = "windows"))]
         let b = if let Some(reference) = probe_ref {
             b.element_ref(&reference)
         } else {
@@ -439,9 +429,7 @@ impl IntoElement for Button {
                 .child(icon::spinner(icon_size)),
         );
         if icon_only {
-            // The name is spoken; in a terminal, where icons are hidden, it is shown.
-            content = content
-                .child(text(move || label_child()).style_when(move || !terminal(), |s| s.hidden()));
+            // The name is spoken.
             return b.child(content).into_element();
         }
         let label_view = text(move || label_child());

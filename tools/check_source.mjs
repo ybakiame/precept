@@ -1,9 +1,10 @@
-// Repository maintenance only. Requires the locked Node test dependencies.
+// Repository maintenance only. Requires the locked Node dependencies in tools/
+// (`npm ci --prefix tools`).
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseDocument } from '../apps/web-smoke/node_modules/yaml/dist/index.js';
+import { parseDocument } from './node_modules/yaml/dist/index.js';
 const root = fileURLToPath(new URL('../', import.meta.url));
 process.chdir(root);
 const listed = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { encoding:'utf8' }).split('\0').filter(Boolean);
@@ -75,17 +76,8 @@ for (const platform of ['nsh-platform-linux', 'nsh-platform-macos', 'nsh-platfor
   requireCheck(!!dependency && /features\s*=\s*\[[^\]]*"svg"/.test(dependency.body),
     `NSH native platform without the svg feature (icons would not draw): ${platform}`);
 }
-const packagerPin = readFileSync('tools/package_ui_web.mjs', 'utf8')
-  .match(/^const pin = '([0-9a-f]{40})';$/m)?.[1];
-requireCheck(!!nshPin && packagerPin === nshPin, 'NSH packager pin differs from Cargo');
 const portablePin = readFileSync('tools/portable/windows-package.mjs', 'utf8')
   .match(/^export const pin = '([0-9a-f]{40})';$/m)?.[1];
 requireCheck(!!nshPin && portablePin === nshPin, 'NSH portable packager pin differs from Cargo');
-const webWorkflow = parseDocument(readFileSync('.github/workflows/ui-spike.yml', 'utf8'), { uniqueKeys:true }).toJS();
-const rendererPins = (webWorkflow.jobs?.web?.steps || []).flatMap(step =>
-  [...(step.run || '').matchAll(/\bgit\s+-C\s+apps\/vendor\/nsh\s+checkout\s+(\S+)/g)]
-    .map(match => match[1]));
-requireCheck(!!nshPin && rendererPins.length === 1 && rendererPins[0] === nshPin,
-  'NSH workflow renderer pin differs from Cargo');
 if (failures.length) { console.error(failures.join('\n')); process.exitCode = 1; }
 else console.log(`PASS: ${files.length} source paths; zero tracked prototype executables/packaging; active refs, local Markdown links, workflow YAML/targets and immutable NSH consumer pins checked`);

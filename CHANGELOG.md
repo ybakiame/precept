@@ -19,6 +19,10 @@ data between schemas with the versioned Profile export and import.
 - A memory note can be proposed as a project convention from the Memory page.
 - `precept profile export --with-memory [--with-environment]` carries project
   memory (export format v3); import adds it to the served projects.
+- **The terminal UI and the offline web preview are gone.** The desktop app is
+  the operator interface; the `precept` CLI covers headless use. Review
+  decisions record the `cli` or `desktop` channel only (the Profile schema
+  changes: export with the previous version, import with this one).
 - **Repeated failures are named.** When the pre-tool gate denies the same
   rule again, the agent is told how often and to stop retrying variations; the
   next session's briefing lists the rules blocked in the last week.

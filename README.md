@@ -7,8 +7,8 @@ historical claims and independent verification. It is not an agent harness or an
 sandbox.
 
 Precept is validation-stage software, not a production release. The supported product
-runtime is Rust, with a native daemon, operator CLI, read-only MCP bridge and NSH
-Desktop/TUI operator app.
+runtime is Rust, with a native daemon, operator CLI, MCP server and NSH desktop
+operator app.
 
 ## What it provides
 
@@ -40,16 +40,13 @@ binaries:
 cargo build --workspace --bins --locked
 ```
 
-The operator app is a separate Cargo workspace. Build its native Desktop and TUI
-with:
+The operator app is a separate Cargo workspace. Build the desktop app with:
 
 ```text
 cargo build --manifest-path apps/Cargo.toml --workspace \
-  --features precept-ui/native,precept-ui/tui --bins --locked
+  --features precept-ui/native --bins --locked
 ```
 
-The optional Web target is an offline synthetic preview. It has no daemon API,
-native IPC, Profile data or agent credentials.
 
 ## Operator model
 

@@ -185,8 +185,8 @@ fn contains(app: &mut nsh_testing::Headless, needle: &str) {
 }
 
 /// Exact detail, peer demotion, all decisions and delete consent through actual
-/// NSH components over a real owned daemon. Desktop/TUI channel selection is
-/// configured headlessly; these are not native input or visual acceptance.
+/// NSH components over a real owned daemon, headless; these are not native
+/// input or visual acceptance.
 /// The workspace has read the Profile and its list (the list loads only after
 /// the Profile reply), and writes are on: no "Writes are off" notice.
 fn writes_on(app: &mut nsh_testing::Headless) {
@@ -370,7 +370,7 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     app.wait_for("待审阅").unwrap();
     app.wait_for("没有待审建议").unwrap();
     drop(app);
-    terminal_channel_and_revoked_delete(&f);
+    keyboard_review_and_revoked_delete(&f);
     changed_root_refuses_reviewed_apply(&f);
     f.child.kill().unwrap();
     f.child.wait().unwrap();
@@ -405,19 +405,17 @@ fn open_row(app: &mut nsh_testing::Headless, row: &str) {
     app.wait_for("Show full digest").unwrap();
 }
 
-fn terminal_channel_and_revoked_delete(f: &Fixture) {
-    // Exercise the shared App's shell-supplied channel, not a fabricated CLI
-    // mutation. This flag is the TUI entry point's own configuration seam.
-    precept_ui::TERMINAL_SURFACE.store(true, std::sync::atomic::Ordering::Relaxed);
+fn keyboard_review_and_revoked_delete(f: &Fixture) {
+    // The review shortcuts end to end, through the desktop channel.
     let mut cfg = EngineConfig::new(Root::of::<precept_ui::App>());
     cfg.viewport = Size::new(px(1080.0), px(760.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
     writes_on(&mut app);
     manage_project(&mut app);
-    add(&mut app, "terminal-editor", "terminal-value");
+    add(&mut app, "keyboard-editor", "keyboard-value");
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 8");
-    app.wait_for("#3 · terminal-editor").unwrap();
+    app.wait_for("#3 · keyboard-editor").unwrap();
     app.wait_for("Show full digest").unwrap();
     let third = f.inspect(3, 1);
     app.press_key("alt+shift+y").unwrap();
@@ -426,20 +424,20 @@ fn terminal_channel_and_revoked_delete(f: &Fixture) {
     assert_eq!(f.inspect(3, 1)["record"]["status"], "suggested");
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 9");
-    let confirmed = f.assert_decision(&third, "confirm", "tui", 2, 9);
-    open_row(&mut app, "#3 · terminal-editor · confirmed · r2");
-    contains(&mut app, "confirm · r1→r2 · tui");
+    let confirmed = f.assert_decision(&third, "confirm", "desktop", 2, 9);
+    open_row(&mut app, "#3 · keyboard-editor · confirmed · r2");
+    contains(&mut app, "confirm · r1→r2 · desktop");
     app.press_key("alt+shift+w").unwrap();
     app.wait_for("Nothing is written until you apply it")
         .unwrap();
     assert_eq!(f.inspect(3, 2)["record"]["status"], "confirmed");
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 10");
-    f.assert_decision(&confirmed, "deprecate", "tui", 3, 10);
-    add(&mut app, "terminal-editor", "terminal-value");
+    f.assert_decision(&confirmed, "deprecate", "desktop", 3, 10);
+    add(&mut app, "keyboard-editor", "keyboard-value");
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 11");
-    app.wait_for("#4 · terminal-editor").unwrap();
+    app.wait_for("#4 · keyboard-editor").unwrap();
     app.wait_for("Show full digest").unwrap();
     let fourth = f.inspect(4, 1);
     app.press_key("alt+shift+n").unwrap();
@@ -447,17 +445,17 @@ fn terminal_channel_and_revoked_delete(f: &Fixture) {
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 12");
-    f.assert_decision(&fourth, "reject", "tui", 2, 12);
-    open_row(&mut app, "#3 · terminal-editor · deprecated · r3");
+    f.assert_decision(&fourth, "reject", "desktop", 2, 12);
+    open_row(&mut app, "#3 · keyboard-editor · deprecated · r3");
     app.press_key("alt+shift+q").unwrap();
     app.wait_for("Delete project alpha preference #3?").unwrap();
     app.type_text("Retype the exact ID", "3").unwrap();
     app.press_key("Enter").unwrap();
     app.wait_for("Nothing is written until you apply it")
         .unwrap();
-    // The exact request names the terminal channel.
+    // The exact request names the desktop channel.
     app.press("Show request").unwrap();
-    contains(&mut app, "\"channel\":\"tui\"");
+    contains(&mut app, "\"channel\":\"desktop\"");
     // Revoke externally between inspection/consent and submit. The real IPC
     // adapter/daemon must refuse rather than accept an obsolete UI grant.
     f.call("profile.write.disable", json!({})).unwrap();
@@ -472,7 +470,7 @@ fn terminal_channel_and_revoked_delete(f: &Fixture) {
     app.press("Writes for this daemon run").unwrap();
     app.wait_for("Writes on for this daemon run").unwrap();
     manage_project(&mut app);
-    open_row(&mut app, "#3 · terminal-editor · deprecated · r3");
+    open_row(&mut app, "#3 · keyboard-editor · deprecated · r3");
     app.press_key("alt+shift+q").unwrap();
     app.wait_for("Delete project alpha preference #3?").unwrap();
     // Revocation and the new grant must not retain the preceding exact text.
@@ -504,7 +502,6 @@ fn terminal_channel_and_revoked_delete(f: &Fixture) {
         .is_err()
     );
     drop(app);
-    precept_ui::TERMINAL_SURFACE.store(false, std::sync::atomic::Ordering::Relaxed);
 }
 
 fn changed_root_refuses_reviewed_apply(f: &Fixture) {

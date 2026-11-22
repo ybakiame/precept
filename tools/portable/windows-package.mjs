@@ -14,7 +14,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { noticeLedger, NoticeError } from './notices.mjs';
 
-export const binaries = ['preceptd.exe', 'precept.exe', 'precept-mcp.exe', 'precept-desktop.exe', 'precept-tui.exe'];
+export const binaries = ['preceptd.exe', 'precept.exe', 'precept-mcp.exe', 'precept-desktop.exe'];
 export const product = 'Precept';
 export const pin = '554163758e30d2f62f814096a6327937dcb4fe49';
 export const target = 'x86_64-pc-windows-msvc';
@@ -184,7 +184,7 @@ export function verifyInventory(root, expected) {
 
 // Explicit removal of an owned extracted prototype, never product-data cleanup.
 // Paths are relative to the extraction root, so they start with `Precept/`.
-const removable = /^Precept\/(bin\/(preceptd|precept|precept-(mcp|desktop|tui))\.exe|runtime\/manifest\.json|notices\/(NOTICE\.txt|dependency-notices\.json|[a-f0-9]{64}\.txt)|README\.txt|LICENSE\.txt)$/;
+const removable = /^Precept\/(bin\/(preceptd|precept|precept-(mcp|desktop))\.exe|runtime\/manifest\.json|notices\/(NOTICE\.txt|dependency-notices\.json|[a-f0-9]{64}\.txt)|README\.txt|LICENSE\.txt)$/;
 const productDirectories = ['Precept/bin', 'Precept/runtime', 'Precept/notices', 'Precept'];
 /// `allowed`/`required` default to the Windows layout; the Linux recipe passes its own.
 export function removeOwnedProduct(root, files, allowed = removable, required = binaries) {
@@ -254,7 +254,7 @@ export function build(repo, parent, name, cargoProgram) {
 
   const workspaces = [
     ['core', 'Cargo.toml', ['preceptd', 'precept', 'precept-mcp'], []],
-    ['operator', 'apps/Cargo.toml', ['precept-ui'], ['--features', 'native,tui']]];
+    ['operator', 'apps/Cargo.toml', ['precept-ui'], ['--features', 'native']]];
   // A new target directory for each attempt prevents packaging stale build products.
   for (const [label, manifestFile, packages, features] of workspaces) {
     const args = ['build', '--manifest-path', manifestFile, '--release', '--locked', '--target', target,

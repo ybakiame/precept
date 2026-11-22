@@ -557,7 +557,6 @@ pub enum Channel {
     #[default]
     Cli,
     Desktop,
-    Tui,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -911,7 +910,7 @@ mod tests {
     fn channel_and_decision_action_closed_sets() {
         assert!(serde_json::from_str::<Channel>("\"cli\"").is_ok());
         assert!(serde_json::from_str::<Channel>("\"desktop\"").is_ok());
-        assert!(serde_json::from_str::<Channel>("\"tui\"").is_ok());
+        assert!(serde_json::from_str::<Channel>("\"tui\"").is_err());
         assert!(serde_json::from_str::<Channel>("\"web\"").is_err());
         assert!(serde_json::from_str::<DecisionAction>("\"confirm\"").is_ok());
         assert!(serde_json::from_str::<DecisionAction>("\"demote\"").is_ok());

@@ -1,7 +1,6 @@
 //! The app's keycaps: a keystroke drawn as the keys to press, each in a small
 //! cap (`Ctrl` `Shift` `L`), as NSH labels it for this platform (`⇧⌘L` on Apple
 //! platforms is one cap). A keystroke NSH cannot parse is shown as written.
-//! In a terminal the label is plain text.
 use super::prelude::*;
 use nsh_core::keymap::Keystroke;
 
@@ -27,9 +26,6 @@ pub fn key_parts(keystroke: &str) -> Vec<String> {
 /// `keystroke` as keycaps.
 pub fn keycaps(model: Signal<Model>, keystroke: &str) -> impl IntoElement {
     let parts = key_parts(keystroke);
-    if terminal() {
-        return text(parts.join("+")).into_element();
-    }
     view()
         .flex_row()
         .items_center()

@@ -3,8 +3,7 @@
 //! checked state for screen readers, Space/Return, disabled), styled here:
 //! a pill track that fills with `primary` and a thumb that slides across it.
 //! The tile is the gallery's quick setting: the whole card is the switch, its
-//! icon well lights up and its edge turns `primary` while on. In a terminal
-//! the base switch shows its own `[on ]` / `[off]` mark beside the label.
+//! icon well lights up and its edge turns `primary` while on.
 use super::prelude::*;
 use std::rc::Rc;
 
@@ -64,8 +63,7 @@ fn thumb(
     }
 }
 
-/// A plain switch named `label` (for screen readers and, in a terminal, beside
-/// its mark).
+/// A plain switch named `label` (for screen readers).
 pub fn switch(
     model: Signal<Model>,
     label: impl Fn() -> SharedString + 'static,
@@ -199,7 +197,6 @@ impl IntoElement for QuickTile {
         let tile = motion::feedback(tile);
         tile.child(
             view()
-                .style_when(terminal, |s| s.hidden())
                 .size(px(32.0))
                 .mb_2()
                 .rounded(px(scale::radius::PILL))

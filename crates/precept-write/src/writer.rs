@@ -59,7 +59,6 @@ fn channel_name(channel: precept_core::operator::Channel) -> &'static str {
     match channel {
         precept_core::operator::Channel::Cli => "cli",
         precept_core::operator::Channel::Desktop => "desktop",
-        precept_core::operator::Channel::Tui => "tui",
     }
 }
 fn check_project(db: &Connection, name: &str) -> Result<()> {

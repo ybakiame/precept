@@ -20,7 +20,6 @@ pub(crate) fn word_action(
         .probe_key(move || format!("{key:?}"))
         .disabled(move || !enabled())
         .on_press(move || {
-            #[cfg(not(target_arch = "wasm32"))]
             if std::env::var_os("PRECEPT_UI_PROBE").is_some() {
                 eprintln!("PRECEPT_UI_ACTION key={key:?}");
             }
@@ -317,11 +316,6 @@ fn destination(model: Signal<Model>, item: Destination, path: &'static str) -> A
         let trailing = dynamic(move || {
             let n = done.get();
             if n == 3 {
-                if ui::terminal() {
-                    return text("✓")
-                        .text_color(move || palette(model).success)
-                        .into_element();
-                }
                 let pop = ui::motion::pop();
                 return view()
                     .text_color(move || palette(model).success)
@@ -669,74 +663,58 @@ fn header(model: Signal<Model>) -> impl IntoElement {
         .items_start()
         .gap_3()
         .child(
-            view()
-                .flex_1()
-                .min_w_0()
-                .gap_1()
-                // On a desktop the title sits in the top bar; the terminal,
-                // which has none, keeps it here.
-                .child(
-                    view()
-                        .style_when(
-                            move || !TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed),
-                            |s| s.hidden(),
-                        )
-                        .child(title_cluster(model)),
-                )
-                .child(
-                    view()
-                        .accessible(true)
-                        .label("Daemon connection state")
-                        .flex_row()
-                        .flex_wrap()
-                        .gap_2()
-                        .child(
-                            text(move || {
-                                let m = model.get();
-                                if let Some(reason) = m.wsl_reason() {
-                                    format!("{} · {}", target_words(&m), m.word(reason))
-                                } else if m.operator.open {
-                                    format!(
-                                        "{} · {}",
-                                        target_words(&m),
-                                        m.word(if m.operator.busy {
-                                            Msg::OperatorBusy
-                                        } else if m.operator.error.is_some() {
-                                            Msg::OperatorFailed
-                                        } else if m.operator.info.is_some() {
-                                            Msg::OperatorObserved
-                                        } else {
-                                            Msg::OperatorUnobserved
-                                        })
-                                    )
-                                } else {
-                                    format!("{} · {}", target_words(&m), m.read_label())
-                                }
-                            })
-                            .text_size(px(ui::scale::text::CAPTION))
-                            .text_color(move || {
-                                match model.get().phase {
-                                    _ if model.get().wsl_reason().is_some() => palette(model).error,
-                                    Phase::Error | Phase::Unavailable => palette(model).error,
-                                    Phase::Loading => palette(model).warning,
-                                    _ => palette(model).muted,
-                                }
-                            }),
-                        )
-                        .child(
-                            text(move || {
-                                let m = model.get();
-                                if m.copied {
-                                    m.word(Msg::Copied).into()
-                                } else {
-                                    m.read_time()
-                                }
-                            })
-                            .style_when(move || model.get().operator.open, |s| s.hidden())
-                            .text_size(px(ui::scale::text::CAPTION))
-                            .text_color(move || palette(model).muted),
-                        ),
-                ),
+            view().flex_1().min_w_0().gap_1().child(
+                view()
+                    .accessible(true)
+                    .label("Daemon connection state")
+                    .flex_row()
+                    .flex_wrap()
+                    .gap_2()
+                    .child(
+                        text(move || {
+                            let m = model.get();
+                            if let Some(reason) = m.wsl_reason() {
+                                format!("{} · {}", target_words(&m), m.word(reason))
+                            } else if m.operator.open {
+                                format!(
+                                    "{} · {}",
+                                    target_words(&m),
+                                    m.word(if m.operator.busy {
+                                        Msg::OperatorBusy
+                                    } else if m.operator.error.is_some() {
+                                        Msg::OperatorFailed
+                                    } else if m.operator.info.is_some() {
+                                        Msg::OperatorObserved
+                                    } else {
+                                        Msg::OperatorUnobserved
+                                    })
+                                )
+                            } else {
+                                format!("{} · {}", target_words(&m), m.read_label())
+                            }
+                        })
+                        .text_size(px(ui::scale::text::CAPTION))
+                        .text_color(move || match model.get().phase {
+                            _ if model.get().wsl_reason().is_some() => palette(model).error,
+                            Phase::Error | Phase::Unavailable => palette(model).error,
+                            Phase::Loading => palette(model).warning,
+                            _ => palette(model).muted,
+                        }),
+                    )
+                    .child(
+                        text(move || {
+                            let m = model.get();
+                            if m.copied {
+                                m.word(Msg::Copied).into()
+                            } else {
+                                m.read_time()
+                            }
+                        })
+                        .style_when(move || model.get().operator.open, |s| s.hidden())
+                        .text_size(px(ui::scale::text::CAPTION))
+                        .text_color(move || palette(model).muted),
+                    ),
+            ),
         )
         .child(
             view()
@@ -856,7 +834,6 @@ pub(crate) fn shell(
             page_rise.timing(0.0, ui::motion::FAST, Easing::EaseOut);
         }
     });
-    let terminal = || TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed);
     view()
         .flex_1()
         .bg(move || palette(model).background)
@@ -889,11 +866,7 @@ pub(crate) fn shell(
                     view()
                         .flex_1()
                         .min_w_0()
-                        .child(
-                            view()
-                                .style_when(terminal, |s| s.hidden())
-                                .child(top_bar(model)),
-                        )
+                        .child(view().child(top_bar(model)))
                         .child(
                             view()
                                 .flex_1()
@@ -994,10 +967,6 @@ pub(crate) fn shell(
                 .absolute()
                 .bottom_0()
                 .right_0()
-                .style_when(
-                    || TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed),
-                    |s| s.hidden(),
-                )
                 .child(chrome::grip(model)),
         )
         .child(crate::shortcuts::panel(model))

@@ -156,7 +156,7 @@ the truth.
 Personal Profiles, review state, project memory and session records belong in
 user-local storage owned by the native daemon, the only writer. Project contracts
 belong to the repository. Rust implements domain logic, the daemon and local IPC;
-NSH Rust provides the shared Desktop/TUI operator experience. Precept does not
+NSH Rust provides the desktop operator experience. Precept does not
 launch or supervise agents; closing a UI does not stop the daemon.
 
 ## Non-goals and claims

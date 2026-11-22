@@ -11,11 +11,11 @@ support, signing or clean-machine claim.
 | Windows | `tools/portable/windows-package.ps1` (portable ZIP, unchanged recipe) | `windows-deploy.ps1` into `%LOCALAPPDATA%\Programs\Precept` (portable; no installer, PATH, registry or Start menu) |
 | WSL2 Arch | `arch-package.sh` (pacman package from one clean commit) | explicit `sudo pacman -U`, then the systemd **user** unit `preceptd.service` |
 
-The Arch package ships `preceptd`, `precept`, `precept-mcp`, `precept-hook`, `precept-bridge` and
-`precept-tui` in `/usr/bin`, the unit in `/usr/lib/systemd/user/`, and this file
+The Arch package ships `preceptd`, `precept`, `precept-mcp`, `precept-hook` and
+`precept-bridge` in `/usr/bin`, the unit in `/usr/lib/systemd/user/`, and this file
 in `/usr/share/doc/precept/`. There is no
 daemon configuration file: projects and the startup Profile are chosen in the
-Desktop (or TUI, or `precept`) and kept by the daemon itself.
+Desktop (or `precept`) and kept by the daemon itself.
 Runtime dependencies are checked against the built binaries' direct libraries.
 
 ## Build

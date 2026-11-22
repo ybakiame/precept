@@ -10,7 +10,7 @@ describes the current Rust-native architecture and its durable target boundaries
 ```mermaid
 flowchart LR
     Operator["Operator"]
-    Clients["NSH Desktop/TUI<br/>native precept"]
+    Clients["NSH desktop<br/>native precept"]
     Daemon["Rust daemon"]
     Core["precept-core"]
     Writer["precept-write"]
@@ -44,7 +44,7 @@ resolution.
 | `crates/precept-mcp` | Read-only stdio bridge to project-bound IPC | Profile or task mutation |
 | `crates/precept-write` | Private Profile v1 creation and typed transactions with lease/epoch fencing, CAS and receipts | Direct UI/CLI access, arbitrary existing-path writers or generic SQL |
 | `crates/precept` | Native operator reads and typed writes through authenticated daemon IPC | Direct database access or a second writer |
-| `apps/core`, `apps/client`, `apps/ui` | Pure operator state/presentation; native IPC and Windows→WSL2 bridge; NSH Desktop/TUI surfaces | Direct database access, duplicate resolution logic or independent authority |
+| `apps/core`, `apps/client`, `apps/ui` | Pure operator state/presentation; native IPC and Windows→WSL2 bridge; NSH desktop surface | Direct database access, duplicate resolution logic or independent authority |
 
 The root product crates and operator app are separate Cargo workspaces with separate
 lockfiles. NSH dependencies do not enter the daemon's dependency closure. The Web
@@ -62,7 +62,7 @@ to the same daemon authority used by local clients. Tokens never cross the stdio
 boundary. It cannot validate or approve mutations, open SQLite or start agents. The framing, allowlists and uncertainty behavior are defined
 in [interfaces](interfaces.md#windows-gui--wsl2-bridge).
 
-The secondary WSLg Linux GUI/TUI path connects directly to the same WSL daemon over
+The secondary WSLg Linux GUI path connects directly to the same WSL daemon over
 Unix IPC and does not use the bridge. WSLg evidence is not standalone Linux support
 evidence.
 

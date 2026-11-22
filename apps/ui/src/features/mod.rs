@@ -32,7 +32,6 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
         .gap_3()
         .style_when(compact, |s| s.gap_2())
         .on_layout(move |_: &Bounds<Points>| {
-            #[cfg(not(target_arch = "wasm32"))]
             if model.get().phase == Phase::Ready && std::env::var_os("PRECEPT_UI_PROBE").is_some() {
                 eprintln!("PRECEPT_NSH_LAYOUT_READY elapsed={:.6}", probe_elapsed());
             }

@@ -5,7 +5,6 @@ Layout
   bin\precept.exe         operator CLI
   bin\precept-mcp.exe           MCP stdio server with two project-bound read-only tools
   bin\precept-desktop.exe    native Desktop (HWND)
-  bin\precept-tui.exe       terminal UI (ConPTY)
   runtime\manifest.json     provenance, prerequisites and SHA-256 of every other file
   notices\                  NOTICE.txt, third-party dependency ledger and license texts
   LICENSE.txt               Apache License 2.0 (Copyright 2026 ybakiame; see notices\NOTICE.txt)
@@ -66,8 +65,7 @@ In a second console:
  .\bin\precept.exe --runtime-dir <same-runtime> --endpoint <same-name> health
  .\bin\precept.exe --runtime-dir <same-runtime> --endpoint <same-name> profile info
  .\bin\precept-desktop.exe --runtime-dir <same-runtime> --endpoint <same-name> --operator
- .\bin\precept-tui.exe --runtime-dir <same-runtime> --endpoint <same-name> --operator
-GUI/TUI use native operator read credentials. Write-enable is a separate explicit
+The GUI uses native operator read credentials. Write-enable is a separate explicit
 Profile-scoped operator action; read authority does not grant write access.
 
 For a separately selected synthetic Profile and registered allowlisted project only:
@@ -80,7 +78,7 @@ is unknown/refused evidence, not fresh verification. Font/media/WebView2 and exa
 runtime closure remain subject to the recorded dependency and clean-target evidence.
 
 Stop
-Close GUI normally; TUI Ctrl+Q exits and restores the terminal. UI close does NOT
+Close the GUI normally. UI close does NOT
 stop the daemon. In the daemon's own console use Ctrl+C for graceful shutdown and wait
 for exit. Never stop unrelated processes or unlink a held lease/lock. A forced kill
 is a crash, not a graceful stop. After a crash, retain state and follow the existing

@@ -66,7 +66,7 @@ pub mod tint {
     pub const REST: f32 = 0.14;
 }
 pub fn compact() -> bool {
-    TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed) || window().width.0 < 900.0
+    window().width.0 < 900.0
 }
 /// Mix two semantic colors per appearance, moving `t` toward `b` (`0.0` = `a`,
 /// `1.0` = `b`). Derives hover and pressed washes from tokens without

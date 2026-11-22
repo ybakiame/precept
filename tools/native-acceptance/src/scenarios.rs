@@ -1,7 +1,7 @@
 //! S3 extensions. Every cell owns a fresh disposable daemon/Profile/UI; failures
 //! do not suppress later independent cells. Relay faults forward real daemon
 //! replies and are explicitly not described as native typing of protocol fields.
-use super::{Fixture, Ui, desktop, evidence, tty};
+use super::{Fixture, Ui, desktop, evidence};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
@@ -23,7 +23,7 @@ struct Session {
     desktop: bool,
 }
 impl Session {
-    fn new(surface: &str, out: &Path, script: &str) -> Self {
+    fn new(out: &Path, script: &str) -> Self {
         fs::create_dir(out).unwrap();
         let repo = std::env::current_dir().unwrap();
         let f = Fixture::new(repo.clone());
@@ -37,10 +37,9 @@ impl Session {
                 .bytes()
                 .fold(0u64, |n, b| n.wrapping_mul(131).wrapping_add(b as u64))
         );
-        let is_desktop = surface == "desktop";
         let binary = repo.join("apps/target/debug").join(format!(
             "precept-nsh-{}{}",
-            if is_desktop { "native" } else { "tui" },
+            "native",
             std::env::consts::EXE_SUFFIX
         ));
         let args = vec![
@@ -56,34 +55,19 @@ impl Session {
             "--project".into(),
             "alpha".into(),
         ];
-        let mut ui = if is_desktop {
-            Ui::Desktop(Box::new(desktop::Desktop::start(
-                &binary, &args, &nonce, script, out, &f.focus,
-            )))
-        } else {
-            Ui::Tty(tty::Tty::start(&binary, &args, out, &f.focus))
-        };
+        let mut ui = Ui(Box::new(desktop::Desktop::start(
+            &binary, &args, &nonce, script, out, &f.focus,
+        )));
         evidence::event(
             "owned-ui",
             json!({"pid":ui.pid(),"nonce":nonce,"fixture":"fresh-independent-synthetic"}),
         );
         ui.key("alt+o");
-        ui.wait(
-            "selected=false grant=false busy=false",
-            "No Profile selected",
-        );
+        ui.wait("selected=false grant=false busy=false");
         ui.capture("unselected-owned-profile", out);
         ui.field("alt+p", f.db.to_str().unwrap());
-        ui.apply(
-            "alt+shift+u",
-            "selected=true grant=false busy=false",
-            "Profile selected",
-        );
-        ui.apply(
-            "alt+shift+e",
-            "selected=true grant=true busy=false",
-            "Write grant active",
-        );
+        ui.apply("alt+shift+u", "selected=true grant=false busy=false");
+        ui.apply("alt+shift+e", "selected=true grant=true busy=false");
         for name in ["alpha", "beta"] {
             let root = f.root.path().join(name).canonicalize().unwrap();
             f.mutate(
@@ -91,12 +75,9 @@ impl Session {
                 &["project-register", name, root.to_str().unwrap()],
             );
         }
-        ui.resize(
-            if is_desktop { 1080 } else { 160 },
-            if is_desktop { 1000 } else { 90 },
-        );
+        ui.resize(1080, 1000);
         ui.key("ctrl+r");
-        ui.wait("phase=Ready", "alpha");
+        ui.wait("phase=Ready");
         ui.field("alt+k", "matrix-key");
         ui.field("alt+w", "synthetic-matrix-value");
         ui.field("alt+f", "synthetic-matrix-source");
@@ -104,7 +85,7 @@ impl Session {
             ui,
             f,
             out: out.into(),
-            desktop: is_desktop,
+            desktop: true,
         };
         session.capture("ready");
         session
@@ -179,15 +160,14 @@ impl Session {
     }
     fn select_first(&mut self, rows: usize) {
         self.action("OperatorList", true);
-        self.ui.wait(&format!("rows={rows}"), "#1");
+        self.ui.wait(&format!("rows={rows}"));
         self.ui.key("alt+shift+i");
         self.ui.key("alt+shift+y");
-        self.ui
-            .wait("inspected_id=1 inspected_revision=1", "Show full digest");
+        self.ui.wait("inspected_id=1 inspected_revision=1");
     }
     fn prepare(&mut self) {
         self.ui.key("alt+shift+y");
-        self.ui.wait("review=true", "Prepared operation");
+        self.ui.wait("review=true");
         self.capture("prepared-exact-review");
     }
     fn unchanged(&self, sequence: i64, rows: &[Value]) {
@@ -301,7 +281,7 @@ impl Drop for Session {
 }
 fn empty(s: &mut Session) {
     s.action("ReviewQueueLoad", true);
-    s.ui.wait("queue=0", "No pending suggestions");
+    s.ui.wait("queue=0");
     assert!(s.queue(false, 0)["records"].as_array().unwrap().is_empty());
     s.capture("initial-empty-queue");
 }
@@ -311,17 +291,14 @@ fn paging(s: &mut Session, global: bool) {
     if global {
         s.action("OperatorGlobal", true);
         s.ui.key("alt+shift+r");
-        s.ui.wait("selected=true grant=true busy=false", "Write grant active");
+        s.ui.wait("selected=true grant=true busy=false");
     }
     s.action("ReviewQueueLoad", true);
     let first = s.queue(global, 0);
     assert_eq!(first["records"].as_array().unwrap().len(), 12);
-    s.ui.wait("queue=12", "#1 ·");
+    s.ui.wait("queue=12");
     let sequence = first["commit_sequence"].as_i64().unwrap();
-    s.ui.wait(
-        &format!("queue_sequence={sequence}"),
-        &format!("Queue watermark: commit {sequence}"),
-    );
+    s.ui.wait(&format!("queue_sequence={sequence}"));
     s.capture("pending-first-page");
     let mut args = vec![
         "preference-suggest",
@@ -354,11 +331,11 @@ fn paging(s: &mut Session, global: bool) {
             .iter()
             .all(|r| r["id"].as_i64().unwrap() > after)
     );
-    s.ui.wait("queue_stale=true", "Queue changed since page loaded");
-    s.ui.wait("queue=2", "#13 ·");
+    s.ui.wait("queue_stale=true");
+    s.ui.wait("queue=2");
     s.capture("pending-next-page-stale-disclosure");
     s.action("ReviewQueueFirst", true);
-    s.ui.wait("queue=12", "#1 ·");
+    s.ui.wait("queue=12");
     s.capture("pending-first-page-refreshed");
 }
 fn invalidation(s: &mut Session, kind: &str) {
@@ -394,8 +371,7 @@ fn invalidation(s: &mut Session, kind: &str) {
     s.ui.key("alt+shift+v");
     thread::sleep(Duration::from_millis(250));
     match &s.ui {
-        Ui::Desktop(d) => d.wait("review=false"),
-        Ui::Tty(t) => t.wait_gone("Prepared operation"),
+        Ui(d) => d.wait("review=false"),
     }
     s.unchanged(sequence, &before);
     s.capture("navigation-invalidated-review");
@@ -423,7 +399,7 @@ fn changed_authority(s: &mut Session, kind: &str) {
         _ => unreachable!(),
     };
     s.ui.key("alt+shift+v");
-    s.ui.wait(&format!("error={error}"), error);
+    s.ui.wait(&format!("error={error}"));
     s.unchanged(sequence, &before);
     s.capture("authority-refused-old-inspection");
 }
@@ -451,7 +427,7 @@ fn status_change(s: &mut Session) {
     let sequence = s.f.commit_sequence();
     let before = s.f.rows();
     s.ui.key("alt+shift+v");
-    s.ui.wait("error=Conflict", "Conflict");
+    s.ui.wait("error=Conflict");
     s.unchanged(sequence, &before);
     assert_eq!(s.f.record(1)["status"], "rejected");
     s.capture("competing-status-refused");
@@ -459,7 +435,7 @@ fn status_change(s: &mut Session) {
 fn delayed_read(s: &mut Session) {
     s.seed(1, false, "alpha");
     s.action("OperatorList", true);
-    s.ui.wait("rows=1", "#1");
+    s.ui.wait("rows=1");
     s.ui.key("alt+shift+i");
     let sequence = s.f.commit_sequence();
     let before = s.f.rows();
@@ -482,13 +458,10 @@ fn delayed_read(s: &mut Session) {
             .unwrap();
     assert_eq!(proof["released_after_navigation"], true);
     s.ui.key("alt+o");
-    s.ui.wait("selected=true grant=true busy=false", "Write grant active");
+    s.ui.wait("selected=true grant=true busy=false");
     s.ui.field("alt+f", "synthetic-matrix-source");
     s.ui.tab_nav(1);
-    s.ui.wait(
-        "inspected_id=0 inspected_revision=0",
-        "Select a queue row to inspect",
-    );
+    s.ui.wait("inspected_id=0 inspected_revision=0");
     s.ui.key("alt+shift+v");
     s.unchanged(sequence, &before);
     s.capture("delayed-inspect-discarded-after-navigation");
@@ -500,7 +473,7 @@ fn unknown(s: &mut Session, kind: &str) {
     let sequence = s.f.commit_sequence() + 1;
     fs::write(s.f.root.path().join("drop-next"), b"synthetic-reply-loss").unwrap();
     s.ui.key("alt+shift+v");
-    s.ui.wait("unknown=true", "Outcome unknown");
+    s.ui.wait("unknown=true");
     s.capture("committed-confirm-unobserved");
     let before = s.f.rows();
     assert_eq!(before[0]["status"], "confirmed");
@@ -525,10 +498,7 @@ fn unknown(s: &mut Session, kind: &str) {
         "unknown-no-auto-replay" => {}
         "manual-exact-replay" => {
             s.ui.key("alt+shift+z");
-            s.ui.wait(
-                &format!("receipt={sequence} "),
-                &format!("commit {sequence}"),
-            );
+            s.ui.wait(&format!("receipt={sequence} "));
             let replayed: Value = serde_json::from_slice(
                 &fs::read(s.f.root.path().join("replayed-receipt.json")).unwrap(),
             )
@@ -542,13 +512,13 @@ fn unknown(s: &mut Session, kind: &str) {
         "replay-changed-bytes" => {
             s.fault("profile.mutate", "changed-bytes");
             s.ui.key("alt+shift+z");
-            s.ui.wait("error=IdempotencyConflict", "IdempotencyConflict");
+            s.ui.wait("error=IdempotencyConflict");
         }
         "replay-stale-epoch" => {
             assert!(s.f.query(&["profile", "write", "disable"]).0);
             s.enable_cli();
             s.ui.key("alt+shift+z");
-            s.ui.wait("error=Unauthorized", "Unauthorized");
+            s.ui.wait("error=Unauthorized");
         }
         _ => unreachable!(),
     }
@@ -566,32 +536,19 @@ fn presentation(s: &mut Session, zh: bool) {
     for mode in ["Light", "Dark"] {
         s.action("Settings", false);
         s.action(mode, false);
-        if let Ui::Desktop(d) = &s.ui {
+        {
+            let Ui(d) = &s.ui;
             d.wait(&format!("mode={mode}"));
         }
         s.ui.key("alt+o");
-        s.ui.wait(
-            "selected=true grant=true busy=false",
-            if zh {
-                "写入授权有效"
-            } else {
-                "Write grant active"
-            },
-        );
+        s.ui.wait("selected=true grant=true busy=false");
         // Re-enter Detail after the settings navigation. This is a real read,
         // not a fixture callback or a screenshot-only synthetic surface.
         s.ui.key("alt+shift+l");
-        s.ui.wait("rows=1", "#1");
+        s.ui.wait("rows=1");
         s.ui.key("alt+shift+i");
         s.ui.key("alt+shift+y");
-        s.ui.wait(
-            "inspected_id=1 inspected_revision=1",
-            if zh {
-                "显示完整摘要"
-            } else {
-                "Show full digest"
-            },
-        );
+        s.ui.wait("inspected_id=1 inspected_revision=1");
         for compact in [false, true] {
             s.ui.resize(
                 if s.desktop {
@@ -622,7 +579,7 @@ fn presentation(s: &mut Session, zh: bool) {
         );
     }
 }
-pub fn run(surface: &str, out: &Path, script: &str, only: Option<&str>) {
+pub fn run(out: &Path, script: &str, only: Option<&str>) {
     let cases = [
         "empty-queue",
         "project-paging",
@@ -674,7 +631,7 @@ pub fn run(surface: &str, out: &Path, script: &str, only: Option<&str>) {
         evidence::begin(id, mechanism);
         evidence::clear_owner();
         let result = std::panic::catch_unwind(|| {
-            let mut s = Session::new(surface, &out.join(format!("s3-{id}")), script);
+            let mut s = Session::new(&out.join(format!("s3-{id}")), script);
             match id {
                 "empty-queue" => empty(&mut s),
                 "project-paging" | "stale-page-disclosure" => paging(&mut s, false),

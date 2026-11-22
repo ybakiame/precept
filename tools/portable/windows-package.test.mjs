@@ -49,7 +49,7 @@ test('inventory refuses changed bytes, unlisted credentials and aliased executab
   fs.linkSync(file, path.join(root, 'alias.exe')); assert.throws(() => regular(file));
 });
 test('shipping contract is exactly five product entrypoints', () => {
-  assert.deepEqual([...binaries].sort(), ['precept-desktop.exe','precept-mcp.exe','precept-tui.exe','precept.exe','preceptd.exe']);
+  assert.deepEqual([...binaries].sort(), ['precept-desktop.exe','precept-mcp.exe','precept.exe','preceptd.exe']);
 });
 
 test('committed first-party LICENSE is the verbatim Apache-2.0 text and NOTICE names the holder', () => {

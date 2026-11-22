@@ -2,8 +2,7 @@
 //! distribution, a connection target). Built on the semantic `nsh/base` radio
 //! group: one Tab stop, arrows move and check, Space checks, the radio role and
 //! checked state for screen readers. Each option is a full-width row with the
-//! app's indicator, hover wash, pressed wash and a persistent checked fill; in a
-//! terminal the base draws `(•)` / `( )` and the app's dot is left out.
+//! app's indicator, hover wash, pressed wash and a persistent checked fill.
 use super::prelude::*;
 use nsh_base::{radio as base_radio, radio_group as base_radio_group};
 use std::rc::Rc;
@@ -92,7 +91,6 @@ impl RadioGroup {
 fn indicator(model: Signal<Model>, checked: StateFn) -> impl IntoElement {
     let ring = checked.clone();
     view()
-        .style_when(terminal, |s| s.hidden())
         .size(px(scale::icon::SM))
         .items_center()
         .justify_center()

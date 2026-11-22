@@ -2,8 +2,7 @@
 
 ![Precept](design/brand.svg)
 
-This is the visual and interaction system of the Precept Operator (Desktop, Web preview
-and TUI). It turns the [NSH Design Guides](https://nsh.dev/docs/design-guides.md)
+This is the visual and interaction system of the Precept Operator desktop app. It turns the [NSH Design Guides](https://nsh.dev/docs/design-guides.md)
 into this app's decisions: its tokens, its controls, its motion and its words.
 Product behavior and authority rules live in the [UI standards](../../docs/product-ui.md);
 where this file and that contract seem to disagree, the contract wins and the
@@ -49,8 +48,8 @@ Six working principles:
 ## 2. Who, where, and the primary tasks
 
 The primary setup is a Windows Desktop window operating an Precept daemon that runs as
-a systemd user service inside WSL2. The TUI and the offline Web preview share the
-same semantics. Mobile is not a target.
+a systemd user service inside WSL2. There is no terminal or web interface; the
+`precept` CLI covers headless use. Mobile is not a target.
 
 Tasks, by how often they happen:
 
@@ -76,7 +75,7 @@ Tasks, by how often they happen:
 
 **Sidebar rows.** 32 high, icon 16 in a fixed lane, label, and a trailing lane
 for state: on **Runtime checks**, a success check once all three steps
-(Connection, Profile, Workspaces) are ready (`✓` in a terminal) or a tabular
+(Connection, Profile, Workspaces) are ready or a tabular
 `n/3` count while incomplete; on **Review & preferences**, a `primary` count
 pill showing the daemon's exact count of suggested records (`profile.review.count`,
 personal scope plus the selected project), read again when the target, project or
@@ -221,8 +220,7 @@ One family: original outline vectors on a 24 grid, stroke 1.6, round caps and
 joins, `currentColor`, defined in `src/ui/icons.rs`. Sizes: 14 in small controls,
 16 by default and inside the 28 tinted discs of toasts and dialog headers, 20 for
 the brand mark, 24 in empty states (inside a 48 tinted disc). Icons supplement labels; an icon-only control always has an
-accessible name and, when its meaning is not universal, a tooltip. In a terminal
-icons are hidden and labels (and `✓`) carry the meaning.
+accessible name and, when its meaning is not universal, a tooltip.
 
 | Icon | Meaning | Used in |
 | --- | --- | --- |
@@ -278,7 +276,7 @@ Compact layouts tighten padding, never height.
 | Component | Variants and states | Notes |
 | --- | --- | --- |
 | `button` | Default (inset fill, hairline edge), Primary, Danger, Ghost; selected, disabled, loading; `leading` and `trailing` slots | 1 pt edge, label centered in the frame. Focus: the edge takes `primary` and a 2 pt `primary` ring sits outside it. Loading keeps width and shows a spinner beside the label |
-| `icon_button` | Ghost square of the control height; selected (a pressed toggle) | Accessible name required (shown as text in a terminal); press scale 0.95 |
+| `icon_button` | Ghost square of the control height; selected (a pressed toggle) | Accessible name required; press scale 0.95 |
 | `copy_button` | Any button variant | Shows its result in place: the copy glyph swaps to a check that pops in and the label to "Copied" for 1.5 s, so no notification is sent |
 | `nav_item`, `step_item`, `nav_item_counted` | Ghost full-width rows | `step_item` has the trailing done check, `nav_item_counted` the count pill |
 | `keycaps` | — | A keystroke as caps (`Ctrl` `Shift` `L`), as NSH labels it for the platform; mono `CAPTION` on `inset` with a hairline |
@@ -300,7 +298,7 @@ Compact layouts tighten padding, never height.
 | `empty` | Optional icon and action | Icon in a 48 tinted disc; title 16 / 600; one action |
 | `surface`, `card` | Optional title | `panel`, hairline, `CONTAINER`, padding 16 |
 | `choice_card` | Selected | One option shown by its own preview (themes: "Aa" on the theme's floor with its accent and status dots), its name, a `primary` edge and a check when chosen |
-| `switch` | On, off, disabled | An on/off setting that takes effect at once (nsh/base switch): a 34 × 20 pill track that fills with `primary`, a 14 thumb that slides across it (`FAST`, ease-out); `[on ]` / `[off]` in a terminal. Settings with only two states use it, never a button pair |
+| `switch` | On, off, disabled | An on/off setting that takes effect at once (nsh/base switch): a 34 × 20 pill track that fills with `primary`, a 14 thumb that slides across it (`FAST`, ease-out). Settings with only two states use it, never a button pair |
 | `quick_tile` | On, off, disabled | The gallery's quick setting: the whole card is the switch; its icon well fills with `primary`, its edge turns `primary` and the card tints while on; title and one detail line (what on means, or why it is off); tiles in a row share it, 180 minimum |
 
 ### Dialog
@@ -478,15 +476,12 @@ shortcut lists.
   it.
 - **Saved** as overrides in `settings.toml` (`[shortcuts]`, id = keystroke). Reset all
   clears them. Escape is fixed and not listed.
-- In a terminal the panel is read-only: keys are text and there is no recorder.
 
 ## 12. Platforms
 
 | Family | Adaptation |
 | --- | --- |
 | Desktop (Windows HWND, Linux, macOS) | The design above. Own title bar; drag region; caption buttons from the theme |
-| Web preview | Same design, synthetic data, no daemon |
-| TUI | Whole cells; no radii, shadows or icons; `✓` and words carry state; 16 colors and monochrome; toasts become a framed line at the bottom; dialogs are framed boxes |
 
 ## 13. Where it lives
 

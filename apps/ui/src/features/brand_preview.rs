@@ -114,9 +114,6 @@ pub fn default_size() -> (i32, i32) {
     let size = window_options().default_size;
     size.map_or((1180, 780), |s| (s.width.0 as i32, s.height.0 as i32))
 }
-fn terminal() -> bool {
-    super::TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed)
-}
 fn compact() -> bool {
     crate::ui::tokens::compact()
 }
@@ -192,7 +189,6 @@ fn panel(ui: Signal<Ui>, title: Msg, lines: Vec<String>) -> impl IntoElement {
         .p_3()
         .gap_2()
         .style_when(compact, |s| s.p_2().gap_1())
-        .style_when(terminal, |s| s.p_1())
         .rounded(px(8.0))
         .border_1()
         .border_color(move || color(ui.get().colors().border))
@@ -291,7 +287,7 @@ fn titlebar(ui: Signal<Ui>) -> impl IntoElement {
 fn title(ui: Signal<Ui>, key: Msg) -> impl IntoElement {
     text(ui.get().word(key))
         .font_weight(FontWeight::SEMIBOLD)
-        .text_size(px(if terminal() { 16.0 } else { 22.0 }))
+        .text_size(px(22.0))
 }
 fn workspace_cards(ui: Signal<Ui>, model: Signal<Model>) -> impl IntoElement {
     let s = ui.get();
@@ -732,11 +728,7 @@ fn preview(config: Config) -> impl IntoElement {
         .text_size(px(14.0))
         .bg(move || color(ui.get().colors().background))
         .text_color(move || color(ui.get().colors().text))
-        .child(
-            view()
-                .style_when(terminal, |s| s.hidden())
-                .child(dynamic(move || titlebar(ui))),
-        )
+        .child(view().child(dynamic(move || titlebar(ui))))
         .child(
             view()
                 .flex_1()
@@ -794,23 +786,19 @@ fn preview(config: Config) -> impl IntoElement {
                 ),
         )
         .child(
-            view()
-                .flex_row()
-                .justify_end()
-                .style_when(terminal, |s| s.hidden())
-                .child(
-                    view()
-                        .w(px(18.0))
-                        .h(px(12.0))
-                        .window_resize(ResizeEdge::BottomRight)
-                        .accessible(true)
-                        .label(move || ui.get().word(Msg::Resize))
-                        .child(
-                            text("⋱")
-                                .text_size(px(12.0))
-                                .text_color(move || color(ui.get().colors().muted)),
-                        ),
-                ),
+            view().flex_row().justify_end().child(
+                view()
+                    .w(px(18.0))
+                    .h(px(12.0))
+                    .window_resize(ResizeEdge::BottomRight)
+                    .accessible(true)
+                    .label(move || ui.get().word(Msg::Resize))
+                    .child(
+                        text("⋱")
+                            .text_size(px(12.0))
+                            .text_color(move || color(ui.get().colors().muted)),
+                    ),
+            ),
         )
 }
 

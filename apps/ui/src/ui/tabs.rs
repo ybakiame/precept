@@ -2,8 +2,7 @@
 //! owns the WAI-ARIA tablist keyboard pattern (one Tab stop, arrows / Home / End
 //! move between tabs, Space / Return activate) and a single selection indicator
 //! that slides to the chosen tab natively, honoring reduced motion. The app
-//! styles the indicator and each tab from tokens; in a terminal the base draws
-//! the selected tab bold on a band and the others muted, with no indicator.
+//! styles the indicator and each tab from tokens.
 use super::prelude::*;
 use std::rc::Rc;
 

@@ -59,7 +59,6 @@ pub use keycap::{key_parts, keycaps};
 pub use markdown::{markdown_input, markdown_view};
 pub use menu::menu;
 pub use nav::{Slide, nav_item, nav_item_counted, step_item};
-pub(crate) use prelude::terminal;
 pub use properties::properties;
 pub use radio::radio_group;
 pub use sheet::sheet;

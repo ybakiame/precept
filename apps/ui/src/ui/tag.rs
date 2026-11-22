@@ -14,15 +14,10 @@ use precept_ui_core::operator::{MAX_TAGS, normalize_tag};
 use std::rc::Rc;
 
 /// One tag, as shown on a row or a record: its color as a dot and a light
-/// tint behind theme text (`#name` in its color in a terminal).
+/// tint behind theme text.
 pub fn tag(model: Signal<Model>, name: &str) -> AnyElement {
     let key = name.to_owned();
     let label: SharedString = precept_ui_core::presentation::sanitize(name, 32).into();
-    if terminal() {
-        return text(format!("#{label}"))
-            .text_color(move || super::tag_color(model, &key))
-            .into_element();
-    }
     let (tint, edge, dot) = (key.clone(), key.clone(), key);
     view()
         .flex_row()

@@ -67,9 +67,6 @@ pub fn choice_card(
                 if !checked.get() {
                     return view().into_element();
                 }
-                if terminal() {
-                    return text("✓").into_element();
-                }
                 let pop = motion::pop();
                 view()
                     .text_color(move || palette(model).primary)

@@ -6,14 +6,6 @@
 #[path = "../desktop.rs"]
 mod desktop;
 #[cfg(unix)]
-#[allow(dead_code)]
-#[path = "../screen.rs"]
-mod screen;
-#[cfg(unix)]
-#[allow(dead_code)]
-#[path = "../tty.rs"]
-mod tty;
-#[cfg(unix)]
 #[path = "linux_portable_smoke/unix.rs"]
 mod unix;
 

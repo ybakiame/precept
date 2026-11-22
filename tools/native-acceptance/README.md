@@ -1,10 +1,10 @@
 # Owned native acceptance driver
 
-Repository maintenance only; not a product launcher, terminal emulator or transport.
+Repository maintenance only; not a product launcher or transport.
 Follow the [repository validation requirements](../../AGENTS.md#engineering-and-validation).
 No Python is required.
 
-Build the root daemon/query and NSH native,tui binaries from the same clean commit
+Build the root daemon/query and NSH native binaries from the same clean commit
 before running this standalone manifest. Its only Precept dependency is the IPC client;
 it cannot open a writable Profile. Run from the repository root:
 
@@ -15,12 +15,10 @@ cargo clippy --manifest-path tools/native-acceptance/Cargo.toml --all-targets --
 cargo test --manifest-path tools/native-acceptance/Cargo.toml --locked
 ```
 
-Choose a **new absolute** report directory below the ignored artifacts tree. On
-Linux, run `tools/native-acceptance/target/debug/precept-native-acceptance tui NEW_OUTPUT`.
-On native Windows, run the corresponding `.exe` with the same arguments from an
-existing process-local MSVC/Cargo/Git environment. This creates a real PTY/ConPTY,
-feeds terminal keyboard sequences and handles the terminal's cursor query. Captures
-contain actual child VT output, a bounded parsed view, and restoration assertions.
+Choose a **new absolute** report directory below the ignored artifacts tree and run
+`tools/native-acceptance/target/debug/precept-native-acceptance desktop NEW_OUTPUT
+WINDOW_SCRIPT` (the `.exe` on native Windows, from an existing process-local
+MSVC/Cargo/Git environment).
 
 `PRECEPT_S5_APPEARANCE=dark` selects the retained S2 baseline flow's initial appearance;
 the default is `light`. Other values are refused. The S3 presentation cells also
@@ -113,8 +111,7 @@ No installed English layout means refusal. This does not certify IME composition
 input; Chinese UI rendering remains a separate assertion. WSLg host layout is not
 changed by this native-Windows-only step.
 
-Synthetic text is sent once, one Unicode scalar per 25 ms on PTY/ConPTY and one
-fixed ASCII key per 25 ms on Desktop, rather than a bulk terminal paste or 4 ms
+Synthetic text is sent once, one fixed ASCII key per 25 ms, rather than a 4 ms
 GUI burst. Desktop field editing first observes the actual focus event after a
 non-activating Tab and the field shortcut; it does not infer readiness from a
 fixed Tab count. Exact content/receipt assertions remain unchanged. This validates
@@ -152,7 +149,7 @@ independent cells. Stored NOT_RUN Handoff history is not fresh Git evidence.
 `ledger.json` declares every required cell as PASS/FAIL/BLOCKED/NOT_RUN and
 references the single append-only `events.jsonl` stream by zero-based event range.
 Events contain monotonic elapsed milliseconds and UTC Unix milliseconds, actual
-chords, redacted text lengths, observed GUI probes **or** terminal frame text,
+chords, redacted text lengths, observed GUI probes,
 CLI response hashes, capture-relative filenames and owned UI PID/nonce. They do
 not record tokens, private paths or field values. Cell `owned_ui_event` references
 the corresponding PID/nonce event. Full ledgers are checkpointed at cell
@@ -164,7 +161,7 @@ observable native focus is BLOCKED, never a guessed platform Tab count or an
 automatic business-action retry. Overall success requires every declared cell
 PASS, normal clean-source before/after checks and successful retained baseline.
 `report.json` retains binary hashes and the per-cell summary. A failure preserves
-the partial ledger, event stream, previous captures, last terminal/probe output
+the partial ledger, event stream, previous captures, last probe output
 and a best-effort last owned frame before cleanup. Independent fixtures live in
 `s3-CELL/`; no failed exploratory artifact is overwritten.
 
@@ -175,27 +172,23 @@ regular non-symlink/non-reparse files append-only, flushes fixed catalog-key
 focus events and refuses growth beyond 256 KiB. It creates no file, control,
 focus stop, product state or authority. Existing Windows scoped Enter/Space
 focus references are preserved. There is no normal-run file work, extra process,
-stderr/ConPTY redirection or detached observer thread.
+stderr redirection or detached observer thread.
 
 S2 review checks wait for fresh, action-specific probes: exact inspected ID/revision
 after an inspect, and `digest_expanded=true` after deliberate expansion. A previously
 observed row revision cannot acknowledge either action. The scenario also confirms
-a same-key peer demotion, checks actual decision revisions and `desktop`/`tui`
+a same-key peer demotion, checks actual decision revisions and `desktop`
 channel labels through independent CLI reads, and refuses history inspection after
 deletion. A first decision chord without exact inspection performs only that read;
 preparation and application remain separate explicit inputs.
 For deletion, Desktop waits for native `on_open` with a mounted initial-focus
 reference, not merely an armed model flag. Input waits require fresh retype-length
-and readiness probes; no typed ID or proposal value is logged. Both shells cancel
+and readiness probes; no typed ID or proposal value is logged. It cancels
 the destructive tier with Escape, retain the workspace and reopen with fresh consent.
 The locale pass re-reads retained content/history in zh-CN, then explicitly enables
 the synthetic grant, reloads selection/inspection in its new epoch, and exercises
-compact wrong-ID refusal without a preference write. TTY startup logs the actual
-owned PTY/ConPTY child PID; GUI startup logs the owned PID and title nonce.
-
-The fixed-flow VT observer handles ConPTY's erase-character (`CSI X`) before its
-cursor-jump spaces, and retires both halves of overwritten/erased wide glyphs.
-Otherwise old draft text can falsely obscure the actually rendered status.
+compact wrong-ID refusal without a preference write. GUI startup logs the owned
+PID and title nonce.
 
 Owned captures use a two-second composition/nonuniform-frame readiness budget;
 the existing capture RPC deadline still bounds OS calls. Every attempt rechecks

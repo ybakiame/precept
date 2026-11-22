@@ -88,13 +88,13 @@ cargo test --workspace --all-targets --locked
 ```
 
 For UI changes, run the equivalent `apps/Cargo.toml` format, Clippy and test gates
-with `precept-ui/native,precept-ui/tui`, plus affected shared presentation
+with `precept-ui/native`, plus affected shared presentation
 and real-daemon integration checks. Run native Windows and Linux/WSL acceptance
 when the changed boundary is platform-sensitive. Headless tests do not prove native
-window, keyboard, terminal, accessibility or device behavior.
+window, keyboard, accessibility or device behavior.
 
 For documentation or source-layout changes, run `node tools/check_source.mjs` after
-installing the locked `apps/web-smoke` Node dependencies when they are absent.
+installing its locked Node dependencies (`npm ci --prefix tools`) when they are absent.
 Store validation output under `.tmp/`, not in tracked documentation.
 
 Add regressions for scope isolation, stale worktrees, malformed requests,

@@ -9,8 +9,3 @@ pub(crate) use nsh_base::{
     tabs as base_tabs,
 };
 pub(crate) use nsh_core::prelude::*;
-
-/// Whether the app is rendering into a terminal (whole-cell, keyboard-first).
-pub(crate) fn terminal() -> bool {
-    crate::TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed)
-}

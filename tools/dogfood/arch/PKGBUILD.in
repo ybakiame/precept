@@ -3,7 +3,7 @@
 pkgname=precept
 pkgver=@PKGVER@
 pkgrel=1
-pkgdesc='Precept local daemon, CLI, MCP stdio server, TUI and Windows-GUI WSL bridge (private dogfooding build)'
+pkgdesc='Precept local daemon, CLI, MCP stdio server and Windows-GUI WSL bridge (private dogfooding build)'
 arch=(x86_64)
 url='https://github.com/ybakiame/precept'
 license=(Apache-2.0)
@@ -14,7 +14,7 @@ options=(!debug !lto)
 source=("precept-@SHORT@.tar" preceptd.service README.md)
 sha256sums=(@SUMS@)
 
-_bins=(preceptd precept precept-mcp precept-hook precept-bridge precept-tui)
+_bins=(preceptd precept precept-mcp precept-hook precept-bridge)
 
 prepare() {
   cd "$srcdir/precept-@SHORT@"
@@ -33,8 +33,6 @@ build() {
   cargo build --frozen --release -p preceptd -p precept -p precept-mcp --bins
   cargo build --frozen --release --manifest-path apps/Cargo.toml \
     -p precept-ui-client --bin precept-bridge
-  cargo build --frozen --release --manifest-path apps/Cargo.toml \
-    -p precept-ui --bin precept-tui --features precept-ui/tui
 }
 
 package() {

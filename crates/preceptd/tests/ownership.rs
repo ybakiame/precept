@@ -1703,7 +1703,7 @@ fn review_queue_inspect_and_digest_binding_are_exact_and_operator_only() {
                 id: 2,
                 scope: Scope::Global,
                 proposal_digest: digest.clone(),
-                channel: Channel::Tui,
+                channel: Channel::Desktop,
                 expected: Expected::Revision(1),
                 note: None,
             },
@@ -1721,7 +1721,7 @@ fn review_queue_inspect_and_digest_binding_are_exact_and_operator_only() {
     assert_eq!(decisions[0]["action"], "demote");
     assert_eq!(decisions[0]["from_revision"], 2);
     assert_eq!(decisions[0]["to_revision"], 3);
-    assert_eq!(decisions[0]["channel"], "tui");
+    assert_eq!(decisions[0]["channel"], "desktop");
     assert_eq!(decisions[0]["proposal_digest"], digest);
     assert_eq!(
         decisions[0]["receipt_commit_sequence"],

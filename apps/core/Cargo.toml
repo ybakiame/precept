@@ -4,7 +4,7 @@ version.workspace = true
 edition = "2024"
 license = "Apache-2.0"
 publish = false
-description = "Operator app state, presentation and i18n: pure, no I/O (also builds for wasm)"
+description = "Operator app state, presentation and i18n: pure, no I/O"
 
 [dependencies]
 precept-core = { path = "../../crates/precept-core" }

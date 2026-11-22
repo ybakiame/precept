@@ -46,9 +46,6 @@ pub fn nav_item_counted(
         } else {
             n.to_string()
         };
-        if terminal() {
-            return text(format!("({shown})")).into_element();
-        }
         let pop = motion::pop();
         view()
             .min_w(px(scale::icon::LG))
@@ -79,7 +76,7 @@ pub fn nav_item_counted(
 }
 
 /// A setup step tab: its icon, visible label, and a success check in the
-/// trailing lane once complete (`✓` in a terminal, where icons are hidden).
+/// trailing lane once complete.
 /// The check grows in when the step completes.
 pub fn step_item(
     model: Signal<Model>,
@@ -94,11 +91,6 @@ pub fn step_item(
     let check = dynamic(move || {
         if !done.get() {
             return view().into_element();
-        }
-        if terminal() {
-            return text("✓")
-                .text_color(move || palette(model).success)
-                .into_element();
         }
         let pop = motion::pop();
         view()

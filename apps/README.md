@@ -1,9 +1,8 @@
 # Precept Operator
 
-The Precept Operator provides shared NSH Desktop and TUI interfaces for the local Precept
-daemon. It uses the same operator authority and scoped data as the native CLI; it
-never opens a Profile directly or creates a second write owner. The optional Web
-target is an offline synthetic preview without daemon IPC.
+The Precept Operator is the NSH desktop app for the local Precept daemon. It uses
+the same operator authority and scoped data as the native CLI; it never opens a
+Profile directly or creates a second write owner.
 
 Navigation is grouped into **Set up** (Connection, Profile, Workspaces and Agents),
 **Project** (Dashboard, Preferences, Handoff and Sessions) and **Personal**
@@ -44,7 +43,5 @@ does not open SQLite, expose a network listener or grant authority. Closing the 
 or leaving the WSL target closes the helper without stopping the daemon or changing
 Profile state.
 
-The Web target serves only synthetic static assets on loopback during local smoke
-tests. It does not serve Profile data, runtime capabilities or agent authentication.
-Desktop/TUI behavior and platform support require actual native validation; Web or
-headless behavior is not a substitute.
+Desktop behavior and platform support require actual native validation; headless
+behavior is not a substitute.

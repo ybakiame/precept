@@ -2,12 +2,6 @@
 #[allow(dead_code)]
 #[path = "../desktop.rs"]
 mod desktop;
-#[allow(dead_code)]
-#[path = "../screen.rs"]
-mod screen;
-#[allow(dead_code)]
-#[path = "../tty.rs"]
-mod tty;
 use precept_ipc::{Access, Client, Error, Location, load_credential, transport};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -562,28 +556,6 @@ async fn main() {
         f.location.endpoint.clone(),
         "--operator".into(),
     ];
-    {
-        let mut ui = tty::Tty::start(&bins.join("precept-tui.exe"), &ui_args, &out, &focus);
-        ui.wait("Precept");
-        package.modules(ui.pid(), "precept-tui.exe", &out, &args[3], "conpty");
-        ui.capture(&out.join("conpty.txt"));
-        ui.resize(100, 35);
-        ui.wait("Precept");
-        ui.close();
-        let end = Instant::now() + Duration::from_secs(2);
-        loop {
-            let raw = ui.raw.lock().unwrap();
-            if raw.windows(8).any(|w| w == b"\x1b[?1049l")
-                && raw.windows(8).any(|w| w == b"\x1b[?2004l")
-            {
-                break;
-            }
-            drop(raw);
-            assert!(Instant::now() < end, "terminal restore sequences missing");
-            thread::sleep(Duration::from_millis(20));
-        }
-    }
-    record("packaged-conpty-render-resize-normal-restore");
     {
         let nonce = &precept_ipc::operator::operation_id().unwrap()[..16];
         let mut ui = desktop::Desktop::start(

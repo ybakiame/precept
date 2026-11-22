@@ -649,7 +649,7 @@ fn s3_only_confirmed_rows_and_their_tags_reach_real_ipc_or_mcp() {
                     id,
                     scope: scope.clone(),
                     proposal_digest: digest.into(),
-                    channel: Channel::Tui,
+                    channel: Channel::Desktop,
                     expected: Expected::Revision(1),
                     note: None,
                 }

@@ -1,4 +1,4 @@
-//! Small original outline vectors; labels always carry the same meaning in TUI.
+//! Small original outline vectors; labels always carry the same meaning.
 use crate::*;
 use precept_ui_core::Section;
 /// The outline path of a section's destination.
@@ -66,16 +66,11 @@ pub(crate) fn section(section: Section) -> impl IntoElement {
     let markup = format!(
         "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='{path}' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>"
     );
-    view()
-        .style_when(
-            || TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed),
-            |s| s.hidden(),
-        )
-        .child(
-            svg(nsh_core::element::ImageSrc::svg_markup(&markup))
-                .w(px(16.0))
-                .h(px(16.0)),
-        )
+    view().child(
+        svg(nsh_core::element::ImageSrc::svg_markup(&markup))
+            .w(px(16.0))
+            .h(px(16.0)),
+    )
 }
 
 /// Editor toolbar glyphs.

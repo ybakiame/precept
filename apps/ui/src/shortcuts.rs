@@ -314,29 +314,28 @@ fn row(
         lane.into_element()
     };
     let mut actions = view().flex_row().items_center().gap_1();
-    if !TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed) {
-        actions = actions.child(
-            button(model, "")
-                .label_fn(move || model.get().word(Msg::KeysChange).into())
-                .spoken(move || {
-                    let m = model.get();
-                    format!("{} {}", m.word(Msg::KeysChange), m.word(shortcut.label)).into()
-                })
-                .variant(ButtonVariant::Ghost)
-                .size(ButtonSize::Small)
-                .selected(move || model.get().shortcut_recording == Some(id))
-                .on_press(move || {
-                    problem.set(None);
-                    model.update(|m| {
-                        m.shortcut_recording = if m.shortcut_recording == Some(id) {
-                            None
-                        } else {
-                            Some(id)
-                        }
-                    });
-                }),
-        );
-    }
+    actions = actions.child(
+        button(model, "")
+            .label_fn(move || model.get().word(Msg::KeysChange).into())
+            .spoken(move || {
+                let m = model.get();
+                format!("{} {}", m.word(Msg::KeysChange), m.word(shortcut.label)).into()
+            })
+            .variant(ButtonVariant::Ghost)
+            .size(ButtonSize::Small)
+            .selected(move || model.get().shortcut_recording == Some(id))
+            .on_press(move || {
+                problem.set(None);
+                model.update(|m| {
+                    m.shortcut_recording = if m.shortcut_recording == Some(id) {
+                        None
+                    } else {
+                        Some(id)
+                    }
+                });
+            }),
+    );
+
     if custom {
         actions = actions.child(
             icon_button(model, ui::icons::RESET, move || {

@@ -35,7 +35,6 @@ pub fn tag_color(model: Signal<Model>, tag: &str) -> AdaptiveColor {
 /// A round dot of `color`.
 pub fn color_dot(color: impl Fn() -> AdaptiveColor + 'static, size: f32) -> impl IntoElement {
     view()
-        .style_when(terminal, |s| s.hidden())
         .size(px(size))
         .flex_shrink_0()
         .rounded(px(scale::radius::PILL))

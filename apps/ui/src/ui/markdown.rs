@@ -3,8 +3,7 @@
 //! (word and character counts, and an Edit / Markdown switch that shows the
 //! stored form agents read). NSH's `RichEditor` draws nothing of its own:
 //! every node and mark is styled here, typography and spacing by classes,
-//! colors from the app's palette. In a terminal it is a multi-line input over
-//! the same Markdown. The caller owns the text.
+//! colors from the app's palette. The caller owns the text.
 use super::prelude::*;
 use super::{ButtonSize, icon_button, icons};
 use nsh_base::rich_editor::{
@@ -292,17 +291,6 @@ pub fn markdown_input(
 ) -> impl IntoElement {
     let on_change = Rc::new(on_change);
     let label = Rc::new(label);
-    if terminal() {
-        let change = on_change.clone();
-        let label = label.clone();
-        return super::input::input(model, "")
-            .label_fn(move || label())
-            .multiline(6)
-            .test_id(id)
-            .value(initial)
-            .on_change(move |v: &str| change(v.to_owned()))
-            .into_element();
-    }
     let start = untracked(initial);
     let Some(editor) = session(&start) else {
         // A schema that cannot be built never loses the value: plain text.

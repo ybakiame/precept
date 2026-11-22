@@ -94,7 +94,7 @@ const AREA: f32 = 320.0;
 
 /// The window's toast stack; the shell mounts it once, last. On the desktop it
 /// floats in an overlay at the bottom-right corner and never takes layout
-/// space; in a terminal the stack owns the status line.
+/// space.
 pub fn toaster(model: Signal<Model>) -> impl IntoElement {
     let manager = stored(ToastManager::<u64, Item>::new(ToastMotion::sonner()));
     let shown: Signal<Shown> = signal(Vec::new());
@@ -184,9 +184,6 @@ pub fn toaster(model: Signal<Model>) -> impl IntoElement {
                     )
             },
         ));
-    if terminal() {
-        return stack.into_element();
-    }
     overlay()
         .bottom_4()
         .right_4()

@@ -54,24 +54,8 @@ public static class PreceptNative {
     if (!GenerateConsoleCtrlEvent(0, 0)) return "GenerateConsoleCtrlEvent error " + Marshal.GetLastWin32Error();
     return null;
   }
-  [StructLayout(LayoutKind.Explicit, CharSet=CharSet.Unicode)] struct INPUT_RECORD {
-    [FieldOffset(0)] public ushort EventType; [FieldOffset(4)] public int KeyDown; [FieldOffset(8)] public ushort Repeat;
-    [FieldOffset(10)] public ushort VirtualKey; [FieldOffset(12)] public ushort ScanCode; [FieldOffset(14)] public char Char;
-    [FieldOffset(16)] public uint ControlState; }
   [DllImport("kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)]
   static extern IntPtr CreateFileW(string name, uint access, uint share, IntPtr sa, uint disposition, uint flags, IntPtr template);
-  [DllImport("kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)]
-  static extern bool WriteConsoleInputW(IntPtr h, INPUT_RECORD[] records, uint count, out uint written);
-  static INPUT_RECORD Key(bool down, ushort vk, char ch, uint state) {
-    var r = new INPUT_RECORD(); r.EventType = 1; r.KeyDown = down ? 1 : 0; r.Repeat = 1; r.VirtualKey = vk; r.Char = ch; r.ControlState = state; return r; }
-  // Types Ctrl+Q into this (shared) console's input buffer for the TUI that is reading it.
-  public static void SendCtrlQ() {
-    IntPtr h = CreateFileW("CONIN$", 0xC0000000, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);
-    if (h == new IntPtr(-1)) throw new Win32Exception();
-    var records = new[] { Key(true, 0x11, '\0', 8), Key(true, 0x51, '\u0011', 8), Key(false, 0x51, '\u0011', 8), Key(false, 0x11, '\0', 0) };
-    uint written; bool ok = WriteConsoleInputW(h, records, (uint)records.Length, out written); CloseHandle(h);
-    if (!ok || written != records.Length) throw new Win32Exception();
-  }
 }
 '@
 [void][PreceptNative]::SetProcessDPIAware()
@@ -273,21 +257,6 @@ Cell 'hwnd-desktop-render-close-daemon-survives' {
     Need ($p.ExitCode -eq 0) "exit $($p.ExitCode)"
     Need ((Q @('health')).code -eq 0) 'daemon stopped with UI'
     "title='$title'; $($vc -join ','); normal close exit 0; daemon healthy"
-}
-Cell 'conpty-tui-render-ctrl-q-exit' {
-    # Shares this console: types Ctrl+Q into the input buffer the TUI reads.
-    $psi = New-Object Diagnostics.ProcessStartInfo (Join-Path $bin 'precept-tui.exe')
-    $psi.Arguments = '--runtime-dir "' + $runtime + '" --endpoint ' + $endpoint + ' --operator'
-    $psi.UseShellExecute = $false
-    $p = [Diagnostics.Process]::Start($psi)
-    Start-Sleep -Seconds 5
-    Need (-not $p.HasExited) "TUI exited early ($($p.ExitCode))"
-    $vc = VcModules $p
-    Need (($vc -join ',') -eq 'VCRUNTIME140.dll@System32') "VC modules: $($vc -join ',')"
-    [PreceptNative]::SendCtrlQ()
-    Need ($p.WaitForExit(10000)) 'TUI did not exit on Ctrl+Q'
-    Need ($p.ExitCode -eq 0) "exit $($p.ExitCode)"
-    "$($vc -join ','); Ctrl+Q exit 0"
 }
 Cell 'graceful-stop-cleans-credentials' {
     Need ($daemonPid -ne 0) 'no daemon'

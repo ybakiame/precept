@@ -31,8 +31,7 @@ with a small, explicit set of writes, not a web dashboard.
   Graphite (default), Harbor, Ledger and Instrument each have light, dark and
   high-contrast modes, and every text role meets 4.5:1 on every surface.
 - Status and meaning always include text, never color, shape or motion alone.
-- Spacing, radii, type and control sizes come from the shared scales. TUI layout
-  snaps to whole cells, with no fractional spacing, radii or shadows.
+- Spacing, radii, type and control sizes come from the shared scales.
 
 ## Shared controls and states
 
@@ -49,8 +48,7 @@ Disabled and loading controls prevent duplicate submission. Destructive actions 
 the danger treatment and deliberate confirmation.
 
 Icons are original outline vectors on a 24×24 grid using `currentColor`; they
-supplement labels. Icon-only controls require accessible names. Terminal surfaces
-use text labels rather than depending on glyphs.
+supplement labels. Icon-only controls require accessible names.
 
 Keyboard shortcuts come from one catalog and are shown and changed in the
 Shortcuts panel (`Ctrl+/`, `F1`, the sidebar's keyboard button), never printed on
@@ -323,9 +321,9 @@ result by itself.
 
 ## Platform and honest states
 
-Desktop and Web share the desktop interaction idiom; TUI adapts the same semantics
-to a keyboard-first character grid. Mobile is not a current target. The Web target
-is offline and synthetic, with no daemon gateway.
+The operator app is a desktop app (Windows, and Linux under Wayland). There is no
+terminal or web interface; the `precept` CLI covers headless use. Mobile is not
+a target.
 
 Keep review (`Suggested`, `Confirmed`, `Rejected`, `Deprecated`), resolution
 (`Applies`, `Masked`, `Conflict`, `Unknown`), connection, lease and evidence origin
@@ -335,6 +333,6 @@ read, turn unknown into zero or relabel an unknown fingerprint as clean.
 
 Reuse shared theme, localization and content bounds. Project data remains in its
 original language. Validate affected behavior with shared headless tests and real
-IPC integration, then inspect the running Desktop and TUI for visual and input
+IPC integration, then inspect the running desktop app for visual and input
 behavior. Headless success is not proof of a mapped window, physical keyboard,
-terminal restoration, IME, screen reader or platform support.
+IME, screen reader or platform support.

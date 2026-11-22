@@ -57,7 +57,7 @@ and refuses if another Sandbox is running. It maps the ZIP and the Microsoft-sig
 Sandbox. There, `sandbox-acceptance.ps1` (Windows PowerShell 5.1) proves the five
 executables fail with `0xC0000135` without the prerequisite, installs it inside the
 Sandbox only, then follows the README: private state directory, daemon in its own
-console, CLI, MCP, HWND, ConPTY, Ctrl+C stop, exact removal. The Sandbox shuts itself
+console, CLI, MCP, HWND, Ctrl+C stop, exact removal. The Sandbox shuts itself
 down; results stay in the ignored `<attempt>-sandbox-NN/output/`. Do not click inside
 the Sandbox window while it runs.
 
@@ -79,7 +79,7 @@ focused lint/tests. It launches **extracted** product binaries against a new pri
 synthetic fixture outside Git (`-PackageDir` is the extraction root holding `Precept/`), explicitly creates a fresh Profile, enables writes
 only to register its allowlisted synthetic project, then revokes them. It tests
 MCP tools/context/refusals, stale capabilities, endpoint collision, normal/crash
-restart and runtime lease release. Desktop and ConPTY reuse existing bounded owned
+restart and runtime lease release. The Desktop reuses existing bounded owned
 workers; no 148-cell matrix, IME/AT certification, model or system changes. A GUI
 capture/resize needs the owned window foreground; the worker never steals focus.
 Click it if requested. Its title nonce/PID bind the exact window. Only synthetic
@@ -104,7 +104,7 @@ A developer-host PASS never satisfies the independent clean-target, second-user,
 offline runtime closure or stable minimum Windows version gate. No VM availability
 means BLOCKED/NOT_RUN, not installing a VM or changing the daily machine.
 
-Standalone Linux x86_64 native Wayland + PTY acceptance remains a separate future gate;
+Standalone Linux x86_64 native Wayland acceptance remains a separate future gate;
 WSLg does not satisfy it. S1-C validates the WSLg integration and a local-only Linux
 package recipe on Ubuntu 24.04 WSL2. Do not infer general Linux support, add a compositor
 matrix, or upload the generated archive as a PR/Release asset.

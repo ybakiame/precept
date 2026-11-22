@@ -124,7 +124,7 @@ pub const REVIEW_DECISIONS: &str = r#"CREATE TABLE acp_review_decisions (
     to_revision INTEGER NOT NULL CHECK (to_revision > 0),
     proposal_digest BLOB NOT NULL CHECK (length(proposal_digest) = 32),
     receipt_commit_sequence INTEGER NOT NULL CHECK (receipt_commit_sequence > 0),
-    channel TEXT NOT NULL CHECK (channel IN ('cli', 'desktop', 'tui')),
+    channel TEXT NOT NULL CHECK (channel IN ('cli', 'desktop')),
     decided_at TEXT NOT NULL,
     note TEXT CHECK (note IS NULL OR length(note) BETWEEN 1 AND 500),
     replaced_by INTEGER CHECK (replaced_by IS NULL OR replaced_by > preference_id),
@@ -682,7 +682,7 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
                 && v.revision == to
                 && !v.deleted
         }))?;
-        valid(["cli", "desktop", "tui"].contains(&string(&r[9])?))?;
+        valid(["cli", "desktop"].contains(&string(&r[9])?))?;
         valid(timestamp_valid(string(&r[10])?))?;
         // Replay the writer's status machine over the ordered decision chain.
         let entry = decision_state

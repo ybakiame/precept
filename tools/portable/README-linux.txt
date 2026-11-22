@@ -10,7 +10,6 @@ Layout
   bin/precept-mcp           MCP stdio server (two project-bound read-only tools); also the
                         trusted context bridge for opted-in sessions
   bin/precept-desktop    native Desktop (GTK 4, Wayland)
-  bin/precept-tui       terminal UI (PTY)
   bin/precept-bridge    helper started by the Windows GUI through wsl.exe (Windows -> WSL2)
   runtime/manifest.json provenance, ELF facts, declared runtime packages, file hashes
   notices/              NOTICE.txt, dependency ledger and license texts
@@ -23,8 +22,7 @@ service, PATH or profile change, root requirement, auto-update or network bootst
 Runtime dependencies (not included; OS-owned libraries are never bundled)
   glibc providing at least {{GLIBC}}, plus these Ubuntu 24.04 packages:
     sudo apt-get install {{RUNTIME_PACKAGES}}
-  The Desktop needs a Wayland session (WSLg provides one); the TUI needs only a
-  terminal. Git is optional and external (live repository evidence only).
+  The Desktop needs a Wayland session (WSLg provides one). Git is optional and external (live repository evidence only).
 
 GPU rendering on WSLg (optional)
   By default Mesa renders the Desktop in software on WSLg, because WSLg's Weston
@@ -53,15 +51,13 @@ Start (replace placeholders; synthetic data for this prototype)
 In another terminal:
   ./bin/precept --runtime-dir <state>/runtime --endpoint <state>/runtime/control.sock health
   ./bin/precept-desktop --runtime-dir <state>/runtime --endpoint <state>/runtime/control.sock --operator
-  ./bin/precept-tui --runtime-dir <state>/runtime --endpoint <state>/runtime/control.sock --operator
 The daemon never creates a Profile or enables writes by itself; it selects one at
 start only when you asked ("Select at start", or profile create/select --remember).
 Add projects (Git repository roots in your home) in the Desktop's Workspaces page or
 with precept project check|add|remove, after enabling writes.
 
 Stop
-Close the Desktop normally; TUI Ctrl+Q exits and restores the terminal. UI close does
-NOT stop the daemon. In the daemon's terminal use Ctrl+C and wait for it to exit.
+Close the Desktop normally. UI close does NOT stop the daemon. In the daemon's terminal use Ctrl+C and wait for it to exit.
 
 Remove
 After all Precept processes exit (Linux lets a running executable be deleted, so check

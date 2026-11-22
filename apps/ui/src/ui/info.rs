@@ -1,7 +1,6 @@
 //! An info button that opens a short explanation in a popover anchored to it,
 //! so long help does not crowd the page. The explanation is supplementary: a
-//! page stays usable without opening it. In a terminal the button is a "(?)"
-//! label; the popover is the same.
+//! page stays usable without opening it.
 use super::prelude::*;
 use nsh_base::popover;
 
@@ -33,12 +32,7 @@ pub fn info(
                 .duration(motion::ms(motion::INSTANT))
                 .hover(move |s| s.bg(palette(model).inset).text_color(palette(model).text))
                 .focus_visible(move |s| s.border_1().border_color(palette(model).primary))
-                .child(icon::glyph(INFO, scale::icon::MD))
-                .child(
-                    text("(?)")
-                        .style_when(move || !terminal(), |s| s.hidden())
-                        .text_size(px(scale::text::CAPTION)),
-                ),
+                .child(icon::glyph(INFO, scale::icon::MD)),
         )
         .child(
             view()

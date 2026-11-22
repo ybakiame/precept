@@ -1,4 +1,4 @@
-//! One read-only presentation and interaction surface for NSH desktop and TUI.
+//! The operator's presentation and interaction surface for the NSH desktop.
 use nsh_base::button;
 use nsh_core::prelude::*;
 use precept_ui_core::{Model, Phase};
@@ -13,9 +13,6 @@ use ui::{icons, tokens};
 pub static DESKTOP_RUNTIME: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();
 fn runtime_lines(locale: precept_ui_core::i18n::Locale) -> Vec<String> {
     use precept_ui_core::i18n::{Msg, tr};
-    if TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed) {
-        return vec!["Backend: NSH / ratatui / crossterm terminal".into()];
-    }
     if let Some((backend, renderer)) = DESKTOP_RUNTIME.get() {
         return vec![
             format!("Actual GTK backend: {backend} · renderer: {renderer}"),
@@ -31,10 +28,8 @@ fn runtime_lines(locale: precept_ui_core::i18n::Locale) -> Vec<String> {
         .into(),
     ]
 }
-pub static TERMINAL_SURFACE: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
 pub static PROBE_STARTED: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
-/// Set by the desktop and terminal binaries: the operator's settings are read
+/// Set by the desktop binary: the operator's settings are read
 /// from and written to the private `settings.toml`. Tests and previews never
 /// touch the developer's settings.
 pub static PERSIST_SETTINGS: std::sync::atomic::AtomicBool =
@@ -66,12 +61,6 @@ fn native(registry: &mut Registry) {
     registry.register::<App>();
 }
 
-#[cfg(target_arch = "wasm32")]
-nsh_platform_web::rust_app!(
-    vec![nsh_base::registry(), registry()],
-    nsh_core::element::Root::of::<App>()
-);
-
 #[cfg(feature = "ipc")]
 pub static INPUTS: std::sync::OnceLock<precept_ui_client::native::Inputs> =
     std::sync::OnceLock::new();
@@ -79,8 +68,6 @@ pub static INPUTS: std::sync::OnceLock<precept_ui_client::native::Inputs> =
 fn load(model: Signal<Model>) {
     #[cfg(feature = "ipc")]
     let inputs = precept_ui_client::native::Inputs::from_connection(&model.get().connection);
-    // NSH's clock uses the host monotonic timer on WASM as well as native;
-    // std::time::Instant panics on wasm32-unknown-unknown.
     let started = nsh_core::time::now();
     let mut request = None;
     model.update(|m| {
@@ -120,9 +107,6 @@ fn load(model: Signal<Model>) {
                     Ok(s)
                 }
             };
-            #[cfg(target_arch = "wasm32")]
-            let now = 0;
-            #[cfg(not(target_arch = "wasm32"))]
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|t| t.as_millis() as u64)
@@ -212,18 +196,13 @@ fn copy_page(model: Signal<Model>) -> bool {
 #[component]
 pub fn App() -> impl IntoElement {
     // Debug-only design-system gallery; never reached from normal navigation.
-    #[cfg(not(target_arch = "wasm32"))]
     if std::env::var_os("PRECEPT_UI_GALLERY").is_some() {
         return ui::gallery::gallery().into_element();
     }
     #[cfg(feature = "ipc")]
     let inputs = INPUTS.get().cloned().unwrap_or_default();
     let mut initial = Model::loading();
-    initial.operator.channel = if TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed) {
-        precept_ui_core::operator::Channel::Tui
-    } else {
-        precept_ui_core::operator::Channel::Desktop
-    };
+    initial.operator.channel = precept_ui_core::operator::Channel::Desktop;
     #[cfg(feature = "ipc")]
     {
         // Saved settings first; explicit launch arguments win over them.
@@ -292,7 +271,7 @@ pub fn App() -> impl IntoElement {
                     initial.connection = saved.clone();
                     initial.connection_draft = saved;
                 }
-                None if !TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed) => {
+                None => {
                     initial.setup_open = true;
                     initial.setup_tab = precept_ui_core::SetupTab::Connection;
                     // The primary workflow: a daemon inside WSL2.
@@ -300,7 +279,6 @@ pub fn App() -> impl IntoElement {
                         initial.connection_draft.target = precept_ui_core::connection::Target::Wsl;
                     }
                 }
-                None => {}
             }
         }
         initial.task_id = inputs.task_id.unwrap_or_default();
@@ -548,8 +526,8 @@ fn console(model: Signal<Model>) -> impl IntoElement {
     );
     // Alt+left/right navigate the review tabs while the operator review workspace
     // is active; otherwise they keep paging the read-only console preferences.
-    // The TUI platform names arrows "ArrowLeft/ArrowRight"; the GTK desktop names
-    // them "Left/Right", so both spellings are the defaults.
+    // Platforms name arrows "ArrowLeft/ArrowRight" or "Left/Right", so both
+    // spellings are the defaults.
     bind(
         "page.next",
         global,
@@ -560,7 +538,6 @@ fn console(model: Signal<Model>) -> impl IntoElement {
         global,
         Box::new(move || review_or_page(model, -1)),
     );
-    #[cfg(not(target_arch = "wasm32"))]
     effect(move || {
         if std::env::var_os("PRECEPT_UI_PROBE").is_some() {
             let current = model.get();

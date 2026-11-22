@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds a local Arch Linux package (pacman) of the Precept daemon side for private
-# dogfooding: preceptd, precept, precept-mcp, precept-bridge, precept-tui and the
+# dogfooding: preceptd, precept, precept-mcp, precept-bridge and the
 # preceptd systemd user unit. Does not install anything; installing is an explicit
 # `sudo pacman -U` by the owner.
 #

@@ -1,5 +1,5 @@
 //! Unix body of the Linux packaged smoke (see the bin root).
-use super::{desktop, tty};
+use super::desktop;
 use precept_ipc::{Access, Client, Error, Location, load_credential, transport};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -578,37 +578,6 @@ pub async fn main() {
         "--operator".into(),
     ];
     {
-        let mut ui = tty::Tty::start(&bins.join("precept-tui"), &ui_args, &out, &focus);
-        ui.wait("Precept");
-        let tui_libs = package.modules(ui.pid(), &out, "pty");
-        // The TUI needs no GUI stack: no GTK, GStreamer or Pango is mapped.
-        assert!(
-            tui_libs
-                .iter()
-                .all(|l| !["gtk", "gst", "pango", "cairo", "wayland"]
-                    .iter()
-                    .any(|g| l.contains(g))),
-            "TUI loaded GUI libraries"
-        );
-        ui.capture(&out.join("pty.txt"));
-        ui.resize(100, 35);
-        ui.wait("Precept");
-        ui.close();
-        let end = Instant::now() + Duration::from_secs(2);
-        loop {
-            let raw = ui.raw.lock().unwrap();
-            if raw.windows(8).any(|w| w == b"\x1b[?1049l")
-                && raw.windows(8).any(|w| w == b"\x1b[?2004l")
-            {
-                break;
-            }
-            drop(raw);
-            assert!(Instant::now() < end, "terminal restore sequences missing");
-            thread::sleep(Duration::from_millis(20));
-        }
-    }
-    record("packaged-pty-render-resize-normal-restore");
-    {
         let nonce = &precept_ipc::operator::operation_id().unwrap()[..16];
         let mut ui = desktop::Desktop::start(
             &bins.join("precept-desktop"),
@@ -743,7 +712,7 @@ pub async fn main() {
 }
 
 /// Before the declared GUI packages are installed: the Desktop must fail with the
-/// loader's explicit missing-library error, while CLI/daemon/MCP/TUI/bridge run.
+/// loader's explicit missing-library error, while CLI/daemon/MCP/bridge run.
 fn missing_deps(bins: &Path, out: &Path) {
     fs::create_dir(out).unwrap();
     let mut results = Vec::new();
@@ -751,7 +720,6 @@ fn missing_deps(bins: &Path, out: &Path) {
         "preceptd",
         "precept",
         "precept-mcp",
-        "precept-tui",
         "precept-bridge",
         "precept-desktop",
     ] {
@@ -1027,7 +995,6 @@ fn remove_owned(root: &Path, files: &[Value]) -> Result<(usize, Vec<&'static str
         "precept",
         "precept-mcp",
         "precept-desktop",
-        "precept-tui",
         "precept-bridge",
     ];
     let allowed = |f: &str| {

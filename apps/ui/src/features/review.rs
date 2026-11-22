@@ -1,6 +1,6 @@
 //! Minimal native operator panel; all business transitions live in shared::Model.
 //! The Queue / Detail / History review workspace, the destructive delete tier and
-//! their motion are rendered here for Desktop and TUI from the one shared Model.
+//! their motion are rendered here from the one shared Model.
 use crate::*;
 use precept_ui_core::{
     connection::Target,
@@ -243,7 +243,6 @@ fn open_delete(model: Signal<Model>, delete_open: Signal<bool>) {
         m.operator.review = None;
     });
     delete_open.set(true);
-    #[cfg(not(target_arch = "wasm32"))]
     if std::env::var_os("PRECEPT_UI_PROBE").is_some() {
         eprintln!(
             "PRECEPT_UI_DIALOG requested_open={} armed={}",
@@ -313,7 +312,6 @@ fn channel_word(locale: Locale, channel: Channel) -> &'static str {
     match channel {
         Channel::Cli => tr(locale, Msg::ChannelCli),
         Channel::Desktop => tr(locale, Msg::ChannelDesktop),
-        Channel::Tui => tr(locale, Msg::ChannelTui),
     }
 }
 /// Binds `shortcut` to focus `reference` in `pane` of the open workspace, and
@@ -381,7 +379,6 @@ fn field(
             .element_ref(&reference)
             .value(move || get(&model.get().operator).to_owned())
             .on_focus(move || {
-                #[cfg(not(target_arch = "wasm32"))]
                 if std::env::var_os("PRECEPT_UI_PROBE").is_some() {
                     eprintln!("PRECEPT_UI_FOCUS shortcut={shortcut}");
                 }
@@ -808,18 +805,6 @@ fn loaded_list(
             .into_element()
     };
     let body = view().gap_2().flex_shrink_0();
-    // A terminal does not draw a list in its parent's scroll: the loaded rows
-    // as they are, with Load more as the way on.
-    if ui::terminal() {
-        let mut plain = view().gap_1();
-        for index in 0..count {
-            plain = plain.child(row(index));
-        }
-        return body
-            .child(plain)
-            .child(view().items_center().child(footer))
-            .into_element();
-    }
     let row = std::rc::Rc::new(row);
     let mut list = virtual_list(count, move |at: Position| {
         let row = row.clone();
@@ -1135,13 +1120,8 @@ fn update_section(
             .font_weight(FontWeight::SEMIBOLD),
         )
         .child(caption(m.word(Msg::UpdatesRuleHelp).into()));
-    if ui::terminal() {
-        section = section
-            .child(caption(format!("− {}", sanitize(&old.value, 600))))
-            .child(caption(format!("+ {}", sanitize(&new.value, 600))));
-    } else {
-        section = section.child(ui::text_diff(model, old.value.clone(), new.value.clone()));
-    }
+    section = section.child(ui::text_diff(model, old.value.clone(), new.value.clone()));
+
     if old.tags != new.tags {
         section = section.child(caption(
             m.word(Msg::UpdatesTags)
@@ -1260,7 +1240,6 @@ pub(crate) fn export_dialog(model: Signal<Model>) -> impl IntoElement {
             // An update shows the change; a new file, its text.
             if p.state == "different"
                 && let Some(current) = p.current.clone()
-                && !ui::terminal()
             {
                 return body
                     .child(ui::text_diff(model, current, p.text))
@@ -1446,7 +1425,7 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
         ..Default::default()
     };
     // The destructive tier's presentation state; the armed identity itself lives
-    // in the shared model so Desktop and TUI enforce one guard.
+    // in the shared model so every view enforces one guard.
     let delete_open = signal(false);
     let retype_ref = element_ref();
     let bind = |id: &'static str, handler: Box<dyn Fn()>| {
@@ -1565,7 +1544,6 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
         }
     });
     effect(move || {
-        #[cfg(not(target_arch = "wasm32"))]
         if std::env::var_os("PRECEPT_UI_PROBE").is_some() {
             let m = model.get();
             let o = &m.operator;
@@ -1759,7 +1737,6 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
         .child(unknown_banner(model));
     let content = view()
         .on_layout(move |_: &Bounds<Points>| {
-            #[cfg(not(target_arch = "wasm32"))]
             if model.get().operator.open && std::env::var_os("PRECEPT_UI_PROBE").is_some() {
                 eprintln!("PRECEPT_NSH_LAYOUT_READY elapsed={:.6}", probe_elapsed());
             }

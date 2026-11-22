@@ -57,7 +57,6 @@ impl IntoElement for Empty {
             // The icon in a tinted disc: the empty state's one focal shape.
             body = body.child(
                 view()
-                    .style_when(terminal, |s| s.hidden())
                     .size(px(scale::disc::LG))
                     .mb_2()
                     .items_center()

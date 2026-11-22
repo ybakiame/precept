@@ -327,7 +327,6 @@ pub fn Gallery() -> impl IntoElement {
     .into_element();
     // `PRECEPT_UI_GALLERY=dialog` opens the form dialog, `=toast` shows a toast,
     // `=sheet` opens the sheet: overlays reviewable in a still capture.
-    #[cfg(not(target_arch = "wasm32"))]
     match std::env::var("PRECEPT_UI_GALLERY").as_deref() {
         Ok("dialog") => form_open.set(true),
         Ok("sheet") => sheet_open.set(true),

@@ -4,4 +4,3 @@ target-*/
 **/dist/
 artifacts/
 vendor/
-web-smoke/node_modules/

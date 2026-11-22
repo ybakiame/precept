@@ -227,7 +227,6 @@ impl IntoElement for AlertDialog {
                     .text_color(move || palette(model).text)
                     .shadow_xl()
                     .on_layout(move |_bounds: &Bounds<Points>| {
-                        #[cfg(not(target_arch = "wasm32"))]
                         if std::env::var_os("PRECEPT_UI_PROBE").is_some() {
                             eprintln!(
                                 "PRECEPT_UI_DIALOG panel_width={} panel_height={}",
@@ -261,7 +260,6 @@ impl IntoElement for AlertDialog {
                     };
                     header = header.child(
                         view()
-                            .style_when(terminal, |s| s.hidden())
                             .size(px(scale::disc::MD))
                             .flex_shrink_0()
                             .items_center()
@@ -316,7 +314,6 @@ impl IntoElement for AlertDialog {
                     .close_on_escape(true)
                     .animation(ModalAnimation::None)
                     .on_open(move || {
-                        #[cfg(not(target_arch = "wasm32"))]
                         if std::env::var_os("PRECEPT_UI_PROBE").is_some() {
                             eprintln!(
                                 "PRECEPT_UI_DIALOG opened=true initial_focus={} focus_bound={}",
@@ -329,7 +326,6 @@ impl IntoElement for AlertDialog {
                         }
                     })
                     .on_layout(move |_bounds: &Bounds<Points>| {
-                        #[cfg(not(target_arch = "wasm32"))]
                         if std::env::var_os("PRECEPT_UI_PROBE").is_some() {
                             eprintln!(
                                 "PRECEPT_UI_DIALOG root_width={} root_height={}",

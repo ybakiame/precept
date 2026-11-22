@@ -341,7 +341,7 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
 
     evidence::begin("wsl-connect-no-implicit-state", "actual-os-input + wsl-cli");
     let started = Instant::now();
-    let mut ui = Ui::Desktop(Box::new(desktop::Desktop::start(
+    let mut ui = Ui(Box::new(desktop::Desktop::start(
         gui,
         &gui_args(&r),
         &nonce,
@@ -354,10 +354,7 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
         json!({"pid":ui.pid(),"nonce":nonce,"target":"wsl"}),
     );
     ui.key("alt+o");
-    ui.wait(
-        "selected=false grant=false busy=false",
-        "No Profile selected",
-    );
+    ui.wait("selected=false grant=false busy=false");
     evidence::event(
         "timing",
         json!({"step":"gui-launch-to-operator-state","ms":started.elapsed().as_millis() as u64}),
@@ -374,11 +371,11 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     );
     ui.field("alt+p", &r.db);
     ui.key("alt+shift+u");
-    ui.wait("review=true", "Prepared operation");
+    ui.wait("review=true");
     ui.capture("wsl-create-review", out);
     timed("profile-create-apply", || {
         ui.key("alt+shift+v");
-        ui.wait("selected=true grant=false busy=false", "Profile selected");
+        ui.wait("selected=true grant=false busy=false");
     });
     assert_eq!(
         (
@@ -390,11 +387,7 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     evidence::finish("PASS");
 
     evidence::begin("wsl-write-grant-enable", "actual-os-input + wsl-cli");
-    ui.apply(
-        "alt+shift+e",
-        "selected=true grant=true busy=false",
-        "Write grant active",
-    );
+    ui.apply("alt+shift+e", "selected=true grant=true busy=false");
     assert_eq!(r.info()["write_enabled"], true);
     evidence::finish("PASS");
 
@@ -421,7 +414,7 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     ui.resize(1080, 1000);
     timed("reconnect-to-ready", || {
         ui.key("ctrl+r");
-        ui.wait("phase=Ready", "alpha");
+        ui.wait("phase=Ready");
     });
     assert_eq!(
         r.wsl.pids("precept-bridge"),
@@ -431,10 +424,10 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     ui.capture("wsl-ready", out);
     ui.field("alt+t", "shared");
     ui.key("alt+shift+h");
-    ui.wait("handoff_revision=1", "Saved synthetic S1-B history");
+    ui.wait("handoff_revision=1");
     ui.capture("wsl-handoff", out);
     ui.key("alt+shift+r");
-    ui.wait("selected=true grant=true busy=false", "Write grant active");
+    ui.wait("selected=true grant=true busy=false");
     evidence::finish("PASS");
 
     evidence::begin("wsl-suggest-inspect-confirm", "actual-os-input + wsl-cli");
@@ -445,11 +438,11 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     timed("suggest-apply", || ui.receipt("alt+shift+s", n));
     assert_eq!(r.rows()[0]["status"], "suggested");
     ui.key("alt+shift+l");
-    ui.wait("rows=1", "#1");
+    ui.wait("rows=1");
     ui.key("alt+shift+i");
-    ui.wait("record_revision=1", "#1");
+    ui.wait("record_revision=1");
     ui.key("alt+shift+y");
-    ui.wait("inspected_id=1 inspected_revision=1", "Show full digest");
+    ui.wait("inspected_id=1 inspected_revision=1");
     ui.capture("wsl-inspected", out);
     ui.receipt("alt+shift+y", n + 1);
     assert_eq!(r.record(1)["status"], "confirmed");
@@ -459,23 +452,23 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     let n = r.commit_sequence() + 1;
     ui.receipt("alt+shift+s", n);
     ui.key("alt+shift+l");
-    ui.wait("rows=2", "#2");
+    ui.wait("rows=2");
     ui.key("alt+shift+i");
     ui.key("alt+shift+i");
-    ui.wait("record_revision=1", "#2");
+    ui.wait("record_revision=1");
     ui.key("alt+shift+n");
-    ui.wait("inspected_id=2 inspected_revision=1", "Show full digest");
+    ui.wait("inspected_id=2 inspected_revision=1");
     ui.receipt("alt+shift+n", n + 1);
     assert_eq!(r.record(2)["status"], "rejected");
     evidence::finish("PASS");
 
     evidence::begin("wsl-deprecate", "actual-os-input + wsl-cli");
     ui.key("alt+shift+l");
-    ui.wait("rows=2", "#2");
+    ui.wait("rows=2");
     ui.key("alt+shift+i");
-    ui.wait("record_revision=2", "#1");
+    ui.wait("record_revision=2");
     ui.key("alt+shift+w");
-    ui.wait("inspected_id=1 inspected_revision=2", "Show full digest");
+    ui.wait("inspected_id=1 inspected_revision=2");
     let n = r.commit_sequence() + 1;
     ui.receipt("alt+shift+w", n);
     assert_eq!(r.record(1)["status"], "deprecated");
@@ -483,19 +476,16 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
 
     evidence::begin("wsl-delete-exact-retype", "actual-os-input + wsl-cli");
     ui.key("alt+shift+l");
-    ui.wait("rows=2", "#2");
+    ui.wait("rows=2");
     ui.key("alt+shift+i");
-    ui.wait("record_revision=3", "#1");
+    ui.wait("record_revision=3");
     ui.key("alt+shift+q");
-    ui.wait("inspected_id=1 inspected_revision=3", "Show full digest");
+    ui.wait("inspected_id=1 inspected_revision=3");
     // A wrong retype never prepares a delete.
     ui.key("alt+shift+q");
-    ui.wait(
-        "PRECEPT_UI_DIALOG opened=true",
-        "Delete project alpha preference #1?",
-    );
+    ui.wait("PRECEPT_UI_DIALOG opened=true");
     ui.text("9");
-    ui.wait("delete_retype_chars=1 delete_ready=false", "Retype");
+    ui.wait("delete_retype_chars=1 delete_ready=false");
     ui.key("enter");
     thread::sleep(Duration::from_millis(300));
     assert_eq!(
@@ -504,20 +494,14 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
         "a wrong retype must not write"
     );
     ui.key("escape");
-    ui.wait("delete_armed=false", "Show full digest");
+    ui.wait("delete_armed=false");
     ui.key("alt+shift+q");
-    ui.wait(
-        "PRECEPT_UI_DIALOG opened=true",
-        "Delete project alpha preference #1?",
-    );
+    ui.wait("PRECEPT_UI_DIALOG opened=true");
     ui.text("1");
-    ui.wait(
-        "delete_retype_chars=1 delete_ready=true",
-        "Deletion armed; apply to commit",
-    );
+    ui.wait("delete_retype_chars=1 delete_ready=true");
     let n = r.commit_sequence() + 1;
     ui.key("alt+shift+v");
-    ui.wait(&format!("receipt={n} "), "Deleted.");
+    ui.wait(&format!("receipt={n} "));
     assert!(r.record(1).is_null(), "record #1 deleted");
     ui.capture("wsl-deleted", out);
     evidence::finish("PASS");
@@ -527,12 +511,12 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
         "actual-os-input + wsl-process-fault + wsl-cli",
     );
     ui.key("alt+shift+r");
-    ui.wait("selected=true grant=true busy=false", "Write grant active");
+    ui.wait("selected=true grant=true busy=false");
     ui.field("alt+k", "uncertain");
     ui.field("alt+w", "synthetic-value");
     ui.field("alt+f", "synthetic-source");
     ui.key("alt+shift+s");
-    ui.wait("review=true", "Prepared operation");
+    ui.wait("review=true");
     let before = r.rows();
     // Freeze the helper, submit, then kill it: the request was written to the
     // bridge but no answer can arrive, so the outcome is unknown to the GUI.
@@ -542,7 +526,7 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     ui.key("alt+shift+v");
     thread::sleep(Duration::from_millis(500));
     r.wsl.ok("/usr/bin/kill", &["-KILL", &helper[0]]);
-    ui.wait("unknown=true", "Outcome unknown");
+    ui.wait("unknown=true");
     ui.capture("wsl-outcome-unknown", out);
     thread::sleep(Duration::from_secs(2));
     assert!(
@@ -554,7 +538,7 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     let n = r.commit_sequence() + 1;
     timed("retry-with-bridge-restart", || {
         ui.key("alt+shift+z");
-        ui.wait(&format!("receipt={n} "), &format!("commit {n}"));
+        ui.wait(&format!("receipt={n} "));
     });
     assert_eq!(r.rows().len(), before.len() + 1, "settled exactly once");
     let restarted = r.wsl.pids("precept-bridge");
@@ -606,11 +590,7 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
 
     evidence::begin("wsl-write-grant-disable", "actual-os-input + wsl-cli");
     ui.key("alt+o");
-    ui.apply(
-        "alt+shift+x",
-        "selected=true grant=false busy=false",
-        "Write grant off",
-    );
+    ui.apply("alt+shift+x", "selected=true grant=false busy=false");
     assert_eq!(r.info()["write_enabled"], false);
     evidence::finish("PASS");
 
@@ -639,7 +619,7 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
         "wsl-daemon-absent-and-explicit-recovery",
         "actual-os-input + wsl-process",
     );
-    let mut ui = Ui::Desktop(Box::new(desktop::Desktop::start(
+    let mut ui = Ui(Box::new(desktop::Desktop::start(
         gui,
         &gui_args(&r),
         &relaunch_nonce,
@@ -648,37 +628,28 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
         &focus,
     )));
     ui.key("alt+o");
-    ui.wait("selected=true grant=false busy=false", "Profile selected");
+    ui.wait("selected=true grant=false busy=false");
     r.stop_daemon();
     // Detected live, with no user action: the watcher's health check over the
     // still-running bridge reports the stopped daemon.
-    ui.wait(
-        "PRECEPT_UI_WSL link=Some(\"WSL daemon not running or not reachable\")",
-        "unavailable",
-    );
+    ui.wait("PRECEPT_UI_WSL link=Some(\"WSL daemon not running or not reachable\")");
     ui.capture("wsl-daemon-stopped-live", out);
     ui.key("ctrl+r");
-    ui.wait("phase=Unavailable", "unavailable");
-    ui.wait(
-        "failure=Some(\"WSL daemon not running or not reachable\")",
-        "unavailable",
-    );
+    ui.wait("phase=Unavailable");
+    ui.wait("failure=Some(\"WSL daemon not running or not reachable\")");
     ui.capture("wsl-daemon-absent", out);
     // Explicit restart: no Profile is adopted; the operator selects it again.
     r.start_daemon();
     assert_eq!(r.info()["selected"], false);
     ui.key("alt+o");
-    ui.wait(
-        "selected=false grant=false busy=false",
-        "No Profile selected",
-    );
+    ui.wait("selected=false grant=false busy=false");
     ui.field("alt+p", &r.db);
     ui.key("alt+shift+m");
-    ui.wait("review=true", "Prepared operation");
+    ui.wait("review=true");
     ui.key("alt+shift+v");
-    ui.wait("selected=true grant=false busy=false", "Profile selected");
+    ui.wait("selected=true grant=false busy=false");
     ui.key("ctrl+r");
-    ui.wait("phase=Ready", "alpha");
+    ui.wait("phase=Ready");
     ui.close();
     evidence::finish("PASS");
 
@@ -715,11 +686,11 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
         let mut args = gui_args(&r);
         args[field] = value;
         let nonce = format!("{:016x}", nanos.wrapping_add(2 + i as u64));
-        let mut ui = Ui::Desktop(Box::new(desktop::Desktop::start(
+        let mut ui = Ui(Box::new(desktop::Desktop::start(
             gui, &args, &nonce, script, out, &focus,
         )));
-        ui.wait("phase=Unavailable", "unavailable");
-        ui.wait(&format!("failure=Some(\"{cause}\")"), "unavailable");
+        ui.wait("phase=Unavailable");
+        ui.wait(&format!("failure=Some(\"{cause}\")"));
         evidence::event("wrong-target-cause", json!({"case":i,"cause":cause}));
         ui.capture(&format!("wsl-wrong-target-{i}"), out);
         ui.close();
@@ -732,7 +703,7 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
     );
     // Connected GUI, then the disposable distribution is terminated (daemon and
     // helper die). The GUI reports the lost bridge by itself, without restarting it.
-    let mut ui = Ui::Desktop(Box::new(desktop::Desktop::start(
+    let mut ui = Ui(Box::new(desktop::Desktop::start(
         gui,
         &gui_args(&r),
         &format!("{:016x}", nanos.wrapping_add(9)),
@@ -741,18 +712,15 @@ pub fn run(gui: &Path, out: &Path, script: &str, wsl: Wsl) {
         &focus,
     )));
     ui.key("alt+o");
-    ui.wait("selected=true grant=false busy=false", "Profile selected");
-    ui.wait("PRECEPT_UI_WSL link=None", "Profile selected");
+    ui.wait("selected=true grant=false busy=false");
+    ui.wait("PRECEPT_UI_WSL link=None");
     let terminated = Command::new(wsl_exe())
         .args(["--terminate", &r.wsl.distribution])
         .status()
         .unwrap();
     assert!(terminated.success());
     r.daemon = None;
-    ui.wait(
-        "PRECEPT_UI_WSL link=Some(\"WSL bridge disconnected\")",
-        "disconnected",
-    );
+    ui.wait("PRECEPT_UI_WSL link=Some(\"WSL bridge disconnected\")");
     ui.capture("wsl-bridge-disconnected-live", out);
     thread::sleep(Duration::from_secs(3));
     assert!(

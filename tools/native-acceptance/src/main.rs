@@ -3,8 +3,6 @@ mod desktop;
 mod evidence;
 mod relay;
 mod scenarios;
-mod screen;
-mod tty;
 mod wsl;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -266,60 +264,24 @@ impl Drop for Fixture {
         self.stop_daemon();
     }
 }
-enum Ui {
-    // Boxed: the bounded worker handle set is larger on Windows than the TTY state.
-    Desktop(Box<desktop::Desktop>),
-    Tty(tty::Tty),
-}
+struct Ui(Box<desktop::Desktop>);
 impl Ui {
     fn key(&mut self, key: &str) {
         evidence::event("os-key", json!({"chord":key}));
         match self {
-            Self::Desktop(d) => d.key(key),
-            Self::Tty(t) => {
-                let b = match key {
-                    "escape" => vec![27],
-                    "enter" => vec![13],
-                    "tab" => vec![9],
-                    "space" => vec![32],
-                    "ctrl+a" => vec![1],
-                    "ctrl+e" => vec![5],
-                    "ctrl+u" => vec![21],
-                    "ctrl+l" => vec![12],
-                    "ctrl+r" => vec![18],
-                    "ctrl+p" => vec![16],
-                    "alt+right" => b"\x1b[1;3C".to_vec(),
-                    "alt+left" => b"\x1b[1;3D".to_vec(),
-                    _ => {
-                        let parts = key.split('+').collect::<Vec<_>>();
-                        assert!(parts[0] == "alt");
-                        let c = parts.last().unwrap().chars().next().unwrap();
-                        vec![
-                            27,
-                            if parts.contains(&"shift") {
-                                c.to_ascii_uppercase() as u8
-                            } else {
-                                c as u8
-                            },
-                        ]
-                    }
-                };
-                t.send(&b);
-            }
+            Self(d) => d.key(key),
         }
     }
     fn text(&mut self, text: &str) {
         // Never record field bytes, paths or proposal values.
         evidence::event("os-text", json!({"characters":text.chars().count()}));
         match self {
-            Self::Desktop(d) => d.text(text),
-            Self::Tty(t) => t.text(text),
+            Self(d) => d.text(text),
         }
     }
     fn field(&mut self, key: &str, text: &str) {
         let focus_after = match self {
-            Self::Desktop(d) => Some(d.lines.lock().unwrap().len()),
-            Self::Tty(_) => None,
+            Self(d) => Some(d.lines.lock().unwrap().len()),
         };
         // A Tab before the focus chord ensures a real focus event even if this
         // input was already focused. Snapshot before both keys: Tab itself may
@@ -328,44 +290,29 @@ impl Ui {
             self.key("tab");
         }
         self.key(key);
-        if let (Self::Desktop(d), Some(after)) = (&self, focus_after) {
+        if let (Self(d), Some(after)) = (&self, focus_after) {
             d.wait_after(&format!("PRECEPT_UI_FOCUS shortcut={key}"), after);
         }
-        match self {
-            // Desktop ctrl+a selects all, so typing replaces the field content.
-            Self::Desktop(_) => self.key("ctrl+a"),
-            // The TUI input reads ctrl+a as cursor-to-start (not select-all), so
-            // move to end (ctrl+e) and kill back to start (ctrl+u) to clear first.
-            // Both are editing keys with no app mod binding; the focused input
-            // consumes them (app mod bindings stay suppressed while editing).
-            Self::Tty(_) => {
-                self.key("ctrl+e");
-                self.key("ctrl+u");
-            }
-        }
+        // ctrl+a selects all, so typing replaces the field content.
+        self.key("ctrl+a");
         self.text(text);
     }
     /// Activate a rendered button using only its anchor chord, Tab stops and
     /// Enter/Space. Disabled and concealed controls are skipped.
-    /// Counts are calibrated independently on the real PTY, ConPTY, GTK and HWND
-    /// chains. Load/digest and queue-row stops respectively: PTY 3/4, ConPTY 4/5,
-    /// GTK 3/3, HWND 3/4. Read-only UI Automation confirms
-    /// HWND's load action precedes the queue row; VT traces retain the terminal's
-    /// actual per-stop focus attributes. Neither observer actuates a control.
+    /// Counts are calibrated independently on the real GTK and HWND chains.
+    /// Load/digest and queue-row stops respectively: GTK 3/3, HWND 3/4.
+    /// Read-only UI Automation confirms HWND's load action precedes the queue
+    /// row. The observer never actuates a control.
     fn activate(
         &mut self,
         (anchor, activation): (&str, &str),
-        tty_tabs: (usize, usize),
         desktop_tabs: (usize, usize),
         marker: &str,
-        text: &str,
         out: &Path,
     ) {
         let tabs = match self {
-            Self::Desktop(_) if cfg!(windows) => desktop_tabs.1,
-            Self::Desktop(_) => desktop_tabs.0,
-            Self::Tty(_) if cfg!(windows) => tty_tabs.1,
-            Self::Tty(_) => tty_tabs.0,
+            Self(_) if cfg!(windows) => desktop_tabs.1,
+            Self(_) => desktop_tabs.0,
         };
         let trace = std::env::var_os("PRECEPT_S5_KEYBOARD_TRACE").is_some();
         self.key(anchor);
@@ -385,12 +332,12 @@ impl Ui {
             }
         }
         self.key(activation);
-        self.wait(marker, text);
+        self.wait(marker);
     }
     /// Move the review tabs (Queue / Detail / History) by a relative delta with
-    /// the global alt+left/right review chord on both surfaces. The app registers
-    /// both the TUI ("alt+ArrowLeft/Right") and GTK desktop ("alt+Left/Right") key
-    /// spellings, so the same chord reaches the shared tab handler on either.
+    /// the global alt+left/right review chord. The app registers both the
+    /// "alt+ArrowLeft/Right" and "alt+Left/Right" key spellings, so the chord
+    /// reaches the tab handler on every platform.
     fn tab_nav(&mut self, delta: i32) {
         let steps = delta.unsigned_abs();
         let chord = if delta > 0 { "alt+right" } else { "alt+left" };
@@ -398,37 +345,29 @@ impl Ui {
             self.key(chord);
         }
     }
-    fn wait(&self, marker: &str, text: &str) {
+    fn wait(&self, marker: &str) {
         match self {
-            Self::Desktop(d) => {
+            Self(d) => {
                 d.wait(marker);
                 evidence::event(
                     "surface-observation",
                     json!({"observer":"owned-GUI-probe","marker":marker,"pixels_require_independent_review":true}),
                 );
             }
-            Self::Tty(t) => {
-                t.wait(text);
-                evidence::event(
-                    "surface-observation",
-                    json!({"observer":"actual-terminal-frame","visible_ui_text":text}),
-                );
-            }
         }
     }
-    fn apply(&mut self, key: &str, marker: &str, text: &str) {
+    fn apply(&mut self, key: &str, marker: &str) {
         self.key(key);
-        self.wait("review=true", "Prepared operation");
+        self.wait("review=true");
         self.key("alt+shift+v");
-        self.wait(marker, text);
+        self.wait(marker);
     }
     fn receipt(&mut self, key: &str, n: i64) {
-        self.apply(key, &format!("receipt={n} "), &format!("commit {n}"));
+        self.apply(key, &format!("receipt={n} "));
     }
     fn capture(&mut self, name: &str, out: &Path) {
         let suffix = match self {
-            Self::Desktop(_) => "png",
-            Self::Tty(_) => "txt",
+            Self(_) => "png",
         };
         let directory = out.file_name().unwrap().to_string_lossy();
         let artifact = if directory.starts_with("s3-") {
@@ -438,17 +377,7 @@ impl Ui {
         };
         evidence::event("capture-attempt", json!({"artifact":&artifact}));
         match self {
-            Self::Desktop(d) => d.capture(name, out),
-            Self::Tty(t) => {
-                t.capture(&out.join(format!("{name}.txt")));
-                if name.starts_with("keyboard-") {
-                    fs::write(
-                        out.join(format!("{name}.vt")),
-                        t.raw.lock().unwrap().as_slice(),
-                    )
-                    .unwrap();
-                }
-            }
+            Self(d) => d.capture(name, out),
         }
         evidence::event(
             "capture",
@@ -457,22 +386,19 @@ impl Ui {
     }
     fn resize(&mut self, w: u16, h: u16) {
         match self {
-            Self::Desktop(d) => d.resize(w, h),
-            Self::Tty(t) => t.resize(w, h),
+            Self(d) => d.resize(w, h),
         }
     }
     fn close(&mut self) {
         match self {
-            Self::Desktop(d) => d.close(),
-            Self::Tty(t) => t.close(),
+            Self(d) => d.close(),
         }
     }
 }
 impl Ui {
     fn pid(&self) -> u32 {
         match self {
-            Self::Desktop(d) => d.pid(),
-            Self::Tty(t) => t.pid(),
+            Self(d) => d.pid(),
         }
     }
     fn action(&mut self, key: &str, focus: &Path, anchor: Option<&str>) {
@@ -532,11 +458,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     let nonce = format!("{hash:016x}");
     let nsh = repo.join("apps/target/debug").join(format!(
         "precept-nsh-{}{}",
-        if surface == "desktop" {
-            "native"
-        } else {
-            "tui"
-        },
+        "native",
         std::env::consts::EXE_SUFFIX
     ));
     let appearance = match std::env::var("PRECEPT_S5_APPEARANCE").as_deref() {
@@ -553,30 +475,23 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         "--appearance".into(),
         appearance.into(),
     ];
-    let mut ui = if surface == "desktop" {
-        Ui::Desktop(Box::new(desktop::Desktop::start(
-            &nsh,
-            &args,
-            &nonce,
-            window_script,
-            out,
-            &f.focus,
-        )))
-    } else {
-        Ui::Tty(tty::Tty::start(&nsh, &args, out, &f.focus))
-    };
+    let mut ui = Ui(Box::new(desktop::Desktop::start(
+        &nsh,
+        &args,
+        &nonce,
+        window_script,
+        out,
+        &f.focus,
+    )));
     evidence::event("owned-ui", json!({"pid":ui.pid(),"nonce":nonce}));
     ui.key("alt+o");
-    ui.wait(
-        "selected=false grant=false busy=false",
-        "No Profile selected",
-    );
+    ui.wait("selected=false grant=false busy=false");
     ui.field("alt+p", f.db.to_str().unwrap());
     ui.key("alt+shift+u");
-    ui.wait("review=true", "Prepared operation");
+    ui.wait("review=true");
     ui.capture("create-review", out);
     ui.key("alt+shift+v");
-    ui.wait("selected=true grant=false busy=false", "Profile selected");
+    ui.wait("selected=true grant=false busy=false");
     assert_eq!(f.query(&["profile", "info"]).1["write_enabled"], false);
     let competitor_run = f.root.path().join("competitor");
     let competitor_endpoint = if cfg!(windows) {
@@ -622,7 +537,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         )
         .0
     );
-    ui.apply("alt+shift+e", "error=Busy", "Busy");
+    ui.apply("alt+shift+e", "error=Busy");
     ui.capture("busy", out);
     assert_eq!(f.query(&["profile", "info"]).1["write_enabled"], false);
     assert!(
@@ -635,12 +550,8 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     );
     drop(competitor);
     ui.key("alt+shift+r");
-    ui.wait("selected=true grant=false busy=false", "Write grant off");
-    ui.apply(
-        "alt+shift+e",
-        "selected=true grant=true busy=false",
-        "Write grant active",
-    );
+    ui.wait("selected=true grant=false busy=false");
+    ui.apply("alt+shift+e", "selected=true grant=true busy=false");
     assert_eq!(f.query(&["profile", "info"]).1["write_enabled"], true);
     evidence::finish("PASS");
     for name in ["alpha", "beta"] {
@@ -666,12 +577,9 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     // The review workspace renders below the preference records; give both
     // surfaces enough height that the Queue/Detail/History content and the
     // destructive tier stay inside the captured viewport. Restored below.
-    ui.resize(
-        if surface == "desktop" { 1080 } else { 160 },
-        if surface == "desktop" { 1000 } else { 90 },
-    );
+    ui.resize(1080, 1000);
     ui.key("ctrl+r");
-    ui.wait("phase=Ready", "alpha");
+    ui.wait("phase=Ready");
     ui.field("alt+k", "editor");
     ui.field("alt+w", "synthetic-value");
     ui.field("alt+f", "synthetic-source");
@@ -682,11 +590,11 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     );
     assert_eq!(f.rows()[0]["status"], "suggested");
     ui.key("alt+shift+l");
-    ui.wait("rows=1", "#1");
+    ui.wait("rows=1");
     ui.key("alt+shift+i");
-    ui.wait("record_revision=1", "#1");
+    ui.wait("record_revision=1");
     ui.key("alt+shift+y");
-    ui.wait("inspected_id=1 inspected_revision=1", "Show full digest");
+    ui.wait("inspected_id=1 inspected_revision=1");
     let exact = f.query(&[
         "review-inspect",
         "1",
@@ -724,17 +632,17 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     evidence::begin("reject", "actual-os-input + independent-cli");
     ui.receipt("alt+shift+s", 6);
     ui.key("alt+shift+l");
-    ui.wait("rows=2", "#2");
+    ui.wait("rows=2");
     ui.key("alt+shift+i");
     ui.key("alt+shift+i");
-    ui.wait("record_revision=1", "#2");
+    ui.wait("record_revision=1");
     ui.key("alt+shift+n");
-    ui.wait("inspected_id=2 inspected_revision=1", "Show full digest");
+    ui.wait("inspected_id=2 inspected_revision=1");
     ui.receipt("alt+shift+n", 7);
     assert_eq!(f.rows()[1]["status"], "rejected");
     evidence::finish("PASS");
     fs::write(f.root.path().join("drop-next"), b"synthetic fault").unwrap();
-    ui.apply("alt+shift+s", "unknown=true", "Outcome unknown");
+    ui.apply("alt+shift+s", "unknown=true");
     ui.capture("outcome-unknown", out);
     let before = f.rows();
     assert_eq!(before.len(), 3);
@@ -747,7 +655,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     );
     assert!(!f.root.path().join("replayed-receipt.json").exists());
     ui.key("alt+shift+z");
-    ui.wait("receipt=8 ", "commit 8");
+    ui.wait("receipt=8 ");
     assert_eq!(f.rows(), before);
     let dropped: Value =
         serde_json::from_slice(&fs::read(f.root.path().join("dropped-receipt.json")).unwrap())
@@ -766,21 +674,21 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     )
     .unwrap();
     ui.key("alt+shift+r");
-    ui.wait("selected=true grant=true busy=false", "Write grant active");
+    ui.wait("selected=true grant=true busy=false");
     ui.key("alt+shift+l");
-    ui.wait("rows=3", "#3");
+    ui.wait("rows=3");
     ui.key("alt+shift+i");
     ui.key("alt+shift+i");
     ui.key("alt+shift+i");
-    ui.wait("record_revision=1", "#3");
+    ui.wait("record_revision=1");
     ui.key("alt+shift+y");
-    ui.wait("inspected_id=3 inspected_revision=1", "Show full digest");
+    ui.wait("inspected_id=3 inspected_revision=1");
     ui.key("alt+shift+y");
     evidence::begin(
         "stale-revision",
         "actual-os-input + independent-concurrent-cli",
     );
-    ui.wait("review=true", "Prepared operation");
+    ui.wait("review=true");
     // S1 made `--proposal-digest` mandatory for every decision. Bind the exact
     // persisted digest of record #3 so the competing CLI reject names the same
     // proposal the UI prepared; a stale or absent digest is a clap usage error.
@@ -802,19 +710,19 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         ],
     );
     ui.key("alt+shift+v");
-    ui.wait("error=Conflict", "Conflict");
+    ui.wait("error=Conflict");
     assert_eq!(f.rows()[2]["status"], "rejected");
     ui.capture("stale-conflict", out);
     evidence::finish("PASS");
     ui.key("alt+shift+r");
-    ui.wait("selected=true grant=true busy=false", "Write grant active");
+    ui.wait("selected=true grant=true busy=false");
     ui.key("alt+shift+s");
-    ui.wait("review=true", "Prepared operation");
+    ui.wait("review=true");
     ui.key("escape");
     ui.key("alt+o");
-    ui.wait("selected=true grant=true busy=false", "Write grant active");
+    ui.wait("selected=true grant=true busy=false");
     ui.key("alt+shift+s");
-    ui.wait("review=true", "Prepared operation");
+    ui.wait("review=true");
     ui.key("ctrl+p");
     thread::sleep(Duration::from_millis(500));
     ui.key("ctrl+p");
@@ -824,7 +732,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     assert_eq!(f.rows().len(), 3);
     ui.field("alt+t", "shared");
     ui.key("alt+shift+h");
-    ui.wait("handoff_revision=1", "Saved synthetic history");
+    ui.wait("handoff_revision=1");
     ui.capture("saved-handoff", out);
     let saved = f.query(&["handoff-record", "alpha", "shared"]).1;
     assert_eq!(saved["record"]["revision"], 1);
@@ -835,7 +743,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
             .contains("NOT_RUN")
     );
     ui.key("alt+shift+r");
-    ui.wait("selected=true grant=true busy=false", "Write grant active");
+    ui.wait("selected=true grant=true busy=false");
     // ---- S2 review workspace: Queue / Detail / History tabs, deprecate and the
     // destructive delete tier, driven by real chords on both surfaces. A dedicated
     // suggestion (#4) walks the whole lifecycle and demonstrates atomic demotion
@@ -880,49 +788,31 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         "tab-enter-space-alt",
         "actual-os-input + owned-surface-render",
     );
-    ui.activate(("alt+f", "enter"), (3, 4), (3, 3), "queue=1", "#4", out);
+    ui.activate(("alt+f", "enter"), (3, 3), "queue=1", out);
     ui.capture("review-queue", out);
     // Open the exact record from its queue row; Detail auto-selects and inspects.
     ui.activate(
         ("alt+f", "enter"),
-        (4, 5),
         (3, 4),
         "inspected_id=4 inspected_revision=1",
-        "Show full digest",
         out,
     );
-    ui.wait("peer_total=1", "Deprecates 1 same-key confirmed records");
+    ui.wait("peer_total=1");
     ui.capture("review-detail", out);
     // Exercise the same global Alt+left/right review chords on both surfaces.
     ui.tab_nav(1);
-    ui.wait(
-        "review_tab=History",
-        "No decisions recorded for this record",
-    );
+    ui.wait("review_tab=History");
     ui.capture("review-history-empty", out);
     ui.tab_nav(-1);
-    ui.wait("review_tab=Detail", "Show full digest");
+    ui.wait("review_tab=Detail");
     ui.tab_nav(-1);
-    ui.wait("review_tab=Queue", "#4");
+    ui.wait("review_tab=Queue");
     ui.tab_nav(1);
-    ui.wait("review_tab=Detail", "Show full digest");
+    ui.wait("review_tab=Detail");
     // The digest is a 16-hex prefix until an explicit expand reveals the whole.
     let digest4 = f.digest(id4);
-    ui.activate(
-        ("alt+f", "space"),
-        (3, 4),
-        (3, 3),
-        "digest_expanded=true",
-        "Collapse digest",
-        out,
-    );
+    ui.activate(("alt+f", "space"), (3, 3), "digest_expanded=true", out);
     ui.capture("review-digest-expanded", out);
-    if let Ui::Tty(t) = &ui {
-        assert!(
-            t.state.lock().unwrap().text().contains(&digest4),
-            "expanded proposal digest not rendered"
-        );
-    }
     evidence::finish("PASS");
     // Confirm the suggestion through the shared chord; it becomes confirmed.
     evidence::begin("confirm-peer-demotion", "actual-os-input + independent-cli");
@@ -983,15 +873,15 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     evidence::begin("history-bounded", "actual-os-input + independent-cli");
     // decision history, then prepare/apply the deprecate chord.
     ui.key("alt+shift+l");
-    ui.wait("rows=4", "#4");
+    ui.wait("rows=4");
     for _ in 0..4 {
         ui.key("alt+shift+i");
     }
     // A decision chord without a current inspect performs only that read.
     ui.key("alt+shift+w");
-    ui.wait("inspected_id=4 inspected_revision=2", "Show full digest");
+    ui.wait("inspected_id=4 inspected_revision=2");
     ui.tab_nav(1);
-    ui.wait("review_tab=History", "Channel is client-asserted");
+    ui.wait("review_tab=History");
     ui.capture("review-history-confirm", out);
     let inspect = f
         .query(&[
@@ -1017,10 +907,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     evidence::finish("PASS");
     evidence::begin("deprecate", "actual-os-input + independent-cli");
     ui.tab_nav(-1);
-    ui.wait(
-        "review_tab=Detail",
-        "Deprecation makes the record inactive in agent effective context.",
-    );
+    ui.wait("review_tab=Detail");
     let n = f.commit_sequence() + 1;
     ui.receipt("alt+shift+w", n);
     assert_eq!(f.record(id4)["status"], "deprecated");
@@ -1029,12 +916,12 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     evidence::finish("PASS");
     // Delete through the destructive tier. Re-inspect the deprecated record first.
     ui.key("alt+shift+l");
-    ui.wait("rows=4", "#4");
+    ui.wait("rows=4");
     for _ in 0..4 {
         ui.key("alt+shift+i");
     }
     ui.key("alt+shift+q");
-    ui.wait("inspected_id=4 inspected_revision=3", "Show full digest");
+    ui.wait("inspected_id=4 inspected_revision=3");
     let inspect = f
         .query(&[
             "review-inspect",
@@ -1054,11 +941,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         .map(|d| d["action"].as_str().unwrap())
         .collect();
     assert!(actions.contains(&"confirm") && actions.contains(&"deprecate"));
-    let channel = if surface == "desktop" {
-        "desktop"
-    } else {
-        "tui"
-    };
+    let channel = "desktop";
     for (action, from, to) in [("confirm", 1, 2), ("deprecate", 2, 3)] {
         let decision = inspect["decisions"]
             .as_array()
@@ -1120,21 +1003,12 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     let seq_before = f.commit_sequence();
     evidence::begin("delete-wrong-id", "actual-os-input + independent-cli");
     // Wrong retype: the tier shows the mismatch and Enter prepares nothing.
-    ui.resize(
-        if surface == "desktop" { 640 } else { 80 },
-        if surface == "desktop" { 480 } else { 30 },
-    );
+    ui.resize(640, 480);
     ui.key("alt+shift+q");
-    ui.wait(
-        "PRECEPT_UI_DIALOG opened=true initial_focus=true focus_bound=true",
-        "Delete project alpha preference #4?",
-    );
+    ui.wait("PRECEPT_UI_DIALOG opened=true initial_focus=true focus_bound=true");
     ui.capture("review-delete-compact", out);
     ui.text("999");
-    ui.wait(
-        "delete_retype_chars=3 delete_ready=false",
-        "The typed ID does not match",
-    );
+    ui.wait("delete_retype_chars=3 delete_ready=false");
     ui.key("enter");
     ui.capture("review-delete-refused", out);
     assert_eq!(
@@ -1149,23 +1023,13 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     // Escape cancels only the destructive tier and discards its retype.
     ui.key("escape");
     match &ui {
-        Ui::Desktop(d) => d.wait("delete_armed=false"),
-        Ui::Tty(t) => t.wait_gone("Delete project alpha preference #4?"),
+        Ui(d) => d.wait("delete_armed=false"),
     }
-    ui.resize(
-        if surface == "desktop" { 1080 } else { 160 },
-        if surface == "desktop" { 1000 } else { 90 },
-    );
+    ui.resize(1080, 1000);
     // Blind Enter on a fresh empty retype field also prepares nothing.
     ui.key("alt+shift+q");
-    ui.wait(
-        "PRECEPT_UI_DIALOG opened=true initial_focus=true focus_bound=true",
-        "Delete project alpha preference #4?",
-    );
-    ui.wait(
-        "delete_retype_chars=0 delete_ready=false",
-        "Type the ID exactly to arm deletion",
-    );
+    ui.wait("PRECEPT_UI_DIALOG opened=true initial_focus=true focus_bound=true");
+    ui.wait("delete_retype_chars=0 delete_ready=false");
     evidence::finish("PASS");
     evidence::begin("delete-blind-enter", "actual-os-input + independent-cli");
     ui.key("enter");
@@ -1176,28 +1040,19 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     );
     assert_eq!(f.record(id4)["status"], "deprecated");
     ui.key("escape");
-    ui.wait("delete_armed=false", "Show full digest");
+    ui.wait("delete_armed=false");
     evidence::finish("PASS");
     evidence::begin("delete-exact-id", "actual-os-input + independent-cli");
     // POSITIVE: arm with the exact ID and apply; only the exact retype prepares
     // and commits the delete.
     ui.key("alt+shift+q");
-    ui.wait(
-        "PRECEPT_UI_DIALOG opened=true initial_focus=true focus_bound=true",
-        "Delete project alpha preference #4?",
-    );
+    ui.wait("PRECEPT_UI_DIALOG opened=true initial_focus=true focus_bound=true");
     ui.text("4");
-    ui.wait(
-        "delete_retype_chars=1 delete_ready=true",
-        "Deletion armed; apply to commit",
-    );
+    ui.wait("delete_retype_chars=1 delete_ready=true");
     ui.capture("review-delete-armed", out);
     let n = f.commit_sequence() + 1;
     ui.key("alt+shift+v");
-    ui.wait(
-        &format!("receipt={n} "),
-        "Deleted. Content and decision history are gone; receipts remain identity-only.",
-    );
+    ui.wait(&format!("receipt={n} "));
     let delete_receipt: Value =
         serde_json::from_slice(&fs::read(f.root.path().join("last-receipt.json")).unwrap())
             .unwrap();
@@ -1258,22 +1113,13 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     evidence::finish("PASS");
     // ---- end S2 review workspace ----
     // The tall viewport stays until the existing compact/restore resize below
-    // returns the surface to its normal size; a height-only resize here redraws
-    // the TUI with collapsed spaces.
-    ui.apply(
-        "alt+shift+x",
-        "selected=true grant=false busy=false",
-        "Write grant off",
-    );
+    // returns the surface to its normal size.
+    ui.apply("alt+shift+x", "selected=true grant=false busy=false");
     assert_eq!(f.query(&["profile", "info"]).1["write_enabled"], false);
-    ui.apply(
-        "alt+shift+e",
-        "selected=true grant=true busy=false",
-        "Write grant active",
-    );
+    ui.apply("alt+shift+e", "selected=true grant=true busy=false");
     assert!(f.query(&["profile", "write", "disable"]).0);
     ui.field("alt+k", "editor");
-    ui.apply("alt+shift+s", "error=Unauthorized", "Unauthorized");
+    ui.apply("alt+shift+s", "error=Unauthorized");
     assert_eq!(f.rows().len(), 3);
     ui.capture("revoked-grant", out);
     for (i, section) in [
@@ -1289,7 +1135,8 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
         let n = i + 1;
         ui.key(&format!("alt+{n}"));
         thread::sleep(Duration::from_millis(150));
-        if let Ui::Desktop(d) = &ui {
+        {
+            let Ui(d) = &ui;
             d.wait(&format!("section={section}"));
         }
         ui.capture(&format!("page-{n}"), out);
@@ -1302,57 +1149,36 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     ui.key("ctrl+l");
     ui.key("alt+o");
     thread::sleep(Duration::from_millis(250));
-    ui.resize(
-        if surface == "desktop" { 640 } else { 80 },
-        if surface == "desktop" { 480 } else { 30 },
-    );
+    ui.resize(640, 480);
     ui.capture("compact-zh", out);
     // Inspect real retained content/history in zh-CN, then prove the compact
     // destructive disclosure/refusal without another preference write.
-    ui.resize(
-        if surface == "desktop" { 1080 } else { 160 },
-        if surface == "desktop" { 1000 } else { 90 },
-    );
+    ui.resize(1080, 1000);
     ui.key("alt+shift+l");
-    ui.wait("rows=3", "#1");
+    ui.wait("rows=3");
     ui.key("alt+shift+i");
     ui.key("alt+shift+w");
-    ui.wait(
-        "inspection_current=true inspected_id=1 inspected_revision=3",
-        "修订: 3",
-    );
+    ui.wait("inspection_current=true inspected_id=1 inspected_revision=3");
     ui.capture("review-zh-detail", out);
     ui.tab_nav(1);
-    ui.wait("review_tab=History", "渠道由客户端声明");
+    ui.wait("review_tab=History");
     ui.capture("review-zh-history", out);
     ui.key("alt+shift+e");
-    ui.wait("review=true", "操作已准备，尚未发送写入");
+    ui.wait("review=true");
     ui.key("alt+shift+v");
-    ui.wait("selected=true grant=true busy=false", "写入授权有效");
+    ui.wait("selected=true grant=true busy=false");
     // A grant-epoch change deliberately clears selection and inspection.
     ui.key("alt+shift+l");
-    ui.wait("rows=3", "#1");
+    ui.wait("rows=3");
     ui.key("alt+shift+i");
     ui.key("alt+shift+w");
-    ui.wait(
-        "inspection_current=true inspected_id=1 inspected_revision=3",
-        "修订: 3",
-    );
-    ui.resize(
-        if surface == "desktop" { 640 } else { 80 },
-        if surface == "desktop" { 480 } else { 30 },
-    );
+    ui.wait("inspection_current=true inspected_id=1 inspected_revision=3");
+    ui.resize(640, 480);
     ui.key("alt+shift+q");
-    ui.wait(
-        "PRECEPT_UI_DIALOG opened=true initial_focus=true focus_bound=true",
-        "偏好 #1？",
-    );
+    ui.wait("PRECEPT_UI_DIALOG opened=true initial_focus=true focus_bound=true");
     let zh_sequence = f.commit_sequence();
     ui.text("999");
-    ui.wait(
-        "delete_retype_chars=3 delete_ready=false",
-        "输入的 ID 不匹配",
-    );
+    ui.wait("delete_retype_chars=3 delete_ready=false");
     ui.key("enter");
     ui.capture("review-zh-delete-refused", out);
     assert_eq!(f.commit_sequence(), zh_sequence);
@@ -1360,25 +1186,17 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     assert_eq!(f.record(1)["status"], "deprecated");
     ui.key("escape");
     match &ui {
-        Ui::Desktop(d) => d.wait("delete_armed=false"),
-        Ui::Tty(t) => t.wait_gone("偏好 #1？"),
+        Ui(d) => d.wait("delete_armed=false"),
     }
-    ui.resize(
-        if surface == "desktop" { 1080 } else { 160 },
-        if surface == "desktop" { 760 } else { 50 },
-    );
+    ui.resize(1080, 760);
     ui.key("ctrl+l");
-    ui.apply(
-        "alt+shift+x",
-        "selected=true grant=false busy=false",
-        "Write grant off",
-    );
+    ui.apply("alt+shift+x", "selected=true grant=false busy=false");
     ui.key("alt+shift+r");
-    ui.wait("selected=true grant=false busy=false", "Write grant off");
+    ui.wait("selected=true grant=false busy=false");
     f.stop_daemon();
     evidence::begin("disconnect", "actual-os-input + owned-daemon-stop");
     ui.key("alt+shift+r");
-    ui.wait("error=Unavailable", "Unavailable");
+    ui.wait("error=Unavailable");
     ui.capture("disconnected", out);
     evidence::finish("PASS");
     evidence::begin(
@@ -1388,7 +1206,7 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
     ui.close();
     let backend =
         match &ui {
-            Ui::Desktop(d) => {
+            Ui(d) => {
                 let lines = d.lines.lock().unwrap();
                 fs::write(out.join("desktop-probes.log"), lines.join("\n")).unwrap();
                 if cfg!(unix) {
@@ -1405,15 +1223,6 @@ fn run(surface: &str, out: &Path, window_script: &str, development: bool) -> Val
                 } else {
                     "native Windows HWND"
                 }
-            }
-            Ui::Tty(t) => {
-                let raw = t.raw.lock().unwrap();
-                fs::write(out.join("terminal.vt"), &*raw).unwrap();
-                assert!(
-                    raw.windows(8).any(|s| s == b"\x1b[?1049l"),
-                    "alternate screen restoration missing"
-                );
-                if cfg!(windows) { "ConPTY" } else { "PTY" }
             }
         };
     evidence::finish("PASS");
@@ -1435,7 +1244,7 @@ fn main() {
         return;
     }
     assert!(a.len() >= 2, "surface and NEW_OUTPUT required");
-    assert!(["desktop", "tui"].contains(&a[0].as_str()));
+    assert_eq!(a[0], "desktop");
     let out = PathBuf::from(&a[1]);
     assert!(out.is_absolute());
     let repo = std::env::current_dir().unwrap();
@@ -1473,7 +1282,7 @@ fn main() {
     fs::create_dir(&out).expect("new report directory required");
     let nsh = repo.join("apps/target/debug").join(format!(
         "precept-nsh-{}{}",
-        if a[0] == "desktop" { "native" } else { "tui" },
+        "native",
         std::env::consts::EXE_SUFFIX
     ));
     let binary_paths = [
@@ -1502,12 +1311,7 @@ fn main() {
     if baseline.is_err() {
         evidence::finish("FAIL");
     }
-    scenarios::run(
-        &a[0],
-        &out,
-        a.get(2).map_or("", String::as_str),
-        only.as_deref(),
-    );
+    scenarios::run(&out, a.get(2).map_or("", String::as_str), only.as_deref());
     assert_eq!(
         binary_fingerprints(&binary_paths),
         binaries,

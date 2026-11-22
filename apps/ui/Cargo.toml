@@ -11,7 +11,6 @@ crate-type = ["rlib", "cdylib"]
 [features]
 ipc = ["dep:precept-ui-client"]
 native = ["ipc", "dep:nsh-platform-linux", "dep:nsh-platform-macos", "dep:nsh-platform-windows"]
-tui = ["ipc", "dep:nsh-platform-tui", "dep:ratatui-core", "dep:ratatui-crossterm", "dep:crossterm"]
 
 [dependencies]
 serde_json = "1"
@@ -21,11 +20,7 @@ precept-ui-client = { path = "../client", optional = true }
 # behind the platform crates' `svg` feature (default off here): the native
 # platforms enable it, or every icon silently draws nothing.
 nsh-core = { git = "https://github.com/longbridge/nsh", rev = "554163758e30d2f62f814096a6327937dcb4fe49" }
-nsh-base = { git = "https://github.com/longbridge/nsh", rev = "554163758e30d2f62f814096a6327937dcb4fe49", default-features = false, features = ["rich-editor"] }
-nsh-platform-tui = { git = "https://github.com/longbridge/nsh", rev = "554163758e30d2f62f814096a6327937dcb4fe49", default-features = false, features = ["run-app"], optional = true }
-ratatui-core = { version = "=0.1.2", optional = true }
-ratatui-crossterm = { version = "=0.1.2", optional = true }
-crossterm = { version = "0.29", optional = true }
+nsh-base = { git = "https://github.com/longbridge/nsh", rev = "554163758e30d2f62f814096a6327937dcb4fe49", default-features = false, features = ["editor", "highlight", "rich-editor"] }
 
 [target.'cfg(target_os="linux")'.dependencies]
 nsh-platform-linux = { git = "https://github.com/longbridge/nsh", rev = "554163758e30d2f62f814096a6327937dcb4fe49", default-features = false, features = ["svg"], optional = true }
@@ -34,8 +29,6 @@ nsh-platform-macos = { git = "https://github.com/longbridge/nsh", rev = "5541637
 [target.'cfg(target_os="windows")'.dependencies]
 nsh-platform-windows = { git = "https://github.com/longbridge/nsh", rev = "554163758e30d2f62f814096a6327937dcb4fe49", default-features = false, features = ["svg"], optional = true }
 
-[target.'cfg(target_arch="wasm32")'.dependencies]
-nsh-platform-web = { git = "https://github.com/longbridge/nsh", rev = "554163758e30d2f62f814096a6327937dcb4fe49", default-features = false }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt","net","time"] }
@@ -48,7 +41,3 @@ nsh-engine = { git = "https://github.com/longbridge/nsh", rev = "554163758e30d2f
 name = "precept-desktop"
 path = "src/main.rs"
 required-features = ["native"]
-[[bin]]
-name = "precept-tui"
-path = "src/tui.rs"
-required-features = ["tui"]

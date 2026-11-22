@@ -3,7 +3,7 @@
 # Enable explicitly:   systemctl --user enable --now preceptd.service
 # The daemon never creates a Profile by itself. It selects one at start only if
 # you asked for that ("Select at start" / precept profile select --remember).
-# Projects are added from the Desktop, the TUI or precept (project add); the
+# Projects are added from the Desktop or precept (project add); the
 # daemon keeps them in its state directory. There is nothing to configure here.
 [Unit]
 Description=Precept local daemon (Profile write owner; private dogfooding)

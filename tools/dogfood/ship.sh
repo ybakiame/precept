@@ -53,8 +53,8 @@ if ((gates)); then
     cargo test --workspace --all-targets --locked
     cd apps
     cargo fmt --all -- --check
-    cargo clippy --workspace --all-targets --locked --features precept-ui/native,precept-ui/tui -- -D warnings
-    cargo test --workspace --all-targets --locked --features precept-ui/native,precept-ui/tui
+    cargo clippy --workspace --all-targets --locked --features precept-ui/native -- -D warnings
+    cargo test --workspace --all-targets --locked --features precept-ui/native
     cd ..
     node tools/check_source.mjs
   ) >"$out/gates.log" 2>&1 || die "gates failed; see $out/gates.log"

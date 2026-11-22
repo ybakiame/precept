@@ -101,8 +101,7 @@ separate design with its own threat model.
 - Handoff validation is historical. Bounded Fingerprint v1 stores only a digest,
   not raw diffs/files; overflow or missing observations remain unverified.
 - No product network listener, telemetry, automatic model call, history ingestion,
-  credential import or remote synchronization. Optional Web tests serve only
-  synthetic static assets on loopback, without any daemon API/gateway.
+  credential import or remote synchronization.
 
 ## Limitations
 
