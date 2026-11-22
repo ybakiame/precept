@@ -144,7 +144,7 @@ fn load(model: Signal<Model>) {
         })
     });
 }
-fn reconnect(model: Signal<Model>) {
+pub(crate) fn reconnect(model: Signal<Model>) {
     load(model);
 }
 fn next_project(model: Signal<Model>) {

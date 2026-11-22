@@ -193,6 +193,40 @@ impl SqliteStore {
             Ok(ReviewInspect { binding: metadata.binding, commit_sequence: metadata.commit_sequence, record, decisions, peer_demotions, peer_demotion_total })
         })
     }
+    /// A project's saved Handoffs, newest first, at most 50.
+    pub fn operator_handoffs(&self, project: &str) -> Result<HandoffList> {
+        if !crate::profile::name_valid(project) {
+            return Err(Error::InvalidRecord);
+        }
+        self.snapshot(|metadata| {
+            super::project_record(&self.db, project)?;
+            let mut stmt = self
+                .db
+                .prepare("SELECT task_id,objective,branch,revision,updated_at FROM handoffs WHERE project=?1 ORDER BY updated_at DESC, task_id LIMIT 50")
+                .map_err(|_| Error::ReadFailed)?;
+            let handoffs = stmt
+                .query_map([project], |row| {
+                    let objective: String = row.get(1)?;
+                    Ok(HandoffSummary {
+                        task_id: row.get(0)?,
+                        objective: objective
+                            .lines()
+                            .next()
+                            .unwrap_or_default()
+                            .chars()
+                            .take(200)
+                            .collect(),
+                        branch: row.get(2)?,
+                        revision: row.get(3)?,
+                        updated_at: row.get(4)?,
+                    })
+                })
+                .map_err(|_| Error::ReadFailed)?
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(|_| Error::InvalidRecord)?;
+            Ok(HandoffList { binding: metadata.binding, handoffs })
+        })
+    }
     pub fn operator_handoff(&self, project: &str, task: &str) -> Result<HandoffPreview> {
         if !crate::profile::name_valid(project) || !crate::profile::text(task, 120, true) {
             return Err(Error::InvalidRecord);

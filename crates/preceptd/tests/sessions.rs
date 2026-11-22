@@ -255,4 +255,27 @@ fn a_closed_session_becomes_a_handoff_the_next_agent_resumes() {
     assert!(text.contains("Add import from AGENTS.md"), "{text}");
     assert!(text.contains("Scan and dialog done."));
     assert!(text.contains("- Visual check"));
+    // The operator lists the project's saved handoffs; agents cannot.
+    let listed = f
+        .daemon
+        .control("profile.handoff.list", json!({"project":"alpha"}))
+        .unwrap();
+    assert_eq!(listed["handoffs"][0]["task_id"], "import");
+    assert_eq!(
+        listed["handoffs"][0]["objective"],
+        "Add import from AGENTS.md"
+    );
+    assert_eq!(
+        f.daemon.call(
+            &f.daemon.credential("agent-alpha.cap"),
+            "profile.handoff.list",
+            json!({"project":"alpha"})
+        ),
+        Err(Error::Unauthorized)
+    );
+    assert_eq!(
+        f.daemon
+            .control("profile.handoff.list", json!({"project":"../x"})),
+        Err(Error::InvalidRequest)
+    );
 }

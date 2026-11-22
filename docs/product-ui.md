@@ -224,7 +224,8 @@ each agent's connection level, the task to resume and the suggestions waiting. T
 Handoff page shows the task (objective, next action), **Before you continue** (the
 daemon's resume warnings in the operator's language and a short worktree
 fingerprint) and **Recorded checks** (each check's result and name, never raw
-records). Diagnostics lists the repository's documents as path, state and size.
+records). Below it, **Saved handoffs** lists the project's handoffs (task,
+objective, branch, when saved), newest first; pressing one opens it. Diagnostics lists the repository's documents as path, state and size.
 
 Each tag has one color wherever it appears, kept per tag in the private
 `settings.toml` (never in the Profile, never sent to agents). A tag without a

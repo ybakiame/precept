@@ -2,15 +2,131 @@
 use crate::*;
 use precept_ui_core::i18n::Msg;
 use precept_ui_core::presentation::sanitize;
-use shell::*;
+
 use tokens::palette;
+
+/// Reads the selected project's saved handoffs while the Handoff page shows.
+pub(crate) fn watch(model: Signal<Model>) {
+    let ready = computed(move || {
+        let m = model.get();
+        (
+            shell::current(&m) == shell::Destination::Handoff && m.live && m.data.is_some(),
+            m.epoch,
+            m.selected_project.clone(),
+        )
+    });
+    effect(move || {
+        let (shown, _, project) = ready.get();
+        if let (true, Some(project)) = (shown, project) {
+            untracked(|| load(model, project));
+        }
+    });
+}
+fn load(model: Signal<Model>, project: String) {
+    super::profile::call(
+        model,
+        "profile.handoff.list",
+        serde_json::json!({ "project": project }),
+        move |_, m, r| {
+            if m.selected_project.as_deref() != Some(project.as_str()) {
+                return;
+            }
+            if let Ok(list) = r.and_then(|v| {
+                serde_json::from_value::<precept_ui_core::operator::HandoffList>(v)
+                    .map_err(|_| "Unavailable")
+            }) {
+                m.handoff_list = Some((project.clone(), list.handoffs));
+            }
+        },
+    );
+}
+
+/// The project's saved handoffs: pressing one opens it.
+pub(crate) fn saved(model: Signal<Model>) -> impl IntoElement {
+    let m = model.get();
+    let list = m
+        .handoff_list
+        .as_ref()
+        .filter(|(p, _)| m.selected_project.as_deref() == Some(p.as_str()))
+        .map(|(_, l)| l.clone());
+    let mut card = ui::surface(model).title(m.word(Msg::SavedHandoffs));
+    let Some(list) = list else {
+        return card.into_element();
+    };
+    if list.is_empty() {
+        return card
+            .child(
+                text(m.word(Msg::SavedHandoffsNone))
+                    .text_size(px(ui::scale::text::CAPTION))
+                    .text_color(move || palette(model).muted),
+            )
+            .into_element();
+    }
+    for h in list {
+        let task = h.task_id.clone();
+        let spoken = m
+            .word(Msg::OpenHandoffNamed)
+            .replace("{task}", &sanitize(&h.task_id, 120));
+        let current = m.queried_task == h.task_id;
+        card = card.child(
+            view()
+                .role(AccessibilityRole::Button)
+                .label(spoken)
+                .on_press(move || {
+                    let task = task.clone();
+                    model.update(|m| m.task_id = task);
+                    crate::reconnect(model);
+                })
+                .flex_row()
+                .flex_wrap()
+                .items_center()
+                .gap_x_3()
+                .gap_y_0p5()
+                .px_2()
+                .py_1p5()
+                .rounded(px(ui::scale::radius::CONTROL))
+                .bg(move || {
+                    if current {
+                        ui::tokens::mix(palette(model).panel, palette(model).primary, 0.10)
+                    } else {
+                        palette(model).panel
+                    }
+                })
+                .hover(move |s| {
+                    s.bg(ui::tokens::mix(
+                        palette(model).panel,
+                        palette(model).text,
+                        0.06,
+                    ))
+                })
+                .child(text(sanitize(&h.task_id, 120)).font_weight(FontWeight::SEMIBOLD))
+                .child(text(sanitize(&h.objective, 200)).flex_1().min_w(px(160.0)))
+                .child(
+                    text(format!(
+                        "{} · {}",
+                        sanitize(&h.branch, 60),
+                        precept_ui_core::presentation::utc_minute(&h.updated_at)
+                    ))
+                    .text_size(px(ui::scale::text::CAPTION))
+                    .text_color(move || palette(model).muted),
+                ),
+        );
+    }
+    card.into_element()
+}
 
 pub(crate) fn handoff(model: Signal<Model>) -> impl IntoElement {
     let m = model.get();
     let p = m.project().expect("ready project");
     let mut body = view().flex_shrink_0().gap_3();
     let Some(h) = p.handoff.as_ref().filter(|h| h.task_id == m.queried_task) else {
-        return body.child(card(model, m.word(Msg::ResumeSummary), m.visible_lines()));
+        return body
+            .child(shell::card(
+                model,
+                m.word(Msg::ResumeSummary),
+                m.visible_lines(),
+            ))
+            .child(saved(model));
     };
     let caption = |s: String| {
         text(s)
@@ -97,5 +213,5 @@ pub(crate) fn handoff(model: Signal<Model>) -> impl IntoElement {
                 .child(text(name).flex_1().min_w_0()),
         );
     }
-    body.child(checks)
+    body.child(checks).child(saved(model))
 }

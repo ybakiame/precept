@@ -256,6 +256,9 @@ pub struct Model {
     /// The project-scoped Sessions page (agents' work sessions).
     pub sessions_page: bool,
     pub sessions: work::SessionsPage,
+    /// The selected project's saved Handoffs (`profile.handoff.list`), with
+    /// the project they were read for.
+    pub handoff_list: Option<(String, Vec<precept_core::operator::HandoffSummary>)>,
     /// Registered WSL distributions (`None` until listed on this page).
     pub distributions: Option<Result<Vec<String>, &'static str>>,
     pub probe: Probe,
@@ -338,6 +341,7 @@ impl Model {
             agents_page: false,
             sessions_page: false,
             sessions: Default::default(),
+            handoff_list: None,
             agents: Default::default(),
             distributions: None,
             probe: Probe::Idle,

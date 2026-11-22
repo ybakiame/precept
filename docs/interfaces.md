@@ -10,8 +10,8 @@ profile/generation/epoch-bound write credential. Only the daemon invokes the
 private writer. No SQL/JSON patch, default Profile, automatic grant/startup,
 generic bridge forwarding or direct database fallback.
 
-Preview methods `profile.preferences.list`, `profile.preferences.get` and
-`profile.handoff.get` are Operator-only, bounded and exact-scope/revision. They are
+Preview methods `profile.preferences.list`, `profile.preferences.get`,
+`profile.handoff.get` and `profile.handoff.list {project}` (newest first, at most 50: task, objective's first line, branch, revision, saved time) are Operator-only, bounded and exact-scope/revision. They are
 not exposed to agents, OperatorWrite peers or MCP.
 
 `suggest_preference` carries `key`, `value`, `tags` and `origin`. `tags` is one to
@@ -334,7 +334,7 @@ explicit inputs; project, task and request data never appear in argv.
 - **Requests:** `{"version":1,"id":N,"op":{...}}`, strict fields, `id` ≥ 1, at most
   8 in flight. `op.type` is exactly one of `snapshot`, `control` (the Operator
   read/control allowlist: `profile.info|create|select|write.enable|write.disable`,
-  `profile.preferences.list|get`, `profile.review.queue|count|inspect`, `profile.handoff.get`),
+  `profile.preferences.list|get`, `profile.review.queue|count|inspect`, `profile.handoff.get|list`),
   `mutate` (one OperatorWrite `Mutation`), `project_write` (`project.add|register|remove`),
   `health` (daemon health with the Operator credential, for the GUI's live WSL
   status) or `cancel` (abandon an in-flight id; no reply of its own). Anything else is

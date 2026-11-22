@@ -825,6 +825,7 @@ pub(crate) fn shell(
     profile::watch_count(model);
     agents::watch(model);
     sessions::watch(model);
+    features::handoff::watch(model);
     let on = move |d: Destination| move || current(&model.get()) != d;
     // A new destination starts at its top and its content settles in with a
     // short rise (`fast`); nothing remounts, so inputs keep state. Movement

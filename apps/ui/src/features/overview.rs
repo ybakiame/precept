@@ -228,7 +228,8 @@ pub(crate) fn dashboard(model: Signal<Model>) -> impl IntoElement {
 
     let agent = surface(model)
         .title(m.word(Msg::ClientAccess))
-        .child(super::agents::level_rows(model))
+        // The card's title already names it: no second heading.
+        .child(super::agents::level_rows(model, false))
         .child(
             view().items_start().child(
                 button(model, "")

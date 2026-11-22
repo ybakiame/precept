@@ -228,4 +228,16 @@ fn an_agents_work_session_is_shown_and_deleted() {
         std::thread::sleep(Duration::from_millis(20));
     }
     contains(&mut app, "No work sessions yet");
+    // The Handoff page lists it; pressing it opens it, no task id typed.
+    app.press("Handoff").unwrap();
+    app.wait_for("Saved handoffs").unwrap();
+    app.wait_until("listed", Duration::from_secs(10), |s| {
+        s.count("role:button[Open handoff add-import-from-files]")
+            .unwrap_or(0)
+            > 0
+    })
+    .unwrap();
+    app.press("Open handoff add-import-from-files").unwrap();
+    app.wait_for("Before you continue").unwrap();
+    contains(&mut app, "Handoff add-import-from-files · alpha");
 }

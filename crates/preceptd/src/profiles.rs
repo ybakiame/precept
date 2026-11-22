@@ -1014,6 +1014,7 @@ impl Profiles {
                 | "profile.review.count"
                 | "profile.review.inspect"
                 | "profile.handoff.get"
+                | "profile.handoff.list"
         ) {
             let (store, roots) = self.read()?;
             let check_scope = |scope: &Scope| -> Result<()> {
@@ -1099,6 +1100,25 @@ impl Profiles {
                         return Err(Error::Conflict);
                     }
                     serde_json::to_value(inspect)
+                }
+                "profile.handoff.list" => {
+                    #[derive(Deserialize)]
+                    #[serde(deny_unknown_fields)]
+                    struct P {
+                        project: String,
+                    }
+                    let p: P = super::decode(params)?;
+                    if !precept_ipc::valid_project(&p.project) {
+                        return Err(Error::InvalidRequest);
+                    }
+                    check_scope(&Scope::Project {
+                        name: p.project.clone(),
+                    })?;
+                    serde_json::to_value(
+                        store
+                            .operator_handoffs(&p.project)
+                            .map_err(|_| Error::Unavailable)?,
+                    )
                 }
                 _ => {
                     let p: HandoffGet = super::decode(params)?;

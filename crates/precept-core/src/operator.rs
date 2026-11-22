@@ -508,6 +508,23 @@ pub struct HandoffRecord {
     pub validation_json: String,
     pub snapshot: Snapshot,
 }
+/// One saved Handoff of a project, for a list: its task, objective's first
+/// line, branch and when it was saved.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HandoffSummary {
+    pub task_id: String,
+    pub objective: String,
+    pub branch: String,
+    pub revision: i64,
+    pub updated_at: String,
+}
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HandoffList {
+    pub binding: Binding,
+    pub handoffs: Vec<HandoffSummary>,
+}
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HandoffPreview {

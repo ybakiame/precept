@@ -889,11 +889,11 @@ fn group(
 /// Each agent's connection level (hooks, MCP, both) with what it means;
 /// the recommended setup and the add-ons in one line under it.
 fn levels(model: Signal<Model>) -> impl IntoElement {
-    level_rows(model).child(caption(model, |_| Some(Msg::LevelHelp)))
+    level_rows(model, true).child(caption(model, |_| Some(Msg::LevelHelp)))
 }
 /// The heading and one row per agent with its level badge (also the
 /// Dashboard's agent card).
-pub(crate) fn level_rows(model: Signal<Model>) -> View {
+pub(crate) fn level_rows(model: Signal<Model>, heading: bool) -> View {
     use precept_ui_core::mcp::Level;
     let row = move |agent: &'static str, name: Msg| {
         view()
@@ -920,7 +920,11 @@ pub(crate) fn level_rows(model: Signal<Model>) -> View {
     view()
         .gap_2()
         .pt_2()
-        .child(text(word(model, Msg::LevelHeading)).font_weight(FontWeight::SEMIBOLD))
+        .child(
+            text(word(model, Msg::LevelHeading))
+                .font_weight(FontWeight::SEMIBOLD)
+                .style_when(move || !heading, |s| s.hidden()),
+        )
         .child(row("claude", Msg::TileClaude))
         .child(row("codex", Msg::TileCodex))
         .child(row("antigravity", Msg::TileAntigravity))

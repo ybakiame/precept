@@ -17,6 +17,7 @@ pub const CONTROL_METHODS: &[&str] = &[
     "profile.review.count",
     "profile.review.inspect",
     "profile.handoff.get",
+    "profile.handoff.list",
     "profile.startup.forget",
     "project.check",
     "project.list",
