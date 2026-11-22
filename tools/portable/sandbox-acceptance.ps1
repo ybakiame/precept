@@ -97,7 +97,9 @@ Cell 'clean-target-has-no-vc-runtime' {
     'registry key and System32 DLL absent'
 }
 Cell 'zip-hash-extract-new-dir-manifest-verify' {
-    $zip = Get-ChildItem -LiteralPath $in -Filter 'precept-windows-x86_64-*.zip'
+    # A prototype (precept-windows-x86_64-prototype-<sha>.zip) or a release
+    # (precept-<version>-windows-x86_64.zip); the input holds exactly one.
+    $zip = Get-ChildItem -LiteralPath $in -Filter 'precept-*.zip'
     Need (@($zip).Count -eq 1) 'expected one ZIP'
     Need ((Get-FileHash -LiteralPath $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -eq $expected.archive_sha256) 'ZIP hash mismatch'
     Need (-not (Test-Path $product)) 'extraction collision'
