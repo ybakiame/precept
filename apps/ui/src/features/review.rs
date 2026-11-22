@@ -1352,7 +1352,7 @@ fn history_tab(model: Signal<Model>) -> AnyElement {
                 d.from_revision,
                 d.to_revision,
                 channel_word(m.locale, d.channel),
-                sanitize(&d.decided_at, 40),
+                precept_ui_core::presentation::utc_minute(&d.decided_at),
                 m.word(Msg::ReviewCommit),
                 d.receipt_commit_sequence
             );

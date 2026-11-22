@@ -36,6 +36,22 @@ pub fn preview_after_title(value: &str, title: &str, max: usize) -> String {
     preview_line(&rest.join("\n"), max)
 }
 
+/// An RFC 3339 UTC time (`2026-11-21T16:52:27Z`) as `2026-11-21 16:52 UTC`;
+/// anything else as it is (sanitized).
+pub fn utc_minute(raw: &str) -> String {
+    let b = raw.as_bytes();
+    let shaped = raw.len() >= 17
+        && raw.ends_with('Z')
+        && b.get(10) == Some(&b'T')
+        && b.get(13) == Some(&b':')
+        && raw[..10].bytes().all(|c| c.is_ascii_digit() || c == b'-');
+    if shaped {
+        format!("{} {} UTC", &raw[..10], &raw[11..16])
+    } else {
+        sanitize(raw, 40)
+    }
+}
+
 /// A warning the daemon sends with a context, in the operator's language
 /// when it is one of the fixed ones; any other text as sent (sanitized).
 pub fn warning(locale: crate::i18n::Locale, raw: &str) -> String {
@@ -470,6 +486,8 @@ mod tests {
         assert_eq!(preview_line("# Title\n\nBody", 80), "Title");
         assert_eq!(preview_line("- item", 80), "item");
         assert_eq!(preview_line("abcdef", 3), "abc…");
+        assert_eq!(utc_minute("2026-11-21T16:52:27Z"), "2026-11-21 16:52 UTC");
+        assert_eq!(utc_minute("yesterday"), "yesterday");
         assert_eq!(
             preview_after_title("# Release\n\nNever force.", "Release", 80),
             "Never force."
