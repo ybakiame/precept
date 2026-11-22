@@ -122,6 +122,33 @@ fn work(context: &Value) -> String {
     out
 }
 
+/// The rules the pre-tool gate denied in the last week, most frequent first:
+/// what earlier agents were blocked from, so this one does not repeat it.
+fn blocked(context: &Value) -> String {
+    let denials = context
+        .get("gate_denials")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    if denials.is_empty() {
+        return String::new();
+    }
+    let mut out = String::from(
+        "\n## Recently blocked\n\nThe pre-tool gate denied these committed hard rules in the last 7 days. Follow them from the start instead of retrying variations; ask the developer if a rule is in the way.\n\n",
+    );
+    for d in &denials {
+        let rule = cut(d.get("rule").and_then(Value::as_str).unwrap_or("?"), 120).0;
+        let count = d.get("count").and_then(Value::as_u64).unwrap_or(0);
+        let last = d.get("last_ms").and_then(Value::as_u64).unwrap_or(0);
+        out.push_str(&format!(
+            "- `{rule}`: {count} time{}, last {}\n",
+            if count == 1 { "" } else { "s" },
+            when(last)
+        ));
+    }
+    out
+}
+
 /// The project's memory (agents' notes, unreviewed): counts by kind, every
 /// environment note, then the heaviest others, within [`MEMORY_BYTES`].
 fn memory(context: &Value) -> String {
@@ -397,6 +424,14 @@ pub fn render(project: &str, context: &Value, moment: Moment) -> String {
         out.push_str(&entry);
     }
     if !truncated {
+        let blocked = blocked(context);
+        if out.len() + blocked.len() > MAX_BYTES - 200 {
+            truncated = true;
+        } else {
+            out.push_str(&blocked);
+        }
+    }
+    if !truncated {
         let work = work(context);
         if out.len() + work.len() > MAX_BYTES - 200 {
             truncated = true;
@@ -447,6 +482,14 @@ mod memory_tests {
         assert!(text.contains("- [caution] **WSL paths** _changed often lately_ (`b2`)"));
         assert!(text.find("### Environment") < text.find("### Most relevant"));
         assert!(memory(&json!({"memory":{"counts":{}}})).is_empty());
+        let b = blocked(&json!({"gate_denials":[
+            {"rule":"no-force-push","count":3,"last_ms":1_763_640_000_000u64},
+            {"rule":"env-file","count":1,"last_ms":1_763_640_000_000u64}
+        ]}));
+        assert!(b.contains("## Recently blocked"));
+        assert!(b.contains("- `no-force-push`: 3 times, last 2025-11-20"));
+        assert!(b.contains("- `env-file`: 1 time, last"));
+        assert!(blocked(&json!({"gate_denials":[]})).is_empty());
         let many: Vec<Value> = (0..40)
             .map(|i| json!({"id":format!("{i}"),"title":format!("t{i}"),"body":"x".repeat(500)}))
             .collect();

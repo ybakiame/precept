@@ -50,8 +50,9 @@ separate design with its own threat model.
   private state (`evidence-<project>.jsonl`, 0600; at most 1500 entries, the
   oldest dropped with the last dropped hash kept as the base). Each entry holds
   the method kind, outcome, counts, the client's self-reported label and the work
-  session id `precept-mcp` attaches, never values, selectors, task ids, paths,
-  file contents or tokens, plus the SHA-256 of the entry before: an edit or a
+  session id `precept-mcp` attaches, and for a gate denial the key of the
+  committed rule that denied, never values, selectors, task ids, paths,
+  commands, file contents or tokens, plus the SHA-256 of the entry before: an edit or a
   removal in the middle is detected and reported, which is integrity, not a
   signature (whoever can write the daemon's state can rewrite the whole file).
   Refused handshakes, which carry no project, stay in daemon memory. Readable by

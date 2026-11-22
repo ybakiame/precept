@@ -43,6 +43,11 @@ struct Args {
     #[arg(long)]
     mcp_executable: Option<PathBuf>,
 }
+/// Gate denials of one rule within this window count as repeats.
+const REPEAT_WINDOW_MS: u64 = 24 * 3_600_000;
+/// The window of gate denials a context carries.
+const DENIALS_WINDOW_MS: u64 = 7 * 24 * 3_600_000;
+
 #[derive(Clone)]
 struct Service {
     profiles: Arc<profiles::Profiles>,
@@ -218,7 +223,7 @@ impl Service {
                 .map(|b| {
                     json!({"id":b.seq,"at_ms":b.at_ms,"kind":b.kind,"via":b.via,"project":project,
                         "client":b.client,"session":b.session,"outcome":b.outcome,
-                        "duration_ms":b.duration_ms,"counts":b.counts})
+                        "duration_ms":b.duration_ms,"counts":b.counts,"rule":b.rule})
                 })
                 .collect();
             if p.before.is_none() {
@@ -662,8 +667,31 @@ impl Service {
                 ),
             );
             return Ok(match check(&snapshot, &call) {
-                Some(d) => json!({"decision":"deny","reason":d.reason,
-                    "rule":{"id":d.id,"key":d.key,"file":d.file}}),
+                Some(d) => {
+                    // This denial and the earlier ones of the same rule in
+                    // the last day: a repeat tells the agent to stop trying
+                    // variations.
+                    let earlier = self
+                        .evidence
+                        .denials(
+                            self.profiles.state_dir(),
+                            &project,
+                            activity::now().saturating_sub(REPEAT_WINDOW_MS),
+                        )
+                        .unwrap_or_default()
+                        .into_iter()
+                        .find(|x| x.rule == d.key)
+                        .map_or(0, |x| x.count);
+                    let repeat = earlier + 1;
+                    let mut reason = d.reason.clone();
+                    if repeat >= 2 {
+                        reason.push_str(&format!(
+                            "\n\nThis rule has now blocked {repeat} tool calls in this project in the last 24 hours. Do not retry variations of the same call: follow the rule, or stop and ask the developer."
+                        ));
+                    }
+                    json!({"decision":"deny","reason":reason,"repeat":repeat,
+                        "rule":{"id":d.id,"key":d.key,"file":d.file}})
+                }
                 None => json!({"decision":"allow","gate":"on"}),
             });
         }
@@ -794,6 +822,21 @@ impl Service {
                 .sessions
                 .for_context(self.profiles.state_dir(), &project);
             result["work_sessions"] = serde_json::to_value(work).unwrap_or(Value::Array(vec![]));
+            // And the rules the gate denied lately, so the next agent does not
+            // repeat what was blocked.
+            result["gate_denials"] = serde_json::to_value(
+                self.evidence
+                    .denials(
+                        self.profiles.state_dir(),
+                        &project,
+                        activity::now().saturating_sub(DENIALS_WINDOW_MS),
+                    )
+                    .unwrap_or_default()
+                    .into_iter()
+                    .take(5)
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap_or(Value::Array(vec![]));
             // And the project's memory: agents' notes, unreviewed, weighted.
             result["memory"] = self.memory.for_context(self.profiles.state_dir(), &project);
         }
@@ -1249,6 +1292,13 @@ async fn peer(mut stream: Stream, service: Service, permit: Arc<OwnedSemaphorePe
                             duration_ms,
                             counts: counts.clone(),
                             at_ms: activity::now(),
+                            rule: match (&result, kind) {
+                                (Ok(v), activity::Kind::Gate) if v["decision"] == "deny" => v
+                                    .pointer("/rule/key")
+                                    .and_then(Value::as_str)
+                                    .map(str::to_owned),
+                                _ => None,
+                            },
                         },
                     );
                 }

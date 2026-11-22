@@ -994,6 +994,7 @@ mod tests {
             duration_ms: 1,
             counts: None,
             session: None,
+            rule: None,
         };
         m.agents.activity.page = Some(crate::activity::Page {
             daemon_started_ms: 0,

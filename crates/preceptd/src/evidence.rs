@@ -1,7 +1,8 @@
 //! Evidence: each project's agent activity, persisted as a hash chain so it
 //! survives restarts and any change in the middle shows. One line per agent
-//! request (what kind, which client and session, the outcome and counts;
-//! never values, selectors, paths or file contents), each carrying the
+//! request (what kind, which client and session, the outcome and counts, and
+//! for a gate denial the key of the rule that denied; never values,
+//! selectors, paths, commands or file contents), each carrying the
 //! SHA-256 of the line before. Integrity only, not a signature: whoever can
 //! write the daemon's private state can rewrite it whole, but not edit or
 //! drop an entry unnoticed. Bounded; the oldest entries are dropped with the
@@ -37,6 +38,9 @@ pub struct Body {
     pub outcome: String,
     pub duration_ms: u64,
     pub counts: Option<Counts>,
+    /// The key of the committed rule a gate denial came from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rule: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -177,6 +181,16 @@ pub struct Entry {
     pub duration_ms: u64,
     pub counts: Option<Counts>,
     pub at_ms: u64,
+    pub rule: Option<String>,
+}
+
+/// How often one rule denied a tool call: its key, the count and the last
+/// time.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Denials {
+    pub rule: String,
+    pub count: u64,
+    pub last_ms: u64,
 }
 
 impl Evidence {
@@ -213,6 +227,7 @@ impl Evidence {
                 outcome: e.outcome,
                 duration_ms: e.duration_ms,
                 counts: e.counts,
+                rule: e.rule,
             };
             let line = Line {
                 hash: hash(&prev, &body),
@@ -265,6 +280,38 @@ impl Evidence {
             Ok((out, more))
         })
     }
+    /// Gate denials since `since_ms`, by rule, most frequent first.
+    pub fn denials(
+        &self,
+        state: &StateDir,
+        project: &str,
+        since_ms: u64,
+    ) -> Result<Vec<Denials>, Error> {
+        self.with(state, project, |chain| {
+            let mut by: BTreeMap<&str, (u64, u64)> = BTreeMap::new();
+            for l in &chain.lines {
+                if l.body.kind == Kind::Gate
+                    && l.body.outcome == "deny"
+                    && l.body.at_ms >= since_ms
+                    && let Some(rule) = l.body.rule.as_deref()
+                {
+                    let e = by.entry(rule).or_default();
+                    e.0 += 1;
+                    e.1 = e.1.max(l.body.at_ms);
+                }
+            }
+            let mut out: Vec<Denials> = by
+                .into_iter()
+                .map(|(rule, (count, last_ms))| Denials {
+                    rule: rule.to_owned(),
+                    count,
+                    last_ms,
+                })
+                .collect();
+            out.sort_by_key(|d| (std::cmp::Reverse(d.count), std::cmp::Reverse(d.last_ms)));
+            Ok(out)
+        })
+    }
     /// Reads the file again and verifies the whole chain.
     pub fn status(&self, state: &StateDir, project: &str) -> Result<Status, Error> {
         let mut chains = self.chains.lock().unwrap_or_else(|e| e.into_inner());
@@ -294,7 +341,38 @@ mod tests {
             duration_ms: 3,
             counts: None,
             at_ms: 1_000,
+            rule: None,
         }
+    }
+
+    #[test]
+    fn denials_count_by_rule_and_an_old_line_keeps_its_hash() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = StateDir::open(&temp.path().join("state")).unwrap();
+        let ev = Evidence::new();
+        for (rule, at) in [
+            ("no-force-push", 10),
+            ("no-force-push", 20),
+            ("env-file", 30),
+        ] {
+            let mut e = entry(Kind::Gate, None);
+            e.outcome = "deny".into();
+            e.rule = Some(rule.into());
+            e.at_ms = at;
+            ev.append(&state, "a", e).unwrap();
+        }
+        ev.append(&state, "a", entry(Kind::Gate, None)).unwrap();
+        let d = ev.denials(&state, "a", 15).unwrap();
+        assert_eq!(d.len(), 2);
+        assert_eq!(
+            (d[0].rule.as_str(), d[0].count, d[0].last_ms),
+            ("env-file", 1, 30)
+        );
+        assert_eq!(ev.denials(&state, "a", 0).unwrap()[0].count, 2);
+        // A line without a rule serialises as before the field existed.
+        let body = serde_json::to_value(&ev.list(&state, "a", None, 1).unwrap().0[0]).unwrap();
+        assert!(body.get("rule").is_none());
+        assert!(ev.status(&state, "a").unwrap().ok);
     }
 
     #[test]

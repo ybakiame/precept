@@ -441,6 +441,14 @@ fn the_gate_denies_calls_that_break_a_committed_hard_rule_only_while_switched_on
         "args":{"CommandLine":"git push --force","Cwd":root}}});
     let v: Value = serde_json::from_str(&run_with(&antigravity, &ag)).unwrap();
     assert_eq!(v["decision"], "deny");
+    // A repeated denial of one rule (push, lock file, push) tells the agent to stop retrying.
+    assert!(
+        v["reason"]
+            .as_str()
+            .unwrap()
+            .contains("has now blocked 3 tool calls"),
+        "{v}"
+    );
     // Outside the project the hook stays silent.
     let elsewhere = json!({"cwd":f.temp.path(),"tool_name":"Bash",
         "tool_input":{"command":"git push --force"}});
@@ -468,4 +476,10 @@ fn the_gate_denies_calls_that_break_a_committed_hard_rule_only_while_switched_on
         .collect();
     assert!(gates.contains(&"deny") && gates.contains(&"off") && gates.contains(&"allow"));
     assert_eq!(log["chain"]["ok"], true);
+    // The next agent's context names what was blocked, and how often.
+    let context = f.daemon.call(&agent, "context.get", json!({})).unwrap();
+    let denials = context["gate_denials"].as_array().unwrap();
+    assert_eq!(denials[0]["rule"], "release");
+    assert_eq!(denials[0]["count"], 3, "{denials:?}");
+    assert_eq!(denials.len(), 1);
 }

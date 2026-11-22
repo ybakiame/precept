@@ -119,7 +119,14 @@ while the gate is off. Otherwise it reads the committed rule files and answers
 (a shell command containing its `deny` text, whitespace-normalized, or a written
 path equal to, or under, one of its `paths`), else `allow`. Uncommitted rules
 never deny. Each answer is a `gate` entry in the project's evidence chain with
-outcome `allow`, `deny` or `off`.
+outcome `allow`, `deny` or `off`; a denial also records the rule's key. A denial
+carries `repeat`, the number of this rule's denials in the project in the last
+24 hours including this one; from the second, `reason` adds that the agent should
+stop retrying variations and follow the rule or ask the developer. Agent and
+operator `context.get` add `gate_denials` (at most five rules denied in the
+last 7 days: `rule`, `count`, `last_ms`, most frequent first), which the
+session-start briefing renders as **Recently blocked**; `activity.list` events
+carry `rule`, and the Sessions page shows it beside a denial.
 
 Operator-only `integration.mcp {}` reports, for Claude Code
 (`~/.claude.json`, `mcpServers`), Codex (`~/.codex/config.toml`,

@@ -32,6 +32,9 @@ pub struct Event {
     /// The work session the request belonged to, when the agent had one.
     #[serde(default)]
     pub session: Option<String>,
+    /// The key of the rule a gate denial came from.
+    #[serde(default)]
+    pub rule: Option<String>,
 }
 
 /// Whether the project's persisted evidence chain still verifies.

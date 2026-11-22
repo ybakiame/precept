@@ -1167,10 +1167,14 @@ pub(crate) fn activity_row(
         .child(
             badge(
                 model,
-                if ok {
-                    "OK".to_owned()
-                } else {
-                    e.outcome.clone()
+                match (ok, &e.rule) {
+                    (true, _) => "OK".to_owned(),
+                    (false, Some(rule)) => format!(
+                        "{} · {}",
+                        e.outcome,
+                        precept_ui_core::presentation::sanitize(rule, 64)
+                    ),
+                    (false, None) => e.outcome.clone(),
                 },
             )
             // A gate's answer is a decision, not a failure: a denial is the

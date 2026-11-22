@@ -19,6 +19,9 @@ data between schemas with the versioned Profile export and import.
 - A memory note can be proposed as a project convention from the Memory page.
 - `precept profile export --with-memory [--with-environment]` carries project
   memory (export format v3); import adds it to the served projects.
+- **Repeated failures are named.** When the pre-tool gate denies the same
+  rule again, the agent is told how often and to stop retrying variations; the
+  next session's briefing lists the rules blocked in the last week.
 
 ## 0.4.0
 
