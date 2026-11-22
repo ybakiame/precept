@@ -238,9 +238,9 @@ fn byline(m: &Model, e: &Entry) -> String {
         .replace("{time}", &date_time(e.updated_ms))
 }
 
-/// One note: its title (pressing it opens the detail), its first line, who
-/// and when, and its weight.
-fn row(model: Signal<Model>, index: usize, e: &Entry) -> AnyElement {
+/// One note, the whole row pressable (it opens the detail): its title, its
+/// badges, its first line, who and when, and its weight with the reasons.
+fn row(model: Signal<Model>, e: &Entry) -> AnyElement {
     let m = model.get_untracked();
     let id = e.id.clone();
     let first: String = e
@@ -251,25 +251,33 @@ fn row(model: Signal<Model>, index: usize, e: &Entry) -> AnyElement {
         .chars()
         .take(160)
         .collect();
-    let spoken = m.word(Msg::MemoryOpenNamed).replace("{title}", &e.title);
     view()
+        .role(AccessibilityRole::Button)
+        .label(m.word(Msg::MemoryOpenNamed).replace("{title}", &e.title))
+        .on_press(move || model.update(|m| m.memory.open = Some(id.clone())))
         .gap_1()
+        .px_2()
         .py_2()
-        .style_when(move || index > 0, |s| s.border_t_1())
-        .border_color(move || palette(model).hairline)
+        .rounded(px(scale::radius::CONTROL))
+        .bg(move || palette(model).panel)
+        .hover(move |s| {
+            s.bg(ui::tokens::mix(
+                palette(model).panel,
+                palette(model).text,
+                0.06,
+            ))
+        })
+        .focus(move |s| {
+            s.ring(px(2.0))
+                .ring_color(palette(model).primary.opacity(0.55))
+        })
         .child(
             view()
                 .flex_row()
+                .flex_wrap()
                 .items_center()
                 .gap_2()
-                .child(
-                    view().flex_1().min_w_0().child(
-                        button(model, e.title.clone())
-                            .spoken(move || spoken.clone().into())
-                            .variant(ButtonVariant::Ghost)
-                            .on_press(move || model.update(|m| m.memory.open = Some(id.clone()))),
-                    ),
-                )
+                .child(text(e.title.clone()).font_weight(FontWeight::SEMIBOLD))
                 .child(badges(model, &m, e)),
         )
         .child(
@@ -286,13 +294,9 @@ fn row(model: Signal<Model>, index: usize, e: &Entry) -> AnyElement {
 
 /// The move of the Profile's confirmed environment notes, shown while any
 /// remain: the notes it takes, and one button.
-fn move_card(model: Signal<Model>) -> impl IntoElement {
-    dynamic(move || {
-        let m = model.get();
+fn move_card(model: Signal<Model>, m: &Model) -> AnyElement {
+    {
         let notes = m.memory.environment.clone();
-        if notes.is_empty() {
-            return view().into_element();
-        }
         let mut card = surface(model)
             .title(m.word(Msg::MemoryMoveTitle))
             .child(caption(
@@ -323,7 +327,7 @@ fn move_card(model: Signal<Model>) -> impl IntoElement {
             ),
         )
         .into_element()
-    })
+    }
 }
 
 /// The open note's detail, in a sheet.
@@ -540,7 +544,12 @@ fn clear_dialog(model: Signal<Model>) -> impl IntoElement {
 pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
     let state = computed(move || {
         let m = model.get();
-        (m.memory.list.clone(), m.memory.error.clone(), m.locale)
+        (
+            m.memory.list.clone(),
+            m.memory.error.clone(),
+            m.memory.environment.clone(),
+            m.locale,
+        )
     });
     view()
         .gap_6()
@@ -597,9 +606,8 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
                         .on_press(move || model.update(|m| m.memory.clear = true)),
                 ),
         )
-        .child(move_card(model))
         .child(dynamic(move || {
-            let (list, error, _) = state.get();
+            let (list, error, environment, _) = state.get();
             let m = model.get_untracked();
             if let Some(code) = error
                 && m.memory.edit.is_none()
@@ -612,16 +620,22 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
             let Some(list) = list else {
                 return view().into_element();
             };
+            // One column: an absent move card leaves no gap behind.
+            let mut groups = view().gap_6();
+            if !environment.is_empty() {
+                groups = groups.child(move_card(model, &m));
+            }
             if list.is_empty() {
-                return surface(model)
+                return groups
                     .child(
-                        ui::empty(model, m.word(Msg::MemoryEmpty))
-                            .description(m.word(Msg::MemoryEmptyHelp))
-                            .icon(icons::MEMORY),
+                        surface(model).child(
+                            ui::empty(model, m.word(Msg::MemoryEmpty))
+                                .description(m.word(Msg::MemoryEmptyHelp))
+                                .icon(icons::MEMORY),
+                        ),
                     )
                     .into_element();
             }
-            let mut groups = view().gap_6();
             for kind in Kind::ALL {
                 let entries: Vec<&Entry> = list.iter().filter(|e| e.kind == kind).collect();
                 if entries.is_empty() {
@@ -629,8 +643,8 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
                 }
                 let mut card =
                     surface(model).title(format!("{} · {}", m.word(kind.heading()), entries.len()));
-                for (i, e) in entries.iter().enumerate() {
-                    card = card.child(row(model, i, e));
+                for e in entries {
+                    card = card.child(row(model, e));
                 }
                 groups = groups.child(card);
             }
