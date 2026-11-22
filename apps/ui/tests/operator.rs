@@ -153,8 +153,7 @@ fn writes_on(app: &mut nsh_testing::Headless) {
         Duration::from_secs(10),
         |s| {
             let t = s.texts().join("\n");
-            (t.contains("Queue watermark: commit")
-                || t.contains("No pending suggestions")
+            (t.contains("No pending suggestions")
                 || t.contains("No records in this exact scope")
                 || t.contains(" · r"))
                 && !t.contains("Writes are off for this daemon run")
@@ -231,7 +230,7 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
         app.type_text("Tags", "Tooling,").unwrap();
         app.wait_for("One to five short labels, such as style or git. Press Enter or a comma to add one. · 2 of 5").unwrap();
         app.press("Save as suggestion").unwrap();
-        app.wait_for("Prepared operation; no write sent yet")
+        app.wait_for("Nothing is written until you apply it")
             .unwrap();
     };
     add(&mut app);
@@ -260,7 +259,7 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     app.wait_for("Show full digest").unwrap();
     app.wait_for("#1 · editor").unwrap();
     app.press_key("alt+shift+y").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
+    app.wait_for("Nothing is written until you apply it")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 3");
@@ -271,7 +270,7 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     contains(&mut app, "commit 4");
     app.wait_for("#2 · editor").unwrap();
     app.press_key("alt+shift+n").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
+    app.wait_for("Nothing is written until you apply it")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 5");

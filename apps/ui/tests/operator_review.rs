@@ -195,8 +195,7 @@ fn writes_on(app: &mut nsh_testing::Headless) {
         Duration::from_secs(10),
         |s| {
             let t = s.texts().join("\n");
-            (t.contains("Queue watermark: commit")
-                || t.contains("No pending suggestions")
+            (t.contains("No pending suggestions")
                 || t.contains("No records in this exact scope")
                 || t.contains(" · r"))
                 && !t.contains("Writes are off for this daemon run")
@@ -270,7 +269,7 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     // Confirm #1; it becomes a same-key confirmed peer for the next suggestion.
     let first = f.inspect(1, 1);
     app.press("Confirm preference…").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
+    app.wait_for("Nothing is written until you apply it")
         .unwrap();
     assert_eq!(f.inspect(1, 1)["record"]["status"], "suggested");
     app.press_key("alt+shift+v").unwrap();
@@ -291,7 +290,7 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     // Confirm #2 (demotes #1), then read its decision history.
     let second = f.inspect(2, 1);
     app.press("Confirm preference…").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
+    app.wait_for("Nothing is written until you apply it")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 5");
@@ -304,7 +303,7 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     app.wait_for("Deprecation makes the record inactive in agent effective context.")
         .unwrap();
     app.press("Deprecate preference…").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
+    app.wait_for("Nothing is written until you apply it")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 6");
@@ -318,7 +317,7 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     app.type_text("Retype the exact ID", "9").unwrap();
     app.wait_for("The typed ID does not match").unwrap();
     app.press_key("Enter").unwrap();
-    assert!(!app.screen().shows("Prepared operation; no write sent yet"));
+    assert!(!app.screen().shows("Nothing is written until you apply it"));
     assert_eq!(f.inspect(2, 3)["record"]["status"], "deprecated");
     app.press("Cancel").unwrap();
     app.wait_for_gone(
@@ -331,7 +330,7 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     app.type_text("Retype the exact ID", "2").unwrap();
     app.wait_for("Deletion armed; apply to commit").unwrap();
     app.press_key("Enter").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
+    app.wait_for("Nothing is written until you apply it")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 7");
@@ -390,7 +389,7 @@ fn add(app: &mut nsh_testing::Headless, key: &str, value: &str) {
     app.type_text("id:preference-value", value).unwrap();
     app.type_text("Tags", "review\n").unwrap();
     app.press("Save as suggestion").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
+    app.wait_for("Nothing is written until you apply it")
         .unwrap();
 }
 /// A record row in the scope's list opens its sheet with the exact record.
@@ -422,7 +421,7 @@ fn terminal_channel_and_revoked_delete(f: &Fixture) {
     app.wait_for("Show full digest").unwrap();
     let third = f.inspect(3, 1);
     app.press_key("alt+shift+y").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
+    app.wait_for("Nothing is written until you apply it")
         .unwrap();
     assert_eq!(f.inspect(3, 1)["record"]["status"], "suggested");
     app.press_key("alt+shift+v").unwrap();
@@ -431,7 +430,7 @@ fn terminal_channel_and_revoked_delete(f: &Fixture) {
     open_row(&mut app, "#3 · terminal-editor · confirmed · r2");
     contains(&mut app, "confirm · r1→r2 · tui");
     app.press_key("alt+shift+w").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
+    app.wait_for("Nothing is written until you apply it")
         .unwrap();
     assert_eq!(f.inspect(3, 2)["record"]["status"], "confirmed");
     app.press_key("alt+shift+v").unwrap();
@@ -444,7 +443,7 @@ fn terminal_channel_and_revoked_delete(f: &Fixture) {
     app.wait_for("Show full digest").unwrap();
     let fourth = f.inspect(4, 1);
     app.press_key("alt+shift+n").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
+    app.wait_for("Nothing is written until you apply it")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 12");
@@ -454,7 +453,7 @@ fn terminal_channel_and_revoked_delete(f: &Fixture) {
     app.wait_for("Delete project alpha preference #3?").unwrap();
     app.type_text("Retype the exact ID", "3").unwrap();
     app.press_key("Enter").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
+    app.wait_for("Nothing is written until you apply it")
         .unwrap();
     // The exact request names the terminal channel.
     app.press("Show request").unwrap();
@@ -520,7 +519,7 @@ fn changed_root_refuses_reviewed_apply(f: &Fixture) {
     app.wait_for("#5 · root-bound-review").unwrap();
     app.wait_for("Show full digest").unwrap();
     app.press_key("alt+shift+y").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
+    app.wait_for("Nothing is written until you apply it")
         .unwrap();
     let root = f.root.path().join("alpha");
     let moved = f.root.path().join("alpha-moved");

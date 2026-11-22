@@ -22,6 +22,35 @@ pub fn preview_line(value: &str, max: usize) -> String {
     out
 }
 
+/// [`preview_line`] of a text that opens with `title` as its heading: the
+/// line after that heading, so a row does not say its title twice.
+pub fn preview_after_title(value: &str, title: &str, max: usize) -> String {
+    let mut lines = value.lines().map(str::trim).filter(|l| !l.is_empty());
+    let rest: Vec<&str> = match lines.next() {
+        Some(first) if first.trim_start_matches('#').trim() == title.trim() => lines.collect(),
+        _ => return preview_line(value, max),
+    };
+    if rest.is_empty() {
+        return preview_line(value, max);
+    }
+    preview_line(&rest.join("\n"), max)
+}
+
+/// A warning the daemon sends with a context, in the operator's language
+/// when it is one of the fixed ones; any other text as sent (sanitized).
+pub fn warning(locale: crate::i18n::Locale, raw: &str) -> String {
+    use crate::i18n::{Msg, tr};
+    let known = match raw {
+        "Only confirmed preferences are included." => Some(Msg::WarnConfirmedOnly),
+        "Documents are live references, not a complete project audit." => Some(Msg::WarnDocuments),
+        "This context does not authorize filesystem edits or external actions." => {
+            Some(Msg::WarnNoAuthority)
+        }
+        _ => None,
+    };
+    known.map_or_else(|| sanitize(raw, 512), |k| tr(locale, k).to_owned())
+}
+
 pub fn sanitize(value: &str, limit: usize) -> String {
     let mut chars = value.chars().filter(|c| {
         !c.is_control() && !matches!(*c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
@@ -420,4 +449,35 @@ pub fn hashtags(tags: &[String]) -> String {
         .map(|t| format!("#{}", sanitize(t, 32)))
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_fixed_daemon_warning_is_translated() {
+        for raw in precept_core::WARNINGS {
+            let zh = warning(crate::i18n::Locale::ZhCn, raw);
+            assert_ne!(zh, raw, "untranslated daemon warning: {raw}");
+            assert_eq!(warning(crate::i18n::Locale::En, raw), raw);
+        }
+        assert_eq!(warning(crate::i18n::Locale::ZhCn, "Other"), "Other");
+    }
+
+    #[test]
+    fn a_preview_line_drops_heading_marks_and_bullets() {
+        assert_eq!(preview_line("# Title\n\nBody", 80), "Title");
+        assert_eq!(preview_line("- item", 80), "item");
+        assert_eq!(preview_line("abcdef", 3), "abc…");
+        assert_eq!(
+            preview_after_title("# Release\n\nNever force.", "Release", 80),
+            "Never force."
+        );
+        assert_eq!(
+            preview_after_title("# Other\n\nText", "Release", 80),
+            "Other"
+        );
+        assert_eq!(preview_after_title("# Release", "Release", 80), "Release");
+    }
 }

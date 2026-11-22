@@ -159,8 +159,7 @@ fn writes_on(app: &mut nsh_testing::Headless) {
         Duration::from_secs(10),
         |s| {
             let t = s.texts().join("\n");
-            (t.contains("Queue watermark: commit")
-                || t.contains("No pending suggestions")
+            (t.contains("No pending suggestions")
                 || t.contains("No records in this exact scope")
                 || t.contains(" · r"))
                 && !t.contains("Writes are off for this daemon run")
@@ -232,7 +231,7 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     app.type_text("Priority (-100 to 100)", "5").unwrap();
     app.press("Hard").unwrap();
     app.press("Save as suggestion").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
+    app.wait_for("Nothing is written until you apply it")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
     let start = Instant::now();
@@ -259,7 +258,7 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     loop {
         app.press_key("alt+shift+y").unwrap();
         if app
-            .wait_for("Prepared operation; no write sent yet")
+            .wait_for("Nothing is written until you apply it")
             .is_ok()
         {
             break;
@@ -331,7 +330,7 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     app.clear("Preference key").unwrap();
     app.type_text("Preference key", "answer-length").unwrap();
     app.press("Save as a new suggestion").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
+    app.wait_for("Nothing is written until you apply it")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
     let record = |f: &Fixture, id: i64| {
@@ -399,7 +398,7 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     app.type_text("Note (optional)", "Both reviewed together.")
         .unwrap();
     app.press("Confirm 2…").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
+    app.wait_for("Nothing is written until you apply it")
         .unwrap();
     contains(&mut app, "Confirm 2 suggestions");
     app.press_key("alt+shift+v").unwrap();
@@ -438,7 +437,7 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     app.clear("Preference key").unwrap();
     app.type_text("Preference key", "review-pace").unwrap();
     app.press("Save the new version").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
+    app.wait_for("Nothing is written until you apply it")
         .unwrap();
     app.press_key("alt+shift+v").unwrap();
     let start = Instant::now();

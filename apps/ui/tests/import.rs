@@ -155,8 +155,7 @@ fn writes_on(app: &mut nsh_testing::Headless) {
         Duration::from_secs(10),
         |s| {
             let t = s.texts().join("\n");
-            (t.contains("Queue watermark: commit")
-                || t.contains("No pending suggestions")
+            (t.contains("No pending suggestions")
                 || t.contains("No records in this exact scope")
                 || t.contains(" · r"))
                 && !t.contains("Writes are off for this daemon run")
@@ -205,7 +204,7 @@ fn rules_in_the_projects_files_are_picked_and_filed_as_suggestions() {
     app.press("Import agents-testing").unwrap();
     app.wait_for("Suggest 1…").unwrap();
     app.press("Suggest 1…").unwrap();
-    app.wait_for("Prepared operation; no write sent yet")
+    app.wait_for("Nothing is written until you apply it")
         .unwrap();
     contains(
         &mut app,

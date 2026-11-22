@@ -262,6 +262,15 @@ fn check_badge(model: Signal<Model>, m: &Model, checks: &serde_json::Value) -> A
 fn rule_row(model: Signal<Model>, r: &precept_ui_core::RepositoryRule, index: usize) -> AnyElement {
     let m = model.get();
     let key = sanitize(&r.key, 64);
+    // A rule with a title is named by it; its key follows, quietly.
+    let name = r
+        .title
+        .as_deref()
+        .map_or_else(|| key.clone(), |t| sanitize(t, 80));
+    let preview = match &r.title {
+        Some(t) => precept_ui_core::presentation::preview_after_title(&r.text, t, 160),
+        None => precept_ui_core::presentation::preview_line(&r.text, 160),
+    };
     let spoken = format!("{} · {key}", m.word(Msg::Details));
     let mut meta = view()
         .flex_row()
@@ -333,10 +342,23 @@ fn rule_row(model: Signal<Model>, r: &precept_ui_core::RepositoryRule, index: us
                 .items_center()
                 .gap_2()
                 .child(
-                    text(key)
-                        .font_weight(FontWeight::SEMIBOLD)
+                    view()
                         .flex_1()
-                        .min_w_0(),
+                        .min_w_0()
+                        .flex_row()
+                        .flex_wrap()
+                        .items_center()
+                        .gap_x_2()
+                        .child(text(name.clone()).font_weight(FontWeight::SEMIBOLD))
+                        .child(
+                            text(if name == key {
+                                String::new()
+                            } else {
+                                key.clone()
+                            })
+                            .text_size(px(ui::scale::text::CAPTION))
+                            .text_color(move || palette(model).muted),
+                        ),
                 )
                 .child(
                     ui::button(model, "")
@@ -347,10 +369,7 @@ fn rule_row(model: Signal<Model>, r: &precept_ui_core::RepositoryRule, index: us
                         .on_press(move || model.update(|m| m.select_rule(index))),
                 ),
         )
-        .child(text(sanitize(
-            &precept_ui_core::presentation::preview_line(&r.text, 160),
-            170,
-        )))
+        .child(text(sanitize(&preview, 170)))
         .child(meta)
         .into_element()
 }

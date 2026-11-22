@@ -283,12 +283,6 @@ fn scope_label(locale: Locale, scope: &Scope) -> String {
         }
     }
 }
-fn project_name(scope: &Scope) -> String {
-    match scope {
-        Scope::Global => "—".into(),
-        Scope::Project { name } | Scope::Environment { name } => sanitize(name, 120),
-    }
-}
 /// Who a record comes from, in the operator's words.
 fn origin_label(locale: Locale, origin: Origin) -> &'static str {
     tr(
@@ -410,6 +404,15 @@ fn review_literal(review: &Review, expanded: bool, value: &str) -> Vec<String> {
     literal(value)
 }
 /// Preserve all record characters for review; make control/bidi content visible.
+/// Whether `s` holds characters that could disguise what it says (control
+/// characters other than line breaks and tabs, bidirectional overrides): it
+/// is then shown escaped, never rendered.
+fn disguising(s: &str) -> bool {
+    s.chars().any(|c| {
+        (c.is_control() && c != '\n' && c != '\t')
+            || matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+    })
+}
 fn literal(s: &str) -> Vec<String> {
     let escaped: String = s
         .chars()
@@ -452,23 +455,16 @@ fn queue_tab(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
             .child(ui::empty(model, m.word(Msg::ReviewQueueUnobserved)))
             .into_element();
     };
-    body = body.child(text(
-        tr(m.locale, Msg::ReviewQueueWatermark)
-            .replace("{sequence}", &queue.commit_sequence.to_string()),
-    ));
-    body = body.child(
-        text(m.word(Msg::ReviewQueuePaging))
-            .text_size(px(ui::scale::text::CAPTION))
-            .text_color(move || palette(model).muted),
-    );
     // Even an empty later page can disclose drift; paging is not a snapshot.
     if queue.commit_sequence > m.operator.queue_watermark {
         let delta = queue.commit_sequence - m.operator.queue_watermark;
         body = body.child(
-            // Keep the drift disclosure readable as a native text row.
-            text(format!("{} · +{delta}", m.word(Msg::ReviewWatermark)))
-                .text_size(px(ui::scale::text::CAPTION))
-                .text_color(move || palette(model).warning),
+            text(
+                m.word(Msg::ReviewQueueChanged)
+                    .replace("{n}", &delta.to_string()),
+            )
+            .text_size(px(ui::scale::text::CAPTION))
+            .text_color(move || palette(model).warning),
         );
     }
     if queue.records.is_empty() {
@@ -904,53 +900,106 @@ fn detail_tab(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
             r.proposal_digest.chars().take(16).collect::<String>()
         )
     };
-    let mut lines = vec![
-        format!("ID: {}", r.id),
-        format!(
-            "{}: {}",
-            m.word(Msg::Scope),
-            scope_label(m.locale, &r.scope)
-        ),
-        format!("{}: {}", m.word(Msg::Project), project_name(&r.scope)),
-        format!("{}: {}", m.word(Msg::ReviewStatus), r.status),
-        format!("{}:", m.word(Msg::OperatorKey)),
-    ];
-    lines.extend(literal(&r.key));
-    lines.push(format!("{}:", m.word(Msg::OperatorValue)));
-    lines.extend(literal(&r.value));
-    lines.push(format!(
-        "{}: {}",
-        m.word(Msg::OperatorTags),
-        precept_ui_core::presentation::hashtags(&r.tags)
-    ));
-    lines.push(format!(
-        "{}: {}",
-        m.word(Msg::ReviewOrigin),
-        origin_label(m.locale, r.origin)
-    ));
-    lines.push(format!("{}: {}", m.word(Msg::ReviewRevision), r.revision));
-    lines.push(format!("{}: {}", m.word(Msg::ReviewDigest), digest));
-    body = body.child(card(model, m.word(Msg::ReviewDetailTab), lines));
-    body = body.child(
-        text(m.word(Msg::ReviewProvenanceNote))
+    let variant = match r.status.as_str() {
+        "confirmed" => ui::BadgeVariant::Success,
+        "suggested" => ui::BadgeVariant::Warning,
+        _ => ui::BadgeVariant::Neutral,
+    };
+    let caption = |s: String| {
+        text(s)
             .text_size(px(ui::scale::text::CAPTION))
-            .text_color(move || palette(model).muted),
-    );
+            .text_color(move || palette(model).muted)
+    };
+    // The record: its key and state, its text as written, where it applies.
     body = body.child(
-        text(m.word(Msg::ReviewContractNote))
-            .text_size(px(ui::scale::text::CAPTION))
-            .text_color(move || palette(model).muted),
+        view()
+            .gap_2()
+            .p_3()
+            .rounded(px(ui::scale::radius::CONTAINER))
+            .bg(move || palette(model).panel)
+            .border_1()
+            .border_color(move || palette(model).hairline)
+            .child(
+                view()
+                    .flex_row()
+                    .flex_wrap()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        text(sanitize(&r.key, 120))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .min_w_0(),
+                    )
+                    .child(ui::badge(model, status_word(&m, &r.status)).variant(variant))
+                    .child(caption(format!(
+                        "{} · {}",
+                        scope_label(m.locale, &r.scope),
+                        origin_label(m.locale, r.origin)
+                    ))),
+            )
+            .child(if disguising(&r.value) || disguising(&r.key) {
+                // Escaped, exactly as stored: nothing is rendered or hidden.
+                let mut lines = view().gap_0p5();
+                for line in literal(&r.key).into_iter().chain(literal(&r.value)) {
+                    lines = lines.child(text(line).font_family("monospace"));
+                }
+                lines.into_element()
+            } else {
+                scroll()
+                    .max_h(px(320.0))
+                    .w_full()
+                    .child(ui::markdown_view(model, r.value.clone()))
+                    .into_element()
+            })
+            .child(record_meta(model, r)),
     );
-    body = body.child(word_action(
-        model,
-        if m.operator.digest_expanded {
-            Msg::ReviewDigestCollapse
-        } else {
-            Msg::ReviewDigestExpand
-        },
-        || true,
-        move || model.update(|m| m.operator.digest_expanded = !m.operator.digest_expanded),
-    ));
+    // What only matters when checking exactly what is decided: one quiet
+    // line, the notes behind its info button.
+    body = body.child(
+        view()
+            .flex_row()
+            .flex_wrap()
+            .items_center()
+            .gap_2()
+            .child(caption(format!(
+                "#{} · {} {} · {} {}",
+                r.id,
+                m.word(Msg::ReviewRevision),
+                r.revision,
+                m.word(Msg::ReviewDigest),
+                digest
+            )))
+            .child(
+                ui::button(model, "")
+                    .label_fn(move || {
+                        let m = model.get();
+                        m.word(if m.operator.digest_expanded {
+                            Msg::ReviewDigestCollapse
+                        } else {
+                            Msg::ReviewDigestExpand
+                        })
+                        .into()
+                    })
+                    .size(ui::ButtonSize::Small)
+                    .variant(ui::ButtonVariant::Ghost)
+                    .on_press(move || {
+                        model.update(|m| m.operator.digest_expanded = !m.operator.digest_expanded)
+                    }),
+            )
+            .child(ui::info(
+                model,
+                move || model.get().word(Msg::ReviewNotesTitle).into(),
+                move || {
+                    let m = model.get();
+                    format!(
+                        "{}\n\n{}",
+                        m.word(Msg::ReviewProvenanceNote),
+                        m.word(Msg::ReviewContractNote)
+                    )
+                    .into()
+                },
+            )),
+    );
     // Peer-demotion disclosure read from inspect; the authoritative set is
     // computed at commit. A truncated preview still names the full total.
     if inspect.peer_demotion_total > 0 {
@@ -3297,7 +3346,7 @@ mod tests {
         app.wait_for("Deprecation makes the record inactive in agent effective context.")
             .unwrap();
         app.press("Deprecate preference…").unwrap();
-        app.wait_for("Prepared operation; no write sent yet")
+        app.wait_for("Nothing is written until you apply it")
             .unwrap();
         // The prepared destructive-tier card repeats the impact disclosure.
         assert!(
@@ -3316,25 +3365,25 @@ mod tests {
         // A blind Enter on the focused, empty retype field prepares nothing.
         app.type_text("Retype the exact ID", "").unwrap();
         app.press_key("Enter").unwrap();
-        assert!(!app.screen().shows("Prepared operation; no write sent yet"));
+        assert!(!app.screen().shows("Nothing is written until you apply it"));
         // The exact id arms the tier; Enter prepares the delete (no submit here).
         app.type_text("Retype the exact ID", "7").unwrap();
         app.wait_for("Deletion armed; apply to commit").unwrap();
         app.press_key("Enter").unwrap();
-        app.wait_for("Prepared operation; no write sent yet")
+        app.wait_for("Nothing is written until you apply it")
             .unwrap();
         assert!(app.screen().shows(
             "This permanently removes the record's content and its decision history. Receipts remain as identity-only proof; the database file is not securely erased."
         ));
         // Cancelling the prepared delete disarms; a fresh tier refuses a wrong id.
-        app.press("Cancel review").unwrap();
+        app.press("Cancel").unwrap();
         app.wait_for("#7 · synthetic-key-7 · r1").unwrap();
         app.press_key("alt+shift+q").unwrap();
         app.wait_for("Delete global preference #7?").unwrap();
         app.type_text("Retype the exact ID", "8").unwrap();
         app.wait_for("The typed ID does not match").unwrap();
         app.press_key("Enter").unwrap();
-        assert!(!app.screen().shows("Prepared operation; no write sent yet"));
+        assert!(!app.screen().shows("Nothing is written until you apply it"));
     }
 
     #[test]
@@ -3346,7 +3395,7 @@ mod tests {
         app.type_text("Retype the exact ID", "").unwrap();
         app.press_key("Enter").unwrap();
         assert!(!app.screen().shows("Deletion armed; apply to commit"));
-        assert!(!app.screen().shows("Prepared operation; no write sent yet"));
+        assert!(!app.screen().shows("Nothing is written until you apply it"));
     }
 
     #[test]
@@ -3399,7 +3448,7 @@ mod tests {
         app.press_key("Escape").unwrap();
         app.wait_for_gone("Delete global preference #7?", Duration::from_secs(5))
             .unwrap();
-        assert!(!app.screen().shows("Prepared operation; no write sent yet"));
+        assert!(!app.screen().shows("Nothing is written until you apply it"));
         app.press_key("alt+shift+q").unwrap();
         app.wait_for("Delete global preference #7?").unwrap();
         assert_eq!(
@@ -3407,7 +3456,7 @@ mod tests {
             Some("")
         );
         app.press_key("Enter").unwrap();
-        assert!(!app.screen().shows("Prepared operation; no write sent yet"));
+        assert!(!app.screen().shows("Nothing is written until you apply it"));
     }
 
     #[test]
@@ -3419,19 +3468,18 @@ mod tests {
     }
 
     #[test]
-    fn empty_later_queue_page_still_discloses_watermark_and_drift() {
+    fn empty_later_queue_page_still_discloses_drift() {
         let mut app = start::<DriftedEmptyQueueConsole>();
         app.wait_for("No pending suggestions").unwrap();
-        app.wait_for("Queue watermark: commit 8").unwrap();
-        app.wait_for("Queue changed since page loaded · +3")
-            .unwrap();
         app.wait_for(
-            "More loads as you scroll. Each batch is a separate read, not a shared snapshot.",
+            "The Profile changed 3 time(s) since this list loaded; inspect the review queue again to see it.",
         )
         .unwrap();
+        // Implementation detail stays out of the page.
+        assert!(!app.screen().texts().iter().any(|t| t.contains("watermark")));
         app.press_key("mod+l").unwrap();
-        app.wait_for("队列水位：提交 8").unwrap();
-        app.wait_for("页面加载后队列已变化 · +3").unwrap();
+        app.wait_for("此列表加载后 Profile 又变化了 3 次；请重新检查待审队列查看。")
+            .unwrap();
     }
 
     #[test]
@@ -3454,13 +3502,23 @@ mod tests {
                 .any(|t| t.contains("\\n\\u{202e}source-tail"))
         })
         .unwrap();
-        app.wait_for("Origin is the operator's claim, not verified authorship; the digest proves byte equality only.").unwrap();
-        app.wait_for("Tags: #synthetic").unwrap();
-        app.wait_for("Origin: Agent").unwrap();
-        app.wait_for("Committed rules in the repository's .precept/rules/ outrank Profile records of the same key. Confirming a record here does not change the repository.").unwrap();
+        // The authority notes sit behind the record's info button.
+        assert!(
+            app.screen()
+                .count("role:button[About this record]")
+                .unwrap()
+                > 0
+        );
+        app.wait_for("synthetic").unwrap();
+        app.wait_until("origin named", Duration::from_secs(5), |s| {
+            s.texts().iter().any(|t| t.ends_with("· Agent"))
+        })
+        .unwrap();
         app.press_key("mod+l").unwrap();
-        app.wait_for("来源: Agent").unwrap();
-        app.wait_for("修订: 1").unwrap();
+        app.wait_until("localized revision", Duration::from_secs(5), |s| {
+            s.texts().iter().any(|t| t.contains("修订 1"))
+        })
+        .unwrap();
     }
 
     #[test]
@@ -3475,9 +3533,9 @@ mod tests {
         app.wait_for_gone("Delete global preference #7?", Duration::from_secs(5))
             .unwrap();
         app.press_key("alt+shift+v").unwrap();
-        assert!(!app.screen().shows("Prepared operation; no write sent yet"));
+        assert!(!app.screen().shows("Nothing is written until you apply it"));
         app.press_key("alt+shift+q").unwrap();
-        assert!(!app.screen().shows("Prepared operation; no write sent yet"));
+        assert!(!app.screen().shows("Nothing is written until you apply it"));
         assert!(!app.screen().shows("Deletion armed; apply to commit"));
     }
 
@@ -3504,18 +3562,18 @@ mod tests {
         app.wait_for("#7 · synthetic-key-7 · r1").unwrap();
         let full = record(7, "suggested", 1).proposal_digest;
         app.press_key("alt+shift+y").unwrap();
-        app.wait_for("Prepared operation; no write sent yet")
+        app.wait_for("Nothing is written until you apply it")
             .unwrap();
         assert!(!app.screen().texts().join("").contains(&full));
-        app.press("Cancel review").unwrap();
+        app.press("Cancel").unwrap();
         app.wait_for_gone(
-            "Prepared operation; no write sent yet",
+            "Nothing is written until you apply it",
             Duration::from_secs(5),
         )
         .unwrap();
         app.press("Show full digest").unwrap();
         app.press_key("alt+shift+y").unwrap();
-        app.wait_for("Prepared operation; no write sent yet")
+        app.wait_for("Nothing is written until you apply it")
             .unwrap();
         assert!(app.screen().texts().join("").contains(&full));
     }
@@ -3527,7 +3585,7 @@ mod tests {
         app.wait_for("#7 · synthetic-key-7 · suggested · r1")
             .unwrap();
         app.wait_for("Show full digest").unwrap();
-        assert!(!app.screen().shows("Review exact operation"));
+        assert!(!app.screen().shows("Check before writing"));
         assert_eq!(
             app.screen()
                 .count("role:button[Confirm preference…]")
@@ -3541,7 +3599,7 @@ mod tests {
             1
         );
         app.press("Confirm preference…").unwrap();
-        app.wait_for("Prepared operation; no write sent yet")
+        app.wait_for("Nothing is written until you apply it")
             .unwrap();
     }
 
@@ -3554,9 +3612,9 @@ mod tests {
         app.type_text("Retype the exact ID", "8").unwrap();
         app.wait_for("The typed ID does not match").unwrap();
         app.press_key("Enter").unwrap();
-        assert!(!app.screen().shows("Prepared operation; no write sent yet"));
+        assert!(!app.screen().shows("Nothing is written until you apply it"));
         app.press_key("alt+shift+v").unwrap();
-        assert!(!app.screen().shows("Prepared operation; no write sent yet"));
+        assert!(!app.screen().shows("Nothing is written until you apply it"));
         app.press_key("Escape").unwrap();
         app.wait_for_gone("Delete global preference #7?", Duration::from_secs(5))
             .unwrap();

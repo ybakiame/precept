@@ -855,14 +855,32 @@ fn pointer_tile(model: Signal<Model>) -> impl IntoElement {
 fn group(
     model: Signal<Model>,
     title: Msg,
+    summary: Msg,
     scope: Msg,
     tiles: impl IntoElement,
 ) -> impl IntoElement {
     view()
         .gap_2()
         .pt_2()
-        .child(text(word(model, title)).font_weight(FontWeight::SEMIBOLD))
-        .child(caption(model, move |_| Some(scope)))
+        .child(
+            view()
+                .flex_row()
+                .items_center()
+                .gap_1()
+                .child(text(word(model, title)).font_weight(FontWeight::SEMIBOLD))
+                // The full scope and limits, behind the info button.
+                .child(ui::info(
+                    model,
+                    move || {
+                        let m = model.get();
+                        m.word(Msg::AboutGroup)
+                            .replace("{name}", m.word(title))
+                            .into()
+                    },
+                    move || model.get().word(scope).into(),
+                )),
+        )
+        .child(caption(model, move |_| Some(summary)))
         .child(tiles)
 }
 
@@ -913,6 +931,7 @@ fn integrations(model: Signal<Model>) -> impl IntoElement {
         .child(group(
             model,
             Msg::McpGroup,
+            Msg::McpSummary,
             Msg::McpScope,
             row()
                 .child(mcp_tile(model, "claude", Msg::TileClaude))
@@ -922,6 +941,7 @@ fn integrations(model: Signal<Model>) -> impl IntoElement {
         .child(group(
             model,
             Msg::HookGroup,
+            Msg::HookSummary,
             Msg::HookScope,
             row()
                 .child(hook_tile(model, "claude", "session_start", Msg::TileClaude))
@@ -936,6 +956,7 @@ fn integrations(model: Signal<Model>) -> impl IntoElement {
         .child(group(
             model,
             Msg::GateGroup,
+            Msg::GateSummary,
             Msg::GateScope,
             view()
                 .gap_2()
@@ -955,6 +976,7 @@ fn integrations(model: Signal<Model>) -> impl IntoElement {
         .child(group(
             model,
             Msg::PointerGroup,
+            Msg::PointerSummary,
             Msg::PointerScope,
             // One tile wide, like the tiles of the groups above.
             row()

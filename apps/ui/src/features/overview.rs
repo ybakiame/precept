@@ -141,7 +141,10 @@ pub(crate) fn dashboard(model: Signal<Model>) -> impl IntoElement {
     );
     context = context.child(note(model, m.word(Msg::ContextHelp)));
     for warning in p.context.warnings.iter().take(8) {
-        context = context.child(note(model, sanitize(warning, 512)));
+        context = context.child(note(
+            model,
+            precept_ui_core::presentation::warning(m.locale, warning),
+        ));
     }
     context = context.child(
         view().items_start().child(
