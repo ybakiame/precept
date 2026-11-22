@@ -47,7 +47,7 @@ fn main() -> impl std::process::Termination {
             title,
             #[cfg(any(target_os = "linux", target_os = "windows"))]
             app_id: "org.precept.operator".into(),
-            size: (1080, 760),
+            size: precept_ui::brand_preview::default_size(),
             storage: Some(precept_ui::ephemeral_storage()),
             cache: platform::CacheOptions::off(),
             ..Default::default()

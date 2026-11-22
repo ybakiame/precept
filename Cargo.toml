@@ -1,3 +1,8 @@
 [workspace]
 members = ["crates/precept-core", "crates/precept-store", "crates/precept-write", "crates/precept-ipc", "crates/preceptd", "crates/precept", "crates/precept-mcp"]
 resolver = "2"
+
+# The product version, one for every crate (semantic versioning; 0.x while
+# the Profile schema and interfaces may still change).
+[workspace.package]
+version = "0.4.0"

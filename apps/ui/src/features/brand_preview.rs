@@ -2,7 +2,7 @@
 //! This root only consumes a built-in synthetic snapshot. Native IPC is never initialized.
 use nsh_base::button;
 use nsh_core::{
-    desktop::{MainWindowOptions, ResizeEdge, WindowFrameStyle, WindowMode},
+    desktop::{MainWindowOptions, ResizeEdge, WindowMode},
     element::desktop::current_window,
     prelude::*,
 };
@@ -102,10 +102,17 @@ pub fn configure() -> Result<bool, &'static str> {
         .map_err(|_| "Preview already configured")?;
     Ok(true)
 }
+/// The main window's launch settings, from `nsh.json` `"window"` (the one
+/// place they are set): no system frame, its default and least size.
 pub fn window_options() -> MainWindowOptions {
-    let mut options = MainWindowOptions::default();
-    options.attributes.frame = Some(WindowFrameStyle::None);
-    options
+    let manifest: serde_json::Value =
+        serde_json::from_str(include_str!("../../nsh.json")).expect("nsh.json is JSON");
+    MainWindowOptions::from_json(&manifest["window"]).expect("nsh.json \"window\" is valid")
+}
+/// The default window size from `nsh.json`, in points.
+pub fn default_size() -> (i32, i32) {
+    let size = window_options().default_size;
+    size.map_or((1180, 780), |s| (s.width.0 as i32, s.height.0 as i32))
 }
 fn terminal() -> bool {
     super::TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed)
@@ -810,6 +817,18 @@ fn preview(config: Config) -> impl IntoElement {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_window_settings_come_from_nsh_json() {
+        let o = window_options();
+        assert_eq!(
+            o.attributes.frame,
+            Some(nsh_core::desktop::WindowFrameStyle::None)
+        );
+        let min = o.attributes.min_size.flatten().unwrap();
+        assert_eq!((min.width.0, min.height.0), (960.0, 600.0));
+        assert_eq!(default_size(), (1180, 780));
+    }
     #[test]
     fn preview_cannot_accept_live_or_arbitrary_inputs() {
         let args = |s: &[&str]| s.iter().map(|s| s.to_string()).collect::<Vec<_>>();

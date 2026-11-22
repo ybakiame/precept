@@ -88,6 +88,7 @@ with Diagnostics and Settings available separately. See the
 
 ## Documentation
 
+- [Changelog](CHANGELOG.md)
 - [Product charter](docs/product.md)
 - [Architecture and data ownership](docs/architecture.md)
 - [Interfaces and conformance boundary](docs/interfaces.md)

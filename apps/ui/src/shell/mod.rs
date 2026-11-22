@@ -455,28 +455,10 @@ fn sidebar(model: Signal<Model>) -> impl IntoElement {
         .flex_shrink_0()
         .gap_4()
         .p_3()
-        // Full height so the foot group sits at the bottom; a wrapped row when compact.
-        .style_when(move || !compact(), |s| s.h_full())
+        // The column's rest under the brand bar, so the foot group sits at
+        // the bottom; a wrapped row when compact.
+        .style_when(move || !compact(), |s| s.flex_1())
         .style_when(compact, |s| s.p_2().gap_2())
-        .child(
-            view()
-                .flex_row()
-                .items_center()
-                .gap_2()
-                .px_2()
-                .pb_1()
-                .style_when(compact, |s| s.hidden())
-                .child(
-                    view()
-                        .text_color(move || palette(model).primary)
-                        .child(ui::icon::glyph(icons::BRAND, ui::scale::icon::LG)),
-                )
-                .child(
-                    text("Precept")
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_size(px(ui::scale::text::BODY)),
-                ),
-        )
         .child(
             slide.group(
                 view()
@@ -538,6 +520,134 @@ fn copyable_destination(d: Destination) -> bool {
     )
 }
 
+/// The destination's title, the workspace it is scoped to, and its help.
+fn title_cluster(model: Signal<Model>) -> impl IntoElement {
+    view()
+        .flex_row()
+        .flex_wrap()
+        .items_center()
+        .gap_2()
+        .child({
+            // The title arrives with each destination (a short
+            // rise), so a page change reads as one.
+            let destination = computed(move || current(&model.get()));
+            dynamic(move || {
+                let _ = destination.get();
+                let arrive = ui::motion::page();
+                text(move || model.get().word(title_key(current(&model.get()))))
+                    .role(AccessibilityRole::Header)
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_size(px(ui::scale::text::TITLE))
+                    .bind_motion(&arrive)
+                    .into_element()
+            })
+        })
+        .child(header_scope_badge(model))
+        // A page's longer explanation, behind an info button.
+        .child(
+            view()
+                .style_when(move || page_help(&model.get()).is_none(), |s| s.hidden())
+                .child(ui::info(
+                    model,
+                    move || model.get().word(Msg::AboutThisPage).into(),
+                    move || page_help(&model.get()).unwrap_or_default().into(),
+                )),
+        )
+}
+
+/// The brand at the top of the sidebar, level with the window's buttons;
+/// dragging it moves the window.
+fn brand_bar(model: Signal<Model>) -> impl IntoElement {
+    view()
+        .flex_row()
+        .items_center()
+        .gap_2()
+        .h(px(ui::scale::layout::TITLE_BAR))
+        .px_4()
+        .flex_shrink_0()
+        .window_drag(true)
+        .style_when(compact, |s| s.hidden())
+        .child(
+            view()
+                .text_color(move || palette(model).primary)
+                .child(ui::icon::glyph(icons::BRAND, ui::scale::icon::LG)),
+        )
+        .child(
+            text("Precept")
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_size(px(ui::scale::text::BODY)),
+        )
+}
+
+/// The top bar of the page column: show or hide the sidebar, the page's
+/// title, the version, then the window's buttons. Its empty space moves the
+/// window. With the sidebar hidden, the brand mark leads it.
+fn top_bar(model: Signal<Model>) -> impl IntoElement {
+    let collapsed = move || model.get().sidebar_collapsed;
+    view()
+        .flex_row()
+        .items_center()
+        .gap_2()
+        .h(px(ui::scale::layout::TITLE_BAR))
+        .pl_3()
+        .flex_shrink_0()
+        .child(
+            view()
+                .style_when(move || !collapsed(), |s| s.hidden())
+                .text_color(move || palette(model).primary)
+                .child(ui::icon::glyph(icons::BRAND, ui::scale::icon::MD)),
+        )
+        .child(
+            ui::icon_button(model, icons::SIDEBAR, move || {
+                let m = model.get();
+                m.word(if m.sidebar_collapsed {
+                    Msg::SidebarShow
+                } else {
+                    Msg::SidebarHide
+                })
+                .into()
+            })
+            .variant(ui::ButtonVariant::Ghost)
+            .size(ui::ButtonSize::Small)
+            .on_press(move || model.update(|m| m.sidebar_collapsed = !m.sidebar_collapsed)),
+        )
+        .child(
+            view()
+                .flex_1()
+                .min_w_0()
+                .h_full()
+                .flex_row()
+                .items_center()
+                .window_drag(true)
+                .child(title_cluster(model)),
+        )
+        .child(version_badge(model))
+        .child(chrome::window_buttons(model))
+}
+
+/// The app's version, quiet, beside the window's buttons.
+fn version_badge(model: Signal<Model>) -> impl IntoElement {
+    let version = env!("CARGO_PKG_VERSION");
+    view()
+        .accessible(true)
+        .label(move || {
+            model
+                .get()
+                .word(Msg::VersionLabel)
+                .replace("{version}", version)
+        })
+        .px_2()
+        .py_0p5()
+        .mr_2()
+        .rounded(px(ui::scale::radius::PILL))
+        .bg(move || palette(model).inset)
+        .child(
+            text(format!("v{version}"))
+                .text_size(px(ui::scale::text::CAPTION))
+                .text_color(move || palette(model).muted),
+        )
+}
+
 /// The page header: the destination's title, calm workspace scope indicator,
 /// one human status line and the page-wide actions.
 fn header(model: Signal<Model>) -> impl IntoElement {
@@ -550,41 +660,15 @@ fn header(model: Signal<Model>) -> impl IntoElement {
                 .flex_1()
                 .min_w_0()
                 .gap_1()
+                // On a desktop the title sits in the top bar; the terminal,
+                // which has none, keeps it here.
                 .child(
                     view()
-                        .flex_row()
-                        .flex_wrap()
-                        .items_center()
-                        .gap_2()
-                        .child({
-                            // The title arrives with each destination (a short
-                            // rise), so a page change reads as one.
-                            let destination = computed(move || current(&model.get()));
-                            dynamic(move || {
-                                let _ = destination.get();
-                                let arrive = ui::motion::page();
-                                text(move || model.get().word(title_key(current(&model.get()))))
-                                    .role(AccessibilityRole::Header)
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_size(px(ui::scale::text::TITLE))
-                                    .bind_motion(&arrive)
-                                    .into_element()
-                            })
-                        })
-                        .child(header_scope_badge(model))
-                        // A page's longer explanation, behind an info button.
-                        .child(
-                            view()
-                                .style_when(
-                                    move || page_help(&model.get()).is_none(),
-                                    |s| s.hidden(),
-                                )
-                                .child(ui::info(
-                                    model,
-                                    move || model.get().word(Msg::AboutThisPage).into(),
-                                    move || page_help(&model.get()).unwrap_or_default().into(),
-                                )),
-                        ),
+                        .style_when(
+                            move || !TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed),
+                            |s| s.hidden(),
+                        )
+                        .child(title_cluster(model)),
                 )
                 .child(
                     view()
@@ -757,17 +841,10 @@ pub(crate) fn shell(
             page_rise.timing(0.0, ui::motion::FAST, Easing::EaseOut);
         }
     });
+    let terminal = || TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed);
     view()
         .flex_1()
         .bg(move || palette(model).background)
-        .child(
-            view()
-                .style_when(
-                    || TERMINAL_SURFACE.load(std::sync::atomic::Ordering::Relaxed),
-                    |s| s.hidden(),
-                )
-                .child(chrome::titlebar(model)),
-        )
         .child(
             view()
                 .flex_1()
@@ -777,83 +854,112 @@ pub(crate) fn shell(
                 .bg(move || palette(model).background)
                 .text_color(move || palette(model).text)
                 .text_size(px(ui::scale::text::BODY))
+                // The sidebar runs from the window's top edge to its bottom:
+                // its brand bar is level with the window's buttons.
                 .child(
                     view()
+                        .flex_shrink_0()
                         .bg(move || palette(model).sidebar)
                         .border_color(move || palette(model).hairline)
                         .style_when(move || !compact(), |s| s.border_r_1())
                         .style_when(compact, |s| s.border_b_1())
+                        .style_when(
+                            move || !compact() && model.get().sidebar_collapsed,
+                            |s| s.hidden(),
+                        )
+                        .child(brand_bar(model))
                         .child(sidebar(model)),
                 )
                 .child(
                     view()
                         .flex_1()
                         .min_w_0()
-                        .px_6()
-                        .pt_4()
-                        .gap_4()
-                        .style_when(compact, |s| s.px_2().pt_2().gap_2())
-                        .child(header(model))
-                        .child(task_input(model, task_ref))
-                        .child(preference_input(model, filter_ref))
-                        .child(review::panel(model))
-                        .child(projects::remove_dialog(model))
-                        .child(features::preferences::detail_dialog(model))
-                        .child(features::review::export_dialog(model))
-                        .child(agents::pointer_dialog(model))
                         .child(
-                            scroll()
+                            view()
+                                .style_when(terminal, |s| s.hidden())
+                                .child(top_bar(model)),
+                        )
+                        .child(
+                            view()
                                 .flex_1()
-                                .element_ref(&page_scroll)
-                                .style_when(move || model.get().operator.open, |s| s.hidden())
+                                .min_w_0()
+                                .px_6()
+                                .pt_2()
+                                .gap_4()
+                                .style_when(compact, |s| s.px_2().pt_2().gap_2())
+                                .child(header(model))
+                                .child(task_input(model, task_ref))
+                                .child(preference_input(model, filter_ref))
+                                .child(review::panel(model))
+                                .child(projects::remove_dialog(model))
+                                .child(features::preferences::detail_dialog(model))
+                                .child(features::review::export_dialog(model))
+                                .child(agents::pointer_dialog(model))
                                 .child(
-                                    view()
-                                        .bind_translate_y(&page_rise)
-                                        .gap_4()
-                                        .pb_6()
-                                        .flex_shrink_0()
-                                        .child(
-                                            view()
-                                                .style_when(on(Destination::Settings), |s| {
-                                                    s.hidden()
-                                                })
-                                                .child(settings::appearance(model)),
+                                    scroll()
+                                        .flex_1()
+                                        .element_ref(&page_scroll)
+                                        .style_when(
+                                            move || model.get().operator.open,
+                                            |s| s.hidden(),
                                         )
                                         .child(
                                             view()
-                                                .style_when(on(Destination::RuntimeChecks), |s| {
-                                                    s.hidden()
-                                                })
-                                                .child(setup::page(model)),
-                                        )
-                                        .child(
-                                            view()
-                                                .style_when(on(Destination::Agents), |s| s.hidden())
-                                                .child(agents::page(model)),
-                                        )
-                                        .child(
-                                            view()
-                                                .style_when(on(Destination::Sessions), |s| {
-                                                    s.hidden()
-                                                })
-                                                .child(sessions::page(model)),
-                                        )
-                                        .child(
-                                            view()
-                                                .style_when(on(Destination::Diagnostics), |s| {
-                                                    s.hidden()
-                                                })
-                                                .child(doctor::panel(model)),
-                                        )
-                                        .child(
-                                            view()
-                                                .style_when(
-                                                    move || {
-                                                        !copyable_destination(current(&model.get()))
-                                                    },
-                                                    |s| s.hidden(),
+                                                .bind_translate_y(&page_rise)
+                                                .gap_4()
+                                                .pb_6()
+                                                .flex_shrink_0()
+                                                .child(
+                                                    view()
+                                                        .style_when(
+                                                            on(Destination::Settings),
+                                                            |s| s.hidden(),
+                                                        )
+                                                        .child(settings::appearance(model)),
                                                 )
-                                                .child(dynamic(move || page(model))),
+                                                .child(
+                                                    view()
+                                                        .style_when(
+                                                            on(Destination::RuntimeChecks),
+                                                            |s| s.hidden(),
+                                                        )
+                                                        .child(setup::page(model)),
+                                                )
+                                                .child(
+                                                    view()
+                                                        .style_when(on(Destination::Agents), |s| {
+                                                            s.hidden()
+                                                        })
+                                                        .child(agents::page(model)),
+                                                )
+                                                .child(
+                                                    view()
+                                                        .style_when(
+                                                            on(Destination::Sessions),
+                                                            |s| s.hidden(),
+                                                        )
+                                                        .child(sessions::page(model)),
+                                                )
+                                                .child(
+                                                    view()
+                                                        .style_when(
+                                                            on(Destination::Diagnostics),
+                                                            |s| s.hidden(),
+                                                        )
+                                                        .child(doctor::panel(model)),
+                                                )
+                                                .child(
+                                                    view()
+                                                        .style_when(
+                                                            move || {
+                                                                !copyable_destination(current(
+                                                                    &model.get(),
+                                                                ))
+                                                            },
+                                                            |s| s.hidden(),
+                                                        )
+                                                        .child(dynamic(move || page(model))),
+                                                ),
                                         ),
                                 ),
                         ),

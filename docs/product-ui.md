@@ -88,8 +88,15 @@ project/worktree, plus the task when relevant. Personal scope is
 explicit. Selecting a project never turns a personal action into a repository
 write.
 
-Desktop uses a persistent sidebar beside one page; compact and terminal layouts use
-a wrapped destination row. The active workspace owns one primary scroll region.
+Desktop draws its own frame (`nsh.json` `"window"`: no system frame, a least size
+of 960 × 600 so the desktop never falls back to the compact layout). The sidebar
+runs from the window's top edge, its brand level with the window buttons; the page
+column's top bar holds the sidebar toggle, the page title with its workspace scope
+and help, the version (`v` + the product version) and the window buttons, and its
+empty space moves the window. The sidebar hides and shows from that toggle or
+`Ctrl+B`, and the choice is saved; hidden, the brand mark leads the top bar. The
+terminal layout has no top bar: the title stays in the page header and a wrapped
+destination row replaces the sidebar. The active workspace owns one primary scroll region.
 Project/target switches clear stale task and record detail and invalidate
 late completions. Draft connection settings remain distinct from the applied
 target.

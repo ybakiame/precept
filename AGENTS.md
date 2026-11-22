@@ -119,9 +119,3 @@ Do not delete ignored local data, authentication directories or runtime director
 as part of source cleanup. No automatic rule approval, network listener,
 unpreviewed repository or harness writes, daemon shell execution, OS sandbox claim
 or broad execution permission is implied by the current architecture.
-
-<!-- precept:begin v1 -->
-## Precept
-
-This project's confirmed engineering context (the developer's reviewed preferences and the repository's contracts) is served by Precept. Before planning or editing, call `get_effective_context` on the `precept` MCP server, and again after your context is compacted. Current repository files and contracts outrank those preferences: report a conflict instead of choosing silently.
-<!-- precept:end -->

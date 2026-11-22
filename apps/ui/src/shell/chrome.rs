@@ -47,42 +47,15 @@ fn caption(
                 .h(px(14.0)),
         )
 }
-pub(crate) fn titlebar(model: Signal<Model>) -> impl IntoElement {
+/// The window's minimize, maximize/restore and close buttons, right of the
+/// top bar (the app draws its own frame).
+pub(crate) fn window_buttons(model: Signal<Model>) -> impl IntoElement {
     let minimize = current_window();
     let close = current_window();
-    // The sidebar's color runs up to the window's top edge above the sidebar,
-    // the page's above the page: no full-width strip in the system's colors.
     view()
         .flex_row()
-        .h(px(ui::scale::layout::TITLE_BAR))
-        .items_center()
-        .bg(move || palette(model).background)
-        .text_color(move || palette(model).text)
-        .child(
-            view()
-                .w(px(ui::scale::layout::SIDEBAR))
-                .h_full()
-                .flex_shrink_0()
-                .bg(move || palette(model).sidebar)
-                .border_r_1()
-                .border_color(move || palette(model).hairline)
-                .window_drag(true)
-                .style_when(ui::tokens::compact, |s| s.hidden()),
-        )
-        .child(
-            view()
-                .flex_1()
-                .h_full()
-                .px_3()
-                .justify_center()
-                .window_drag(true)
-                .child(
-                    text("Precept")
-                        .text_size(px(ui::scale::text::CAPTION))
-                        .text_color(move || palette(model).muted)
-                        .style_when(move || !ui::tokens::compact(), |s| s.hidden()),
-                ),
-        )
+        .h_full()
+        .flex_shrink_0()
         .child(caption(
             model,
             Msg::Minimize,

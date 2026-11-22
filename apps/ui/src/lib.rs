@@ -474,6 +474,11 @@ fn console(model: Signal<Model>) -> impl IntoElement {
         auto,
         Box::new(move || toggle_contrast(model)),
     );
+    bind(
+        "sidebar.toggle",
+        global,
+        Box::new(move || model.update(|m| m.sidebar_collapsed = !m.sidebar_collapsed)),
+    );
     // Escape is not rebindable. It steps aside while the Shortcuts panel is
     // open (the panel's sheet hears it) or a keystroke is being recorded.
     let escape_free = computed(move || {
@@ -596,6 +601,35 @@ fn console(model: Signal<Model>) -> impl IntoElement {
 mod tests {
     use super::*;
     use nsh_engine::{EngineConfig, Root};
+    #[test]
+    fn the_top_bar_shows_the_version_and_hides_the_sidebar() {
+        // A desktop window (the least nsh.json allows is wider than the
+        // narrow layout, where the sidebar becomes a top row).
+        let mut cfg = EngineConfig::new(Root::of::<App>());
+        cfg.viewport = Size::new(px(1180.0), px(780.0));
+        let mut app = nsh_testing::Headless::start(cfg).unwrap();
+        app.wait_for("Project: alpha").unwrap();
+        assert!(
+            app.screen()
+                .shows(&format!("v{}", env!("CARGO_PKG_VERSION")))
+        );
+        assert!(app.screen().shows("Review & rules"));
+        app.press("Hide the sidebar").unwrap();
+        app.wait_until("sidebar hidden", std::time::Duration::from_secs(5), |s| {
+            !s.shows("Review & rules")
+        })
+        .unwrap();
+        app.press("Show the sidebar").unwrap();
+        app.wait_for("Review & rules").unwrap();
+        app.press_key("mod+b").unwrap();
+        app.wait_until(
+            "hidden by keyboard",
+            std::time::Duration::from_secs(5),
+            |s| !s.shows("Review & rules"),
+        )
+        .unwrap();
+    }
+
     #[test]
     fn repository_rules_show_their_checks_and_open_in_the_dialog() {
         let mut app = nsh_testing::Headless::start(EngineConfig::new(Root::of::<App>())).unwrap();

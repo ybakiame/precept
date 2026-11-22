@@ -92,6 +92,8 @@ pub(crate) const LIST_ORDERED: &str =
 pub(crate) const QUOTE: &str = "M5 6V18M9 8H19M9 12H19M9 16H15";
 pub(crate) const CODE_BLOCK: &str = "M4 4H20V20H4ZM10 9L7 12L10 15M14 9L17 12L14 15";
 /// The keyboard: shortcuts.
+/// A window with its left panel: show or hide the sidebar.
+pub(crate) const SIDEBAR: &str = "M3 4H21V20H3ZM9 4V20";
 pub(crate) const KEYBOARD: &str =
     "M3 7H21V17H3ZM7 10V10.01M10 10V10.01M13 10V10.01M16 10V10.01M8 14H16";
 /// Undo a change back to its default.

@@ -293,6 +293,8 @@ pub struct Model {
     pub expanded: bool,
     pub evidence_page: usize,
     pub high_contrast: bool,
+    /// The sidebar is hidden (desktop; the operator's choice, saved).
+    pub sidebar_collapsed: bool,
     pub selected_preference: Option<usize>,
     /// The repository rule whose details are open (index into the project's rules).
     pub selected_rule: Option<usize>,
@@ -362,6 +364,7 @@ impl Model {
             expanded: false,
             evidence_page: 0,
             high_contrast: false,
+            sidebar_collapsed: false,
             selected_preference: None,
             selected_rule: None,
             detail_page: 0,

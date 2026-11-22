@@ -19,7 +19,10 @@ name=${1:-}
 
 sha=$(git -C "$repo" rev-parse HEAD)
 short=${sha:0:12}
-pkgver="0.0.0.r$(git -C "$repo" rev-list --count HEAD).g${short}"
+# The product version (root Cargo.toml), then the commit it was built from.
+version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"$/\1/p' "$repo/Cargo.toml")
+[[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "no product version in Cargo.toml" >&2; exit 1; }
+pkgver="${version}.r$(git -C "$repo" rev-list --count HEAD).g${short}"
 parent="$repo/.tmp/artifacts/local-dogfood"
 mkdir -p -m 700 "$parent"
 out="$parent/$name"

@@ -1,8 +1,20 @@
 {
   "name": "Precept Operator",
   "id": "org.precept.operator",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "build": 1,
   "rust": ".",
-  "root": "App"
+  "root": "App",
+  "window": {
+    "title": "Precept",
+    "frame": "none",
+    "defaultSize": {
+      "width": 1180,
+      "height": 780
+    },
+    "minSize": {
+      "width": 960,
+      "height": 600
+    }
+  }
 }

@@ -179,6 +179,7 @@ mod tests {
                 mode: Some("light".into()),
                 high_contrast: Some(false),
                 language: Some("zh-CN".into()),
+                sidebar_collapsed: Some(true),
             },
             shortcuts: [("reconnect".to_owned(), "mod+e".to_owned())].into(),
             tag_colors: [

@@ -50,6 +50,15 @@ for (const file of files) {
 }
 // Cargo's core dependency is the authority; compare every active consumer.
 // This validates pins, never resolves them.
+// One product version: both Cargo workspaces, every crate and the app manifest.
+const workspaceVersion = manifest => /\[workspace\.package\][^[]*?\nversion = "([^"]+)"/.exec(readFileSync(manifest, 'utf8'))?.[1];
+const productVersion = workspaceVersion('Cargo.toml');
+requireCheck(/^\d+\.\d+\.\d+$/.test(productVersion || ''), 'Cargo.toml [workspace.package] version is semantic');
+requireCheck(workspaceVersion('apps/Cargo.toml') === productVersion, 'apps/Cargo.toml version matches Cargo.toml');
+requireCheck(JSON.parse(readFileSync('apps/ui/nsh.json', 'utf8')).version === productVersion, 'apps/ui/nsh.json version matches Cargo.toml');
+for (const manifest of files.filter(file => /^(crates|apps\/(core|client|ui))\/[^/]*\/?Cargo\.toml$|^apps\/(core|client|ui)\/Cargo\.toml$/.test(file))) {
+  requireCheck(/^version\.workspace = true$/m.test(readFileSync(manifest, 'utf8')), `${manifest} takes the workspace version`);
+}
 const nshDependencies = [...readFileSync('apps/ui/Cargo.toml', 'utf8')
   .matchAll(/^(nsh-[\w-]+)\s*=\s*\{([^\n]+)\}\s*$/gm)]
   .map(([, name, fields]) => ({ name, body:fields, revision:fields.match(/\brev\s*=\s*"([0-9a-f]{40})"/)?.[1] }));

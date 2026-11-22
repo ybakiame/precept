@@ -58,6 +58,7 @@ shortcuts! {
     "language.toggle", General, KeyLanguage, ["mod+l"];
     "appearance.toggle", General, KeyDarkLight, ["mod+d"];
     "contrast.toggle", General, KeyContrast, ["mod+shift+h"];
+    "sidebar.toggle", General, KeySidebar, ["mod+b"];
     "theme.graphite", General, KeyThemeGraphite, ["alt+d"];
     "theme.harbor", General, KeyThemeHarbor, ["alt+c"];
     "theme.ledger", General, KeyThemeLedger, ["alt+b"];

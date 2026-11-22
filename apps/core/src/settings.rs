@@ -38,6 +38,8 @@ pub struct Appearance {
     pub high_contrast: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sidebar_collapsed: Option<bool>,
 }
 
 /// What launch arguments set explicitly; those win over saved settings.
@@ -66,6 +68,7 @@ impl Settings {
                     }
                     .into(),
                 ),
+                sidebar_collapsed: Some(m.sidebar_collapsed),
             },
             shortcuts: m.keymap.overrides().clone(),
             tag_colors: m.tag_colors.clone(),
@@ -91,6 +94,9 @@ impl Settings {
         }
         if let Some(contrast) = a.high_contrast {
             m.high_contrast = contrast;
+        }
+        if let Some(collapsed) = a.sidebar_collapsed {
+            m.sidebar_collapsed = collapsed;
         }
         if !explicit.language
             && let Some(locale) = a.language.as_deref().and_then(Locale::parse)
