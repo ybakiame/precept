@@ -120,7 +120,7 @@ line naming the recommended setup and the add-ons. The integrations are grouped 
 group headed by what it does and where it reaches, with one quick-setting tile per
 agent: **MCP tools** (on demand; the one `precept` server entry, for every
 registered project, in Claude
-Code's, Codex's and Antigravity's user configuration), **Session-start briefing**
+Code's, Codex's, Antigravity's and Cursor's user configuration), **Session-start briefing**
 (automatic; their session-start hooks), the **Pre-tool gate** (opt-in: the
 project's gate switch, then one gate-hook tile per agent; a tile installed while
 the gate is off says it asks nothing yet) and the **Repository pointer** (the

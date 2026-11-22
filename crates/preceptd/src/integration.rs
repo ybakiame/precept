@@ -146,14 +146,24 @@ pub enum Vendor {
     /// Antigravity: `~/.gemini/config/hooks.json`, whose top-level keys name
     /// hooks; Precept owns the one named `precept-<project>`.
     Antigravity,
+    /// Cursor: `~/.cursor/hooks.json`, `{version: 1, hooks: {<event>:
+    /// [{command}]}}`; the gate answers `beforeShellExecution` only (Cursor
+    /// documents no pre-write input).
+    Cursor,
 }
 impl Vendor {
-    pub const ALL: [Vendor; 3] = [Vendor::Claude, Vendor::Codex, Vendor::Antigravity];
+    pub const ALL: [Vendor; 4] = [
+        Vendor::Claude,
+        Vendor::Codex,
+        Vendor::Antigravity,
+        Vendor::Cursor,
+    ];
     fn file(self) -> (&'static str, &'static str) {
         match self {
             Vendor::Claude => (".claude", "settings.json"),
             Vendor::Codex => (".codex", "hooks.json"),
             Vendor::Antigravity => (".gemini/config", "hooks.json"),
+            Vendor::Cursor => (".cursor", "hooks.json"),
         }
     }
     fn name(self) -> &'static str {
@@ -161,6 +171,7 @@ impl Vendor {
             Vendor::Claude => "claude",
             Vendor::Codex => "codex",
             Vendor::Antigravity => "antigravity",
+            Vendor::Cursor => "cursor",
         }
     }
 }
@@ -175,11 +186,13 @@ pub enum HookEvent {
     PreTool,
 }
 impl HookEvent {
-    /// The event's key in the harness configuration.
-    fn key(self) -> &'static str {
-        match self {
-            Self::SessionStart => "SessionStart",
-            Self::PreTool => "PreToolUse",
+    /// The event's key in `vendor`'s configuration.
+    fn key(self, vendor: Vendor) -> &'static str {
+        match (self, vendor) {
+            (Self::SessionStart, Vendor::Cursor) => "sessionStart",
+            (Self::PreTool, Vendor::Cursor) => "beforeShellExecution",
+            (Self::SessionStart, _) => "SessionStart",
+            (Self::PreTool, _) => "PreToolUse",
         }
     }
     /// The tool matcher a pre-tool entry carries: shell commands and file
@@ -192,6 +205,8 @@ impl HookEvent {
             (Self::PreTool, Vendor::Antigravity) => {
                 Some("run_command|write_to_file|replace_file_content|multi_replace_file_content")
             }
+            // beforeShellExecution judges every command.
+            (Self::PreTool, Vendor::Cursor) => None,
         }
     }
 }
@@ -262,18 +277,18 @@ fn config_file(home: &Path, vendor: Vendor) -> PathBuf {
 }
 
 /// The commands of `event` handlers in a Claude-shaped hooks object.
-fn grouped_commands(config: &crate::ojson::J, event: HookEvent) -> Vec<String> {
+fn grouped_commands(config: &crate::ojson::J, vendor: Vendor, event: HookEvent) -> Vec<String> {
     use crate::ojson::J;
-    let Some(J::Arr(groups)) = config.get("hooks").and_then(|h| h.get(event.key())) else {
+    let Some(J::Arr(groups)) = config.get("hooks").and_then(|h| h.get(event.key(vendor))) else {
         return vec![];
     };
     groups
         .iter()
-        .filter_map(|g| match g.get("hooks") {
-            Some(J::Arr(hs)) => Some(hs),
-            _ => None,
+        .flat_map(|g| match g.get("hooks") {
+            Some(J::Arr(hs)) => hs.iter().collect::<Vec<_>>(),
+            // Cursor lists handlers directly.
+            _ => vec![g],
         })
-        .flatten()
         .filter_map(|h| h.get("command").and_then(|c| c.as_str()).map(str::to_owned))
         .collect()
 }
@@ -288,7 +303,7 @@ fn named_commands(config: &crate::ojson::J, event: HookEvent) -> Vec<String> {
     };
     let mut out = Vec::new();
     for (_, hook) in entries {
-        let Some(J::Arr(items)) = hook.get(event.key()) else {
+        let Some(J::Arr(items)) = hook.get(event.key(Vendor::Antigravity)) else {
             continue;
         };
         for item in items {
@@ -330,7 +345,10 @@ fn edit_named(
         let J::Obj(events) = hook else {
             continue;
         };
-        let Some((_, J::Arr(items))) = events.iter_mut().find(|(k, _)| k == event.key()) else {
+        let Some((_, J::Arr(items))) = events
+            .iter_mut()
+            .find(|(k, _)| k == event.key(Vendor::Antigravity))
+        else {
             continue;
         };
         let before = items.len();
@@ -349,7 +367,7 @@ fn edit_named(
             items.retain(|i| !matches!(i.get("hooks"), Some(J::Arr(hs)) if hs.is_empty()));
         }
         if (touched || items.len() != before) && items.is_empty() {
-            events.retain(|(k, _)| k != event.key());
+            events.retain(|(k, _)| k != event.key(Vendor::Antigravity));
         }
     }
     entries.retain(|(_, hook)| !matches!(hook, J::Obj(events) if events.is_empty()));
@@ -371,7 +389,7 @@ fn edit_named(
             entries.push((name.clone(), J::Obj(vec![])));
         }
         if let Some((_, J::Obj(events))) = entries.iter_mut().find(|(k, _)| *k == name) {
-            events.push((event.key().into(), J::Arr(vec![item])));
+            events.push((event.key(Vendor::Antigravity).into(), J::Arr(vec![item])));
         }
     }
 }
@@ -402,7 +420,7 @@ pub fn hook_status(
         .flatten()
         .map(|j| match vendor {
             Vendor::Antigravity => named_commands(&j, event),
-            _ => grouped_commands(&j, event),
+            _ => grouped_commands(&j, vendor, event),
         })
         .unwrap_or_default();
     let mine: Vec<&String> = commands
@@ -459,7 +477,7 @@ fn edit_grouped(
         return Err(Error::InvalidRequest);
     }
     let start = hooks
-        .entry(event.key(), J::Arr(vec![]))
+        .entry(event.key(vendor), J::Arr(vec![]))
         .ok_or(Error::InvalidRequest)?;
     let J::Arr(groups) = start else {
         return Err(Error::InvalidRequest);
@@ -477,6 +495,26 @@ fn edit_grouped(
         }
     }
     groups.retain(|g| !matches!(g.get("hooks"), Some(J::Arr(hs)) if hs.is_empty()));
+    // Cursor lists handlers directly, without groups.
+    if vendor == Vendor::Cursor {
+        groups.retain(|h| {
+            !h.get("command")
+                .and_then(J::as_str)
+                .is_some_and(|c| ours(c, project, event))
+        });
+        if enabled {
+            groups.push(J::Obj(vec![
+                ("command".into(), J::str(cmd)),
+                ("timeout".into(), J::Num(10.into())),
+            ]));
+        }
+        if groups.is_empty() {
+            hooks.remove(event.key(vendor));
+        }
+        // Cursor requires `version`; an existing one is kept.
+        config.entry("version", J::Num(1.into()));
+        return Ok(());
+    }
     if enabled {
         let mut group = vec![];
         if let Some(m) = event.matcher(vendor) {
@@ -493,7 +531,7 @@ fn edit_grouped(
         groups.push(J::Obj(group));
     }
     if groups.is_empty() {
-        hooks.remove(event.key());
+        hooks.remove(event.key(vendor));
     }
     Ok(())
 }
@@ -916,9 +954,22 @@ mod tests {
             assert_eq!(added["installed"], true, "{vendor:?}");
             assert_eq!(added["current"], true);
             let raw = fs::read_to_string(config_file(home, vendor)).unwrap();
-            assert!(raw.contains("PreToolUse") && raw.contains("SessionStart"));
-            let matcher = HookEvent::PreTool.matcher(vendor).unwrap();
-            assert!(raw.contains(matcher), "{vendor:?}");
+            assert!(
+                raw.contains(HookEvent::PreTool.key(vendor))
+                    && raw.contains(HookEvent::SessionStart.key(vendor))
+            );
+            if let Some(matcher) = HookEvent::PreTool.matcher(vendor) {
+                assert!(raw.contains(matcher), "{vendor:?}");
+            }
+            if vendor == Vendor::Cursor {
+                let v: Value = serde_json::from_str(&raw).unwrap();
+                assert_eq!(v["version"], 1);
+                assert_eq!(
+                    v["hooks"]["beforeShellExecution"][0]["command"],
+                    gate.as_str()
+                );
+                assert_eq!(v["hooks"]["sessionStart"][0]["command"], start.as_str());
+            }
             let start_status =
                 hook_status(home, vendor, "alpha", &start, HookEvent::SessionStart).unwrap();
             assert_eq!(start_status["current"], true, "{vendor:?}");
@@ -935,7 +986,7 @@ mod tests {
             )
             .unwrap();
             let raw = fs::read_to_string(config_file(home, vendor)).unwrap();
-            assert!(!raw.contains("PreToolUse"), "{vendor:?}");
+            assert!(!raw.contains(HookEvent::PreTool.key(vendor)), "{vendor:?}");
             assert!(!raw.contains("pre-tool"));
             assert_eq!(
                 hook_status(home, vendor, "alpha", &start, HookEvent::SessionStart).unwrap()["current"],

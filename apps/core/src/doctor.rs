@@ -50,16 +50,18 @@ fn check(title: Msg, level: Level, detail: impl Into<String>, fix: Option<Fix>) 
 }
 
 /// The harnesses with a one-switch session-start hook, in page order.
-pub const HOOKS: [(&str, Msg); 3] = [
+pub const HOOKS: [(&str, Msg); 4] = [
     ("claude", Msg::DoctorHookClaude),
     ("codex", Msg::DoctorHookCodex),
     ("antigravity", Msg::DoctorHookAntigravity),
+    ("cursor", Msg::DoctorHookCursor),
 ];
 /// The clients with a one-switch MCP entry, in page order.
-pub const MCP: [(&str, Msg); 3] = [
+pub const MCP: [(&str, Msg); 4] = [
     ("claude", Msg::DoctorMcpClaude),
     ("codex", Msg::DoctorMcpCodex),
     ("antigravity", Msg::DoctorMcpAntigravity),
+    ("cursor", Msg::DoctorMcpCursor),
 ];
 
 fn daemon(m: &Model) -> Check {
@@ -609,6 +611,7 @@ fn rules(m: &Model) -> Vec<Check> {
                     ("claude", Msg::TileClaude),
                     ("codex", Msg::TileCodex),
                     ("antigravity", Msg::TileAntigravity),
+                    ("cursor", Msg::TileCursor),
                 ]
                 .iter()
                 .filter(|(v, _)| h.of(v, "pre_tool").is_some_and(|s| s.installed))

@@ -24,14 +24,22 @@ pub enum Client {
     Codex,
     /// Antigravity: `~/.gemini/config/mcp_config.json`, `mcpServers`.
     Antigravity,
+    /// Cursor: `~/.cursor/mcp.json`, `mcpServers`.
+    Cursor,
 }
 impl Client {
-    pub const ALL: [Client; 3] = [Client::Claude, Client::Codex, Client::Antigravity];
+    pub const ALL: [Client; 4] = [
+        Client::Claude,
+        Client::Codex,
+        Client::Antigravity,
+        Client::Cursor,
+    ];
     fn file(self) -> &'static str {
         match self {
             Client::Claude => ".claude.json",
             Client::Codex => ".codex/config.toml",
             Client::Antigravity => ".gemini/config/mcp_config.json",
+            Client::Cursor => ".cursor/mcp.json",
         }
     }
 }

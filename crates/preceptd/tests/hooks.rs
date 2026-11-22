@@ -210,7 +210,8 @@ fn one_mcp_entry_per_client_serves_the_project_of_the_session_folder() {
         [
             "~/.claude.json",
             "~/.codex/config.toml",
-            "~/.gemini/config/mcp_config.json"
+            "~/.gemini/config/mcp_config.json",
+            "~/.cursor/mcp.json"
         ]
     );
     assert_eq!(status["clients"][0]["legacy"], 1);
@@ -449,6 +450,34 @@ fn the_gate_denies_calls_that_break_a_committed_hard_rule_only_while_switched_on
             .contains("has now blocked 3 tool calls"),
         "{v}"
     );
+    // Cursor's beforeShellExecution: an explicit answer every time, since
+    // Cursor blocks on empty output.
+    let cursor = gate_command(&f, "cursor");
+    let cursor_call = |command: &str, cwd: &std::path::Path| {
+        let out = run_with(
+            &cursor,
+            &json!({"hook_event_name":"beforeShellExecution","command":command,
+                "cwd":cwd,"workspace_roots":[cwd]}),
+        );
+        serde_json::from_str::<Value>(&out).unwrap()
+    };
+    let v = cursor_call("git push --force origin main", &root);
+    assert_eq!(v["permission"], "deny");
+    assert!(
+        v["agent_message"]
+            .as_str()
+            .unwrap()
+            .contains("Never rewrite")
+    );
+    assert_eq!(
+        cursor_call("git push origin main", &root)["permission"],
+        "allow"
+    );
+    assert_eq!(
+        cursor_call("git push --force", f.temp.path())["permission"],
+        "allow",
+        "outside the project"
+    );
     // Outside the project the hook stays silent.
     let elsewhere = json!({"cwd":f.temp.path(),"tool_name":"Bash",
         "tool_input":{"command":"git push --force"}});
@@ -480,7 +509,7 @@ fn the_gate_denies_calls_that_break_a_committed_hard_rule_only_while_switched_on
     let context = f.daemon.call(&agent, "context.get", json!({})).unwrap();
     let denials = context["gate_denials"].as_array().unwrap();
     assert_eq!(denials[0]["rule"], "release");
-    assert_eq!(denials[0]["count"], 3, "{denials:?}");
+    assert_eq!(denials[0]["count"], 4, "{denials:?}");
     assert_eq!(denials.len(), 1);
     // The edited rule file is not committed: explain says so.
     let why = f

@@ -23,6 +23,9 @@ data between schemas with the versioned Profile export and import.
   `context.explain` list every rule of a key with its outcome and reason:
   not confirmed, switched off, applies elsewhere, replaced or constrained by a
   repository rule, outranked, or uncommitted.
+- **Cursor joins.** The Agents page sets up Cursor's MCP entry, its
+  session-start briefing and the gate for its shell commands (Cursor offers no
+  hook before a file write).
 - **The terminal UI and the offline web preview are gone.** The desktop app is
   the operator interface; the `precept` CLI covers headless use. Review
   decisions record the `cli` or `desktop` channel only (the Profile schema

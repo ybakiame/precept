@@ -253,7 +253,7 @@ pub enum Level {
     None,
 }
 /// The agents a level is shown for: (hook vendor and MCP client name).
-pub const AGENTS: [&str; 3] = ["claude", "codex", "antigravity"];
+pub const AGENTS: [&str; 4] = ["claude", "codex", "antigravity", "cursor"];
 impl AgentsPage {
     /// `agent`'s level from its session-start hook and MCP entry; `None`
     /// until both were read (never guessed).

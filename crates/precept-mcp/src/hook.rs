@@ -17,7 +17,8 @@ enum Vendor {
     /// Claude Code (and Codex, which reads the same hook shape).
     Claude,
     Codex,
-    /// Cursor's `sessionStart` hook.
+    /// Cursor's `sessionStart` and `beforeShellExecution` hooks
+    /// (`~/.cursor/hooks.json`).
     Cursor,
     /// Antigravity's `SessionStart` hook (`~/.gemini/config/hooks.json`).
     Antigravity,
@@ -72,6 +73,10 @@ enum Call {
 fn tool_call(stdin: &[u8]) -> Option<Call> {
     let v: Value = serde_json::from_slice(stdin).ok()?;
     let s = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).map(str::to_owned);
+    // Cursor's beforeShellExecution: the command at the top level.
+    if v.get("hook_event_name").and_then(Value::as_str) == Some("beforeShellExecution") {
+        return s(&v, "command").map(Call::Shell);
+    }
     if let Some(call) = v.get("toolCall") {
         let args = call.get("args")?;
         return match call.get("name")?.as_str()? {
@@ -149,8 +154,19 @@ fn deny_output(vendor: Vendor, reason: &str) -> Option<Value> {
             }
         })),
         Vendor::Antigravity => Some(json!({"decision": "deny", "reason": reason})),
-        Vendor::Cursor => None,
+        Vendor::Cursor => Some(json!({
+            "permission": "deny",
+            "user_message": reason,
+            "agent_message": reason
+        })),
     }
+}
+
+/// What every other pre-tool answer prints: Cursor's permission hooks treat
+/// empty output as invalid and block, so it is told `allow` explicitly;
+/// other harnesses proceed on silence.
+fn allow_output(vendor: Vendor) -> Option<Value> {
+    (vendor == Vendor::Cursor).then(|| json!({"permission": "allow"}))
 }
 
 /// Asks the gate about the call in `stdin`; `Some(reason)` to deny.
@@ -194,8 +210,9 @@ async fn gate(args: &Args, stdin: &[u8]) -> precept_ipc::Result<Option<String>> 
 }
 
 /// The session's directories from the hook input: `cwd` (Claude Code, Codex,
-/// Cursor), else Antigravity's `workspacePaths` (a leading `~/` is the home),
-/// else this process's working directory.
+/// Cursor's shell hook), else Antigravity's `workspacePaths` or Cursor's
+/// `workspace_roots` (a leading `~/` is the home), else this process's
+/// working directory.
 fn session_dirs(stdin: &[u8]) -> Vec<std::path::PathBuf> {
     let input = serde_json::from_slice::<Value>(stdin).ok();
     let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
@@ -212,7 +229,7 @@ fn session_dirs(stdin: &[u8]) -> Vec<std::path::PathBuf> {
     }
     let workspaces: Vec<std::path::PathBuf> = input
         .as_ref()
-        .and_then(|v| v.get("workspacePaths"))
+        .and_then(|v| v.get("workspacePaths").or_else(|| v.get("workspace_roots")))
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
@@ -295,24 +312,35 @@ async fn main() {
     let args = Args::parse();
     let mut stdin = Vec::new();
     let _ = std::io::stdin().take(1024 * 1024).read_to_end(&mut stdin);
-    if let Some(root) = &args.root
-        && !inside(root, &stdin)
-    {
-        return;
-    }
+    let outside = args.root.as_ref().is_some_and(|root| !inside(root, &stdin));
     if args.event == Event::PreTool {
-        let run =
-            tokio::time::timeout(std::time::Duration::from_secs(4), gate(&args, &stdin)).await;
-        match run {
-            Ok(Ok(Some(reason))) => {
-                if let Some(out) = deny_output(args.vendor, &reason) {
-                    println!("{out}");
+        let denied = if outside {
+            None
+        } else {
+            let run =
+                tokio::time::timeout(std::time::Duration::from_secs(4), gate(&args, &stdin)).await;
+            match run {
+                Ok(Ok(reason)) => reason,
+                Ok(Err(e)) => {
+                    eprintln!("precept-hook: gate not asked ({e})");
+                    None
+                }
+                Err(_) => {
+                    eprintln!("precept-hook: gate not asked (timeout)");
+                    None
                 }
             }
-            Ok(Ok(None)) => {}
-            Ok(Err(e)) => eprintln!("precept-hook: gate not asked ({e})"),
-            Err(_) => eprintln!("precept-hook: gate not asked (timeout)"),
+        };
+        let out = match denied {
+            Some(reason) => deny_output(args.vendor, &reason),
+            None => allow_output(args.vendor),
+        };
+        if let Some(out) = out {
+            println!("{out}");
         }
+        return;
+    }
+    if outside {
         return;
     }
     let run = tokio::time::timeout(
@@ -403,7 +431,21 @@ mod tests {
             deny_output(Vendor::Antigravity, "no"),
             Some(json!({"decision":"deny","reason":"no"}))
         );
-        assert_eq!(deny_output(Vendor::Cursor, "no"), None);
+        assert_eq!(
+            deny_output(Vendor::Cursor, "no"),
+            Some(json!({"permission":"deny","user_message":"no","agent_message":"no"}))
+        );
+        assert_eq!(
+            allow_output(Vendor::Cursor),
+            Some(json!({"permission":"allow"}))
+        );
+        assert_eq!(allow_output(Vendor::Claude), None);
+        assert_eq!(
+            tool_call(
+                br#"{"hook_event_name":"beforeShellExecution","command":"git push -f","cwd":"/r"}"#
+            ),
+            Some(Call::Shell("git push -f".into()))
+        );
     }
     #[test]
     fn compact_is_read_and_shapes_match_each_vendor() {

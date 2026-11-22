@@ -928,6 +928,7 @@ pub(crate) fn level_rows(model: Signal<Model>, heading: bool) -> View {
         .child(row("claude", Msg::TileClaude))
         .child(row("codex", Msg::TileCodex))
         .child(row("antigravity", Msg::TileAntigravity))
+        .child(row("cursor", Msg::TileCursor))
 }
 
 /// The integrations, by mechanism: MCP tools, the session-start briefing and
@@ -946,7 +947,8 @@ fn integrations(model: Signal<Model>) -> impl IntoElement {
             row()
                 .child(mcp_tile(model, "claude", Msg::TileClaude))
                 .child(mcp_tile(model, "codex", Msg::TileCodex))
-                .child(mcp_tile(model, "antigravity", Msg::TileAntigravity)),
+                .child(mcp_tile(model, "antigravity", Msg::TileAntigravity))
+                .child(mcp_tile(model, "cursor", Msg::TileCursor)),
         ))
         .child(group(
             model,
@@ -961,7 +963,8 @@ fn integrations(model: Signal<Model>) -> impl IntoElement {
                     "antigravity",
                     "session_start",
                     Msg::TileAntigravity,
-                )),
+                ))
+                .child(hook_tile(model, "cursor", "session_start", Msg::TileCursor)),
         ))
         .child(group(
             model,
@@ -980,7 +983,8 @@ fn integrations(model: Signal<Model>) -> impl IntoElement {
                             "antigravity",
                             "pre_tool",
                             Msg::TileAntigravity,
-                        )),
+                        ))
+                        .child(hook_tile(model, "cursor", "pre_tool", Msg::TileCursor)),
                 ),
         ))
         .child(group(

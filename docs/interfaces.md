@@ -86,8 +86,8 @@ commits or writes any other file. `precept project pointer` exposes both.
 ### Session-start hooks in the agents' configuration
 
 Operator-only `integration.hooks {project}` reports, for Claude Code
-(`~/.claude/settings.json`), Codex (`~/.codex/hooks.json`) and Antigravity
-(`~/.gemini/config/hooks.json`) in the daemon user's home: `file`, `exists`, `sha256`, `malformed` (not a JSON object), `installed`,
+(`~/.claude/settings.json`), Codex (`~/.codex/hooks.json`), Antigravity
+(`~/.gemini/config/hooks.json`) and Cursor (`~/.cursor/hooks.json`) in the daemon user's home: `file`, `exists`, `sha256`, `malformed` (not a JSON object), `installed`,
 `current` (installed exactly as written now) and the exact `command`, or
 `available: false` when no `precept-hook` ships beside `precept-mcp`.
 `integration.hooks.apply {project, vendor, enabled, expected_sha256}` adds
@@ -95,7 +95,9 @@ Operator-only `integration.hooks {project}` reports, for Claude Code
 `hooks.SessionStart` (`{"type":"command","command":…,"timeout":10}`) only if the
 file still has the reported digest, otherwise `Conflict`. Antigravity's file maps
 hook names to events, so its entry is the named hook `precept-<project>` holding
-`SessionStart: [{"type":"command","command":…,"timeout":10}]`. A handler is Precept's
+`SessionStart: [{"type":"command","command":…,"timeout":10}]`. Cursor's file is
+`{"version": 1, "hooks": {"sessionStart": [{"command":…,"timeout":10}]}}` (a
+missing `version` is set to 1, an existing one kept). A handler is Precept's
 when its command runs `precept-hook` with `--project <name>`; every other key, hook
 and their order are kept, the previous file is kept as `<file>.precept.bak`,
 writes are atomic, a new file is owner-only. The command passes `--root`, so the
@@ -106,7 +108,9 @@ The same methods take `event: "pre_tool"` (default `session_start`) for the
 pre-tool gate entry: its command adds `--event pre-tool`, and it sits under
 `PreToolUse` in a group with a tool matcher (Claude Code
 `Bash|Write|Edit|MultiEdit|NotebookEdit`, Codex `Bash|apply_patch`, Antigravity
-`run_command|write_to_file|replace_file_content|multi_replace_file_content`).
+`run_command|write_to_file|replace_file_content|multi_replace_file_content`);
+Cursor's gate entry sits under `beforeShellExecution` without a matcher, so Cursor
+is asked about shell commands only (it documents no hook before a file write).
 Session-start and gate entries are added and removed independently. The status
 lists them under `gate_hooks`, with `gate`, the project's switch. Operator-only
 `project.gate {name, enabled}` turns the gate on or off (off by default; persisted
@@ -130,8 +134,9 @@ carry `rule`, and the Sessions page shows it beside a denial.
 
 Operator-only `integration.mcp {}` reports, for Claude Code
 (`~/.claude.json`, `mcpServers`), Codex (`~/.codex/config.toml`,
-`[mcp_servers."precept"]`) and Antigravity
-(`~/.gemini/config/mcp_config.json`, `mcpServers`) in the daemon user's home:
+`[mcp_servers."precept"]`), Antigravity
+(`~/.gemini/config/mcp_config.json`, `mcpServers`) and Cursor (`~/.cursor/mcp.json`,
+`mcpServers`) in the daemon user's home:
 `file`, `server`, `exists`, `sha256`, `malformed`, `installed` and `current` (the
 entry starts this daemon's `precept-mcp` exactly) and `legacy` (older per-project
 `precept-<name>` entries launching `precept-mcp`), or `available: false` without
@@ -273,7 +278,8 @@ Markdown briefing of the effective contracts and confirmed preferences in the
 harness's shape: `hookSpecificOutput.additionalContext` for Claude Code and Codex,
 `additional_context` for Cursor, and `injectSteps: [{systemMessage: {systemMessage}}]`
 for Antigravity. With `--root`, a session whose working directory (the input's
-`cwd`, else any of Antigravity's `workspacePaths`, else the hook's) is outside that
+`cwd`, else any of Antigravity's `workspacePaths` or Cursor's `workspace_roots`,
+else the hook's) is outside that
 root gets nothing at all. Any
 refusal or a 4 s timeout prints nothing on stdout, exits 0 and writes one
 sanitized line to stderr (fail-open).
@@ -283,11 +289,13 @@ sanitized line to stderr (fail-open).
 `file_path`, `NotebookEdit` `notebook_path`, Codex `apply_patch` file headers;
 Antigravity: `toolCall.name` / `toolCall.args` with `run_command` `CommandLine` and
 `write_to_file` / `replace_file_content` / `multi_replace_file_content`
-`TargetFile`), makes written paths relative to the project root (dropping paths
+`TargetFile`; Cursor: `beforeShellExecution` with `command` and `cwd`), makes written paths relative to the project root (dropping paths
 outside it) and asks `gate.check`. A denial prints
 `hookSpecificOutput.permissionDecision: "deny"` with the reason for Claude Code and
-Codex, and `{decision: "deny", reason}` for Antigravity; anything else prints
-nothing (fail-open).
+Codex, `{decision: "deny", reason}` for Antigravity and `{permission: "deny",
+user_message, agent_message}` for Cursor; anything else prints nothing
+(fail-open), except for Cursor, which blocks on empty output and is answered
+`{permission: "allow"}`, also outside the project and when Precept cannot answer.
 
 | Tool | Inputs | Outputs | Side effects |
 | --- | --- | --- | --- |
