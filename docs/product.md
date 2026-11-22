@@ -96,7 +96,8 @@ Add-ons, for the cases that need them:
 
 | Add-on | What it adds | When to use it | Cost |
 | --- | --- | --- | --- |
-| Pre-tool gate | Denies shell commands and file writes that break a hard rule's guard | Things that must not happen (force pushes, editing a lock file), with those rules committed | One local question per mediated tool call; only calls routed through the hook; not a sandbox |
+| Pre-tool gate | Denies shell commands and file writes that break a hard rule's guard (Cursor: shell commands only) | Things that must not happen (force pushes, editing a lock file), with those rules committed | One local question per mediated tool call; only calls routed through the hook; not a sandbox |
+| Stale-document warning | After a file read, tells the agent when committed rule checks on that file fail | Documents that drift from the code, with checks committed | One local question per read; Claude Code only; never blocks |
 | AGENTS.md pointer | Tells agents that read AGENTS.md to call the `precept` MCP server | Agents without a session-start hook, or MCP-only setups | Committed: teammates without Precept see a pointer to a server they do not have; best for solo repositories or teams that all use Precept |
 | Rules in Git (`.precept/rules`) | Conventions that travel with the repository, reviewed like code, for every person and machine; checks and guards | Shared conventions; checks ("verified"); the gate, whose guards come only from committed rule files | Kept and committed in the repository; uncommitted files do not apply |
 

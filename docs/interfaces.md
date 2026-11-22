@@ -319,7 +319,11 @@ nothing.
 | Tool | Inputs | Outputs | Side effects |
 | --- | --- | --- | --- |
 | `get_effective_context` | optional boolean `include_documents`; optional `selector` object | compatible confirmed preferences, effective repository contracts, explicit resolution status, bounded metadata and opt-in allowlisted documents | Read-only |
+| `explain_rule` | string `key`; optional `selector` | every rule of the key with outcome and reason | Read-only |
 | `get_handoff` | exact string `task_id` | saved task/revision and historical checks, current Git state and drift warnings | Read-only |
+| `suggest_rule` | `scope`, `key`, `value`, optional `tags`, `applies_to`, `enforcement`, `replaces` | the suggestion's id; never active until confirmed | A `suggested` record, where allowed and writes are on |
+| `start_session`, `update_work_state`, `close_session` | goal and done / doing / todo lists, summary | the session | Daemon-private session record, where allowed |
+| `remember`, `recall`, `reaffirm`, `forget` | kind, title, body; query; note id | the note(s) | Daemon-private project memory, where allowed (`recall` counts recalls) |
 
 The optional `selector` contains only `agent_id`, `path`, `language`, `task_tags`.
 These are caller-supplied applicability labels, never authentication or permission

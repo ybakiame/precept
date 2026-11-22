@@ -1,14 +1,13 @@
 # Precept
 
-Precept (Precept) is a local-first context and policy layer for coding
-agents. It combines current repository rules, confirmed personal preferences and
+Precept is a local-first context and policy layer for coding agents. It combines current repository rules, confirmed personal preferences and
 explicit task Handoffs while preserving the difference between current facts,
 historical claims and independent verification. It is not an agent harness or an OS
 sandbox.
 
-Precept is validation-stage software, not a production release. The supported product
-runtime is Rust, with a native daemon, operator CLI, MCP server and NSH desktop
-operator app.
+Precept is early (0.x) software: interfaces and the Profile schema may still change
+between minor versions. It is written in Rust: a native daemon, the `precept` CLI,
+an MCP server, harness hooks and an NSH desktop operator app.
 
 ## What it provides
 
@@ -19,17 +18,23 @@ operator app.
 - Effective context that explains applicable, masked, conflicting and unknown rules
   without letting personal or session state override repository contracts.
 - One `precept` MCP server for every registered project, bound to the session's
-  folder: `get_effective_context` and `get_handoff`, and, where you allow it,
-  `suggest_rule` (suggestions and updates for your review) and work-session tools.
-- Session-start briefings and an opt-in pre-tool gate through harness hooks, and
+  folder: `get_effective_context`, `explain_rule` (why a rule applies or not) and
+  `get_handoff`, and, where you allow it, `suggest_rule` (suggestions and updates
+  for your review), work-session tools and project memory (`remember`, `recall`,
+  `reaffirm`, `forget`).
+- Session-start briefings, an opt-in pre-tool gate and a stale-document warning
+  through harness hooks (Claude Code, Codex, Antigravity and Cursor), and
   repository rules (`.precept/rules/`) with checks.
+- Project memory that agents keep themselves (this machine's environment,
+  cautions, lessons, attempts), unreviewed and below rules, which survives a
+  change of agent, harness or model.
+- Historical Handoffs with revision, branch, worktree and content-drift warnings.
+- A Windows desktop workflow that operates a daemon inside WSL2 through the typed
+  `precept-bridge` helper, without TCP or shell forwarding.
 
 Recommended setup: the session-start hook and MCP together. The pre-tool gate, the
 AGENTS.md pointer and rules in Git are add-ons for specific needs; see
 [Connecting agents](docs/product.md#connecting-agents).
-- Historical Handoffs with revision, branch, worktree and content-drift warnings.
-- A Windows Desktop workflow that operates a daemon inside WSL2 through the typed
-  `precept-bridge` helper, without TCP or shell forwarding.
 
 ## Build from source
 
@@ -52,8 +57,9 @@ cargo build --manifest-path apps/Cargo.toml --workspace \
 
 Create or select a Profile explicitly. Startup selection and per-run write
 enablement are separate choices; the daemon never creates or adopts a Profile by
-itself. Only fresh Rust-native Profile v1 is supported, with no automatic discovery,
-migration, repair or direct-write fallback.
+itself. Each release reads exactly its own Profile schema, with no automatic
+discovery, migration, repair or direct-write fallback; move data between releases
+with `precept profile export` and `precept profile import`.
 
 Add a project by choosing one checkout. The daemon validates that path and owns the
 registered project set; the UI and agents do not scan for repositories. Sharing a
@@ -65,8 +71,10 @@ mask compatible global preferences, but neither can override repository contract
 Handoff records remain historical and must be revalidated against the current
 checkout.
 
-The operator app groups navigation into **Set up**, **Project** and **Personal**,
-with Diagnostics and Settings available separately. See the
+The desktop app groups navigation into **Workspace** (Dashboard, Preferences &
+contracts, Agents, Sessions, Memory, Handoff for the selected project), **Review**
+(suggestions and rules) and **Set up** (Runtime checks), with Diagnostics and
+Settings at the foot. See the
 [operator app guide](apps/README.md) for its review workflow.
 
 ## Data and trust

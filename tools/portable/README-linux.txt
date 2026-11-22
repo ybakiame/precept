@@ -7,7 +7,7 @@ and signing require a later, explicit release decision.
 Layout
   bin/preceptd        local daemon; the only Profile write owner
   bin/precept         operator CLI
-  bin/precept-mcp           MCP stdio server (two project-bound read-only tools); also the
+  bin/precept-mcp           MCP stdio server (project-bound tools); also the
                         trusted context bridge for opted-in sessions
   bin/precept-desktop    native Desktop (GTK 4, Wayland)
   bin/precept-bridge    helper started by the Windows GUI through wsl.exe (Windows -> WSL2)

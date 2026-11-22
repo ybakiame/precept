@@ -3,7 +3,7 @@ Precept Windows x86_64 portable prototype - local, unpublished, synthetic use on
 Layout
   bin\preceptd.exe        local daemon; the only Profile write owner
   bin\precept.exe         operator CLI
-  bin\precept-mcp.exe           MCP stdio server with two project-bound read-only tools
+  bin\precept-mcp.exe           MCP stdio server with project-bound tools
   bin\precept-desktop.exe    native Desktop (HWND)
   runtime\manifest.json     provenance, prerequisites and SHA-256 of every other file
   notices\                  NOTICE.txt, third-party dependency ledger and license texts
@@ -70,8 +70,9 @@ Profile-scoped operator action; read authority does not grant write access.
 
 For a separately selected synthetic Profile and registered allowlisted project only:
  .\bin\precept-mcp.exe --runtime-dir <same-runtime> --endpoint <same-name> --project synthetic --capability-file <same-runtime>\agent-synthetic.cap
-This is an MCP stdio process, not an interactive shell or network service. It exposes
-only get_effective_context and get_handoff. Never substitute operator/write credentials.
+This is an MCP stdio process, not an interactive shell or network service. Its tools
+read context, explain rules and Handoffs; suggestions, work sessions and memory need
+the operator's per-project permission. Never substitute operator/write credentials.
 Agents and authentication remain external; no agent/model needs to be launched.
 Live Git evidence requires a separately available Git; it is not bundled. Missing Git
 is unknown/refused evidence, not fresh verification. Font/media/WebView2 and exact OS

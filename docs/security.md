@@ -73,7 +73,9 @@ separate design with its own threat model.
   the project's agent capability, fails open (an unreachable daemon, a timeout or
   an unknown tool allows the call) and records each decision in the evidence
   chain. It mediates only the calls a harness routes through its hook.
-- Project-bound MCP tools: two read-only tools and `suggest_rule`; no
+- Project-bound MCP tools: read-only context, explain and Handoff tools, and,
+  where the operator allows agent writes, `suggest_rule`, work-session and
+  project-memory tools; no
   administrative previews, decisions, context-driven approval or tool-supplied
   project selector. `suggest_rule` is accepted only for a project whose agents
   the operator allowed to suggest (`project.propose`, off by default, persisted in

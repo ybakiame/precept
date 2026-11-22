@@ -4,10 +4,11 @@ The Precept Operator is the NSH desktop app for the local Precept daemon. It use
 the same operator authority and scoped data as the native CLI; it never opens a
 Profile directly or creates a second write owner.
 
-Navigation is grouped into **Set up** (Connection, Profile, Workspaces and Agents),
-**Project** (Dashboard, Preferences, Handoff and Sessions) and **Personal**
-(personal preferences and suggestions to review), with Diagnostics and Settings at
-the navigation foot. See the [UI standards](../docs/product-ui.md) for interaction,
+Navigation is grouped into **Workspace** (Dashboard, Preferences & contracts,
+Agents, Sessions, Memory and Handoff for the selected project), **Review**
+(suggestions, personal preferences and project conventions) and **Set up**
+(Runtime checks: Connection, Profile and Workspaces), with Diagnostics and
+Settings at the navigation foot. See the [UI standards](../docs/product-ui.md) for interaction,
 scope and presentation contracts, and the [design system](ui/DESIGN.md) for the
 visual language, components and motion.
 
