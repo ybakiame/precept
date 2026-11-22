@@ -383,9 +383,10 @@ pub enum Command {
     /// Files several suggestions in one write (an import the operator
     /// picked): each is an ordinary `suggested` record, none is confirmed.
     SuggestBatch { items: Vec<SuggestItem> },
-    /// Confirms or rejects several exact suggestions in one write, each as
-    /// its own decision: every item must still be the reviewed revision and
-    /// proposal, or nothing is written.
+    /// Confirms or rejects several exact suggestions, or deprecates several
+    /// confirmed records, in one write, each as its own decision: every item
+    /// must still be the reviewed revision and proposal, or nothing is
+    /// written.
     DecideBatch {
         decision: BatchDecision,
         items: Vec<BatchItem>,
@@ -418,6 +419,8 @@ pub enum Command {
 pub enum BatchDecision {
     Confirm,
     Reject,
+    /// Retires confirmed records (moving environment notes to memory).
+    Deprecate,
 }
 /// One exact suggestion of a batch.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -1,0 +1,644 @@
+//! Memory: the selected project's memory, as agents keep it (environment,
+//! cautions, lessons, attempts), heaviest first within each kind, with why
+//! each note weighs what it does. The operator pins, edits (a correction
+//! kept in history), restores, deletes or clears notes, and moves the
+//! project's confirmed environment notes from the Profile in.
+use crate::*;
+use precept_ui_core::{
+    activity::date_time,
+    i18n::Msg,
+    memory::{Entry, Kind, author, why},
+};
+use tokens::palette;
+use ui::{BadgeVariant, ButtonSize, ButtonVariant, badge, button, scale, surface};
+
+fn word(model: Signal<Model>, key: Msg) -> impl Fn() -> SharedString + 'static {
+    move || model.get().word(key).into()
+}
+
+/// Reads the project's memory and the environment notes still to move.
+pub(crate) fn load(model: Signal<Model>, project: String) {
+    model.update(|m| {
+        let s = &mut m.memory;
+        if s.project.as_deref() != Some(project.as_str()) {
+            s.list = None;
+            s.open = None;
+            s.environment.clear();
+        }
+        s.project = Some(project.clone());
+        s.busy = true;
+        s.error = None;
+    });
+    let p = project.clone();
+    super::profile::call(
+        model,
+        "memories.list",
+        serde_json::json!({ "project": project }),
+        move |_, m, r| {
+            if m.memory.project.as_deref() != Some(p.as_str()) {
+                return;
+            }
+            m.memory.busy = false;
+            match r.and_then(precept_ui_core::memory::parse) {
+                Ok(list) => m.memory.list = Some(list),
+                Err(code) => m.memory.error = Some(code.into()),
+            }
+        },
+    );
+    super::profile::call(
+        model,
+        "memories.environment",
+        serde_json::json!({ "project": project }),
+        move |_, m, r| {
+            if m.memory.project.as_deref() != Some(project.as_str()) {
+                return;
+            }
+            m.memory.environment = r
+                .and_then(precept_ui_core::memory::parse_environment)
+                .unwrap_or_default();
+        },
+    );
+}
+
+/// Keeps the page aligned with the sidebar's current project while shown.
+pub(crate) fn watch(model: Signal<Model>) {
+    let ready = computed(move || {
+        let m = model.get();
+        (
+            m.memory_page && m.live && m.data.is_some(),
+            m.epoch,
+            m.selected_project.clone(),
+        )
+    });
+    effect(move || {
+        let (shown, _, project) = ready.get();
+        if !shown {
+            return;
+        }
+        if let Some(project) = project {
+            untracked(|| load(model, project));
+        }
+    });
+}
+
+/// One operator call on the project's memory; the list is read again after.
+fn change(
+    model: Signal<Model>,
+    method: &'static str,
+    params: serde_json::Value,
+    done: impl FnOnce(&mut Model) + 'static,
+) {
+    let Some(project) = model.get().memory.project.clone() else {
+        return;
+    };
+    let mut params = params;
+    params["project"] = project.clone().into();
+    model.update(|m| {
+        m.memory.busy = true;
+        m.memory.error = None;
+    });
+    super::profile::call(model, method, params, move |model, m, r| {
+        m.memory.busy = false;
+        match r {
+            Ok(_) => done(m),
+            Err("Conflict") => m.memory.error = Some(m.word(Msg::MemoryTitleTaken).into()),
+            Err(code) => m.memory.error = Some(code.into()),
+        }
+        spawn(async move { load(model, project) });
+    });
+}
+
+fn set_pin(model: Signal<Model>, id: String, pinned: bool) {
+    change(
+        model,
+        "memories.edit",
+        serde_json::json!({ "id": id, "pinned": pinned }),
+        |_| {},
+    );
+}
+
+fn save_edit(model: Signal<Model>) {
+    let m = model.get();
+    let Some(id) = m.memory.edit.clone() else {
+        return;
+    };
+    let (title, body) = (
+        m.memory.title.trim().to_owned(),
+        m.memory.body.trim().to_owned(),
+    );
+    change(
+        model,
+        "memories.edit",
+        serde_json::json!({ "id": id, "title": title, "body": body }),
+        |m| {
+            m.memory.edit = None;
+            ui::notify(ui::Tone::Success, m.word(Msg::ToastMemorySaved));
+        },
+    );
+}
+
+fn restore(model: Signal<Model>, id: String, index: usize) {
+    change(
+        model,
+        "memories.restore",
+        serde_json::json!({ "id": id, "index": index }),
+        |m| ui::notify(ui::Tone::Success, m.word(Msg::ToastMemorySaved)),
+    );
+}
+
+fn delete(model: Signal<Model>) {
+    let Some(id) = model.get().memory.delete.clone() else {
+        return;
+    };
+    change(
+        model,
+        "memories.delete",
+        serde_json::json!({ "id": id }),
+        |m| {
+            m.memory.delete = None;
+            m.memory.open = None;
+            ui::notify(ui::Tone::Success, m.word(Msg::ToastMemoryDeleted));
+        },
+    );
+}
+
+fn clear(model: Signal<Model>) {
+    change(model, "memories.clear", serde_json::json!({}), |m| {
+        m.memory.clear = false;
+        m.memory.open = None;
+        ui::notify(ui::Tone::Success, m.word(Msg::ToastMemoryCleared));
+    });
+}
+
+/// Moves exactly the listed environment notes (writes are turned on first
+/// when off, as Add does).
+fn move_environment(model: Signal<Model>) {
+    if model.get().project_add.write_enabled == Some(true) {
+        move_now(model);
+    } else {
+        super::profile::enable_writes(model, move_now);
+    }
+}
+fn move_now(model: Signal<Model>) {
+    let items: Vec<serde_json::Value> = model
+        .get()
+        .memory
+        .environment
+        .iter()
+        .map(|r| {
+            serde_json::json!({"id": r.id, "revision": r.revision, "proposal_digest": r.proposal_digest})
+        })
+        .collect();
+    let n = items.len();
+    change(
+        model,
+        "memories.move_environment",
+        serde_json::json!({ "items": items }),
+        move |m| {
+            m.memory.moving = false;
+            m.memory.environment.clear();
+            ui::notify(
+                ui::Tone::Success,
+                m.word(Msg::ToastMemoryMoved).replace("{n}", &n.to_string()),
+            );
+        },
+    );
+}
+
+fn caption(model: Signal<Model>, t: String) -> AnyElement {
+    text(t)
+        .text_size(px(scale::text::CAPTION))
+        .text_color(move || palette(model).muted)
+        .into_element()
+}
+
+/// The entry's state badges: pinned, changed often, fading, edited by you.
+fn badges(model: Signal<Model>, m: &Model, e: &Entry) -> AnyElement {
+    let mut row = view().flex_row().flex_wrap().gap_1();
+    for (on, msg, variant) in [
+        (e.pinned, Msg::MemoryPinned, BadgeVariant::Info),
+        (e.unstable, Msg::MemoryUnstable, BadgeVariant::Warning),
+        (e.fading, Msg::MemoryFading, BadgeVariant::Neutral),
+        (
+            e.edited_by_operator,
+            Msg::MemoryEditedByYou,
+            BadgeVariant::Neutral,
+        ),
+    ] {
+        if on {
+            row = row.child(badge(model, m.word(msg)).variant(variant));
+        }
+    }
+    row.into_element()
+}
+
+fn byline(m: &Model, e: &Entry) -> String {
+    m.word(Msg::MemoryByline)
+        .replace("{by}", &author(m.locale, e.by.as_deref()))
+        .replace("{time}", &date_time(e.updated_ms))
+}
+
+/// One note: its title (pressing it opens the detail), its first line, who
+/// and when, and its weight.
+fn row(model: Signal<Model>, index: usize, e: &Entry) -> AnyElement {
+    let m = model.get_untracked();
+    let id = e.id.clone();
+    let first: String = e
+        .body
+        .lines()
+        .next()
+        .unwrap_or("")
+        .chars()
+        .take(160)
+        .collect();
+    let spoken = m.word(Msg::MemoryOpenNamed).replace("{title}", &e.title);
+    view()
+        .gap_1()
+        .py_2()
+        .style_when(move || index > 0, |s| s.border_t_1())
+        .border_color(move || palette(model).hairline)
+        .child(
+            view()
+                .flex_row()
+                .items_center()
+                .gap_2()
+                .child(
+                    view().flex_1().min_w_0().child(
+                        button(model, e.title.clone())
+                            .spoken(move || spoken.clone().into())
+                            .variant(ButtonVariant::Ghost)
+                            .on_press(move || model.update(|m| m.memory.open = Some(id.clone()))),
+                    ),
+                )
+                .child(badges(model, &m, e)),
+        )
+        .child(
+            text(first)
+                .text_size(px(scale::text::BODY))
+                .text_color(move || palette(model).text),
+        )
+        .child(caption(
+            model,
+            format!("{} · {}", byline(&m, e), why(m.locale, e)),
+        ))
+        .into_element()
+}
+
+/// The move of the Profile's confirmed environment notes, shown while any
+/// remain: the notes it takes, and one button.
+fn move_card(model: Signal<Model>) -> impl IntoElement {
+    dynamic(move || {
+        let m = model.get();
+        let notes = m.memory.environment.clone();
+        if notes.is_empty() {
+            return view().into_element();
+        }
+        let mut card = surface(model)
+            .title(m.word(Msg::MemoryMoveTitle))
+            .child(caption(
+                model,
+                m.word(Msg::MemoryMoveBody)
+                    .replace("{n}", &notes.len().to_string()),
+            ));
+        for n in &notes {
+            let first: String = n
+                .value
+                .lines()
+                .next()
+                .unwrap_or("")
+                .chars()
+                .take(160)
+                .collect();
+            card =
+                card.child(text(format!("{} — {first}", n.key)).text_size(px(scale::text::BODY)));
+        }
+        card.child(
+            view().flex_row().child(
+                button(model, "")
+                    .label_fn(word(model, Msg::MemoryMove))
+                    .variant(ButtonVariant::Primary)
+                    .size(ButtonSize::Small)
+                    .loading(move || model.get().memory.busy)
+                    .on_press(move || move_environment(model)),
+            ),
+        )
+        .into_element()
+    })
+}
+
+/// The open note's detail, in a sheet.
+fn detail(model: Signal<Model>) -> impl IntoElement {
+    ui::sheet(model)
+        .title_fn(move || {
+            model
+                .get()
+                .memory
+                .opened()
+                .map(|e| e.title.clone())
+                .unwrap_or_default()
+                .into()
+        })
+        .close_fn(move || model.get().word(Msg::CloseDetail).into())
+        .open(move || {
+            let m = model.get();
+            m.memory_page && m.memory.opened().is_some()
+        })
+        .on_close(move || model.update(|m| m.memory.open = None))
+        .body(move || {
+            dynamic(move || {
+                let m = model.get();
+                let Some(e) = m.memory.opened().cloned() else {
+                    return view().into_element();
+                };
+                let pin_id = e.id.clone();
+                let edit = e.clone();
+                let delete_id = e.id.clone();
+                let mut body = view()
+                    .gap_4()
+                    .child(
+                        view()
+                            .gap_1()
+                            .child(badges(model, &m, &e))
+                            .child(caption(
+                                model,
+                                format!("{} · {}", m.word(e.kind.heading()), byline(&m, &e)),
+                            ))
+                            .child(caption(model, why(m.locale, &e))),
+                    )
+                    .child(ui::markdown_view(model, e.body.clone()))
+                    .child(
+                        view()
+                            .flex_row()
+                            .items_center()
+                            .gap_3()
+                            .child(
+                                text(word(model, Msg::MemoryPin))
+                                    .flex_1()
+                                    .text_size(px(scale::text::BODY)),
+                            )
+                            .child(ui::switch(
+                                model,
+                                word(model, Msg::MemoryPin),
+                                move || model.get().memory.opened().is_some_and(|e| e.pinned),
+                                move || model.get().memory.busy,
+                                move |on| set_pin(model, pin_id.clone(), on),
+                            )),
+                    )
+                    .child(
+                        view()
+                            .flex_row()
+                            .flex_wrap()
+                            .gap_2()
+                            .child(
+                                button(model, "")
+                                    .label_fn(word(model, Msg::MemoryEdit))
+                                    .size(ButtonSize::Small)
+                                    .disabled(move || model.get().memory.busy)
+                                    .on_press(move || {
+                                        let e = edit.clone();
+                                        model.update(|m| {
+                                            m.memory.title = e.title.clone();
+                                            m.memory.body = e.body.clone();
+                                            m.memory.error = None;
+                                            m.memory.edit = Some(e.id.clone());
+                                        })
+                                    }),
+                            )
+                            .child(
+                                button(model, "")
+                                    .label_fn(word(model, Msg::MemoryDelete))
+                                    .variant(ButtonVariant::Danger)
+                                    .size(ButtonSize::Small)
+                                    .disabled(move || model.get().memory.busy)
+                                    .on_press(move || {
+                                        model.update(|m| m.memory.delete = Some(delete_id.clone()))
+                                    }),
+                            ),
+                    );
+                if !e.history.is_empty() {
+                    let mut list = view()
+                        .gap_3()
+                        .child(text(m.word(Msg::MemoryHistory)).font_weight(FontWeight::SEMIBOLD));
+                    for (i, h) in e.history.iter().enumerate() {
+                        let id = e.id.clone();
+                        let spoken = m
+                            .word(Msg::MemoryRestoreNamed)
+                            .replace("{n}", &(i + 1).to_string());
+                        list = list.child(
+                            view()
+                                .gap_1()
+                                .child(caption(
+                                    model,
+                                    m.word(Msg::MemoryEarlier)
+                                        .replace("{by}", &author(m.locale, h.by.as_deref()))
+                                        .replace("{time}", &date_time(h.until_ms)),
+                                ))
+                                .child(ui::text_diff(model, h.body.clone(), e.body.clone()))
+                                .child(
+                                    view().flex_row().child(
+                                        button(model, "")
+                                            .label_fn(word(model, Msg::MemoryRestore))
+                                            .spoken(move || spoken.clone().into())
+                                            .size(ButtonSize::Small)
+                                            .variant(ButtonVariant::Ghost)
+                                            .icon(ui::icons::UNDO)
+                                            .disabled(move || model.get().memory.busy)
+                                            .on_press(move || restore(model, id.clone(), i)),
+                                    ),
+                                ),
+                        );
+                    }
+                    body = body.child(list);
+                }
+                body.into_element()
+            })
+            .into_element()
+        })
+}
+
+/// The edit: title and text.
+fn edit_dialog(model: Signal<Model>) -> impl IntoElement {
+    ui::dialog(model, "")
+        .icon(icons::MEMORY, ui::DialogTone::Accent)
+        .title_fn(word(model, Msg::MemoryEditTitle))
+        .description_fn(word(model, Msg::MemoryEditBody))
+        .content_fn(move || {
+            view()
+                .w_full()
+                .gap_3()
+                .child(ui::field(
+                    model,
+                    word(model, Msg::MemoryTitleField),
+                    ui::input(model, "")
+                        .label_fn(word(model, Msg::MemoryTitleField))
+                        .value(move || model.get().memory.title.clone())
+                        .on_change(move |v: &str| {
+                            model.update(|m| m.memory.title = v.chars().take(120).collect())
+                        }),
+                ))
+                .child(ui::field(
+                    model,
+                    word(model, Msg::MemoryBodyField),
+                    ui::input(model, "")
+                        .label_fn(word(model, Msg::MemoryBodyField))
+                        .multiline(8)
+                        .value(move || model.get().memory.body.clone())
+                        .on_change(move |v: &str| {
+                            model.update(|m| m.memory.body = v.chars().take(2000).collect())
+                        }),
+                ))
+                .child(
+                    text(move || model.get().memory.error.clone().unwrap_or_default())
+                        .text_size(px(scale::text::CAPTION))
+                        .text_color(move || palette(model).error),
+                )
+                .into_element()
+        })
+        .cancel_fn(word(model, Msg::Cancel))
+        .confirm_fn(word(model, Msg::MemorySave))
+        .confirm_disabled(move || {
+            let m = model.get();
+            m.memory.busy || m.memory.title.trim().is_empty() || m.memory.body.trim().is_empty()
+        })
+        .open(move || model.get().memory.edit.is_some())
+        .on_cancel(move || {
+            model.update(|m| {
+                m.memory.edit = None;
+                m.memory.error = None;
+            })
+        })
+        .on_confirm(move || save_edit(model))
+}
+
+fn delete_dialog(model: Signal<Model>) -> impl IntoElement {
+    ui::alert_dialog(model, "")
+        .icon(icons::TRASH, ui::DialogTone::Danger)
+        .title_fn(word(model, Msg::MemoryDeleteTitle))
+        .description_fn(word(model, Msg::MemoryDeleteBody))
+        .cancel_fn(word(model, Msg::Cancel))
+        .confirm_fn(word(model, Msg::MemoryDeleteConfirm))
+        .confirm_disabled(move || model.get().memory.busy)
+        .open(move || model.get().memory.delete.is_some())
+        .on_cancel(move || model.update(|m| m.memory.delete = None))
+        .on_confirm(move || delete(model))
+}
+
+fn clear_dialog(model: Signal<Model>) -> impl IntoElement {
+    ui::alert_dialog(model, "")
+        .icon(icons::TRASH, ui::DialogTone::Danger)
+        .title_fn(word(model, Msg::MemoryClearTitle))
+        .description_fn(word(model, Msg::MemoryClearBody))
+        .cancel_fn(word(model, Msg::Cancel))
+        .confirm_fn(word(model, Msg::MemoryClearConfirm))
+        .confirm_disabled(move || model.get().memory.busy)
+        .open(move || model.get().memory.clear)
+        .on_cancel(move || model.update(|m| m.memory.clear = false))
+        .on_confirm(move || clear(model))
+}
+
+/// The Memory page (mounted by the shell, outside the per-change rebuild).
+pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
+    let state = computed(move || {
+        let m = model.get();
+        (m.memory.list.clone(), m.memory.error.clone(), m.locale)
+    });
+    view()
+        .gap_6()
+        .max_w(px(scale::layout::FORM))
+        .child(
+            view()
+                .flex_row()
+                .flex_wrap()
+                .items_center()
+                .gap_2()
+                .child(
+                    text(move || {
+                        let m = model.get();
+                        let list = m.memory.list.clone().unwrap_or_default();
+                        Kind::ALL
+                            .iter()
+                            .map(|k| {
+                                format!(
+                                    "{} {}",
+                                    m.word(k.heading()),
+                                    list.iter().filter(|e| e.kind == *k).count()
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" · ")
+                    })
+                    .flex_1()
+                    .text_size(px(scale::text::CAPTION))
+                    .text_color(move || palette(model).muted),
+                )
+                .child(
+                    button(model, "")
+                        .label_fn(word(model, Msg::RefreshList))
+                        .size(ButtonSize::Small)
+                        .variant(ButtonVariant::Ghost)
+                        .icon(ui::icons::RESET)
+                        .loading(move || model.get().memory.busy)
+                        .on_press(move || {
+                            if let Some(p) = model.get().selected_project.clone() {
+                                load(model, p);
+                            }
+                        }),
+                )
+                .child(
+                    button(model, "")
+                        .label_fn(word(model, Msg::MemoryClear))
+                        .size(ButtonSize::Small)
+                        .variant(ButtonVariant::Ghost)
+                        .icon(ui::icons::TRASH)
+                        .disabled(move || {
+                            let m = model.get();
+                            m.memory.busy || m.memory.list.as_ref().is_none_or(Vec::is_empty)
+                        })
+                        .on_press(move || model.update(|m| m.memory.clear = true)),
+                ),
+        )
+        .child(move_card(model))
+        .child(dynamic(move || {
+            let (list, error, _) = state.get();
+            let m = model.get_untracked();
+            if let Some(code) = error
+                && m.memory.edit.is_none()
+            {
+                return text(code)
+                    .text_size(px(scale::text::CAPTION))
+                    .text_color(move || palette(model).error)
+                    .into_element();
+            }
+            let Some(list) = list else {
+                return view().into_element();
+            };
+            if list.is_empty() {
+                return surface(model)
+                    .child(
+                        ui::empty(model, m.word(Msg::MemoryEmpty))
+                            .description(m.word(Msg::MemoryEmptyHelp))
+                            .icon(icons::MEMORY),
+                    )
+                    .into_element();
+            }
+            let mut groups = view().gap_6();
+            for kind in Kind::ALL {
+                let entries: Vec<&Entry> = list.iter().filter(|e| e.kind == kind).collect();
+                if entries.is_empty() {
+                    continue;
+                }
+                let mut card =
+                    surface(model).title(format!("{} · {}", m.word(kind.heading()), entries.len()));
+                for (i, e) in entries.iter().enumerate() {
+                    card = card.child(row(model, i, e));
+                }
+                groups = groups.child(card);
+            }
+            groups.into_element()
+        }))
+        .child(detail(model))
+        // After the sheet, so the dialogs stack above it.
+        .child(edit_dialog(model))
+        .child(delete_dialog(model))
+        .child(clear_dialog(model))
+}

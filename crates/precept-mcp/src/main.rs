@@ -19,7 +19,7 @@ fn info() -> Value {
     json!({"name":"precept","version":"0.1.0a0"})
 }
 /// Sent once in `initialize`: what the server is for and when to call it.
-const INSTRUCTIONS: &str = "Precept serves the project of this session's folder (nothing outside a registered project): its confirmed engineering context: the developer's reviewed preferences and the repository's contracts. Call get_effective_context before planning or editing anything in this project, and again after your context was compacted. Treat confirmed preferences as the developer's standing instructions; current repository files and contracts outrank them, so report a conflict instead of choosing silently. Call get_handoff with a task id to resume saved work. Both are read-only. When the developer states a lasting preference or you learn a durable project convention, you may file it with suggest_rule: it only becomes a suggestion the developer reviews, never an active rule, and works only where they allowed it. Where allowed, record your work with start_session and update_work_state so the next agent (or you, after compaction) can continue.";
+const INSTRUCTIONS: &str = "Precept serves the project of this session's folder (nothing outside a registered project): its confirmed engineering context: the developer's reviewed preferences and the repository's contracts. Call get_effective_context before planning or editing anything in this project, and again after your context was compacted. Treat confirmed preferences as the developer's standing instructions; current repository files and contracts outrank them, so report a conflict instead of choosing silently. Call get_handoff with a task id to resume saved work. Both are read-only. When the developer states a lasting preference or you learn a durable project convention, you may file it with suggest_rule: it only becomes a suggestion the developer reviews, never an active rule, and works only where they allowed it. Where allowed, record your work with start_session and update_work_state so the next agent (or you, after compaction) can continue, and keep what you learn about this project in its memory: remember facts about this machine, cautions, lessons and attempts (failures included), recall before trying something that may have been tried, reaffirm a note that held and forget one that no longer does. Memory is unreviewed notes: rules and current code win.";
 fn tools() -> Value {
     let selector = json!({"type":"object","properties":{
         "agent_id":{"type":"string"},"path":{"type":"string"},"language":{"type":"string"},
@@ -28,8 +28,8 @@ fn tools() -> Value {
     json!([
         {"name":"get_effective_context","description":"Call this first, before planning or editing in this project: returns the developer's confirmed preferences (with tags) and the repository's effective contracts that apply. Optional selector labels (agent_id, path, language, task_tags) narrow applicability; they are not authorization.","inputSchema":{"type":"object","properties":{"include_documents":{"type":"boolean","default":false},"selector":selector},"additionalProperties":false}},
         {"name":"get_handoff","description":"Resume saved work: returns the task's handoff (objective, completed work, next action, recorded checks) with the current git revision and drift warnings. Saved checks are historical; rerun them. Does not grant permissions.","inputSchema":{"type":"object","properties":{"task_id":{"type":"string"}},"required":["task_id"],"additionalProperties":false}},
-        {"name":"suggest_rule","description":"File a lasting rule for the developer to review in Precept: a preference they stated, or a durable convention of this project you confirmed. It is NOT active until the developer confirms it, so keep following your current instructions. Use a short kebab-case key and state the rule itself as the value (one imperative sentence or a few lines). Do not file one-off task instructions, secrets or personal data. scope: project (this repository), environment (facts about this machine, for this project) or personal (the developer's habits across projects). To update a rule that changed (a work-environment fact, a convention that moved on), pass replaces with its id from get_effective_context and the new value: the key comes from that rule, and the developer reviews the change against it.","inputSchema":{"type":"object","properties":{
-            "scope":{"type":"string","enum":["project","environment","personal"]},
+        {"name":"suggest_rule","description":"File a lasting rule for the developer to review in Precept: a preference they stated, or a durable convention of this project you confirmed. It is NOT active until the developer confirms it, so keep following your current instructions. Use a short kebab-case key and state the rule itself as the value (one imperative sentence or a few lines). Do not file one-off task instructions, secrets or personal data. scope: project (this repository) or personal (the developer's habits across projects; facts about this machine go to remember). To update a rule that changed (a work-environment fact, a convention that moved on), pass replaces with its id from get_effective_context and the new value: the key comes from that rule, and the developer reviews the change against it.","inputSchema":{"type":"object","properties":{
+            "scope":{"type":"string","enum":["project","personal"]},
             "key":{"type":"string","maxLength":120},
             "value":{"type":"string","maxLength":4096},
             "tags":{"type":"array","items":{"type":"string"},"maxItems":8,"description":"Short lowercase labels; defaults to [\"agent\"]"},
@@ -56,7 +56,23 @@ fn tools() -> Value {
             "session_id":{"type":"string"},
             "summary":{"type":"string","maxLength":1000},
             "todo":{"type":"array","items":{"type":"string","maxLength":200},"maxItems":12}
-        },"required":["session_id"],"additionalProperties":false}}
+        },"required":["session_id"],"additionalProperties":false}},
+        {"name":"remember","description":"Keep a note in this project's memory so the next agent, harness or model knows it: kind environment (a fact about this machine: toolchain, path, service), caution (a pitfall or a step that must come first), lesson (a way of working that proved right) or attempt (what you tried and how it went, failures included). Notes are yours to keep current, not reviewed rules: rules and the current code win. Writing the same kind and title again updates that note (the same text reaffirms it). Keep notes short and specific; no secrets or personal data.","inputSchema":{"type":"object","properties":{
+            "kind":{"type":"string","enum":["environment","caution","lesson","attempt"]},
+            "title":{"type":"string","maxLength":120},
+            "body":{"type":"string","maxLength":2000}
+        },"required":["kind","title","body"],"additionalProperties":false}},
+        {"name":"recall","description":"Search this project's memory (notes agents kept): by words in the title or text and/or by kind. Your briefing lists the environment and the most relevant notes; recall the rest when a task touches them, before trying something that may have been tried.","inputSchema":{"type":"object","properties":{
+            "query":{"type":"string","maxLength":200},
+            "kind":{"type":"string","enum":["environment","caution","lesson","attempt"]},
+            "limit":{"type":"integer","minimum":1,"maximum":20}
+        },"additionalProperties":false}},
+        {"name":"reaffirm","description":"Mark a memory note (its id from the briefing or recall) as still true, after you relied on it and it held.","inputSchema":{"type":"object","properties":{
+            "id":{"type":"string"}
+        },"required":["id"],"additionalProperties":false}},
+        {"name":"forget","description":"Remove a memory note (its id) that is no longer true. To change a note, remember it again with the same kind and title instead.","inputSchema":{"type":"object","properties":{
+            "id":{"type":"string"}
+        },"required":["id"],"additionalProperties":false}}
     ])
 }
 fn error(id: Value, code: i64, message: &str) -> Value {
@@ -98,6 +114,58 @@ fn suggestion_reply(result: Result<Value, Error>) -> Value {
     };
     tool_error(text)
 }
+/// What a memory tool tells the agent.
+fn memory_reply(method: &str, result: Result<Value, Error>) -> Value {
+    let text = match result {
+        Ok(v) => {
+            let line = |e: &Value| {
+                format!(
+                    "- [{}] {} ({}): {}",
+                    e["kind"].as_str().unwrap_or("?"),
+                    e["title"].as_str().unwrap_or("?"),
+                    e["id"].as_str().unwrap_or("?"),
+                    e["body"].as_str().unwrap_or("")
+                )
+            };
+            let text = match method {
+                "memory.remember" => format!(
+                    "Memory {}: {}",
+                    v["status"].as_str().unwrap_or("kept"),
+                    line(&v["entry"])
+                ),
+                "memory.recall" => {
+                    let entries = v["entries"].as_array().cloned().unwrap_or_default();
+                    if entries.is_empty() {
+                        "No memory notes match.".to_owned()
+                    } else {
+                        let mut out = String::from(
+                            "Memory notes (agents' notes, unreviewed; rules and current code win):\n",
+                        );
+                        for e in &entries {
+                            out.push_str(&line(e));
+                            out.push('\n');
+                        }
+                        out
+                    }
+                }
+                "memory.reaffirm" => "Reaffirmed.".to_owned(),
+                _ => "Forgotten.".to_owned(),
+            };
+            return json!({"content":[{"type":"text","text":text}],"isError":false});
+        }
+        Err(Error::Unauthorized) => {
+            "The developer has not allowed this project's agents to write (Precept, Agents page). Do not retry; mention the note in your reply instead."
+        }
+        Err(Error::NotFound) => "No memory note has that id; recall to find it.",
+        Err(Error::InvalidRequest) => {
+            "Invalid note: a kind, a title (at most 120 characters) and a text (at most 2000), without control characters."
+        }
+        Err(Error::Conflict) => "Another note of that kind already has this title.",
+        Err(_) => "Precept could not reach project memory. Do not retry; continue your task.",
+    };
+    tool_error(text)
+}
+
 /// What a session tool tells the agent.
 fn session_reply(result: Result<Value, Error>) -> Value {
     let text = match result {
@@ -306,7 +374,39 @@ impl Bridge {
                         "scope and value are required strings, and key unless replaces names the rule to update; only tags, applies_to, enforcement and replaces may be added",
                     ));
                 }
+                if args.get("scope") == Some(&json!("environment")) {
+                    return Ok(tool_error(
+                        "Facts about this machine go to project memory: use remember with kind environment.",
+                    ));
+                }
                 ("preference.suggest", Value::Object(args.clone()))
+            }
+            Some(tool @ ("remember" | "recall" | "reaffirm" | "forget")) => {
+                let (allowed, required): (&[&str], &[&str]) = match tool {
+                    "remember" => (&["kind", "title", "body"], &["kind", "title", "body"]),
+                    "recall" => (&["query", "kind", "limit"], &[]),
+                    _ => (&["id"], &["id"]),
+                };
+                let typed = args.iter().all(|(k, v)| match k.as_str() {
+                    "limit" => v.as_u64().is_some_and(|n| (1..=20).contains(&n)),
+                    _ => v.is_string(),
+                });
+                if args.keys().any(|k| !allowed.contains(&k.as_str()))
+                    || required.iter().any(|k| !args.contains_key(*k))
+                    || !typed
+                {
+                    diagnose("memory tool refused: invalid arguments");
+                    return Ok(tool_error("Invalid arguments: see the tool's schema"));
+                }
+                (
+                    match tool {
+                        "remember" => "memory.remember",
+                        "recall" => "memory.recall",
+                        "reaffirm" => "memory.reaffirm",
+                        _ => "memory.forget",
+                    },
+                    Value::Object(args.clone()),
+                )
             }
             Some(tool @ ("start_session" | "update_work_state" | "close_session")) => {
                 let allowed: &[&str] = match tool {
@@ -388,6 +488,9 @@ impl Bridge {
         }
         if method == "preference.suggest" {
             return Ok(suggestion_reply(result));
+        }
+        if method.starts_with("memory.") {
+            return Ok(memory_reply(method, result));
         }
         if method.starts_with("session.") {
             match (&result, method) {
@@ -598,9 +701,9 @@ async fn main() {
 mod tests {
     use super::*;
     #[test]
-    fn schemas_expose_read_suggest_and_session_tools_none_naming_a_project() {
+    fn schemas_expose_read_suggest_session_and_memory_tools_none_naming_a_project() {
         let v = tools();
-        assert_eq!(v.as_array().unwrap().len(), 6);
+        assert_eq!(v.as_array().unwrap().len(), 10);
         for t in v.as_array().unwrap() {
             assert_eq!(t["inputSchema"]["additionalProperties"], false);
             assert!(
@@ -609,6 +712,31 @@ mod tests {
                     .unwrap()
                     .contains_key("project")
             );
+        }
+    }
+    #[test]
+    fn memory_replies_mark_notes_as_unreviewed_and_say_whether_to_retry() {
+        let ok = memory_reply(
+            "memory.recall",
+            Ok(json!({"entries":[{"kind":"caution","title":"WSL","id":"ab","body":"slow"}]})),
+        );
+        let text = ok["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("unreviewed") && text.contains("- [caution] WSL (ab): slow"));
+        let none = memory_reply("memory.recall", Ok(json!({"entries":[]})));
+        assert!(
+            none["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("No memory")
+        );
+        for (e, needle) in [
+            (Error::Unauthorized, "Do not retry"),
+            (Error::NotFound, "recall"),
+            (Error::InvalidRequest, "at most 120"),
+        ] {
+            let r = memory_reply("memory.remember", Err(e));
+            assert_eq!(r["isError"], true);
+            assert!(r["content"][0]["text"].as_str().unwrap().contains(needle));
         }
     }
     #[test]

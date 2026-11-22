@@ -54,6 +54,7 @@ pub(crate) fn open_mode(model: Signal<Model>, mode: ReviewMode) {
         m.setup_open = false;
         m.agents_page = false;
         m.sessions_page = false;
+        m.memory_page = false;
         m.operator.review = None;
         m.operator.delete_arm = None;
         // The pending queue loads with the page, as the record lists do; the

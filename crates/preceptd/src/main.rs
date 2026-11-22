@@ -18,6 +18,7 @@ mod evidence;
 mod importer;
 mod integration;
 mod mcp_config;
+mod memory;
 mod ojson;
 #[cfg(test)]
 mod ownership_tests;
@@ -51,6 +52,7 @@ struct Service {
     grants: precept_ipc::peer::Peers,
     activity: activity::Activity,
     sessions: Arc<sessions::Sessions>,
+    memory: Arc<memory::Memory>,
     evidence: Arc<evidence::Evidence>,
 }
 #[derive(Deserialize)]
@@ -163,6 +165,11 @@ impl Service {
         // here (never supplied by the caller).
         if request.method == "sessions.handoff" {
             return self.session_handoff(authority, params);
+        }
+        // Environment notes move to project memory: copied, then retired in
+        // one reviewed write of exactly the previewed records.
+        if request.method == "memories.move_environment" {
+            return self.move_environment(authority, params);
         }
         if matches!(access, Access::OperatorWrite { .. }) {
             return Err(Error::Unauthorized);
@@ -410,6 +417,131 @@ impl Service {
             };
             return serde_json::to_value(session).map_err(|_| Error::Unavailable);
         }
+        // Project memory: agents write and recall their own notes (with the
+        // operator's permission for agent writes); the operator reads, edits,
+        // pins, deletes, restores and clears them.
+        if request.method.starts_with("memory.") {
+            let Access::Agent { project } = access else {
+                return Err(Error::Unauthorized);
+            };
+            if !self.profiles.can_propose(&project) {
+                return Err(Error::Unauthorized);
+            }
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct P {
+                #[serde(default)]
+                kind: Option<memory::Kind>,
+                #[serde(default)]
+                title: Option<String>,
+                #[serde(default)]
+                body: Option<String>,
+                #[serde(default)]
+                id: Option<String>,
+                #[serde(default)]
+                query: Option<String>,
+                #[serde(default)]
+                limit: Option<usize>,
+                #[serde(default)]
+                client: Option<String>,
+            }
+            let p: P = decode(params)?;
+            let state = self.profiles.state_dir();
+            let now = memory::now_ms();
+            return match request.method.as_str() {
+                "memory.remember" => {
+                    let (kind, title, body) = match (p.kind, p.title, p.body) {
+                        (Some(k), Some(t), Some(b)) => (k, t, b),
+                        _ => return Err(Error::InvalidRequest),
+                    };
+                    let by = p.client.as_deref().and_then(activity::client_label);
+                    let (entry, what) = self
+                        .memory
+                        .remember(state, &project, kind, &title, &body, by, None)?;
+                    Ok(json!({"status": what.as_str(), "entry": entry.view(now)}))
+                }
+                "memory.reaffirm" => {
+                    let id = p.id.ok_or(Error::InvalidRequest)?;
+                    Ok(json!({"entry": self.memory.reaffirm(state, &project, &id)?.view(now)}))
+                }
+                "memory.forget" => {
+                    let id = p.id.ok_or(Error::InvalidRequest)?;
+                    self.memory.forget(state, &project, &id)?;
+                    Ok(json!({"forgotten": id}))
+                }
+                "memory.recall" => {
+                    let entries = self.memory.recall(
+                        state,
+                        &project,
+                        p.query.as_deref(),
+                        p.kind,
+                        p.limit.unwrap_or(8),
+                    )?;
+                    Ok(json!({"entries": entries.iter().map(|e| e.view(now)).collect::<Vec<_>>()}))
+                }
+                _ => Err(Error::Unsupported),
+            };
+        }
+        if request.method.starts_with("memories.") {
+            if access != Access::Operator {
+                return Err(Error::Unauthorized);
+            }
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct P {
+                project: String,
+                #[serde(default)]
+                id: Option<String>,
+                #[serde(default)]
+                title: Option<String>,
+                #[serde(default)]
+                body: Option<String>,
+                #[serde(default)]
+                pinned: Option<bool>,
+                #[serde(default)]
+                index: Option<usize>,
+            }
+            let p: P = decode(params)?;
+            if !precept_ipc::valid_project(&p.project) || !self.profiles.listed(&p.project) {
+                return Err(Error::NotFound);
+            }
+            let state = self.profiles.state_dir();
+            let now = memory::now_ms();
+            let id = || p.id.clone().ok_or(Error::InvalidRequest);
+            return match request.method.as_str() {
+                "memories.list" => {
+                    let entries = self.memory.list(state, &p.project)?;
+                    Ok(json!({"entries": entries.iter().map(|e| e.view(now)).collect::<Vec<_>>()}))
+                }
+                "memories.edit" => Ok(json!({"entry": self
+                    .memory
+                    .edit(
+                        state,
+                        &p.project,
+                        &id()?,
+                        p.title.as_deref(),
+                        p.body.as_deref(),
+                        p.pinned
+                    )?
+                    .view(now)})),
+                "memories.restore" => Ok(json!({"entry": self
+                    .memory
+                    .restore(state, &p.project, &id()?, p.index.ok_or(Error::InvalidRequest)?)?
+                    .view(now)})),
+                "memories.delete" => {
+                    let id = id()?;
+                    self.memory.forget(state, &p.project, &id)?;
+                    Ok(json!({"deleted": id}))
+                }
+                "memories.clear" => Ok(json!({"cleared": self.memory.clear(state, &p.project)?})),
+                // The confirmed environment notes of the Profile, as the
+                // move to memory would take them (its preview).
+                "memories.environment" => {
+                    Ok(json!({"records": self.environment_notes(&p.project)?}))
+                }
+                _ => Err(Error::Unsupported),
+            };
+        }
         if matches!(request.method.as_str(), "sessions.list" | "sessions.delete") {
             if access != Access::Operator {
                 return Err(Error::Unauthorized);
@@ -631,6 +763,8 @@ impl Service {
                 .sessions
                 .for_context(self.profiles.state_dir(), &project);
             result["work_sessions"] = serde_json::to_value(work).unwrap_or(Value::Array(vec![]));
+            // And the project's memory: agents' notes, unreviewed, weighted.
+            result["memory"] = self.memory.for_context(self.profiles.state_dir(), &project);
         }
         Ok(result)
     }
@@ -734,6 +868,127 @@ impl Service {
     /// Saves a work session as the project's Handoff `task_id` (absent until
     /// now): goal as objective, done and summary as completed, todo as next
     /// action, and the repository's current revision, branch and state.
+    /// The project's confirmed environment notes (exact identities).
+    fn environment_notes(&self, project: &str) -> precept_ipc::Result<Vec<Value>> {
+        let (store, _) = self.profiles.read()?;
+        let scope = precept_core::operator::Scope::Environment {
+            name: project.to_owned(),
+        };
+        let mut records = vec![];
+        let mut after = 0;
+        loop {
+            let page = store
+                .operator_preferences(&scope, after)
+                .map_err(|_| Error::Unavailable)?;
+            records.extend(page.records);
+            match page.next_after_id {
+                Some(n) if records.len() < 1000 => after = n,
+                _ => break,
+            }
+        }
+        Ok(records
+            .into_iter()
+            .filter(|r| r.status == "confirmed")
+            .map(|r| {
+                json!({"id":r.id,"revision":r.revision,"proposal_digest":r.proposal_digest,
+                    "key":r.key,"value":r.value})
+            })
+            .collect())
+    }
+    fn move_environment(
+        &self,
+        authority: &precept_ipc::peer::Peer,
+        params: Value,
+    ) -> precept_ipc::Result<Value> {
+        let Access::OperatorWrite {
+            profile_id,
+            generation,
+            owner_epoch,
+        } = authority.access()
+        else {
+            return Err(Error::Unauthorized);
+        };
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Item {
+            id: i64,
+            revision: i64,
+            proposal_digest: String,
+        }
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct P {
+            project: String,
+            items: Vec<Item>,
+        }
+        let p: P = decode(params)?;
+        if !self.profiles.allowed(&p.project) {
+            return Err(Error::NotFound);
+        }
+        if p.items.is_empty() || p.items.len() > precept_core::operator::MAX_BATCH {
+            return Err(Error::InvalidRequest);
+        }
+        let current = self.environment_notes(&p.project)?;
+        // Exactly the previewed records, each still at its revision.
+        let mut picked = vec![];
+        for item in &p.items {
+            let r = current
+                .iter()
+                .find(|r| r["id"] == item.id)
+                .ok_or(Error::Conflict)?;
+            if r["revision"] != item.revision
+                || r["proposal_digest"] != item.proposal_digest.as_str()
+            {
+                return Err(Error::Conflict);
+            }
+            picked.push(r.clone());
+        }
+        // Copied first: a failed write leaves the notes in both places, never
+        // in neither (copying again only reaffirms).
+        let state = self.profiles.state_dir();
+        for r in &picked {
+            let take = |f: &str, n: usize| -> String {
+                r[f].as_str().unwrap_or("").chars().take(n).collect()
+            };
+            self.memory.remember(
+                state,
+                &p.project,
+                memory::Kind::Environment,
+                &take("key", memory::MAX_TITLE),
+                &take("value", memory::MAX_BODY),
+                Some("operator".into()),
+                None,
+            )?;
+        }
+        use precept_core::operator as op;
+        let command = op::Command::DecideBatch {
+            decision: op::BatchDecision::Deprecate,
+            items: p
+                .items
+                .iter()
+                .map(|i| op::BatchItem {
+                    id: i.id,
+                    scope: op::Scope::Environment {
+                        name: p.project.clone(),
+                    },
+                    proposal_digest: i.proposal_digest.clone(),
+                    expected: op::Expected::Revision(i.revision),
+                })
+                .collect(),
+            channel: op::Channel::Desktop,
+            note: Some("Moved to project memory.".into()),
+        };
+        let request = json!({
+            "version": 2,
+            "binding": {"profile_id":profile_id,"generation":generation,"owner_epoch":owner_epoch},
+            "operation_id": precept_ipc::operator::operation_id()?,
+            "command": command,
+        });
+        let receipt = self
+            .profiles
+            .handle(authority, "profile.mutate", request, self)?;
+        Ok(json!({"moved": picked.len(), "receipt": receipt}))
+    }
     fn session_handoff(
         &self,
         authority: &precept_ipc::peer::Peer,
@@ -1040,6 +1295,9 @@ async fn peer(mut stream: Stream, service: Service, permit: Arc<OwnedSemaphorePe
                     Some(activity::Kind::Session)
                 }
                 "gate.check" => Some(activity::Kind::Gate),
+                "memory.remember" | "memory.reaffirm" | "memory.forget" | "memory.recall" => {
+                    Some(activity::Kind::Memory)
+                }
                 _ => None,
             };
             if let Some(kind) = kind {
@@ -1152,6 +1410,7 @@ async fn run(args: Args) -> precept_ipc::Result<()> {
         grants,
         activity: activity::Activity::default(),
         sessions: Arc::new(sessions::Sessions::new()),
+        memory: Arc::new(memory::Memory::new()),
         evidence: Arc::new(evidence::Evidence::new()),
     };
     // The Profile the operator asked to select at start, if any.

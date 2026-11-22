@@ -147,6 +147,18 @@ writes on for the run first when they are off, and a taken id says so) and
 **Delete session…** behind a confirmation; nothing else is editable here. The page explains that sessions are agents' notes, not rules, and that
 agents write them only where agent writes are allowed.
 
+**Memory** (in the Workspace group, after Sessions) shows the selected project's
+memory: a counts line by kind with Refresh and **Clear all…** (confirmed), then
+one card per kind (Environment, Cautions, Lessons, Attempts), heaviest first.
+Each note shows its title, first line, who wrote it and when, its weight with
+the reasons (kind, pin, confirmations, recalls, your edit, fading) and badges
+for pinned, changed often lately, fading and edited by you. A note opens a sheet
+with its text, a **Pinned** switch, **Edit…** (title and text; kept as your
+correction), **Delete…** (confirmed) and its earlier versions, each as a diff
+against the current text with **Restore**. While the project has confirmed
+environment notes in the Profile, a card lists them with **Move to memory**,
+which turns writes on for the run first when they are off.
+
 The Agents page is setup only. Agent activity is on the **Sessions** page: when an
 MCP client started `precept-mcp`, what it read (by count), suggestions and work
 session calls, who asked (the client's self-reported name, or how it arrived) and

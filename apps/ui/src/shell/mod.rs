@@ -4,7 +4,7 @@
 use crate::*;
 pub(crate) mod chrome;
 use features::{
-    agents, connection, doctor, page, profile, projects, review, sessions, settings, setup,
+    agents, connection, doctor, memory, page, profile, projects, review, sessions, settings, setup,
 };
 use precept_ui_core::{Section, SetupTab, i18n::Msg, operator::ReviewMode};
 use tokens::{compact, palette};
@@ -51,6 +51,8 @@ pub(crate) enum Destination {
     Agents,
     /// Agents' work sessions.
     Sessions,
+    /// Agents' project memory.
+    Memory,
     Handoff,
     Review,
     RuntimeChecks,
@@ -67,6 +69,8 @@ pub(crate) fn current(m: &Model) -> Destination {
         Destination::Agents
     } else if m.sessions_page {
         Destination::Sessions
+    } else if m.memory_page {
+        Destination::Memory
     } else if m.settings {
         Destination::Settings
     } else {
@@ -87,6 +91,7 @@ fn leave_workspaces(m: &mut Model) {
     m.setup_open = false;
     m.agents_page = false;
     m.sessions_page = false;
+    m.memory_page = false;
 }
 
 /// Opens Runtime checks directly on `tab` (Connection, Profile, or Workspaces).
@@ -126,6 +131,10 @@ pub(crate) fn go(model: Signal<Model>, destination: Destination) {
             leave_workspaces(m);
             m.sessions_page = true;
         }),
+        Destination::Memory => model.update(|m| {
+            leave_workspaces(m);
+            m.memory_page = true;
+        }),
         Destination::Dashboard => model.update(|m| {
             leave_workspaces(m);
             m.set_section(Section::Dashboard);
@@ -151,6 +160,7 @@ fn title_key(destination: Destination) -> Msg {
         Destination::Rules => Msg::RulesAndContracts,
         Destination::Agents => Msg::AgentsDestination,
         Destination::Sessions => Msg::SessionsDestination,
+        Destination::Memory => Msg::MemoryDestination,
         Destination::Handoff => Msg::Handoff,
         Destination::Review => Msg::ReviewHub,
         Destination::RuntimeChecks => Msg::RuntimeChecks,
@@ -175,6 +185,7 @@ fn page_help(m: &Model) -> Option<String> {
         },
         Destination::Agents => words(&[Msg::AgentsIntro]),
         Destination::Sessions => words(&[Msg::SessionsIntro]),
+        Destination::Memory => words(&[Msg::MemoryIntro]),
         Destination::Review => words(&[
             Msg::OperatorHelp,
             Msg::ReviewProvenanceNote,
@@ -239,6 +250,7 @@ pub(crate) fn workspace_scoped(d: Destination) -> bool {
             | Destination::Rules
             | Destination::Agents
             | Destination::Sessions
+            | Destination::Memory
             | Destination::Handoff
     )
 }
@@ -404,6 +416,7 @@ fn sidebar(model: Signal<Model>) -> impl IntoElement {
         (Rules, icons::section_path(Section::Rules)),
         (Agents, icons::AGENTS),
         (Sessions, icons::LIST),
+        (Memory, icons::MEMORY),
         (Handoff, icons::section_path(Section::Handoff)),
     ];
     // Review: merged pending queue + personal preferences + project preferences.
@@ -825,6 +838,7 @@ pub(crate) fn shell(
     profile::watch_count(model);
     agents::watch(model);
     sessions::watch(model);
+    memory::watch(model);
     features::handoff::watch(model);
     let on = move |d: Destination| move || current(&model.get()) != d;
     // A new destination starts at its top and its content settles in with a
@@ -940,6 +954,13 @@ pub(crate) fn shell(
                                                             |s| s.hidden(),
                                                         )
                                                         .child(sessions::page(model)),
+                                                )
+                                                .child(
+                                                    view()
+                                                        .style_when(on(Destination::Memory), |s| {
+                                                            s.hidden()
+                                                        })
+                                                        .child(memory::page(model)),
                                                 )
                                                 .child(
                                                     view()

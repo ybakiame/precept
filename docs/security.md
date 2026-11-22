@@ -86,6 +86,12 @@ separate design with its own threat model.
   in the Profile or the repository) and deleted by the operator at will. They
   are read back by the project's agents as context, never as rules, and grant
   nothing.
+- Project memory follows the same boundary: agents' notes written only where
+  the operator allows agent writes, bounded, kept in `memory-<project>.json`
+  (0600) in the daemon's private state, never in the Profile or the repository,
+  labelled unreviewed wherever it is delivered, and edited, deleted or cleared
+  by the operator at will. Agents may add, correct, reaffirm and forget notes;
+  nothing in memory confirms, enables or outranks a rule.
 - Preference confirmation binds the exact record/revision/scope. Only confirmed
   applicable values reach effective context; repository contracts remain authoritative.
 - Document bodies are opt-in, narrowly allowlisted, bounded and contained. Native

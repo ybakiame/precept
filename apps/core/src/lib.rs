@@ -11,6 +11,7 @@ pub mod doctor;
 pub mod i18n;
 pub mod keys;
 pub mod mcp;
+pub mod memory;
 pub mod operator;
 pub mod presentation;
 pub mod profile;
@@ -256,6 +257,9 @@ pub struct Model {
     /// The project-scoped Sessions page (agents' work sessions).
     pub sessions_page: bool,
     pub sessions: work::SessionsPage,
+    /// The project-scoped Memory page (agents' project memory).
+    pub memory_page: bool,
+    pub memory: memory::MemoryPage,
     /// The selected project's saved Handoffs (`profile.handoff.list`), with
     /// the project they were read for.
     pub handoff_list: Option<(String, Vec<precept_core::operator::HandoffSummary>)>,
@@ -340,6 +344,8 @@ impl Model {
             setup_tab: SetupTab::Connection,
             agents_page: false,
             sessions_page: false,
+            memory_page: false,
+            memory: Default::default(),
             sessions: Default::default(),
             handoff_list: None,
             agents: Default::default(),

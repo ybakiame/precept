@@ -7,6 +7,9 @@ use serde_json::Value;
 
 /// The longest briefing, in bytes.
 pub const MAX_BYTES: usize = 12 * 1024;
+/// The most the project-memory section adds, in bytes, on top of
+/// [`MAX_BYTES`]: its own budget, so notes never displace rules.
+pub const MEMORY_BYTES: usize = 3 * 1024;
 /// The longest preference value shown before it is cut.
 const MAX_VALUE: usize = 1200;
 
@@ -114,6 +117,88 @@ fn work(context: &Value) -> String {
         }
         if let Some(sum) = s.get("summary").and_then(Value::as_str) {
             out.push_str(&format!("  - Summary: {}\n", cut(sum, 400).0));
+        }
+    }
+    out
+}
+
+/// The project's memory (agents' notes, unreviewed): counts by kind, every
+/// environment note, then the heaviest others, within [`MEMORY_BYTES`].
+fn memory(context: &Value) -> String {
+    let Some(m) = context.get("memory") else {
+        return String::new();
+    };
+    let count = |k: &str| {
+        m.pointer(&format!("/counts/{k}"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0)
+    };
+    let kinds = [
+        ("environment", "Environment"),
+        ("caution", "Cautions"),
+        ("lesson", "Lessons"),
+        ("attempt", "Attempts"),
+    ];
+    if kinds.iter().all(|(k, _)| count(k) == 0) {
+        return String::new();
+    }
+    let counts: Vec<String> = kinds
+        .iter()
+        .map(|(k, label)| format!("{label} {}", count(k)))
+        .collect();
+    let mut out = format!(
+        "\n## Project memory\n\nAgents' notes on this project, unreviewed: repository rules, confirmed preferences and the current code win. {}. Call `recall` for the rest, `reaffirm` a note that held, `remember` what you learn and `forget` what is no longer true.\n",
+        counts.join(" · ")
+    );
+    let line = |e: &Value| {
+        let one = |f: &str| e.get(f).and_then(Value::as_str).unwrap_or("");
+        let mut flags = vec![];
+        if e.get("pinned").and_then(Value::as_bool) == Some(true) {
+            flags.push("pinned");
+        }
+        if e.get("unstable").and_then(Value::as_bool) == Some(true) {
+            flags.push("changed often lately");
+        }
+        let flags = if flags.is_empty() {
+            String::new()
+        } else {
+            format!(" _{}_", flags.join(", "))
+        };
+        format!(
+            "- **{}**{flags} (`{}`): {}\n",
+            cut(one("title"), 120).0,
+            one("id"),
+            cut(one("body"), 600).0.replace('\n', " ")
+        )
+    };
+    for (field, heading) in [
+        ("environment", "Environment"),
+        ("relevant", "Most relevant"),
+    ] {
+        let entries = m
+            .get(field)
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        if entries.is_empty() {
+            continue;
+        }
+        let head = format!("\n### {heading}\n\n");
+        if out.len() + head.len() > MEMORY_BYTES {
+            break;
+        }
+        out.push_str(&head);
+        for e in &entries {
+            let l = if field == "relevant" {
+                let kind = e.get("kind").and_then(Value::as_str).unwrap_or("note");
+                line(e).replacen("- ", &format!("- [{kind}] "), 1)
+            } else {
+                line(e)
+            };
+            if out.len() + l.len() > MEMORY_BYTES {
+                break;
+            }
+            out.push_str(&l);
         }
     }
     out
@@ -337,6 +422,7 @@ pub fn render(project: &str, context: &Value, moment: Moment) -> String {
             out.push_str(&work);
         }
     }
+    out.push_str(&memory(context));
     if let Some(status) = context
         .pointer("/contract_resolution/status")
         .and_then(Value::as_str)
@@ -359,6 +445,32 @@ pub fn render(project: &str, context: &Value, moment: Moment) -> String {
         );
     }
     out
+}
+
+#[cfg(test)]
+mod memory_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn memory_lists_environment_then_relevant_within_its_budget() {
+        let ctx = json!({"memory":{
+            "counts":{"environment":1,"caution":1,"lesson":0,"attempt":3},
+            "environment":[{"id":"a1","title":"Node","body":"Node 22 via mise","pinned":true}],
+            "relevant":[{"id":"b2","kind":"caution","title":"WSL paths","body":"/mnt/c is slow","unstable":true}]
+        }});
+        let text = memory(&ctx);
+        assert!(text.contains("Environment 1 · Cautions 1 · Lessons 0 · Attempts 3"));
+        assert!(text.contains("- **Node** _pinned_ (`a1`): Node 22 via mise"));
+        assert!(text.contains("- [caution] **WSL paths** _changed often lately_ (`b2`)"));
+        assert!(text.find("### Environment") < text.find("### Most relevant"));
+        assert!(memory(&json!({"memory":{"counts":{}}})).is_empty());
+        let many: Vec<Value> = (0..40)
+            .map(|i| json!({"id":format!("{i}"),"title":format!("t{i}"),"body":"x".repeat(500)}))
+            .collect();
+        let big = memory(&json!({"memory":{"counts":{"environment":40},"environment":many}}));
+        assert!(big.len() <= MEMORY_BYTES);
+    }
 }
 
 #[cfg(test)]

@@ -745,6 +745,16 @@ fn mutate(
                         expected,
                         note,
                     },
+                    precept_core::operator::BatchDecision::Deprecate => {
+                        Command::DeprecatePreference {
+                            id,
+                            scope,
+                            proposal_digest,
+                            channel,
+                            expected,
+                            note,
+                        }
+                    }
                 };
                 for (key, version) in mutate(db, &single, now, allocated, sequence, next)? {
                     if versions.insert(key, version).is_some() {

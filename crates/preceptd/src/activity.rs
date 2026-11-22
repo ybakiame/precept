@@ -35,6 +35,8 @@ pub enum Kind {
     Suggested,
     /// An agent started, updated or closed its work session.
     Session,
+    /// An agent wrote, reaffirmed, removed or searched project memory.
+    Memory,
     /// A harness's pre-tool hook asked the gate (outcome `allow`, `deny` or
     /// `off`).
     Gate,

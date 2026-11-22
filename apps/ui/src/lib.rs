@@ -397,6 +397,7 @@ fn console(model: Signal<Model>) -> impl IntoElement {
             m.setup_open = false;
             m.agents_page = false;
             m.sessions_page = false;
+            m.memory_page = false;
             m.set_section(section)
         });
     };
@@ -465,7 +466,7 @@ fn console(model: Signal<Model>) -> impl IntoElement {
                 m.setup_open = false;
                 m.agents_page = false;
                 m.sessions_page = false;
-                m.sessions_page = false;
+                m.memory_page = false;
             })
         }),
     );
@@ -508,7 +509,7 @@ fn console(model: Signal<Model>) -> impl IntoElement {
                 m.setup_open = false;
                 m.agents_page = false;
                 m.sessions_page = false;
-                m.sessions_page = false;
+                m.memory_page = false;
             });
         });
     });

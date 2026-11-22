@@ -36,6 +36,12 @@ pub const CONTROL_METHODS: &[&str] = &[
     "rules.export.apply",
     "import.scan",
     "sessions.list",
+    "memories.list",
+    "memories.edit",
+    "memories.restore",
+    "memories.delete",
+    "memories.clear",
+    "memories.environment",
     "sessions.delete",
 ];
 /// The project-set writes, sent with the OperatorWrite credential.
@@ -44,6 +50,7 @@ pub const PROJECT_WRITES: &[&str] = &[
     "project.register",
     "project.remove",
     "sessions.handoff",
+    "memories.move_environment",
 ];
 
 pub async fn control(location: &Location, method: &str, params: Value) -> Result<Value> {

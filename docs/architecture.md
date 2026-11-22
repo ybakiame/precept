@@ -73,6 +73,7 @@ evidence.
 | Personal preferences, including project-scoped choices | Human-reviewed user-local SQLite | Explicit operator action; never tracked Profile files |
 | Project contracts | Repository-owned AGENTS/docs and reviewed engineering configuration | Bounded live reads; no automatic prose interpretation or file creation |
 | Work sessions | Daemon-private state (`sessions-<project>.json`) | Agent `session.*` where the operator allows agent writes; operator `sessions.delete` |
+| Project memory (environment, cautions, lessons, attempts) | Daemon-private state (`memory-<project>.json`); agents' notes, unreviewed, below rules and code | Agent `memory.*` where the operator allows agent writes; operator `memories.*` edits, restores, pins, deletes and clears; confirmed environment notes move in by one operator-write |
 | Project registration | User-local Profile plus daemon-private project state | Operator-write `project.add` / `project.remove` after checking one chosen path; `project.register` records a listed project in a newly selected Profile at its pinned root |
 | Suggestions and reviews | User-local SQLite proposal/review records | Approval binds exact content, revision and scope; repository changes still need repository review |
 | Effective context | Derived from current sources and review state | Any cache requires source versions and invalidation; never outranks sources |

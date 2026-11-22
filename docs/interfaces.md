@@ -168,8 +168,8 @@ matching capability. Unbound, every tool answers that the folder is not a
 registered project. Tool arguments cannot change scope.
 
 Tools: `get_effective_context` and `get_handoff` (read-only), and `suggest_rule
-{scope: project|environment|personal, key, value, tags?, applies_to?, enforcement?,
-replaces?}`, which calls agent `preference.suggest`. With `replaces` (the id of a
+{scope: project|personal, key, value, tags?, applies_to?, enforcement?,
+replaces?}` (scope `environment` is refused with a pointer to `remember`), which calls agent `preference.suggest`. With `replaces` (the id of a
 confirmed rule of that scope, from `get_effective_context`; else `NotFound`) the
 suggestion is an update of that rule: it takes its key and, when not given, its
 tags, where it applies, priority and enforcement; `key` may be left out.
@@ -206,6 +206,40 @@ action, no validation entries, and the repository's revision, branch, state and
 worktree fingerprint read by the daemon at that moment, never supplied by the
 caller. Calls are in the activity log as
 `session`.
+
+Project memory: `remember {kind, title, body}`, `recall {query?, kind?, limit?}`,
+`reaffirm {id}` and `forget {id}` call agent `memory.remember` /
+`memory.recall` / `memory.reaffirm` / `memory.forget`. Kinds: `environment`
+(facts about this machine), `caution`, `lesson`, `attempt`. Memory is agents'
+own notes, unreviewed: accepted only where the operator allows the project's
+agents to write (`project.propose`), needing no write grant, kept in the
+daemon's private state (`memory-<project>.json`) and never in the Profile.
+Bounds: title 120 characters, body 2000, 300 notes per project (past it the
+lightest unpinned note goes). `remember` with a kind and title (compared without
+case or repeated spaces) already kept updates that note: the same body
+reaffirms it (one more confirmation), another body corrects it (the earlier
+body joins its history, at most five; confirmations restart; a pin stays).
+Weight: environment 100, caution 60, lesson 40, attempt 20; pinned +1000; +4
+per confirmation (at most 10); +1 per recall (at most 20); +10 while the last
+correction is the operator's; after 60 days without confirmation, −0.5 per day
+down to nothing. Three changes in seven days mark a note `unstable` (shown, never
+weighted). `recall` matches words in the title or body (case-insensitive, any
+script), heaviest first, at most 20, and counts a recall for each returned note.
+Agent and operator `context.get` add `memory`: counts by kind, every
+environment note (at most 8) and the five heaviest others that are not fading,
+at most 2.5 KiB of text; the session-start briefing renders it as **Project
+memory** in its own budget of at most 3 KiB after the rules. Operator
+`memories.list {project}` returns every note with its weight and flags;
+`memories.edit {project, id, title?, body?, pinned?}` (a body change is the
+operator's correction; a taken title is `Conflict`), `memories.restore
+{project, id, index}`, `memories.delete {project, id}` and `memories.clear
+{project}` change it. Operator `memories.environment {project}` lists the
+project's confirmed environment notes of the Profile (id, revision, proposal
+digest, key, value); operator-write `memories.move_environment {project,
+items:[{id, revision, proposal_digest}]}` copies exactly those into memory and
+then retires them in one reviewed write (`decide_batch` with decision
+`deprecate`); a changed or unconfirmed item is `Conflict` and nothing is
+retired. Agent calls are in the activity log as `memory`.
 
 `initialize` returns `instructions` telling the agent to call
 `get_effective_context` before planning or editing and again after compaction,

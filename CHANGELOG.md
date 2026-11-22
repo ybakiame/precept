@@ -4,6 +4,17 @@ Precept follows [semantic versioning](https://semver.org/). While the version is
 0.x, a minor release may change the Profile schema or the local interfaces; move
 data between schemas with the versioned Profile export and import.
 
+## Unreleased
+
+- **Project memory.** Agents keep what they learn in a project — this machine's
+  environment, cautions, lessons and attempts — with the `remember`, `recall`,
+  `reaffirm` and `forget` tools, so it survives a change of agent, harness or
+  model. Unreviewed and below rules, weighted (environment first, pins,
+  confirmations, fading), carried in the session briefing, and yours to pin,
+  edit, restore or delete on the new Memory page.
+- Environment notes belong to memory: agents no longer suggest them as rules,
+  and confirmed ones move in with one previewed write.
+
 ## 0.4.0
 
 - **Rules reach agents by themselves.** Session-start hooks for Claude Code, Codex

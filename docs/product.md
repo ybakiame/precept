@@ -87,8 +87,8 @@ Two channels carry rules to an agent; use both where the harness allows it.
 | | Hooks only | MCP only | Hooks + MCP (recommended) |
 | --- | --- | --- | --- |
 | How rules arrive | A briefing at session start and after compaction, without the agent asking | When the agent calls `get_effective_context`; an agent that does not call gets nothing | The briefing always; details on demand |
-| What the agent reads | Confirmed preferences, repository rules with their check results, environment notes, open work sessions; at most 12 KiB, then cut | Everything, narrowed by path, language or task; documents on request; Handoffs | Both |
-| Can the agent give back | No (read-only) | Yes: rule suggestions and updates, its work session | Yes |
+| What the agent reads | Confirmed preferences, repository rules with their check results, open work sessions (at most 12 KiB, then cut), and project memory in its own 3 KiB | Everything, narrowed by path, language or task; documents on request; Handoffs | Both |
+| Can the agent give back | No (read-only) | Yes: rule suggestions and updates, its work session, project memory | Yes |
 | Continuity across agents and compaction | Sees work others left, cannot record its own | Records its work, may not read others' | The full loop |
 | Harnesses | Those with a session-start hook: Claude Code, Codex, Antigravity | Any MCP client | Claude Code, Codex, Antigravity |
 

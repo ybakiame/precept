@@ -4,6 +4,7 @@ pub mod brand_preview;
 pub(crate) mod connection;
 pub(crate) mod doctor;
 pub(crate) mod handoff;
+pub(crate) mod memory;
 pub(crate) mod overview;
 pub(crate) mod preferences;
 pub(crate) mod profile;
