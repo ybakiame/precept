@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# Builds a local Arch Linux package (pacman) of the Precept daemon side for private
-# dogfooding: preceptd, precept, precept-mcp, precept-bridge and the
-# preceptd systemd user unit. Does not install anything; installing is an explicit
+# Builds a local Arch Linux package (pacman) of the Precept daemon side:
+# preceptd, precept, precept-mcp, precept-hook, precept-bridge and the preceptd
+# systemd user unit. Does not install anything; installing is an explicit
 # `sudo pacman -U` by the owner.
 #
-#   tools/dogfood/arch-package.sh <new-attempt-name>
+#   tools/dogfood/arch-package.sh <new-attempt-name> [--release]
 #
-# Output: .tmp/artifacts/local-dogfood/<name>/ (ignored; never commit or upload).
+# --release builds the tagged version (HEAD must be tagged v<version>) for
+# tools/release.sh; otherwise a dogfood build named by commit.
+# Output: .tmp/artifacts/local-dogfood/<name>/ (ignored; never commit).
 set -euo pipefail
 die() { echo "arch-package: $*" >&2; exit 1; }
 
@@ -22,7 +24,14 @@ short=${sha:0:12}
 # The product version (root Cargo.toml), then the commit it was built from.
 version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"$/\1/p' "$repo/Cargo.toml")
 [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "no product version in Cargo.toml" >&2; exit 1; }
-pkgver="${version}.r$(git -C "$repo" rev-list --count HEAD).g${short}"
+# A release build (`--release`) is the tagged version itself; otherwise the
+# version, the commit count and the commit.
+if [[ ${2:-} == --release ]]; then
+  [[ $(git -C "$repo" tag --points-at HEAD) == *"v$version"* ]] || die "--release needs HEAD tagged v$version"
+  pkgver="$version"
+else
+  pkgver="${version}.r$(git -C "$repo" rev-list --count HEAD).g${short}"
+fi
 parent="$repo/.tmp/artifacts/local-dogfood"
 mkdir -p -m 700 "$parent"
 out="$parent/$name"

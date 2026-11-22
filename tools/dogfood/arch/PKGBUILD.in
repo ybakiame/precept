@@ -3,7 +3,7 @@
 pkgname=precept
 pkgver=@PKGVER@
 pkgrel=1
-pkgdesc='Precept local daemon, CLI, MCP stdio server and Windows-GUI WSL bridge (private dogfooding build)'
+pkgdesc='Precept local daemon, CLI, MCP server, harness hooks and Windows-GUI WSL bridge'
 arch=(x86_64)
 url='https://github.com/ybakiame/precept'
 license=(Apache-2.0)

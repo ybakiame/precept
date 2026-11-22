@@ -76,8 +76,11 @@ contracts. Code/contract disagreements require explicit human resolution.
 
 ## Engineering and validation
 
-Use the Rust workspaces and repository CI as the source of truth. The root product
-crates and `apps/` are separate Cargo workspaces with separate lockfiles.
+Use the Rust workspaces and the gates below as the source of truth; they run on
+the maintainer's machine (`tools/release.sh` runs them all before a release), and
+the manual `Release` workflow repeats them on hosted runners when available. The
+root product crates and `apps/` are separate Cargo workspaces with separate
+lockfiles.
 
 For root Rust changes, run:
 

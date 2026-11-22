@@ -1,0 +1,70 @@
+# The release build on hosted runners, run by hand for a pushed tag v<version>.
+# tools/release.sh does the same on the maintainer's machine (and also builds
+# the Arch Linux package); use either. Never triggered by a push.
+name: Release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (the tag v<version> must exist)'
+        required: true
+permissions:
+  contents: write
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ inputs.version }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: NSH build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libclang-dev cmake ninja-build pkg-config libgtk-4-dev libasound2-dev libssl-dev libxkbcommon-dev libwayland-dev
+      - name: Version matches the tag
+        run: grep -q '^version = "${{ inputs.version }}"$' Cargo.toml
+      - run: npm ci --prefix tools
+      - run: node tools/check_source.mjs
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --all-targets --locked
+      - run: cargo fmt --manifest-path apps/Cargo.toml --all -- --check
+      - run: cargo clippy --manifest-path apps/Cargo.toml --workspace --all-targets --features precept-ui/native --locked -- -D warnings
+      - run: cargo test --manifest-path apps/Cargo.toml --workspace --all-targets --features precept-ui/native --locked
+  windows:
+    needs: gates
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ inputs.version }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Pinned stock toolchain
+        run: rustup toolchain install 1.99.1 --profile minimal --target x86_64-pc-windows-msvc
+      - name: Fetch dependencies (the packager builds offline)
+        shell: pwsh
+        run: |
+          cargo fetch --locked
+          cargo fetch --locked --manifest-path apps/Cargo.toml
+      - name: Windows ZIP
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          ./tools/portable/windows-package.ps1 -OutputParent out -Name release -Release '${{ inputs.version }}'
+      - name: Upload to the Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $zip = "out/release/precept-${{ inputs.version }}-windows-x86_64.zip"
+          $tag = 'v${{ inputs.version }}'
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) { gh release create $tag --verify-tag --title "Precept ${{ inputs.version }}" --notes "See CHANGELOG.md." }
+          gh release upload $tag $zip --clobber

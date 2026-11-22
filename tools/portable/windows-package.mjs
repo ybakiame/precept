@@ -215,11 +215,20 @@ export function removeOwnedProduct(root, files, allowed = removable, required = 
 
 function cargoHome() { return process.env.CARGO_HOME || path.join(os.homedir(), '.cargo'); }
 
-export function build(repo, parent, name, cargoProgram) {
+/// The product version in the root Cargo.toml's `[workspace.package]`.
+export function productVersion(repo) {
+  const text = fs.readFileSync(path.join(repo, 'Cargo.toml'), 'utf8');
+  return /\[workspace\.package\][^[]*?\nversion = "([^"]+)"/.exec(text)?.[1];
+}
+
+export function build(repo, parent, name, cargoProgram, release = null) {
   requireValue(process.platform === 'win32' && process.arch === 'x64', 'Native Windows x86_64 required');
   requireValue(!command('git', ['status', '--porcelain', '--untracked-files=all'], repo), 'Clean committed source required');
   const sha = command('git', ['rev-parse', 'HEAD'], repo), tree = command('git', ['rev-parse', 'HEAD^{tree}'], repo);
   requireValue(/^[a-f0-9]{40}$/.test(sha) && /^[a-f0-9]{40}$/.test(tree), 'Invalid source identity');
+  // A release build names the version it ships; it must be the source's.
+  const version = productVersion(repo);
+  requireValue(release === null || release === version, 'Release version differs from Cargo.toml');
   const vcTools = process.env.VCToolsVersion?.trim();
   requireValue(/^14\.\d+\.\d+$/.test(vcTools ?? ''), 'MSVC v14 build tools environment unavailable; no installation attempted');
   // The first-party grant is committed source; only the verbatim Apache-2.0 text ships.
@@ -238,7 +247,8 @@ export function build(repo, parent, name, cargoProgram) {
   const remaps = [[repo, '/precept/source'], [cargoHome(), '/cargo'], [report, '/precept/build']];
   const rustflags = remaps.map(([from, to]) => `--remap-path-prefix=${from}=${to}`);
   const env = cargoEnvironment(process.env, rustflags);
-  const manifest = { format: 2, layout: 'Precept/{bin,runtime,notices}', prototype: true, public_distribution: false,
+  const manifest = { format: 2, layout: 'Precept/{bin,runtime,notices}', version,
+    prototype: release === null, public_distribution: release !== null,
     source_sha: sha, source_tree: tree, target, profile: 'release', nsh_revision: pin,
     builder: { os_build: os.release(), node: process.version,
       vc_tools: vcTools,
@@ -246,7 +256,9 @@ export function build(repo, parent, name, cargoProgram) {
       cargo: command(cargoProgram, ['--version'], repo, null, env), rustc: command('rustc', ['-Vv'], repo, null, env) },
     rustflags: remaps.map(([, to], i) => `--remap-path-prefix=<${['checkout', 'cargo-home', 'build-output'][i]}>=${to}`),
     license: 'Apache-2.0', locks: {}, build_commands: [], binaries: [], prerequisites: [], files: [],
-    limitations: ['Unsigned product executables; not a release or reproducible-binary claim',
+    limitations: [release === null
+      ? 'Unsigned product executables; not a release or reproducible-binary claim'
+      : 'Unsigned product executables; not a reproducible-binary claim',
       'OS minimum and clean-target acceptance unverified',
       'Third-party notices reviewed against a permissive-license policy; the ledger is not a linker-derived SBOM; signing and publication undecided'] };
   for (const file of ['Cargo.lock', 'apps/Cargo.lock']) manifest.locks[file] = digest(fs.readFileSync(path.join(repo, file)));
@@ -328,8 +340,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       else console.log(JSON.stringify({ result: 'PASS', ...removeOwnedProduct(process.argv[3], files) }));
       process.exit(0);
     }
-    requireValue(process.argv.length === 6, 'Usage: node windows-package.mjs REPO EXISTING_PARENT NEW_NAME CARGO');
-    const result = build(...process.argv.slice(2));
+    requireValue(process.argv.length === 6 || process.argv.length === 7,
+      'Usage: node windows-package.mjs REPO EXISTING_PARENT NEW_NAME CARGO [RELEASE_VERSION]');
+    const result = build(...process.argv.slice(2, 6), process.argv[6] ?? null);
     console.log(JSON.stringify({ source_sha: result.sha, source_tree: result.tree, status: 'ASSEMBLED_NOT_ZIPPED' }));
   } catch (error) {
     const detail = error instanceof PolicyError || error instanceof NoticeError ? error.message : (error.code ?? error.name);

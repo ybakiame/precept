@@ -1,6 +1,8 @@
 # Developer-only entrypoint; restore the caller's environment, no prerequisite install.
 # VsDevShell supplies VCToolsRedistDir, the source of the app-local VC++ runtime DLLs.
-param([Parameter(Mandatory)][string]$OutputParent, [Parameter(Mandatory)][string]$Name)
+# -Release <version>: a published build of that version (it must be the source's);
+# without it, an unpublished prototype named by commit.
+param([Parameter(Mandatory)][string]$OutputParent, [Parameter(Mandatory)][string]$Name, [string]$Release = '')
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if ($PSVersionTable.PSVersion.Major -lt 7 -or -not $IsWindows) { throw 'Native Windows PowerShell 7 required' }
@@ -21,12 +23,21 @@ try {
     # The recipe itself strips inherited RUSTFLAGS/wrapper/target/profile overrides for Cargo.
     $env:CARGO_NET_OFFLINE = 'true'
     $parent = (Resolve-Path -LiteralPath $OutputParent).Path
-    & node (Join-Path $PSScriptRoot 'windows-package.mjs') $repo $parent $Name (Join-Path $toolchain 'cargo.exe')
+    $nodeArgs = @((Join-Path $PSScriptRoot 'windows-package.mjs'), $repo, $parent, $Name, (Join-Path $toolchain 'cargo.exe'))
+    if ($Release) {
+        if ($Release -notmatch '^\d+\.\d+\.\d+$') { throw 'Release must be a semantic version' }
+        $nodeArgs += $Release
+    }
+    & node @nodeArgs
     if ($LASTEXITCODE -ne 0) { throw 'Assembly failed; retain private attempt directory' }
     $report = Join-Path $parent $Name
     $packageRoot = Join-Path $report 'package'
     $source = Get-Content -LiteralPath (Join-Path $packageRoot 'Precept/runtime/manifest.json') -Raw | ConvertFrom-Json
-    $zip = Join-Path $report ("precept-windows-x86_64-prototype-" + $source.source_sha.Substring(0,12) + ".zip")
+    $zip = if ($Release) {
+        Join-Path $report ("precept-" + $Release + "-windows-x86_64.zip")
+    } else {
+        Join-Path $report ("precept-windows-x86_64-prototype-" + $source.source_sha.Substring(0,12) + ".zip")
+    }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     # Entries are Precept/...; extraction always creates one product directory.
     [IO.Compression.ZipFile]::CreateFromDirectory($packageRoot, $zip)
@@ -45,7 +56,7 @@ try {
     & node (Join-Path $PSScriptRoot 'windows-package.mjs') --verify $extracted (Join-Path $report 'archive-inventory.json')
     if ($LASTEXITCODE -ne 0) { throw 'Extracted archive mismatch' }
     [ordered]@{ archive = (Split-Path -Leaf $zip); archive_sha256 = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant(); archive_bytes = (Get-Item -LiteralPath $zip).Length; archive_entries = $names.Count; extract_inventory = 'PASS'; clean_target = 'NOT_RUN'; developer_host = $true } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $report 'package-result.json')
-    Write-Output 'PASS: unpublished ZIP assembled and extracted; clean-target acceptance NOT_RUN'
+    Write-Output 'PASS: ZIP assembled and extracted; clean-target acceptance NOT_RUN'
 } finally {
     Pop-Location
     foreach ($key in @([Environment]::GetEnvironmentVariables('Process').Keys)) {

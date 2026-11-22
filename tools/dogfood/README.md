@@ -128,3 +128,21 @@ is not ready yet, the Desktop reports it as unreachable; retry from the Desktop.
 - WSL: `systemctl --user disable --now preceptd`, then `sudo pacman -R precept`.
   `~/.local/state/precept` and `~/.config/precept` (Profile and configuration) are kept;
   delete them only deliberately.
+
+## Release
+
+From WSL2 Arch, on a clean `dev` that is pushed, with the version set in
+`Cargo.toml` and a `## <version>` section in `CHANGELOG.md`:
+
+```text
+tools/release.sh 0.4.0 --windows-clone /mnt/c/<path-to-windows-clone>            # build only
+tools/release.sh 0.4.0 --windows-clone /mnt/c/<path-to-windows-clone> --publish  # and publish
+```
+
+It tags `v<version>` at HEAD (locally), runs every gate, builds the Arch package
+(`arch-package.sh --release`, pkgver = the version) and the Windows ZIP
+(`windows-package.ps1 -Release`, in a temporary worktree of the Windows clone),
+and writes them with `SHA256SUMS` and the changelog section to
+`.tmp/artifacts/release/v<version>/`. `--publish` then fast-forwards `main`,
+pushes the tag and creates the GitHub Release with those assets. The manual
+`Release` workflow builds the gates and the Windows ZIP on hosted runners instead.
