@@ -55,6 +55,20 @@ enum Query {
         #[arg(long)]
         before: Option<u64>,
     },
+    /// Why each rule of KEY reaches a request (narrowed like an agent's
+    /// selector) or not, with the reason.
+    Explain {
+        project: String,
+        key: String,
+        #[arg(long)]
+        agent: Option<String>,
+        #[arg(long)]
+        path: Option<String>,
+        #[arg(long)]
+        language: Option<String>,
+        #[arg(long = "task-tag")]
+        task_tags: Vec<String>,
+    },
     Context {
         project: String,
         #[arg(long)]
@@ -122,6 +136,28 @@ async fn run(args: Args) -> precept_ipc::Result<serde_json::Value> {
         ),
         Query::Handoff { project, task } => {
             ("handoff.get", json!({"project":project,"task_id":task}))
+        }
+        Query::Explain {
+            project,
+            key,
+            agent,
+            path,
+            language,
+            task_tags,
+        } => {
+            let mut selector = json!({});
+            for (k, v) in [("agent_id", agent), ("path", path), ("language", language)] {
+                if let Some(v) = v {
+                    selector[k] = v.into();
+                }
+            }
+            if !task_tags.is_empty() {
+                selector["task_tags"] = task_tags.into();
+            }
+            (
+                "context.explain",
+                json!({"project":project,"key":key,"selector":selector}),
+            )
         }
         _ => unreachable!("operator commands returned above"),
     };

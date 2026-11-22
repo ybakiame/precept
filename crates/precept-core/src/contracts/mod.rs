@@ -7,7 +7,7 @@ pub mod gate;
 mod parser;
 mod snapshot;
 
-pub use bridge::{Projection, SelectorQuery, project};
+pub use bridge::{Projection, SelectorQuery, explain, project};
 pub use checks::{MAX_CHECKED_BYTES, evaluate};
 pub use parser::{
     Check, DIR, Guard, GuardTool, InvalidSource, MAX_BYTES, MAX_FILES, RuleFile, heading_title,

@@ -482,4 +482,11 @@ fn the_gate_denies_calls_that_break_a_committed_hard_rule_only_while_switched_on
     assert_eq!(denials[0]["rule"], "release");
     assert_eq!(denials[0]["count"], 3, "{denials:?}");
     assert_eq!(denials.len(), 1);
+    // The edited rule file is not committed: explain says so.
+    let why = f
+        .daemon
+        .call(&agent, "context.explain", json!({"key":"release"}))
+        .unwrap();
+    assert_eq!(why["rules"][0]["source"], "repository");
+    assert_eq!(why["rules"][0]["reason"], "uncommitted", "{why}");
 }

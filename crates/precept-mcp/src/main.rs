@@ -19,7 +19,7 @@ fn info() -> Value {
     json!({"name":"precept","version":"0.1.0a0"})
 }
 /// Sent once in `initialize`: what the server is for and when to call it.
-const INSTRUCTIONS: &str = "Precept serves the project of this session's folder (nothing outside a registered project): its confirmed engineering context: the developer's reviewed preferences and the repository's contracts. Call get_effective_context before planning or editing anything in this project, and again after your context was compacted. Treat confirmed preferences as the developer's standing instructions; current repository files and contracts outrank them, so report a conflict instead of choosing silently. Call get_handoff with a task id to resume saved work. Both are read-only. When the developer states a lasting preference or you learn a durable project convention, you may file it with suggest_rule: it only becomes a suggestion the developer reviews, never an active rule, and works only where they allowed it. Where allowed, record your work with start_session and update_work_state so the next agent (or you, after compaction) can continue, and keep what you learn about this project in its memory: remember facts about this machine, cautions, lessons and attempts (failures included), recall before trying something that may have been tried, reaffirm a note that held and forget one that no longer does. Memory is unreviewed notes: rules and current code win.";
+const INSTRUCTIONS: &str = "Precept serves the project of this session's folder (nothing outside a registered project): its confirmed engineering context: the developer's reviewed preferences and the repository's contracts. Call get_effective_context before planning or editing anything in this project, and again after your context was compacted. Treat confirmed preferences as the developer's standing instructions; current repository files and contracts outrank them, so report a conflict instead of choosing silently. When a rule you expected is missing or two seem to disagree, explain_rule says why. Call get_handoff with a task id to resume saved work. These are read-only. When the developer states a lasting preference or you learn a durable project convention, you may file it with suggest_rule: it only becomes a suggestion the developer reviews, never an active rule, and works only where they allowed it. Where allowed, record your work with start_session and update_work_state so the next agent (or you, after compaction) can continue, and keep what you learn about this project in its memory: remember facts about this machine, cautions, lessons and attempts (failures included), recall before trying something that may have been tried, reaffirm a note that held and forget one that no longer does. Memory is unreviewed notes: rules and current code win.";
 fn tools() -> Value {
     let selector = json!({"type":"object","properties":{
         "agent_id":{"type":"string"},"path":{"type":"string"},"language":{"type":"string"},
@@ -27,6 +27,7 @@ fn tools() -> Value {
     },"additionalProperties":false});
     json!([
         {"name":"get_effective_context","description":"Call this first, before planning or editing in this project: returns the developer's confirmed preferences (with tags) and the repository's effective contracts that apply. Optional selector labels (agent_id, path, language, task_tags) narrow applicability; they are not authorization.","inputSchema":{"type":"object","properties":{"include_documents":{"type":"boolean","default":false},"selector":selector},"additionalProperties":false}},
+        {"name":"explain_rule","description":"Why a rule key applies to your request or not: every rule of that key (the developer's, the project's, the repository's), each delivered or not with the reason (not confirmed, switched off, applies elsewhere, replaced by a repository rule, value not allowed, outranked, uncommitted). Use it when a rule you expected is missing or two seem to disagree. Read-only.","inputSchema":{"type":"object","properties":{"key":{"type":"string","maxLength":120},"selector":selector},"required":["key"],"additionalProperties":false}},
         {"name":"get_handoff","description":"Resume saved work: returns the task's handoff (objective, completed work, next action, recorded checks) with the current git revision and drift warnings. Saved checks are historical; rerun them. Does not grant permissions.","inputSchema":{"type":"object","properties":{"task_id":{"type":"string"}},"required":["task_id"],"additionalProperties":false}},
         {"name":"suggest_rule","description":"File a lasting rule for the developer to review in Precept: a preference they stated, or a durable convention of this project you confirmed. It is NOT active until the developer confirms it, so keep following your current instructions. Use a short kebab-case key and state the rule itself as the value (one imperative sentence or a few lines). Do not file one-off task instructions, secrets or personal data. scope: project (this repository) or personal (the developer's habits across projects; facts about this machine go to remember). To update a rule that changed (a work-environment fact, a convention that moved on), pass replaces with its id from get_effective_context and the new value: the key comes from that rule, and the developer reviews the change against it.","inputSchema":{"type":"object","properties":{
             "scope":{"type":"string","enum":["project","personal"]},
@@ -345,6 +346,31 @@ impl Bridge {
                     params["selector"] = selector.clone();
                 }
                 ("context.get", params)
+            }
+            Some("explain_rule") => {
+                let key_ok = args
+                    .get("key")
+                    .and_then(Value::as_str)
+                    .is_some_and(|k| !k.is_empty() && k.chars().count() <= 120);
+                if !key_ok || args.keys().any(|k| k != "key" && k != "selector") {
+                    diagnose("explain_rule refused: invalid arguments");
+                    return Ok(tool_error(
+                        "key (a rule key) is required; selector is optional",
+                    ));
+                }
+                let mut params = json!({"key":args["key"]});
+                if let Some(selector) = args.get("selector") {
+                    let valid = serde_json::from_value::<precept_core::contracts::SelectorQuery>(
+                        selector.clone(),
+                    )
+                    .is_ok_and(|q| q.validate().is_ok());
+                    if !valid {
+                        diagnose("explain_rule refused: invalid selector");
+                        return Ok(tool_error("Invalid selector"));
+                    }
+                    params["selector"] = selector.clone();
+                }
+                ("context.explain", params)
             }
             Some("suggest_rule") => {
                 const KEYS: [&str; 7] = [
@@ -698,7 +724,7 @@ mod tests {
     #[test]
     fn schemas_expose_read_suggest_session_and_memory_tools_none_naming_a_project() {
         let v = tools();
-        assert_eq!(v.as_array().unwrap().len(), 10);
+        assert_eq!(v.as_array().unwrap().len(), 11);
         for t in v.as_array().unwrap() {
             assert_eq!(t["inputSchema"]["additionalProperties"], false);
             assert!(

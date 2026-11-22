@@ -19,6 +19,10 @@ data between schemas with the versioned Profile export and import.
 - A memory note can be proposed as a project convention from the Memory page.
 - `precept profile export --with-memory [--with-environment]` carries project
   memory (export format v3); import adds it to the served projects.
+- **Why a rule applies, or not.** `explain_rule` (MCP), `precept explain` and
+  `context.explain` list every rule of a key with its outcome and reason:
+  not confirmed, switched off, applies elsewhere, replaced or constrained by a
+  repository rule, outranked, or uncommitted.
 - **The terminal UI and the offline web preview are gone.** The desktop app is
   the operator interface; the `precept` CLI covers headless use. Review
   decisions record the `cli` or `desktop` channel only (the Profile schema

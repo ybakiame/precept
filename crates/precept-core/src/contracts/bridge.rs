@@ -211,3 +211,161 @@ pub fn project(
         pending_rules,
     })
 }
+
+/// Why each rule of `key` reaches this request or not: every Profile rule of
+/// the project's scopes (any status) and every repository rule file of that
+/// key, each with its outcome and the first reason in resolution order. Uses
+/// the same projection agents receive, so it never disagrees with it.
+pub fn explain(
+    project: &str,
+    preferences: Vec<Preference>,
+    snapshot: &Snapshot,
+    query: &SelectorQuery,
+    key: &str,
+) -> Result<Value> {
+    use crate::Status;
+    let projection = self::project(project, preferences.clone(), snapshot, query)?;
+    let delivered: BTreeSet<u64> = projection.preferences.iter().map(|p| p.id).collect();
+    let served: BTreeSet<String> = projection
+        .repository_rules
+        .iter()
+        .filter_map(|r| r["id"].as_str().map(str::to_owned))
+        .collect();
+    let unresolved = projection.contract_resolution["unresolved_keys"]
+        .as_array()
+        .is_some_and(|k| k.iter().any(|k| k == key));
+    // Repository rules of this key, committed or not.
+    let files: Vec<(RuleFile, bool)> = snapshot
+        .rules()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(r, _)| r.key == key)
+        .map(|(r, _)| {
+            let reviewed = snapshot.reviewed(&r.id);
+            (r, reviewed)
+        })
+        .collect();
+    let replacing = files
+        .iter()
+        .find(|(r, reviewed)| *reviewed && r.allowed.is_empty() && applies(&r.applies_to, query))
+        .map(|(r, _)| file_of(&r.id));
+    let constraining = files
+        .iter()
+        .find(|(r, reviewed)| *reviewed && !r.allowed.is_empty() && applies(&r.applies_to, query))
+        .map(|(r, _)| file_of(&r.id));
+    let winner = projection
+        .preferences
+        .iter()
+        .find(|p| p.key == key)
+        .map(|p| p.id);
+    let mut rules = Vec::new();
+    for p in preferences.iter().filter(|p| {
+        p.key == key
+            && match p.scope {
+                Scope::Global => p.project.is_none(),
+                Scope::Project => p.project.as_deref() == Some(project),
+            }
+    }) {
+        let (outcome, reason, detail) = if delivered.contains(&p.id) {
+            ("delivered", "delivered", String::new())
+        } else if p.status != Status::Confirmed {
+            (
+                "not_delivered",
+                "not_confirmed",
+                format!(
+                    "its status is {}",
+                    serde_json::to_value(&p.status)
+                        .unwrap_or_default()
+                        .as_str()
+                        .unwrap_or("?")
+                ),
+            )
+        } else if !p.enabled {
+            (
+                "not_delivered",
+                "switched_off",
+                "the developer switched it off".into(),
+            )
+        } else if !applicable(p, query) {
+            (
+                "not_delivered",
+                "does_not_apply",
+                format!("it applies only to {}", crate::where_(&p.rule.applies_to)),
+            )
+        } else if let Some(file) = &replacing {
+            (
+                "not_delivered",
+                "replaced_by_repository_rule",
+                format!("{file} decides this key"),
+            )
+        } else if let (Some(file), Some(_)) = (&constraining, winner.filter(|_| !unresolved)) {
+            (
+                "not_delivered",
+                "value_not_allowed",
+                format!("{file} allows other values"),
+            )
+        } else if unresolved {
+            (
+                "not_delivered",
+                "conflict",
+                "this key has an unresolved conflict with a repository rule".into(),
+            )
+        } else {
+            (
+                "not_delivered",
+                "outranked",
+                match winner {
+                    Some(id) => format!(
+                        "rule #{id} wins this key (project before personal, then priority, then newest)"
+                    ),
+                    None => "another rule wins this key".into(),
+                },
+            )
+        };
+        rules.push(json!({
+            "source": "profile", "id": p.id,
+            "scope": if p.scope == Scope::Global { "personal" } else { "project" },
+            "value": p.value, "priority": p.rule.priority,
+            "outcome": outcome, "reason": reason, "detail": detail,
+        }));
+    }
+    for (r, reviewed) in &files {
+        let (outcome, reason, detail) = if served.contains(&r.id) {
+            (
+                "delivered",
+                if r.allowed.is_empty() {
+                    "delivered"
+                } else {
+                    "constrains_values"
+                },
+                if r.allowed.is_empty() {
+                    String::new()
+                } else {
+                    format!("allows {}", r.allowed.join(", "))
+                },
+            )
+        } else if !reviewed {
+            (
+                "not_delivered",
+                "uncommitted",
+                "the file has changes that are not committed".into(),
+            )
+        } else {
+            (
+                "not_delivered",
+                "does_not_apply",
+                format!("it applies only to {}", crate::where_(&r.applies_to)),
+            )
+        };
+        rules.push(json!({
+            "source": "repository", "id": r.id, "file": file_of(&r.id),
+            "outcome": outcome, "reason": reason, "detail": detail,
+        }));
+    }
+    Ok(json!({
+        "key": key,
+        "query": query,
+        "contract_status": projection.contract_resolution["status"],
+        "rules": rules,
+    }))
+}

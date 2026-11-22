@@ -309,6 +309,23 @@ impl<'a> ContextResolver<'a> {
             "pending_rules":projection.pending_rules}),
         })
     }
+    /// Why each rule of `key` reaches a request with `selector`, or not.
+    pub fn explain(&self, key: &str, selector: &contracts::SelectorQuery) -> Result<Value> {
+        selector.validate()?;
+        if key.is_empty() || key.chars().count() > 120 {
+            return Err(Error::InvalidArguments);
+        }
+        let project = self.bound_project()?;
+        let snapshot = contracts::Snapshot::read(&project.root)
+            .with_reviewed(self.worktree.reviewed(&project, contracts::DIR));
+        contracts::explain(
+            &self.project,
+            self.preferences.preferences(&self.project)?,
+            &snapshot,
+            selector,
+            key,
+        )
+    }
     pub fn handoff(&self, task_id: &str) -> Result<Value> {
         let project = self.bound_project()?;
         let handoff = self.handoffs.handoff(&self.project, task_id)?;
@@ -429,6 +446,24 @@ fn applies(a: &operator::AppliesTo, query: &contracts::SelectorQuery) -> bool {
         _ => true,
     };
     one(&a.agents, &query.agent_id) && one(&a.languages, &query.language) && path && tags
+}
+/// Where a rule applies, in words ("languages rust; paths apps/").
+pub(crate) fn where_(a: &operator::AppliesTo) -> String {
+    let parts: Vec<String> = [
+        ("agents", &a.agents),
+        ("languages", &a.languages),
+        ("paths", &a.paths),
+        ("tasks tagged", &a.task_tags),
+    ]
+    .iter()
+    .filter(|(_, v)| !v.is_empty())
+    .map(|(w, v)| format!("{w} {}", v.join(", ")))
+    .collect();
+    if parts.is_empty() {
+        "everywhere".into()
+    } else {
+        parts.join("; ")
+    }
 }
 /// One effective rule per key among personal and project preferences:
 /// project before personal, then higher priority, then the newest.

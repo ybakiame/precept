@@ -178,6 +178,37 @@ fn applies_to_priority_and_the_switch_shape_what_agents_receive() {
         )
         .unwrap();
     assert_eq!(record["record"]["enabled"], false);
+    // Explain says why: switched off, outranked or demoted, never guessed.
+    let explain = |key: &str, selector: Value| {
+        let agent = f.daemon.credential("agent-alpha.cap");
+        f.daemon
+            .call(
+                &agent,
+                "context.explain",
+                json!({"key":key,"selector":selector}),
+            )
+            .unwrap()["rules"]
+            .as_array()
+            .unwrap()
+            .clone()
+    };
+    let fmt = explain("fmt", json!({"language":"rust"}));
+    assert_eq!(fmt.len(), 1);
+    assert_eq!(fmt[0]["reason"], "switched_off");
+    let style = explain("style", json!({}));
+    let by_id = |id: i64| style.iter().find(|r| r["id"] == id).unwrap().clone();
+    assert_eq!(by_id(high)["outcome"], "delivered");
+    assert_eq!(by_id(low)["reason"], "not_confirmed");
+    let agent = f.daemon.credential("agent-alpha.cap");
+    assert_eq!(
+        f.daemon.call(&agent, "context.explain", json!({"key":""})),
+        Err(Error::InvalidRequest)
+    );
+    assert_eq!(
+        f.daemon.call(&agent, "context.get", json!({"key":"style"})),
+        Err(Error::InvalidRequest),
+        "a key belongs to explain only"
+    );
     assert_eq!(values(&context(&f, json!({"language":"rust"}))), ["high"]);
     assert_eq!(
         switch("off-again", rust, Scope::Global, false, r + 1).err(),

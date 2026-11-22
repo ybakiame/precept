@@ -69,6 +69,9 @@ struct OperatorContext {
     project: String,
     #[serde(default)]
     include_documents: bool,
+    /// `context.explain`: the key whose rules to explain.
+    #[serde(default)]
+    key: Option<String>,
     #[serde(default)]
     selector: precept_core::contracts::SelectorQuery,
 }
@@ -101,6 +104,9 @@ struct AgentSuggest {
 struct AgentContext {
     #[serde(default)]
     include_documents: bool,
+    /// `context.explain`: the key whose rules to explain.
+    #[serde(default)]
+    key: Option<String>,
     #[serde(default)]
     selector: precept_core::contracts::SelectorQuery,
     /// The MCP client's self-reported name, for the activity log only.
@@ -748,22 +754,23 @@ impl Service {
                 .agent_suggest(&project, scope, key, p.value, tags, rule);
         }
         let (store, roots) = self.profiles.read()?;
-        let (project, include, task, selector) = match (request.method.as_str(), access) {
-            ("context.get", Access::Operator) => {
+        let explaining = request.method == "context.explain";
+        let (project, include, task, selector, key) = match (request.method.as_str(), access) {
+            ("context.get" | "context.explain", Access::Operator) => {
                 let p: OperatorContext = decode(params)?;
-                (p.project, p.include_documents, None, p.selector)
+                (p.project, p.include_documents, None, p.selector, p.key)
             }
-            ("context.get", Access::Agent { project }) => {
+            ("context.get" | "context.explain", Access::Agent { project }) => {
                 let p: AgentContext = decode(params)?;
-                (project, p.include_documents, None, p.selector)
+                (project, p.include_documents, None, p.selector, p.key)
             }
             ("handoff.get", Access::Operator) => {
                 let p: OperatorHandoff = decode(params)?;
-                (p.project, false, Some(p.task_id), Default::default())
+                (p.project, false, Some(p.task_id), Default::default(), None)
             }
             ("handoff.get", Access::Agent { project }) => {
                 let p: AgentHandoff = decode(params)?;
-                (project, false, Some(p.task_id), Default::default())
+                (project, false, Some(p.task_id), Default::default(), None)
             }
             _ => return Err(Error::Unsupported),
         };
@@ -771,7 +778,10 @@ impl Service {
             return Err(Error::Unauthorized);
         }
         selector.validate().map_err(|_| Error::InvalidRequest)?;
-        if task.as_ref().is_some_and(|s| s.chars().count() > 120) {
+        if task.as_ref().is_some_and(|s| s.chars().count() > 120)
+            || explaining != key.is_some()
+            || (explaining && include)
+        {
             return Err(Error::InvalidRequest);
         }
         let root = store
@@ -792,6 +802,13 @@ impl Service {
         .map_err(|_| Error::NotFound)?;
         let result = if let Some(task) = task {
             resolver.handoff(&task)
+        } else if let Some(key) = key {
+            // Why each rule of the key reaches this request or not; the same
+            // projection agents receive.
+            return resolver.explain(&key, &selector).map_err(|e| match e {
+                precept_core::Error::InvalidArguments => Error::InvalidRequest,
+                _ => Error::Unavailable,
+            });
         } else {
             let prepared = resolver
                 .prepare_context(include, &selector)
@@ -1241,7 +1258,7 @@ async fn peer(mut stream: Stream, service: Service, permit: Arc<OwnedSemaphorePe
         if let Access::Agent { project } = &access {
             let kind = match method.as_str() {
                 "daemon.health" => Some(activity::Kind::Started),
-                "context.get" => Some(activity::Kind::Context),
+                "context.get" | "context.explain" => Some(activity::Kind::Context),
                 "handoff.get" => Some(activity::Kind::Handoff),
                 "preference.suggest" => Some(activity::Kind::Suggested),
                 "session.start" | "session.update" | "session.close" => {

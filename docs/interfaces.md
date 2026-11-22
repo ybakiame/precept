@@ -181,7 +181,7 @@ project it asks each published agent capability for its own root (agent
 matching capability. Unbound, every tool answers that the folder is not a
 registered project. Tool arguments cannot change scope.
 
-Tools: `get_effective_context` and `get_handoff` (read-only), and `suggest_rule
+Tools: `get_effective_context`, `explain_rule` and `get_handoff` (read-only), and `suggest_rule
 {scope: project|personal, key, value, tags?, applies_to?, enforcement?,
 replaces?}`, which calls agent `preference.suggest`. With `replaces` (the id of a
 confirmed rule of that scope, from `get_effective_context`; else `NotFound`) the
@@ -197,6 +197,17 @@ or confirmed is `Conflict`; more than 20 per project per daemon run or 30 waitin
 agent suggestions in a scope is `Capacity`. The tool's reply says the rule is not
 active until the operator confirms it, and whether to retry. Each call is in the
 activity log as `suggested` with its outcome.
+
+`explain_rule {key, selector?}` calls agent `context.explain` (also operator
+`context.explain {project, key, selector?}`, CLI `precept explain PROJECT KEY
+[--agent --path --language --task-tag]`): every Profile rule of that key in the
+project's scopes, any status, and every repository rule file of that key, each
+with `outcome` (`delivered` or `not_delivered`), `reason` (`delivered`,
+`constrains_values`, `not_confirmed`, `switched_off`, `does_not_apply`,
+`replaced_by_repository_rule`, `value_not_allowed`, `conflict`, `outranked`,
+`uncommitted`) and a short `detail`, computed from the same projection
+`context.get` serves. A key on `context.get`, or documents on
+`context.explain`, is `InvalidRequest`.
 
 Work sessions: `start_session {goal, conversation_id?, done?, doing?, todo?}`,
 `update_work_state {session_id, goal?, done?, doing?, todo?}` (each given list
