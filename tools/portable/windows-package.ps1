@@ -15,7 +15,7 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $toolchain 'cargo.exe'))) { throw 'Pinned stock toolchain missing; no installation attempted' }
     $env:Path = "$toolchain;$env:Path"
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-    $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+    $vs = & $vswhere -latest -prerelease -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
     if (-not $vs) { throw 'Existing x64 build tools required' }
     Import-Module (Join-Path $vs 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
     Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64' | Out-Null
