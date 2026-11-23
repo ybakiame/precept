@@ -26,13 +26,10 @@ fn hook_event(
         .arg(&f.daemon.location.runtime_dir)
         .arg("--endpoint")
         .arg(&f.daemon.location.endpoint)
-        .args([
-            "--project",
-            "alpha",
-            "--vendor",
-            vendor,
-            "--capability-file",
-        ])
+        .args(["--project", "alpha", "--vendor"])
+        // `vendor` may carry more arguments ("claude --client qoder").
+        .args(vendor.split_whitespace())
+        .arg("--capability-file")
         .arg(cap);
     if let Some(event) = event {
         cmd.args(["--event", event]);
@@ -131,7 +128,8 @@ fn session_start_briefing_reaches_each_harness_shape_and_fails_open() {
             .contains("was compacted")
     );
 
-    let (ok, out, _) = hook(&f, "qoder", &cap, r#"{"source":"startup"}"#);
+    // A harness that reads Claude Code's shape names itself with --client.
+    let (ok, out, _) = hook(&f, "claude --client qoder", &cap, r#"{"source":"startup"}"#);
     assert!(ok);
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["hookSpecificOutput"]["hookEventName"], "SessionStart");
@@ -140,16 +138,6 @@ fn session_start_briefing_reaches_each_harness_shape_and_fails_open() {
             .as_str()
             .unwrap()
             .contains("# Precept")
-    );
-
-    let (ok, out, _) = hook(&f, "cursor", &cap, "");
-    assert!(ok);
-    let v: Value = serde_json::from_str(&out).unwrap();
-    assert!(
-        v["additional_context"]
-            .as_str()
-            .unwrap()
-            .contains("commit-style")
     );
 
     // The daemon's activity names each hook.
@@ -164,15 +152,7 @@ fn session_start_briefing_reaches_each_harness_shape_and_fails_open() {
         .iter()
         .filter_map(|e| e["client"].as_str())
         .collect();
-    assert_eq!(
-        clients,
-        [
-            "cursor hook",
-            "qoder hook",
-            "codex hook",
-            "claude-code hook"
-        ]
-    );
+    assert_eq!(clients, ["qoder hook", "codex hook", "claude-code hook"]);
 
     // Unshared project: no briefing, exit 0, one stderr line, nothing on stdout.
     f.daemon
@@ -201,7 +181,7 @@ fn pre_compact_reminds_the_agent_to_keep_its_work_session_current() {
     let id = session["id"].as_str().unwrap();
     let cap = f.daemon.location.runtime_dir.join("agent-alpha.cap");
     let stdin = r#"{"hook_event_name":"PreCompact","trigger":"auto"}"#;
-    let (ok, out, _) = hook_event(&f, "qoder", &cap, stdin, Some("pre-compact"));
+    let (ok, out, _) = hook_event(&f, "claude", &cap, stdin, Some("pre-compact"));
     assert!(ok);
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["hookSpecificOutput"]["hookEventName"], "PreCompact");
@@ -210,12 +190,8 @@ fn pre_compact_reminds_the_agent_to_keep_its_work_session_current() {
         .unwrap();
     assert!(text.contains(id) && text.contains("expected_rev"), "{text}");
     assert!(text.contains("get_effective_context"));
-    // Claude Code reads the same shape; the other harnesses get nothing.
-    let (ok, out, _) = hook_event(&f, "claude", &cap, stdin, Some("pre-compact"));
-    assert!(ok);
-    let v: Value = serde_json::from_str(&out).unwrap();
-    assert_eq!(v["hookSpecificOutput"]["hookEventName"], "PreCompact");
-    let (ok, out, _) = hook_event(&f, "cursor", &cap, stdin, Some("pre-compact"));
+    // Codex has no compaction hook: nothing.
+    let (ok, out, _) = hook_event(&f, "codex", &cap, stdin, Some("pre-compact"));
     assert!(ok);
     assert!(out.is_empty());
     // The entry is the operator's to add, and only where the harness has the
@@ -232,7 +208,7 @@ fn pre_compact_reminds_the_agent_to_keep_its_work_session_current() {
         .daemon
         .control(
             "integration.hooks.apply",
-            json!({"project":"alpha","vendor":"qoder","event":"pre_compact","enabled":true,
+            json!({"project":"alpha","vendor":"claude","event":"pre_compact","enabled":true,
                 "expected_sha256":null}),
         )
         .unwrap();
@@ -247,5 +223,5 @@ fn pre_compact_reminds_the_agent_to_keep_its_work_session_current() {
         .daemon
         .control("integration.hooks", json!({"project":"alpha"}))
         .unwrap();
-    assert_eq!(status["compact_hooks"].as_array().unwrap().len(), 4);
+    assert_eq!(status["compact_hooks"].as_array().unwrap().len(), 1);
 }

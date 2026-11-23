@@ -58,11 +58,11 @@ separate design with its own threat model.
   Refused handshakes, which carry no project, stay in daemon memory. Readable by
   the Operator alone.
 - The session-start hook is read-only, uses the project's agent capability,
-  stays silent outside the project root and fails open. Its entry in Claude Code's,
-  Codex's, Antigravity's, Cursor's, Qoder's, Qoder CN's, CodeBuddy's or WorkBuddy's user configuration is added or removed by the daemon only on an
+  stays silent outside the project root and fails open. Its entry in Claude Code's
+  or Codex's user configuration is added or removed by the daemon only on an
   Operator request carrying the reported file digest, touching only Precept's
   entry and keeping a backup. The same holds for the one `precept` MCP server
-  entry in Claude Code's, Codex's, Antigravity's, Cursor's, Qoder's, Qoder CN's, CodeBuddy's or WorkBuddy's user configuration; it names
+  entry in Claude Code's or Codex's user configuration; it names
   only `precept-mcp` and the runtime paths, never a project or a token. The server
   uses only the capability of the registered project that holds the session's
   folder, so a session never sees another project's tools or context. The AGENTS.md pointer is written by the daemon only on an Operator

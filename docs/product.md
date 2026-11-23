@@ -21,7 +21,7 @@ permits is not implemented until those documents describe it.
 ## User and problem
 
 The primary user is a developer working in local Git checkouts with one or more
-coding agents (Claude Code, Codex, Cursor, Antigravity and others). Rules live in
+coding agents (Claude Code, Codex and others). Rules live in
 per-tool files and memories that drift apart; agents do not reliably ask for
 context; documentation rots; switching agents loses the goal, the to-do list and
 the constraints; an old test claim turns into a false current PASS. The developer
@@ -90,13 +90,19 @@ Two channels carry rules to an agent; use both where the harness allows it.
 | What the agent reads | Confirmed preferences, repository rules with their check results, open work sessions (at most 12 KiB, then cut), and project memory in its own 3 KiB | Everything, narrowed by path, language or task; documents on request; Handoffs | Both |
 | Can the agent give back | No (read-only) | Yes: rule suggestions and updates, its work session, project memory | Yes |
 | Continuity across agents and compaction | Sees work others left, cannot record its own | Records its work, may not read others' | The full loop |
-| Harnesses | Those with a session-start hook: Claude Code, Codex, Antigravity, Cursor, Qoder, Qoder CN, CodeBuddy, WorkBuddy | Any MCP client | Claude Code, Codex, Antigravity, Cursor, Qoder, Qoder CN, CodeBuddy, WorkBuddy |
+| Harnesses | Claude Code and Codex, set up by Precept; others with Claude Code's hook format connect themselves through the `precept-connect` skill | Any MCP client | Claude Code and Codex |
+
+Precept sets up and supports Claude Code and Codex. Any other agent connects
+itself: `precept skill` prints the `precept-connect` skill with this machine's
+MCP command and hook commands, and the agent follows it with the developer's
+approval. Such connections are the developer's own configuration; Precept does
+not report or manage them.
 
 Add-ons, for the cases that need them:
 
 | Add-on | What it adds | When to use it | Cost |
 | --- | --- | --- | --- |
-| Pre-tool gate | Denies shell commands and file writes that break a hard rule's guard (Cursor: shell commands only) | Things that must not happen (force pushes, editing a lock file), with those rules committed | One local question per mediated tool call; only calls routed through the hook; not a sandbox |
+| Pre-tool gate | Denies shell commands and file writes that break a hard rule's guard | Things that must not happen (force pushes, editing a lock file), with those rules committed | One local question per mediated tool call; only calls routed through the hook; not a sandbox |
 | Stale-document warning | After a file read, tells the agent when committed rule checks on that file fail | Documents that drift from the code, with checks committed | One local question per read; Claude Code only; never blocks |
 | AGENTS.md pointer | Tells agents that read AGENTS.md to call the `precept` MCP server | Agents without a session-start hook, or MCP-only setups | Committed: teammates without Precept see a pointer to a server they do not have; best for solo repositories or teams that all use Precept |
 | Rules in Git (`.precept/rules`) | Conventions that travel with the repository, reviewed like code, for every person and machine; checks and guards | Shared conventions; checks ("verified"); the gate, whose guards come only from committed rule files | Kept and committed in the repository; uncommitted files do not apply |

@@ -95,11 +95,11 @@ fn work_moves_between_agents_through_their_sessions() {
     );
     let out: Value = serde_json::from_str(&briefing(
         &f,
-        "antigravity",
-        &json!({"conversationId":"other"}).to_string(),
+        "codex",
+        &json!({"session_id":"other"}).to_string(),
     ))
     .unwrap();
-    let text = out["injectSteps"][0]["systemMessage"]["systemMessage"]
+    let text = out["hookSpecificOutput"]["additionalContext"]
         .as_str()
         .unwrap();
     assert!(text.contains("## Work in progress"));

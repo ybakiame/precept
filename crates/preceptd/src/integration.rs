@@ -143,59 +143,19 @@ pub enum Vendor {
     Claude,
     /// Codex: `~/.codex/hooks.json` (Codex asks to approve a new hook once).
     Codex,
-    /// Antigravity: `~/.gemini/config/hooks.json`, whose top-level keys name
-    /// hooks; Precept owns the one named `precept-<project>`.
-    Antigravity,
-    /// Cursor: `~/.cursor/hooks.json`, `{version: 1, hooks: {<event>:
-    /// [{command}]}}`; the gate answers `beforeShellExecution` only (Cursor
-    /// documents no pre-write input).
-    Cursor,
-    /// Qoder (international): `~/.qoder/settings.json`, the same hook shape
-    /// as Claude Code (the file also holds the MCP entry).
-    Qoder,
-    /// Qoder CN: `~/.qoder-cn/settings.json`, the same shape as Qoder.
-    QoderCn,
-    /// CodeBuddy: `~/.codebuddy/settings.json`, the same hook shape as Claude
-    /// Code (its MCP entry lives in `~/.codebuddy/mcp.json`; hook edits made
-    /// outside the CLI are reviewed in its `/hooks` panel before running).
-    CodeBuddy,
-    /// WorkBuddy: `~/.workbuddy/settings.json`, the same hook shape as Claude
-    /// Code (its MCP entry lives in `~/.workbuddy/mcp.json`).
-    WorkBuddy,
 }
 impl Vendor {
-    pub const ALL: [Vendor; 8] = [
-        Vendor::Claude,
-        Vendor::Codex,
-        Vendor::Antigravity,
-        Vendor::Cursor,
-        Vendor::Qoder,
-        Vendor::QoderCn,
-        Vendor::CodeBuddy,
-        Vendor::WorkBuddy,
-    ];
+    pub const ALL: [Vendor; 2] = [Vendor::Claude, Vendor::Codex];
     fn file(self) -> (&'static str, &'static str) {
         match self {
             Vendor::Claude => (".claude", "settings.json"),
             Vendor::Codex => (".codex", "hooks.json"),
-            Vendor::Antigravity => (".gemini/config", "hooks.json"),
-            Vendor::Cursor => (".cursor", "hooks.json"),
-            Vendor::Qoder => (".qoder", "settings.json"),
-            Vendor::QoderCn => (".qoder-cn", "settings.json"),
-            Vendor::CodeBuddy => (".codebuddy", "settings.json"),
-            Vendor::WorkBuddy => (".workbuddy", "settings.json"),
         }
     }
     fn name(self) -> &'static str {
         match self {
             Vendor::Claude => "claude",
             Vendor::Codex => "codex",
-            Vendor::Antigravity => "antigravity",
-            Vendor::Cursor => "cursor",
-            Vendor::Qoder => "qoder",
-            Vendor::QoderCn => "qoder_cn",
-            Vendor::CodeBuddy => "codebuddy",
-            Vendor::WorkBuddy => "workbuddy",
         }
     }
 }
@@ -212,15 +172,13 @@ pub enum HookEvent {
     /// Code only; other harnesses document no read hook that passes context).
     PostRead,
     /// Before the harness compacts the conversation: remind the agent to
-    /// keep its work session current (Claude Code and Qoder).
+    /// keep its work session current (Claude Code).
     PreCompact,
 }
 impl HookEvent {
     /// The event's key in `vendor`'s configuration.
     fn key(self, vendor: Vendor) -> &'static str {
         match (self, vendor) {
-            (Self::SessionStart, Vendor::Cursor) => "sessionStart",
-            (Self::PreTool, Vendor::Cursor) => "beforeShellExecution",
             (Self::SessionStart, _) => "SessionStart",
             (Self::PreTool, _) => "PreToolUse",
             (Self::PostRead, _) => "PostToolUse",
@@ -232,20 +190,8 @@ impl HookEvent {
     fn matcher(self, vendor: Vendor) -> Option<&'static str> {
         match (self, vendor) {
             (Self::SessionStart, _) => None,
-            (
-                Self::PreTool,
-                Vendor::Claude
-                | Vendor::Qoder
-                | Vendor::QoderCn
-                | Vendor::CodeBuddy
-                | Vendor::WorkBuddy,
-            ) => Some("Bash|Write|Edit|MultiEdit|NotebookEdit"),
+            (Self::PreTool, Vendor::Claude) => Some("Bash|Write|Edit|MultiEdit|NotebookEdit"),
             (Self::PreTool, Vendor::Codex) => Some("Bash|apply_patch"),
-            (Self::PreTool, Vendor::Antigravity) => {
-                Some("run_command|write_to_file|replace_file_content|multi_replace_file_content")
-            }
-            // beforeShellExecution judges every command.
-            (Self::PreTool, Vendor::Cursor) => None,
             (Self::PostRead, _) => Some("Read"),
             (Self::PreCompact, _) => None,
         }
@@ -355,114 +301,13 @@ fn grouped_commands(config: &crate::ojson::J, vendor: Vendor, event: HookEvent) 
     };
     groups
         .iter()
-        .flat_map(|g| match g.get("hooks") {
-            Some(J::Arr(hs)) => hs.iter().collect::<Vec<_>>(),
-            // Cursor lists handlers directly.
-            _ => vec![g],
+        .filter_map(|g| match g.get("hooks") {
+            Some(J::Arr(hs)) => Some(hs),
+            _ => None,
         })
+        .flatten()
         .filter_map(|h| h.get("command").and_then(|c| c.as_str()).map(str::to_owned))
         .collect()
-}
-
-/// The commands of `event` handlers in Antigravity's named hooks: each
-/// top-level value's event list holds handlers directly or, as tool events
-/// do, groups with `hooks`.
-fn named_commands(config: &crate::ojson::J, event: HookEvent) -> Vec<String> {
-    use crate::ojson::J;
-    let J::Obj(entries) = config else {
-        return vec![];
-    };
-    let mut out = Vec::new();
-    for (_, hook) in entries {
-        let Some(J::Arr(items)) = hook.get(event.key(Vendor::Antigravity)) else {
-            continue;
-        };
-        for item in items {
-            if let Some(c) = item.get("command").and_then(J::as_str) {
-                out.push(c.to_owned());
-            }
-            if let Some(J::Arr(hs)) = item.get("hooks") {
-                out.extend(
-                    hs.iter()
-                        .filter_map(|h| h.get("command").and_then(J::as_str).map(str::to_owned)),
-                );
-            }
-        }
-    }
-    out
-}
-
-/// Removes `project`'s Precept handlers of `event` from Antigravity's named
-/// hooks (any version, under any name), drops what that empties, then adds
-/// the handler to Precept's own named hook when `enabled`.
-fn edit_named(
-    config: &mut crate::ojson::J,
-    project: &str,
-    cmd: &str,
-    enabled: bool,
-    event: HookEvent,
-) {
-    use crate::ojson::J;
-    let mine = |h: &J| {
-        h.get("command")
-            .and_then(J::as_str)
-            .is_some_and(|c| ours(c, project, event))
-    };
-    let name = format!("precept-{project}");
-    let J::Obj(entries) = config else {
-        return;
-    };
-    for (_, hook) in entries.iter_mut() {
-        let J::Obj(events) = hook else {
-            continue;
-        };
-        let Some((_, J::Arr(items))) = events
-            .iter_mut()
-            .find(|(k, _)| k == event.key(Vendor::Antigravity))
-        else {
-            continue;
-        };
-        let before = items.len();
-        let mut touched = false;
-        items.retain(|i| !mine(i));
-        for i in items.iter_mut() {
-            if let J::Obj(fields) = i
-                && let Some((_, J::Arr(hs))) = fields.iter_mut().find(|(k, _)| k == "hooks")
-            {
-                let n = hs.len();
-                hs.retain(|h| !mine(h));
-                touched |= hs.len() != n;
-            }
-        }
-        if touched {
-            items.retain(|i| !matches!(i.get("hooks"), Some(J::Arr(hs)) if hs.is_empty()));
-        }
-        if (touched || items.len() != before) && items.is_empty() {
-            events.retain(|(k, _)| k != event.key(Vendor::Antigravity));
-        }
-    }
-    entries.retain(|(_, hook)| !matches!(hook, J::Obj(events) if events.is_empty()));
-    if enabled {
-        let handler = J::Obj(vec![
-            ("type".into(), J::str("command")),
-            ("command".into(), J::str(cmd)),
-            ("timeout".into(), J::Num(10.into())),
-        ]);
-        // Tool events take matcher groups; SessionStart lists handlers.
-        let item = match event.matcher(Vendor::Antigravity) {
-            Some(m) => J::Obj(vec![
-                ("matcher".into(), J::str(m)),
-                ("hooks".into(), J::Arr(vec![handler])),
-            ]),
-            None => handler,
-        };
-        if !entries.iter().any(|(k, _)| *k == name) {
-            entries.push((name.clone(), J::Obj(vec![])));
-        }
-        if let Some((_, J::Obj(events))) = entries.iter_mut().find(|(k, _)| *k == name) {
-            events.push((event.key(Vendor::Antigravity).into(), J::Arr(vec![item])));
-        }
-    }
 }
 
 /// One harness's hook state for `project`.
@@ -489,10 +334,7 @@ pub fn hook_status(
     };
     let commands = parsed
         .flatten()
-        .map(|j| match vendor {
-            Vendor::Antigravity => named_commands(&j, event),
-            _ => grouped_commands(&j, vendor, event),
-        })
+        .map(|j| grouped_commands(&j, vendor, event))
         .unwrap_or_default();
     let mine: Vec<&String> = commands
         .iter()
@@ -566,26 +408,6 @@ fn edit_grouped(
         }
     }
     groups.retain(|g| !matches!(g.get("hooks"), Some(J::Arr(hs)) if hs.is_empty()));
-    // Cursor lists handlers directly, without groups.
-    if vendor == Vendor::Cursor {
-        groups.retain(|h| {
-            !h.get("command")
-                .and_then(J::as_str)
-                .is_some_and(|c| ours(c, project, event))
-        });
-        if enabled {
-            groups.push(J::Obj(vec![
-                ("command".into(), J::str(cmd)),
-                ("timeout".into(), J::Num(10.into())),
-            ]));
-        }
-        if groups.is_empty() {
-            hooks.remove(event.key(vendor));
-        }
-        // Cursor requires `version`; an existing one is kept.
-        config.entry("version", J::Num(1.into()));
-        return Ok(());
-    }
     if enabled {
         let mut group = vec![];
         if let Some(m) = event.matcher(vendor) {
@@ -635,11 +457,7 @@ pub fn hook_apply(
     if !matches!(config, J::Obj(_)) {
         return Err(Error::InvalidRequest);
     }
-    if vendor == Vendor::Antigravity {
-        edit_named(&mut config, project, cmd, enabled, event);
-    } else {
-        edit_grouped(&mut config, vendor, project, cmd, enabled, event)?;
-    }
+    edit_grouped(&mut config, vendor, project, cmd, enabled, event)?;
     let next = crate::ojson::pretty(&config);
     let action = if current.as_deref() == Some(next.as_str()) || (current.is_none() && !enabled) {
         "unchanged"
@@ -880,115 +698,6 @@ mod tests {
     }
 
     #[test]
-    fn antigravity_named_hooks_keep_others_and_own_only_precept_entries() {
-        let dir = tempfile::tempdir().unwrap();
-        let home = dir.path();
-        let cmd = command(
-            &launch(Path::new("/r")),
-            Vendor::Antigravity,
-            "alpha",
-            HookEvent::SessionStart,
-        );
-        assert!(cmd.contains("--vendor antigravity --project alpha"));
-        let file = home.join(".gemini/config/hooks.json");
-        fs::create_dir_all(file.parent().unwrap()).unwrap();
-        let theirs = r#"{
-  "my-linter": {"PostToolUse": [{"matcher": "run_command", "hooks": [{"type": "command", "command": "./lint.sh"}]}]},
-  "session-init": {"SessionStart": [{"type": "command", "command": "./init.sh"}], "enabled": true}
-}"#;
-        fs::write(&file, theirs).unwrap();
-        let s = hook_status(
-            home,
-            Vendor::Antigravity,
-            "alpha",
-            &cmd,
-            HookEvent::SessionStart,
-        )
-        .unwrap();
-        assert_eq!(s["file"], "~/.gemini/config/hooks.json");
-        assert_eq!(s["installed"], false);
-        let d = s["sha256"].as_str().map(str::to_owned);
-        let added = hook_apply(
-            home,
-            Vendor::Antigravity,
-            "alpha",
-            &cmd,
-            true,
-            d.as_deref(),
-            HookEvent::SessionStart,
-        )
-        .unwrap();
-        assert_eq!(added["action"], "added");
-        assert_eq!(added["current"], true);
-        let written: Value = serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
-        assert_eq!(
-            written["precept-alpha"]["SessionStart"][0],
-            json!({"type":"command","command":cmd,"timeout":10})
-        );
-        assert_eq!(
-            written["session-init"]["SessionStart"][0]["command"],
-            "./init.sh"
-        );
-        assert_eq!(
-            written["my-linter"]["PostToolUse"][0]["matcher"],
-            "run_command"
-        );
-        let text = fs::read_to_string(&file).unwrap();
-        assert!(text.find("my-linter") < text.find("session-init"));
-        assert!(text.find("session-init") < text.find("precept-alpha"));
-        // An outdated command anywhere is replaced, not duplicated.
-        let old = cmd.replace("--root /r", "--root /old");
-        let stale = text.replace(&cmd, &old);
-        fs::write(&file, &stale).unwrap();
-        let s = hook_status(
-            home,
-            Vendor::Antigravity,
-            "alpha",
-            &cmd,
-            HookEvent::SessionStart,
-        )
-        .unwrap();
-        assert_eq!(
-            (s["installed"].clone(), s["current"].clone()),
-            (json!(true), json!(false))
-        );
-        let d = s["sha256"].as_str().map(str::to_owned);
-        hook_apply(
-            home,
-            Vendor::Antigravity,
-            "alpha",
-            &cmd,
-            true,
-            d.as_deref(),
-            HookEvent::SessionStart,
-        )
-        .unwrap();
-        assert_eq!(
-            fs::read_to_string(&file)
-                .unwrap()
-                .matches("precept-hook")
-                .count(),
-            1
-        );
-        // Off: only Precept's entry goes; the user's hooks stay as they were.
-        let d = pointer::digest(fs::read_to_string(&file).unwrap().as_bytes());
-        let removed = hook_apply(
-            home,
-            Vendor::Antigravity,
-            "alpha",
-            &cmd,
-            false,
-            Some(&d),
-            HookEvent::SessionStart,
-        )
-        .unwrap();
-        assert_eq!(removed["action"], "removed");
-        let after: Value = serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
-        assert!(after.get("precept-alpha").is_none());
-        assert_eq!(after, serde_json::from_str::<Value>(theirs).unwrap());
-    }
-
-    #[test]
     fn gate_entries_sit_beside_session_start_and_leave_independently() {
         for vendor in Vendor::ALL {
             let dir = tempfile::tempdir().unwrap();
@@ -1032,15 +741,6 @@ mod tests {
             );
             if let Some(matcher) = HookEvent::PreTool.matcher(vendor) {
                 assert!(raw.contains(matcher), "{vendor:?}");
-            }
-            if vendor == Vendor::Cursor {
-                let v: Value = serde_json::from_str(&raw).unwrap();
-                assert_eq!(v["version"], 1);
-                assert_eq!(
-                    v["hooks"]["beforeShellExecution"][0]["command"],
-                    gate.as_str()
-                );
-                assert_eq!(v["hooks"]["sessionStart"][0]["command"], start.as_str());
             }
             let start_status =
                 hook_status(home, vendor, "alpha", &start, HookEvent::SessionStart).unwrap();

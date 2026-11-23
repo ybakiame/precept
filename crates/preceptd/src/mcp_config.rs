@@ -22,41 +22,13 @@ pub enum Client {
     Claude,
     /// Codex: `~/.codex/config.toml`, `[mcp_servers.<name>]`.
     Codex,
-    /// Antigravity: `~/.gemini/config/mcp_config.json`, `mcpServers`.
-    Antigravity,
-    /// Cursor: `~/.cursor/mcp.json`, `mcpServers`.
-    Cursor,
-    /// Qoder: `~/.qoder/settings.json`, `mcpServers` (the same file holds
-    /// its hooks).
-    Qoder,
-    /// Qoder CN: `~/.qoder-cn/settings.json`, `mcpServers`.
-    QoderCn,
-    /// CodeBuddy: `~/.codebuddy/mcp.json`, `mcpServers`.
-    CodeBuddy,
-    /// WorkBuddy: `~/.workbuddy/mcp.json`, `mcpServers`.
-    WorkBuddy,
 }
 impl Client {
-    pub const ALL: [Client; 8] = [
-        Client::Claude,
-        Client::Codex,
-        Client::Antigravity,
-        Client::Cursor,
-        Client::Qoder,
-        Client::QoderCn,
-        Client::CodeBuddy,
-        Client::WorkBuddy,
-    ];
+    pub const ALL: [Client; 2] = [Client::Claude, Client::Codex];
     fn file(self) -> &'static str {
         match self {
             Client::Claude => ".claude.json",
             Client::Codex => ".codex/config.toml",
-            Client::Antigravity => ".gemini/config/mcp_config.json",
-            Client::Cursor => ".cursor/mcp.json",
-            Client::Qoder => ".qoder/settings.json",
-            Client::QoderCn => ".qoder-cn/settings.json",
-            Client::CodeBuddy => ".codebuddy/mcp.json",
-            Client::WorkBuddy => ".workbuddy/mcp.json",
         }
     }
 }
@@ -423,35 +395,6 @@ mod tests {
             json!({"other":{"command":"x","args":[]},"precept-theirs":{"command":"node","args":[]}})
         );
 
-        // A new file for Antigravity, without the `type` key.
-        let ag = apply(home, Client::Antigravity, &l, true, None).unwrap();
-        assert_eq!(ag["action"], "added");
-        let v: Value = serde_json::from_str(
-            &fs::read_to_string(home.join(".gemini/config/mcp_config.json")).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(
-            v["mcpServers"]["precept"],
-            json!({"command":"/usr/bin/precept-mcp","args":["--runtime-dir","/r"]})
-        );
-        // Qoder and Qoder CN keep their MCP entry beside their hooks in
-        // settings.json; CodeBuddy and WorkBuddy use a dedicated mcp.json.
-        for (client, file) in [
-            (Client::Qoder, ".qoder/settings.json"),
-            (Client::QoderCn, ".qoder-cn/settings.json"),
-            (Client::CodeBuddy, ".codebuddy/mcp.json"),
-            (Client::WorkBuddy, ".workbuddy/mcp.json"),
-        ] {
-            let on = apply(home, client, &l, true, None).unwrap();
-            assert_eq!(on["action"], "added");
-            assert_eq!(on["file"], format!("~/{file}"));
-            let v: Value =
-                serde_json::from_str(&fs::read_to_string(home.join(file)).unwrap()).unwrap();
-            assert_eq!(
-                v["mcpServers"]["precept"],
-                json!({"command":"/usr/bin/precept-mcp","args":["--runtime-dir","/r"]})
-            );
-        }
         // Not JSON: reported, never written.
         fs::write(&file, "{nope").unwrap();
         assert_eq!(status(home, Client::Claude, &l).unwrap()["malformed"], true);

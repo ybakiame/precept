@@ -50,26 +50,14 @@ fn check(title: Msg, level: Level, detail: impl Into<String>, fix: Option<Fix>) 
 }
 
 /// The harnesses with a one-switch session-start hook, in page order.
-pub const HOOKS: [(&str, Msg); 8] = [
+pub const HOOKS: [(&str, Msg); 2] = [
     ("claude", Msg::DoctorHookClaude),
     ("codex", Msg::DoctorHookCodex),
-    ("antigravity", Msg::DoctorHookAntigravity),
-    ("cursor", Msg::DoctorHookCursor),
-    ("qoder", Msg::DoctorHookQoder),
-    ("qoder_cn", Msg::DoctorHookQoderCn),
-    ("codebuddy", Msg::DoctorHookCodeBuddy),
-    ("workbuddy", Msg::DoctorHookWorkBuddy),
 ];
 /// The clients with a one-switch MCP entry, in page order.
-pub const MCP: [(&str, Msg); 8] = [
+pub const MCP: [(&str, Msg); 2] = [
     ("claude", Msg::DoctorMcpClaude),
     ("codex", Msg::DoctorMcpCodex),
-    ("antigravity", Msg::DoctorMcpAntigravity),
-    ("cursor", Msg::DoctorMcpCursor),
-    ("qoder", Msg::DoctorMcpQoder),
-    ("qoder_cn", Msg::DoctorMcpQoderCn),
-    ("codebuddy", Msg::DoctorMcpCodeBuddy),
-    ("workbuddy", Msg::DoctorMcpWorkBuddy),
 ];
 
 fn daemon(m: &Model) -> Check {
@@ -615,20 +603,11 @@ fn rules(m: &Model) -> Vec<Check> {
                 Some(Fix::Agents),
             ),
             Some(h) => {
-                let names: Vec<&str> = [
-                    ("claude", Msg::TileClaude),
-                    ("codex", Msg::TileCodex),
-                    ("antigravity", Msg::TileAntigravity),
-                    ("cursor", Msg::TileCursor),
-                    ("qoder", Msg::TileQoder),
-                    ("qoder_cn", Msg::TileQoderCn),
-                    ("codebuddy", Msg::TileCodeBuddy),
-                    ("workbuddy", Msg::TileWorkBuddy),
-                ]
-                .iter()
-                .filter(|(v, _)| h.of(v, "pre_tool").is_some_and(|s| s.installed))
-                .map(|(_, t)| m.word(*t))
-                .collect();
+                let names: Vec<&str> = [("claude", Msg::TileClaude), ("codex", Msg::TileCodex)]
+                    .iter()
+                    .filter(|(v, _)| h.of(v, "pre_tool").is_some_and(|s| s.installed))
+                    .map(|(_, t)| m.word(*t))
+                    .collect();
                 if names.is_empty() {
                     check(
                         Msg::DoctorGate,
@@ -667,16 +646,7 @@ fn level(m: &Model) -> Check {
     if !for_project(m, m.selected_project.as_deref()) {
         return unread(m);
     }
-    let names = [
-        Msg::TileClaude,
-        Msg::TileCodex,
-        Msg::TileAntigravity,
-        Msg::TileCursor,
-        Msg::TileQoder,
-        Msg::TileQoderCn,
-        Msg::TileCodeBuddy,
-        Msg::TileWorkBuddy,
-    ];
+    let names = [Msg::TileClaude, Msg::TileCodex];
     let mut parts = vec![];
     let mut levels = vec![];
     for (agent, name) in AGENTS.iter().zip(names) {
@@ -798,16 +768,7 @@ mod tests {
         };
         m.agents.hooks = Some(Hooks {
             available: true,
-            hooks: vec![
-                hook("claude", true),
-                hook("codex", false),
-                hook("antigravity", true),
-                hook("cursor", false),
-                hook("qoder", false),
-                hook("qoder_cn", false),
-                hook("codebuddy", false),
-                hook("workbuddy", false),
-            ],
+            hooks: vec![hook("claude", true), hook("codex", false)],
             ..Default::default()
         });
         // Hooks read, MCP entries not yet: still not guessed.
@@ -819,35 +780,17 @@ mod tests {
         };
         m.agents.mcp = Some(McpEntries {
             available: true,
-            clients: vec![
-                entry("claude", true),
-                entry("codex", true),
-                entry("antigravity", false),
-                entry("cursor", false),
-                entry("qoder", false),
-                entry("qoder_cn", false),
-                entry("codebuddy", false),
-                entry("workbuddy", false),
-            ],
+            clients: vec![entry("claude", true), entry("codex", true)],
         });
         let c = find(&checks(&m), Msg::DoctorLevel).clone();
         assert_eq!(c.level, Level::Ok);
         assert_eq!(
             c.detail,
-            "Claude Code: Hooks + MCP · recommended; Codex: MCP only · only when the agent calls it; Antigravity: Hooks only · briefed, cannot give back; Cursor: Not connected; Qoder: Not connected; Qoder CN: Not connected; CodeBuddy: Not connected; WorkBuddy: Not connected"
+            "Claude Code: Hooks + MCP · recommended; Codex: MCP only · only when the agent calls it"
         );
         m.agents.mcp = Some(McpEntries {
             available: true,
-            clients: vec![
-                entry("claude", false),
-                entry("codex", false),
-                entry("antigravity", false),
-                entry("cursor", false),
-                entry("qoder", false),
-                entry("qoder_cn", false),
-                entry("codebuddy", false),
-                entry("workbuddy", false),
-            ],
+            clients: vec![entry("claude", false), entry("codex", false)],
         });
         assert_eq!(find(&checks(&m), Msg::DoctorLevel).level, Level::Attention);
     }
@@ -952,10 +895,6 @@ mod tests {
                     current: false,
                     ..Default::default()
                 },
-                HookState {
-                    vendor: "antigravity".into(),
-                    ..Default::default()
-                },
             ],
             ..Default::default()
         });
@@ -983,7 +922,6 @@ mod tests {
         let cs = checks(&m);
         assert_eq!(find(&cs, Msg::DoctorMcpClaude).level, Level::Ok);
         assert_eq!(find(&cs, Msg::DoctorMcpCodex).level, Level::Off);
-        assert_eq!(find(&cs, Msg::DoctorMcpAntigravity).level, Level::Unknown);
         let profile = find(&cs, Msg::DoctorProfile);
         assert_eq!(
             (profile.level, profile.fix),
@@ -992,7 +930,6 @@ mod tests {
         assert_eq!(find(&cs, Msg::DoctorWrites).level, Level::Off);
         assert_eq!(find(&cs, Msg::DoctorHookClaude).level, Level::Ok);
         assert_eq!(find(&cs, Msg::DoctorHookCodex).level, Level::Attention);
-        assert_eq!(find(&cs, Msg::DoctorHookAntigravity).level, Level::Off);
         assert_eq!(find(&cs, Msg::TileAgentsMd).level, Level::Off);
         let prefs = find(&cs, Msg::DoctorPreferences);
         assert_eq!(
@@ -1030,7 +967,7 @@ mod tests {
             kind: kind.into(),
             via: "mcp".into(),
             project: Some("alpha".into()),
-            client: Some("antigravity hook".into()),
+            client: Some("qoder hook".into()),
             outcome: outcome.into(),
             duration_ms: 1,
             counts: None,
@@ -1056,7 +993,7 @@ mod tests {
         let a = find(&checks(&m), Msg::DoctorActivity).clone();
         assert_eq!(a.level, Level::Ok);
         assert!(a.detail.contains("01:00:00 UTC"));
-        assert!(a.detail.contains("antigravity hook"));
+        assert!(a.detail.contains("qoder hook"));
     }
 
     #[test]

@@ -996,28 +996,23 @@ impl Service {
                         })
                         .collect::<precept_ipc::Result<Vec<_>>>()
                 };
-                let compact_hooks = [
-                    integration::Vendor::Claude,
-                    integration::Vendor::Qoder,
-                    integration::Vendor::QoderCn,
-                    integration::Vendor::CodeBuddy,
-                ]
-                .iter()
-                .map(|v| {
-                    integration::hook_status(
-                        &home,
-                        *v,
-                        &p.project,
-                        &integration::command(
-                            &launch,
+                let compact_hooks = [integration::Vendor::Claude]
+                    .iter()
+                    .map(|v| {
+                        integration::hook_status(
+                            &home,
                             *v,
                             &p.project,
+                            &integration::command(
+                                &launch,
+                                *v,
+                                &p.project,
+                                integration::HookEvent::PreCompact,
+                            ),
                             integration::HookEvent::PreCompact,
-                        ),
-                        integration::HookEvent::PreCompact,
-                    )
-                })
-                .collect::<precept_ipc::Result<Vec<_>>>()?;
+                        )
+                    })
+                    .collect::<precept_ipc::Result<Vec<_>>>()?;
                 Ok(json!({
                     "available": true,
                     "hooks": status(integration::HookEvent::SessionStart)?,
@@ -1036,7 +1031,7 @@ impl Service {
                         integration::HookEvent::PostRead,
                     )?],
                     // The work-state reminder before compaction: Claude Code
-                    // and Qoder.
+                    // only.
                     "compact_hooks": compact_hooks,
                     "gate": self.profiles.gated(&p.project),
                 }))
@@ -1048,19 +1043,11 @@ impl Service {
                 {
                     return Err(Error::InvalidRequest);
                 }
-                if p.event == integration::HookEvent::PostRead
-                    && vendor != integration::Vendor::Claude
-                {
-                    return Err(Error::Unsupported);
-                }
-                if p.event == integration::HookEvent::PreCompact
-                    && !matches!(
-                        vendor,
-                        integration::Vendor::Claude
-                            | integration::Vendor::Qoder
-                            | integration::Vendor::QoderCn
-                            | integration::Vendor::CodeBuddy
-                    )
+                // The read warning and the compaction reminder: Claude Code only.
+                if matches!(
+                    p.event,
+                    integration::HookEvent::PostRead | integration::HookEvent::PreCompact
+                ) && vendor != integration::Vendor::Claude
                 {
                     return Err(Error::Unsupported);
                 }

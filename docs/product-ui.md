@@ -120,14 +120,16 @@ line naming the recommended setup and the add-ons. The integrations are grouped 
 group headed by what it does and where it reaches, with one quick-setting tile per
 agent: **MCP tools** (on demand; the one `precept` server entry, for every
 registered project, in Claude
-Code's, Codex's, Antigravity's and Cursor's user configuration), **Session-start briefing**
+Code's and Codex's user configuration), **Session-start briefing**
 (automatic; their session-start hooks), the **Stale-document warning** (Claude
 Code's read hook: after a read, a note when committed claims about that file
 fail), the **Pre-tool gate** (opt-in: the
 project's gate switch, then one gate-hook tile per agent; a tile installed while
 the gate is off says it asks nothing yet) and the **Repository pointer** (the
 project's AGENTS.md section, whose switch opens a dialog previewing the exact text
-before anything is written). Settings with only two states use switches, not
+before anything is written). Below the groups, one line says that other agents
+connect themselves with the `precept-connect` skill (`precept skill`). Settings
+with only two states use switches, not
 button pairs. Manual setup, the configuration to paste for agents on Windows or
 other MCP clients and the exact hook command, is folded under **Advanced: manual
 setup**, a disclosure that is closed by default and springs open (at once under

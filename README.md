@@ -23,8 +23,10 @@ an MCP server, harness hooks and an NSH desktop operator app.
   for your review), work-session tools and project memory (`remember`, `recall`,
   `reaffirm`, `forget`).
 - Session-start briefings, an opt-in pre-tool gate and a stale-document warning
-  through harness hooks (Claude Code, Codex, Antigravity and Cursor), and
-  repository rules (`.precept/rules/`) with checks.
+  through harness hooks, and repository rules (`.precept/rules/`) with checks.
+  Precept sets up Claude Code and Codex; other agents connect themselves with
+  the [`precept-connect` skill](skills/precept-connect/SKILL.md) (`precept skill`
+  fills in this machine's values).
 - Project memory that agents keep themselves (this machine's environment,
   cautions, lessons, attempts), unreviewed and below rules, which survives a
   change of agent, harness or model.

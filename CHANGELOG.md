@@ -4,6 +4,23 @@ Precept follows [semantic versioning](https://semver.org/). While the version is
 0.x, a minor release may change the Profile schema or the local interfaces; move
 data between schemas with the versioned Profile export and import.
 
+## Unreleased
+
+- **Two harnesses, done well.** Precept sets up and supports Claude Code and
+  Codex. The integrations for Antigravity, Cursor, Qoder, Qoder CN, CodeBuddy
+  and WorkBuddy are removed; remove their Precept entries from those tools'
+  settings by hand if they were added.
+- **Other agents connect themselves** with the `precept-connect` skill:
+  `precept skill [--out DIR]` prints it with this machine's MCP command and each
+  shared project's hook commands; `precept-hook --client NAME` names such a
+  harness in the activity log.
+- Memory recall gains an index mode and per-id fetch; notes idle a week or more
+  carry a verify-before-relying notice. Session todo items gain ids,
+  dependencies and a revision guard. Claude Code gets a reminder before
+  compaction to keep its work session current.
+- Windows: integration reads and hook paths use the Windows home; hook
+  commands quote for cmd; MCP roots parse Windows drive URIs.
+
 ## 0.4.0
 
 The first published release. Everything below is new relative to earlier private

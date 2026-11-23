@@ -86,21 +86,14 @@ commits or writes any other file. `precept project pointer` exposes both.
 ### Session-start hooks in the agents' configuration
 
 Operator-only `integration.hooks {project}` reports, for Claude Code
-(`~/.claude/settings.json`), Codex (`~/.codex/hooks.json`), Antigravity
-(`~/.gemini/config/hooks.json`), Cursor (`~/.cursor/hooks.json`), Qoder
-(`~/.qoder/settings.json`), Qoder CN (`~/.qoder-cn/settings.json`), CodeBuddy
-(`~/.codebuddy/settings.json`) and WorkBuddy (`~/.workbuddy/settings.json`) —
-the last four read the same hook shape as Claude Code — in the daemon user's home: `file`, `exists`, `sha256`, `malformed` (not a JSON object), `installed`,
+(`~/.claude/settings.json`) and Codex (`~/.codex/hooks.json`), the two harnesses
+Precept sets up itself, in the daemon user's home: `file`, `exists`, `sha256`, `malformed` (not a JSON object), `installed`,
 `current` (installed exactly as written now) and the exact `command`, or
 `available: false` when no `precept-hook` ships beside `precept-mcp`.
 `integration.hooks.apply {project, vendor, enabled, expected_sha256}` adds
 (`enabled: true`) or removes the project's one Precept entry under
 `hooks.SessionStart` (`{"type":"command","command":…,"timeout":10}`) only if the
-file still has the reported digest, otherwise `Conflict`. Antigravity's file maps
-hook names to events, so its entry is the named hook `precept-<project>` holding
-`SessionStart: [{"type":"command","command":…,"timeout":10}]`. Cursor's file is
-`{"version": 1, "hooks": {"sessionStart": [{"command":…,"timeout":10}]}}` (a
-missing `version` is set to 1, an existing one kept). A handler is Precept's
+file still has the reported digest, otherwise `Conflict`. A handler is Precept's
 when its command runs `precept-hook` with `--project <name>`; every other key, hook
 and their order are kept, the previous file is kept as `<file>.precept.bak`,
 writes are atomic, a new file is owner-only. The command passes `--root`, so the
@@ -109,17 +102,12 @@ approve a new hook once.
 
 The same methods take `event: "pre_tool"` (default `session_start`) for the
 pre-tool gate entry: its command adds `--event pre-tool`, and it sits under
-`PreToolUse` in a group with a tool matcher (Claude Code, Qoder, Qoder CN,
-CodeBuddy and WorkBuddy
-`Bash|Write|Edit|MultiEdit|NotebookEdit`, Codex `Bash|apply_patch`, Antigravity
-`run_command|write_to_file|replace_file_content|multi_replace_file_content`);
-Cursor's gate entry sits under `beforeShellExecution` without a matcher, so Cursor
-is asked about shell commands only (it documents no hook before a file write).
+`PreToolUse` in a group with a tool matcher (Claude Code
+`Bash|Write|Edit|MultiEdit|NotebookEdit`, Codex `Bash|apply_patch`).
 `event: "post_read"` (Claude Code only; other vendors are `Unsupported`) adds the
 stale-document warning: `--event post-read` under `PostToolUse` with matcher
-`Read`, listed under `read_hooks`. `event: "pre_compact"` (Claude Code, Qoder,
-Qoder CN and CodeBuddy only; other vendors are `Unsupported` — WorkBuddy's
-desktop build has no verified PreCompact firing) adds the work-state reminder
+`Read`, listed under `read_hooks`. `event: "pre_compact"` (Claude Code only;
+Codex is `Unsupported`) adds the work-state reminder
 before the harness compacts the conversation: `--event pre-compact` under
 `PreCompact`, listed under `compact_hooks`. Session-start, gate, read and
 compact entries are added and removed independently. The status
@@ -145,11 +133,7 @@ carry `rule`, and the Sessions page shows it beside a denial.
 
 Operator-only `integration.mcp {}` reports, for Claude Code
 (`~/.claude.json`, `mcpServers`), Codex (`~/.codex/config.toml`,
-`[mcp_servers."precept"]`), Antigravity
-(`~/.gemini/config/mcp_config.json`, `mcpServers`), Cursor (`~/.cursor/mcp.json`,
-`mcpServers`), Qoder (`~/.qoder/settings.json`) and Qoder CN
-(`~/.qoder-cn/settings.json`, `mcpServers` beside their hooks), CodeBuddy
-(`~/.codebuddy/mcp.json`) and WorkBuddy (`~/.workbuddy/mcp.json`) in the daemon user's home:
+`[mcp_servers."precept"]`) in the daemon user's home:
 `file`, `server`, `exists`, `sha256`, `malformed`, `installed` and `current` (the
 entry starts this daemon's `precept-mcp` exactly) and `legacy` (older per-project
 `precept-<name>` entries launching `precept-mcp`), or `available: false` without
@@ -299,38 +283,38 @@ operator's correction; a taken title is `Conflict`), `memories.restore
 pinned?}]}` (at most 300) keeps each note as `remember` would, author `import`,
 pins kept. Agent calls are in the activity log as `memory`.
 
+Other harnesses connect themselves: `precept skill [--project NAME] [--out DIR]`
+(operator; reads `project.list` and `project.mcp`) prints the `precept-connect`
+skill (`skills/precept-connect/SKILL.md`) with this installation's MCP command
+and, for each shared project (or `--project`), its hook commands in Claude
+Code's shape (`--vendor claude --client <harness>`); with `--out` it writes
+`DIR/SKILL.md` once (`Conflict` if it exists). The skill tells the agent to
+change its own configuration only with the developer's approval, to use hooks
+only where its harness documents Claude Code's hook format, and otherwise to
+connect MCP only. Precept does not report or manage such connections.
+
 `initialize` returns `instructions` telling the agent to call
 `get_effective_context` before planning or editing and again after compaction,
 and that repository files and contracts outrank preferences.
 
-`precept-hook --vendor claude|codex|cursor|antigravity|qoder|qoder_cn|codebuddy|workbuddy` (same location, project and capability
-arguments as `precept-mcp`) is the read-only session-start hook. It reads the
-harness's hook input (only `source`; `compact` adds a resume note), calls agent
-`context.get` with the client label `<vendor> hook`, and prints a bounded (12 KiB)
-Markdown briefing of the effective contracts and confirmed preferences in the
-harness's shape: `hookSpecificOutput.additionalContext` for Claude Code, Codex,
-Qoder, Qoder CN, CodeBuddy and WorkBuddy,
-`additional_context` for Cursor, and `injectSteps: [{systemMessage: {systemMessage}}]`
-for Antigravity. With `--root`, a session whose working directory (the input's
-`cwd`, else any of Antigravity's `workspacePaths` or Cursor's `workspace_roots`,
-else the hook's) is outside that
-root gets nothing at all. Any
+`precept-hook --vendor claude|codex [--client NAME]` (same location, project and
+capability arguments as `precept-mcp`) is the read-only session-start hook. It
+reads the harness's hook input (only `source`; `compact` adds a resume note),
+calls agent `context.get` with the client label `<vendor> hook` (`<NAME> hook`
+with `--client`, for a harness that reads Claude Code's hook shape), and prints a
+bounded (12 KiB) Markdown briefing of the effective contracts and confirmed
+preferences as `hookSpecificOutput.additionalContext`. With `--root`, a session
+whose working directory (the input's `cwd`, else the hook's) is outside that root
+gets nothing at all. Any
 refusal or a 4 s timeout prints nothing on stdout, exits 0 and writes one
 sanitized line to stderr (fail-open).
 
-`precept-hook --event pre-tool` reads the PreToolUse input (Claude Code, Codex,
-Qoder, Qoder CN, CodeBuddy and WorkBuddy:
-`tool_name` / `tool_input` with `Bash` `command`, `Write`/`Edit`/`MultiEdit`
-`file_path`, `NotebookEdit` `notebook_path`, Codex `apply_patch` file headers;
-Antigravity: `toolCall.name` / `toolCall.args` with `run_command` `CommandLine` and
-`write_to_file` / `replace_file_content` / `multi_replace_file_content`
-`TargetFile`; Cursor: `beforeShellExecution` with `command` and `cwd`), makes written paths relative to the project root (dropping paths
-outside it) and asks `gate.check`. A denial prints
-`hookSpecificOutput.permissionDecision: "deny"` with the reason for Claude Code,
-Codex, Qoder, Qoder CN, CodeBuddy and WorkBuddy, `{decision: "deny", reason}` for Antigravity and `{permission: "deny",
-user_message, agent_message}` for Cursor; anything else prints nothing
-(fail-open), except for Cursor, which blocks on empty output and is answered
-`{permission: "allow"}`, also outside the project and when Precept cannot answer.
+`precept-hook --event pre-tool` reads the PreToolUse input (`tool_name` /
+`tool_input` with `Bash` `command`, `Write`/`Edit`/`MultiEdit` `file_path`,
+`NotebookEdit` `notebook_path`, Codex `apply_patch` file headers), makes written
+paths relative to the project root (dropping paths outside it) and asks
+`gate.check`. A denial prints `hookSpecificOutput.permissionDecision: "deny"`
+with the reason; anything else prints nothing (fail-open).
 
 `precept-hook --event post-read` reads a PostToolUse input for `Read`
 (`tool_input.file_path`), makes the path relative to the project root (dropping
@@ -342,7 +326,7 @@ file, failure}`. When there are any, it prints
 out of date, with each failing claim. Otherwise, and on any error, it prints
 nothing.
 
-`precept-hook --event pre-compact` (Claude Code, Qoder, Qoder CN and CodeBuddy) calls agent
+`precept-hook --event pre-compact` (Claude Code) calls agent
 `context.get` and prints `hookSpecificOutput.additionalContext` (event
 `PreCompact`): the conversation is about to be compacted, so keep the work state
 in the project's sessions — bring the open session current with

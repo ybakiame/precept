@@ -52,13 +52,11 @@ fn hooks_switch_on_brief_inside_the_project_only_and_switch_off() {
         .clone();
     assert_eq!(claude["installed"], false);
     assert_eq!(claude["file"], "~/.claude/settings.json");
-    let qoder = status["hooks"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|h| h["vendor"] == "qoder_cn")
-        .unwrap();
-    assert_eq!(qoder["file"], "~/.qoder-cn/settings.json");
+    assert_eq!(
+        status["hooks"].as_array().unwrap().len(),
+        2,
+        "Claude Code and Codex only"
+    );
 
     let agent = f.daemon.credential("agent-alpha.cap");
     assert_eq!(
@@ -132,68 +130,6 @@ fn hooks_switch_on_brief_inside_the_project_only_and_switch_off() {
 
 #[cfg(unix)]
 #[test]
-fn antigravity_hook_is_a_named_entry_that_injects_a_system_message_for_its_workspace() {
-    let f = Fixture::created();
-    let b = f.daemon.enable();
-    f.register(&b, "alpha");
-    let status = f
-        .daemon
-        .control("integration.hooks", json!({"project":"alpha"}))
-        .unwrap();
-    let ag = status["hooks"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|h| h["vendor"] == "antigravity")
-        .unwrap()
-        .clone();
-    assert_eq!(ag["file"], "~/.gemini/config/hooks.json");
-    assert_eq!(ag["installed"], false);
-    let on = f
-        .daemon
-        .control(
-            "integration.hooks.apply",
-            json!({"project":"alpha","vendor":"antigravity","enabled":true,"expected_sha256":null}),
-        )
-        .unwrap();
-    assert_eq!(on["action"], "added");
-    let file = f.temp.path().join(".gemini/config/hooks.json");
-    let config: Value = serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
-    let cmd = config["precept-alpha"]["SessionStart"][0]["command"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    assert_eq!(cmd, on["command"]);
-    assert!(cmd.contains("--vendor antigravity"));
-    // Antigravity's input names the workspaces; there is no `cwd`.
-    let input =
-        |p: &std::path::Path| json!({"conversationId":"c-1","workspacePaths":[p],"modelName":"m"});
-    let out = run_with(&cmd, &input(&f.temp.path().join("alpha")));
-    let v: Value = serde_json::from_str(&out).unwrap();
-    assert!(
-        v["injectSteps"][0]["systemMessage"]["systemMessage"]
-            .as_str()
-            .unwrap()
-            .contains("# Precept: context for alpha")
-    );
-    assert_eq!(
-        run_with(&cmd, &input(&f.temp.path().join("beta"))),
-        "",
-        "silent in other workspaces"
-    );
-    let off = f
-        .daemon
-        .control(
-            "integration.hooks.apply",
-            json!({"project":"alpha","vendor":"antigravity","enabled":false,"expected_sha256":on["sha256"]}),
-        )
-        .unwrap();
-    assert_eq!(off["action"], "removed");
-    assert!(!fs::read_to_string(&file).unwrap().contains("precept-hook"));
-}
-
-#[cfg(unix)]
-#[test]
 fn one_mcp_entry_per_client_serves_the_project_of_the_session_folder() {
     let f = Fixture::created();
     let b = f.daemon.enable();
@@ -213,15 +149,7 @@ fn one_mcp_entry_per_client_serves_the_project_of_the_session_folder() {
         .iter()
         .map(|c| c["file"].as_str().unwrap())
         .collect();
-    assert_eq!(
-        files,
-        [
-            "~/.claude.json",
-            "~/.codex/config.toml",
-            "~/.gemini/config/mcp_config.json",
-            "~/.cursor/mcp.json"
-        ]
-    );
+    assert_eq!(files, ["~/.claude.json", "~/.codex/config.toml"]);
     assert_eq!(status["clients"][0]["legacy"], 1);
     let agent = f.daemon.credential("agent-alpha.cap");
     assert_eq!(
@@ -234,7 +162,7 @@ fn one_mcp_entry_per_client_serves_the_project_of_the_session_folder() {
             .control("integration.mcp", json!({"project":"alpha"})),
         Err(Error::InvalidRequest)
     );
-    for (i, client) in ["claude", "codex", "antigravity"].iter().enumerate() {
+    for (i, client) in ["claude", "codex"].iter().enumerate() {
         let on = f
             .daemon
             .control(
@@ -415,7 +343,7 @@ fn the_gate_denies_calls_that_break_a_committed_hard_rule_only_while_switched_on
     git(&root, &["add", ".precept"]);
     git(&root, &["commit", "-q", "-m", "rules"]);
     let claude = gate_command(&f, "claude");
-    let antigravity = gate_command(&f, "antigravity");
+    let codex = gate_command(&f, "codex");
     let push = json!({"hook_event_name":"PreToolUse","cwd":root,"tool_name":"Bash",
         "tool_input":{"command":"git push --force origin main"}});
     // Off by default: the hook says nothing and the call proceeds.
@@ -447,49 +375,15 @@ fn the_gate_denies_calls_that_break_a_committed_hard_rule_only_while_switched_on
         "tool_input":{"file_path":"../Cargo.lock"}});
     fs::create_dir_all(root.join("src")).unwrap();
     assert!(run_with(&claude, &edit).contains("\"deny\""));
-    let ag = json!({"workspacePaths":[root],"toolCall":{"name":"run_command",
-        "args":{"CommandLine":"git push --force","Cwd":root}}});
-    let v: Value = serde_json::from_str(&run_with(&antigravity, &ag)).unwrap();
-    assert_eq!(v["decision"], "deny");
+    let v: Value = serde_json::from_str(&run_with(&codex, &push)).unwrap();
+    assert_eq!(v["hookSpecificOutput"]["permissionDecision"], "deny");
     // A repeated denial of one rule (push, lock file, push) tells the agent to stop retrying.
     assert!(
-        v["reason"]
+        v["hookSpecificOutput"]["permissionDecisionReason"]
             .as_str()
             .unwrap()
             .contains("has now blocked 3 tool calls"),
         "{v}"
-    );
-    // Qoder CN reads the same shape as Claude Code.
-    let qoder = gate_command(&f, "qoder");
-    let v: Value = serde_json::from_str(&run_with(&qoder, &push)).unwrap();
-    assert_eq!(v["hookSpecificOutput"]["permissionDecision"], "deny");
-    // Cursor's beforeShellExecution: an explicit answer every time, since
-    // Cursor blocks on empty output.
-    let cursor = gate_command(&f, "cursor");
-    let cursor_call = |command: &str, cwd: &std::path::Path| {
-        let out = run_with(
-            &cursor,
-            &json!({"hook_event_name":"beforeShellExecution","command":command,
-                "cwd":cwd,"workspace_roots":[cwd]}),
-        );
-        serde_json::from_str::<Value>(&out).unwrap()
-    };
-    let v = cursor_call("git push --force origin main", &root);
-    assert_eq!(v["permission"], "deny");
-    assert!(
-        v["agent_message"]
-            .as_str()
-            .unwrap()
-            .contains("Never rewrite")
-    );
-    assert_eq!(
-        cursor_call("git push origin main", &root)["permission"],
-        "allow"
-    );
-    assert_eq!(
-        cursor_call("git push --force", f.temp.path())["permission"],
-        "allow",
-        "outside the project"
     );
     // Outside the project the hook stays silent.
     let elsewhere = json!({"cwd":f.temp.path(),"tool_name":"Bash",
@@ -522,7 +416,7 @@ fn the_gate_denies_calls_that_break_a_committed_hard_rule_only_while_switched_on
     let context = f.daemon.call(&agent, "context.get", json!({})).unwrap();
     let denials = context["gate_denials"].as_array().unwrap();
     assert_eq!(denials[0]["rule"], "release");
-    assert_eq!(denials[0]["count"], 5, "{denials:?}");
+    assert_eq!(denials[0]["count"], 3, "{denials:?}");
     assert_eq!(denials.len(), 1);
     // The edited rule file is not committed: explain says so.
     let why = f

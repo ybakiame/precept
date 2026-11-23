@@ -221,7 +221,7 @@ impl Hooks {
 /// One client's `precept-<project>` MCP entry (`integration.mcp`).
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
 pub struct McpEntry {
-    /// `claude`, `codex` or `antigravity`.
+    /// `claude` or `codex`.
     pub client: String,
     /// Where it lives, `~/`-relative for display.
     pub file: String,
@@ -261,16 +261,7 @@ pub enum Level {
     None,
 }
 /// The agents a level is shown for: (hook vendor and MCP client name).
-pub const AGENTS: [&str; 8] = [
-    "claude",
-    "codex",
-    "antigravity",
-    "cursor",
-    "qoder",
-    "qoder_cn",
-    "codebuddy",
-    "workbuddy",
-];
+pub const AGENTS: [&str; 2] = ["claude", "codex"];
 impl AgentsPage {
     /// `agent`'s level from its session-start hook and MCP entry; `None`
     /// until both were read (never guessed).

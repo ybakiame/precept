@@ -1,4 +1,5 @@
 mod operator;
+mod skill;
 mod transfer;
 use clap::{Parser, Subcommand};
 use precept_ipc::{Access, Client, Error, Location, load_credential};
@@ -43,6 +44,17 @@ enum Query {
     /// Switch a confirmed rule off: it stays reviewed but agents stop receiving it.
     PreferenceDisable(operator::Switch),
     HandoffPut(operator::Put),
+    /// The precept-connect skill for agents in other harnesses, filled with
+    /// this installation's MCP command and each shared project's hook
+    /// commands. Printed as Markdown, or written once to <out>/SKILL.md.
+    Skill {
+        /// Only this project's hook commands.
+        #[arg(long)]
+        project: Option<String>,
+        /// A directory to write SKILL.md into (created; never overwritten).
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
+    },
     Health,
     Projects,
     /// Recent agent activity (in memory since the daemon started; newest
@@ -166,6 +178,24 @@ async fn run(args: Args) -> precept_ipc::Result<serde_json::Value> {
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let args = Args::parse();
+    if let Query::Skill { project, out } = &args.command {
+        let result = match skill::render(&args.location, project.as_deref()).await {
+            Ok(text) => match out {
+                Some(dir) => skill::write_new(dir, &text)
+                    .map(|file| json!({"written": file}).to_string() + "\n"),
+                None => Ok(text),
+            },
+            Err(e) => Err(e),
+        };
+        match result {
+            Ok(text) => print!("{text}"),
+            Err(error) => {
+                println!("{}", json!({"error":error}));
+                std::process::exit(3);
+            }
+        }
+        return;
+    }
     let operation_id = match &args.command {
         Query::ProjectRegister(p) => Some(&p.authority.operation_id),
         Query::PreferenceSuggest(p) => Some(&p.authority.operation_id),

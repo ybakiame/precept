@@ -14,36 +14,17 @@ use std::io::Read;
 
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum Vendor {
-    /// Claude Code (and Codex, which reads the same hook shape).
+    /// Claude Code's hook shape (also what other harnesses that copy it read;
+    /// name them with `--client`).
     Claude,
+    /// Codex: the same shape, without the compaction hook.
     Codex,
-    /// Cursor's `sessionStart` and `beforeShellExecution` hooks
-    /// (`~/.cursor/hooks.json`).
-    Cursor,
-    /// Antigravity's `SessionStart` hook (`~/.gemini/config/hooks.json`).
-    Antigravity,
-    /// Qoder (`~/.qoder/settings.json`) and Qoder CN
-    /// (`~/.qoder-cn/settings.json`), which read the same hook shape as
-    /// Claude Code.
-    Qoder,
-    #[value(name = "qoder_cn")]
-    QoderCn,
-    /// CodeBuddy (`~/.codebuddy/settings.json`), Claude Code's hook shape.
-    CodeBuddy,
-    /// WorkBuddy (`~/.workbuddy/settings.json`), Claude Code's hook shape.
-    WorkBuddy,
 }
 impl Vendor {
     fn label(self) -> &'static str {
         match self {
             Self::Claude => "claude-code hook",
             Self::Codex => "codex hook",
-            Self::Cursor => "cursor hook",
-            Self::Antigravity => "antigravity hook",
-            Self::Qoder => "qoder hook",
-            Self::QoderCn => "qoder-cn hook",
-            Self::CodeBuddy => "codebuddy hook",
-            Self::WorkBuddy => "workbuddy hook",
         }
     }
 }
@@ -77,6 +58,19 @@ struct Args {
     /// Which hook this run answers.
     #[arg(long, value_enum, default_value = "session-start")]
     event: Event,
+    /// The harness's name in Precept's activity log, for a harness that reads
+    /// Claude Code's hook shape (default: the vendor's own name).
+    #[arg(long)]
+    client: Option<String>,
+}
+impl Args {
+    /// What the activity log records as the caller.
+    fn label(&self) -> String {
+        match &self.client {
+            Some(c) => format!("{} hook", c.chars().take(48).collect::<String>()),
+            None => self.vendor.label().to_owned(),
+        }
+    }
 }
 
 /// What the gate is asked about: a shell command, or written paths as the
@@ -87,26 +81,11 @@ enum Call {
     Write(Vec<String>),
 }
 
-/// The tool call in a PreToolUse input. Claude Code and Codex send
-/// `tool_name` / `tool_input`; Antigravity sends `toolCall.name` /
-/// `toolCall.args` (PascalCase). Tools the gate does not judge are `None`.
+/// The tool call in a PreToolUse input (`tool_name` / `tool_input`). Tools
+/// the gate does not judge are `None`.
 fn tool_call(stdin: &[u8]) -> Option<Call> {
     let v: Value = serde_json::from_slice(stdin).ok()?;
     let s = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).map(str::to_owned);
-    // Cursor's beforeShellExecution: the command at the top level.
-    if v.get("hook_event_name").and_then(Value::as_str) == Some("beforeShellExecution") {
-        return s(&v, "command").map(Call::Shell);
-    }
-    if let Some(call) = v.get("toolCall") {
-        let args = call.get("args")?;
-        return match call.get("name")?.as_str()? {
-            "run_command" => s(args, "CommandLine").map(Call::Shell),
-            "write_to_file" | "replace_file_content" | "multi_replace_file_content" => {
-                s(args, "TargetFile").map(|p| Call::Write(vec![p]))
-            }
-            _ => None,
-        };
-    }
     let input = v.get("tool_input")?;
     match v.get("tool_name")?.as_str()? {
         "Bash" | "shell" | "exec_command" => s(input, "command").map(Call::Shell),
@@ -205,7 +184,7 @@ async fn read_check(args: &Args, stdin: &[u8]) -> precept_ipc::Result<Option<Str
     let answer = client
         .request(
             "doc.check",
-            json!({"paths":[relative],"client":args.vendor.label()}),
+            json!({"paths":[relative],"client":args.label()}),
         )
         .await?;
     let stale = answer["stale"].as_array().cloned().unwrap_or_default();
@@ -218,7 +197,7 @@ fn read_output(vendor: Vendor, warning: &str) -> Option<Value> {
         Vendor::Claude => Some(json!({
             "hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": warning}
         })),
-        _ => None,
+        Vendor::Codex => None,
     }
 }
 
@@ -230,7 +209,7 @@ async fn compact_note(args: &Args) -> precept_ipc::Result<String> {
     let context = client
         .request(
             "context.get",
-            json!({"include_documents":false,"client":args.vendor.label()}),
+            json!({"include_documents":false,"client":args.label()}),
         )
         .await?;
     let open = context["work_sessions"]
@@ -251,10 +230,10 @@ async fn compact_note(args: &Args) -> precept_ipc::Result<String> {
 /// The pre-compaction reminder in `vendor`'s shape (`None`: say nothing).
 fn compact_output(vendor: Vendor, note: &str) -> Option<Value> {
     match vendor {
-        Vendor::Claude | Vendor::Qoder | Vendor::QoderCn | Vendor::CodeBuddy => Some(json!({
+        Vendor::Claude => Some(json!({
             "hookSpecificOutput": {"hookEventName": "PreCompact", "additionalContext": note}
         })),
-        _ => None,
+        Vendor::Codex => None,
     }
 }
 
@@ -295,35 +274,15 @@ fn repo_relative(root: &std::path::Path, cwd: &std::path::Path, path: &str) -> O
     (!text.is_empty()).then(|| text.join("/"))
 }
 
-/// The gate's denial in `vendor`'s PreToolUse shape (`None`: say nothing).
-fn deny_output(vendor: Vendor, reason: &str) -> Option<Value> {
-    match vendor {
-        Vendor::Claude
-        | Vendor::Codex
-        | Vendor::Qoder
-        | Vendor::QoderCn
-        | Vendor::CodeBuddy
-        | Vendor::WorkBuddy => Some(json!({
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "permissionDecision": "deny",
-                "permissionDecisionReason": reason
-            }
-        })),
-        Vendor::Antigravity => Some(json!({"decision": "deny", "reason": reason})),
-        Vendor::Cursor => Some(json!({
-            "permission": "deny",
-            "user_message": reason,
-            "agent_message": reason
-        })),
-    }
-}
-
-/// What every other pre-tool answer prints: Cursor's permission hooks treat
-/// empty output as invalid and block, so it is told `allow` explicitly;
-/// other harnesses proceed on silence.
-fn allow_output(vendor: Vendor) -> Option<Value> {
-    (vendor == Vendor::Cursor).then(|| json!({"permission": "allow"}))
+/// The gate's denial in the PreToolUse shape both harnesses read.
+fn deny_output(reason: &str) -> Value {
+    json!({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": reason
+        }
+    })
 }
 
 /// Asks the gate about the call in `stdin`; `Some(reason)` to deny.
@@ -334,7 +293,7 @@ async fn gate(args: &Args, stdin: &[u8]) -> precept_ipc::Result<Option<String>> 
     let mut client = connect(args).await?;
     let params = match call {
         Call::Shell(command) => {
-            json!({"tool":"shell","command":command,"client":args.vendor.label()})
+            json!({"tool":"shell","command":command,"client":args.label()})
         }
         Call::Write(paths) => {
             // Only paths inside the project are judged.
@@ -354,7 +313,7 @@ async fn gate(args: &Args, stdin: &[u8]) -> precept_ipc::Result<Option<String>> 
             if paths.is_empty() {
                 return Ok(None);
             }
-            json!({"tool":"write","paths":paths,"client":args.vendor.label()})
+            json!({"tool":"write","paths":paths,"client":args.label()})
         }
     };
     let answer = client.request("gate.check", params).await?;
@@ -366,10 +325,8 @@ async fn gate(args: &Args, stdin: &[u8]) -> precept_ipc::Result<Option<String>> 
     }))
 }
 
-/// The session's directories from the hook input: `cwd` (Claude Code, Codex,
-/// Cursor's shell hook), else Antigravity's `workspacePaths` or Cursor's
-/// `workspace_roots` (a leading `~/` is the home), else this process's
-/// working directory.
+/// The session's directories from the hook input: `cwd` (a leading `~/` is
+/// the home), else this process's working directory.
 fn session_dirs(stdin: &[u8]) -> Vec<std::path::PathBuf> {
     let input = serde_json::from_slice::<Value>(stdin).ok();
     let home_var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
@@ -384,19 +341,6 @@ fn session_dirs(stdin: &[u8]) -> Vec<std::path::PathBuf> {
         .and_then(Value::as_str)
     {
         return vec![path(cwd)];
-    }
-    let workspaces: Vec<std::path::PathBuf> = input
-        .as_ref()
-        .and_then(|v| v.get("workspacePaths").or_else(|| v.get("workspace_roots")))
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .take(64)
-        .map(path)
-        .collect();
-    if !workspaces.is_empty() {
-        return workspaces;
     }
     std::env::current_dir().into_iter().collect()
 }
@@ -426,22 +370,11 @@ fn moment(stdin: &[u8]) -> Moment {
     }
 }
 
-/// The briefing in `vendor`'s output shape.
-fn output(vendor: Vendor, briefing: &str) -> Value {
-    match vendor {
-        Vendor::Claude
-        | Vendor::Codex
-        | Vendor::Qoder
-        | Vendor::QoderCn
-        | Vendor::CodeBuddy
-        | Vendor::WorkBuddy => json!({
-            "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": briefing}
-        }),
-        Vendor::Cursor => json!({"additional_context": briefing}),
-        Vendor::Antigravity => json!({
-            "injectSteps": [{"systemMessage": {"systemMessage": briefing}}]
-        }),
-    }
+/// The briefing in the SessionStart shape both harnesses read.
+fn output(briefing: &str) -> Value {
+    json!({
+        "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": briefing}
+    })
 }
 
 async fn connect(args: &Args) -> precept_ipc::Result<Client> {
@@ -464,7 +397,7 @@ async fn briefing(args: &Args, moment: Moment) -> precept_ipc::Result<String> {
     let context = client
         .request(
             "context.get",
-            json!({"include_documents":false,"client":args.vendor.label()}),
+            json!({"include_documents":false,"client":args.label()}),
         )
         .await?;
     Ok(render(&args.project, &context, moment))
@@ -494,12 +427,8 @@ async fn main() {
                 }
             }
         };
-        let out = match denied {
-            Some(reason) => deny_output(args.vendor, &reason),
-            None => allow_output(args.vendor),
-        };
-        if let Some(out) = out {
-            println!("{out}");
+        if let Some(reason) = denied {
+            println!("{}", deny_output(&reason));
         }
         return;
     }
@@ -542,7 +471,7 @@ async fn main() {
     )
     .await;
     match run {
-        Ok(Ok(text)) => println!("{}", output(args.vendor, &text)),
+        Ok(Ok(text)) => println!("{}", output(&text)),
         Ok(Err(e)) => eprintln!("precept-hook: no briefing ({e})"),
         Err(_) => eprintln!("precept-hook: no briefing (timeout)"),
     }
@@ -554,7 +483,7 @@ mod tests {
     use std::path::Path;
 
     #[test]
-    fn tool_calls_are_read_from_each_harness_shape() {
+    fn tool_calls_are_read_from_the_hook_input() {
         let call = |v: Value| tool_call(v.to_string().as_bytes());
         assert_eq!(
             call(json!({"tool_name":"Bash","tool_input":{"command":"git push --force"}})),
@@ -570,21 +499,7 @@ mod tests {
             Some(Call::Write(vec!["src/a.rs".into(), "Cargo.lock".into()]))
         );
         assert_eq!(
-            call(
-                json!({"toolCall":{"name":"run_command","args":{"CommandLine":"rm -rf x","Cwd":"/r"}}})
-            ),
-            Some(Call::Shell("rm -rf x".into()))
-        );
-        assert_eq!(
-            call(json!({"toolCall":{"name":"write_to_file","args":{"TargetFile":"/r/a"}}})),
-            Some(Call::Write(vec!["/r/a".into()]))
-        );
-        assert_eq!(
             call(json!({"tool_name":"Read","tool_input":{"file_path":"a"}})),
-            None
-        );
-        assert_eq!(
-            call(json!({"toolCall":{"name":"view_file","args":{}}})),
             None
         );
         assert_eq!(tool_call(b"not json"), None);
@@ -628,77 +543,25 @@ mod tests {
     }
 
     #[test]
-    fn denials_match_each_vendor() {
-        let claude = deny_output(Vendor::Claude, "no").unwrap();
-        assert_eq!(claude["hookSpecificOutput"]["permissionDecision"], "deny");
+    fn shapes_and_moments() {
+        let denied = deny_output("no");
+        assert_eq!(denied["hookSpecificOutput"]["permissionDecision"], "deny");
         assert_eq!(
-            claude["hookSpecificOutput"]["permissionDecisionReason"],
+            denied["hookSpecificOutput"]["permissionDecisionReason"],
             "no"
         );
-        assert_eq!(deny_output(Vendor::Qoder, "no"), Some(claude.clone()));
-        assert_eq!(deny_output(Vendor::QoderCn, "no"), Some(claude.clone()));
-        assert_eq!(deny_output(Vendor::CodeBuddy, "no"), Some(claude.clone()));
-        assert_eq!(deny_output(Vendor::WorkBuddy, "no"), Some(claude.clone()));
-        assert_eq!(deny_output(Vendor::Codex, "no"), Some(claude));
-        assert_eq!(
-            deny_output(Vendor::Antigravity, "no"),
-            Some(json!({"decision":"deny","reason":"no"}))
-        );
-        assert_eq!(
-            deny_output(Vendor::Cursor, "no"),
-            Some(json!({"permission":"deny","user_message":"no","agent_message":"no"}))
-        );
-        assert_eq!(
-            allow_output(Vendor::Cursor),
-            Some(json!({"permission":"allow"}))
-        );
-        assert_eq!(allow_output(Vendor::Claude), None);
-        assert_eq!(
-            tool_call(
-                br#"{"hook_event_name":"beforeShellExecution","command":"git push -f","cwd":"/r"}"#
-            ),
-            Some(Call::Shell("git push -f".into()))
-        );
-    }
-    #[test]
-    fn compact_is_read_and_shapes_match_each_vendor() {
         assert_eq!(moment(br#"{"source":"compact"}"#), Moment::Compact);
         assert_eq!(moment(br#"{"source":"startup"}"#), Moment::Start);
         assert_eq!(moment(b"not json"), Moment::Start);
+        assert_eq!(output("b")["hookSpecificOutput"]["additionalContext"], "b");
         assert_eq!(
-            output(Vendor::Claude, "b")["hookSpecificOutput"]["additionalContext"],
-            "b"
-        );
-        assert_eq!(output(Vendor::Qoder, "b"), output(Vendor::Claude, "b"));
-        assert_eq!(output(Vendor::QoderCn, "b"), output(Vendor::Claude, "b"));
-        assert_eq!(output(Vendor::CodeBuddy, "b"), output(Vendor::Claude, "b"));
-        assert_eq!(output(Vendor::WorkBuddy, "b"), output(Vendor::Claude, "b"));
-        assert_eq!(
-            compact_output(Vendor::Qoder, "n"),
+            compact_output(Vendor::Claude, "n"),
             Some(json!({
                 "hookSpecificOutput": {"hookEventName": "PreCompact", "additionalContext": "n"}
             }))
         );
-        assert_eq!(
-            compact_output(Vendor::Claude, "n"),
-            compact_output(Vendor::Qoder, "n")
-        );
-        assert_eq!(
-            compact_output(Vendor::QoderCn, "n"),
-            compact_output(Vendor::Qoder, "n")
-        );
-        assert_eq!(
-            compact_output(Vendor::CodeBuddy, "n"),
-            compact_output(Vendor::Qoder, "n")
-        );
-        assert_eq!(compact_output(Vendor::WorkBuddy, "n"), None);
-        assert_eq!(compact_output(Vendor::Cursor, "n"), None);
-        assert_eq!(compact_output(Vendor::Antigravity, "n"), None);
-        assert_eq!(output(Vendor::Cursor, "b")["additional_context"], "b");
-        assert_eq!(
-            output(Vendor::Antigravity, "b")["injectSteps"][0]["systemMessage"]["systemMessage"],
-            "b"
-        );
+        assert_eq!(compact_output(Vendor::Codex, "n"), None);
+        assert_eq!(read_output(Vendor::Codex, "w"), None);
         let dir = std::env::temp_dir();
         let sub = dir.join(format!("precept-hook-{}", std::process::id()));
         std::fs::create_dir_all(&sub).unwrap();
@@ -707,16 +570,6 @@ mod tests {
         assert!(inside(&dir, input(&sub).as_bytes()));
         assert!(!inside(&sub, input(&dir).as_bytes()));
         assert!(!inside(&sub, br#"{"cwd":"/no/such/dir"}"#));
-        // Antigravity names its workspaces; any one inside the root counts.
-        let workspaces = |ps: &[&std::path::Path]| {
-            json!({"conversationId":"c","workspacePaths":ps.iter().map(|p| p.to_str().unwrap()).collect::<Vec<_>>()})
-                .to_string()
-        };
-        assert!(inside(
-            &sub,
-            workspaces(&[Path::new("/no/such"), &sub]).as_bytes()
-        ));
-        assert!(!inside(&sub, workspaces(&[&dir]).as_bytes()));
         std::fs::remove_dir(&sub).unwrap();
     }
 }
