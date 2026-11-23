@@ -194,6 +194,9 @@ pub struct Hooks {
     /// Stale-document warning entries (after a file read; Claude Code only).
     #[serde(default)]
     pub read_hooks: Vec<HookState>,
+    /// Compaction reminder entries (before the conversation is compacted).
+    #[serde(default)]
+    pub compact_hooks: Vec<HookState>,
     /// Whether the operator turned the gate on for the project.
     #[serde(default)]
     pub gate: bool,
@@ -202,12 +205,13 @@ impl Hooks {
     pub fn get(&self, vendor: &str) -> Option<&HookState> {
         self.hooks.iter().find(|h| h.vendor == vendor)
     }
-    /// The entry of `vendor` for `event` (`session_start`, `pre_tool` or
-    /// `post_read`).
+    /// The entry of `vendor` for `event` (`session_start`, `pre_tool`,
+    /// `post_read` or `pre_compact`).
     pub fn of(&self, vendor: &str, event: &str) -> Option<&HookState> {
         let list = match event {
             "pre_tool" => &self.gate_hooks,
             "post_read" => &self.read_hooks,
+            "pre_compact" => &self.compact_hooks,
             _ => &self.hooks,
         };
         list.iter().find(|h| h.vendor == vendor)
@@ -257,7 +261,16 @@ pub enum Level {
     None,
 }
 /// The agents a level is shown for: (hook vendor and MCP client name).
-pub const AGENTS: [&str; 4] = ["claude", "codex", "antigravity", "cursor"];
+pub const AGENTS: [&str; 8] = [
+    "claude",
+    "codex",
+    "antigravity",
+    "cursor",
+    "qoder",
+    "qoder_cn",
+    "codebuddy",
+    "workbuddy",
+];
 impl AgentsPage {
     /// `agent`'s level from its session-start hook and MCP entry; `None`
     /// until both were read (never guessed).

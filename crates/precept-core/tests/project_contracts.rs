@@ -309,7 +309,8 @@ fn native_windows_reparse_rule_directory_is_refused_without_following_it() {
     fs::create_dir(&target).unwrap();
     let root = temp.path().join("root");
     fs::create_dir_all(root.join(".precept")).unwrap();
-    let link = root.join(DIR);
+    // mklink refuses mixed slashes, so build the path segment by segment.
+    let link = root.join(".precept").join("rules");
     let status = std::process::Command::new("cmd.exe")
         .args(["/D", "/C", "mklink", "/J"])
         .arg(&link)

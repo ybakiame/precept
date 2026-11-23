@@ -50,18 +50,26 @@ fn check(title: Msg, level: Level, detail: impl Into<String>, fix: Option<Fix>) 
 }
 
 /// The harnesses with a one-switch session-start hook, in page order.
-pub const HOOKS: [(&str, Msg); 4] = [
+pub const HOOKS: [(&str, Msg); 8] = [
     ("claude", Msg::DoctorHookClaude),
     ("codex", Msg::DoctorHookCodex),
     ("antigravity", Msg::DoctorHookAntigravity),
     ("cursor", Msg::DoctorHookCursor),
+    ("qoder", Msg::DoctorHookQoder),
+    ("qoder_cn", Msg::DoctorHookQoderCn),
+    ("codebuddy", Msg::DoctorHookCodeBuddy),
+    ("workbuddy", Msg::DoctorHookWorkBuddy),
 ];
 /// The clients with a one-switch MCP entry, in page order.
-pub const MCP: [(&str, Msg); 4] = [
+pub const MCP: [(&str, Msg); 8] = [
     ("claude", Msg::DoctorMcpClaude),
     ("codex", Msg::DoctorMcpCodex),
     ("antigravity", Msg::DoctorMcpAntigravity),
     ("cursor", Msg::DoctorMcpCursor),
+    ("qoder", Msg::DoctorMcpQoder),
+    ("qoder_cn", Msg::DoctorMcpQoderCn),
+    ("codebuddy", Msg::DoctorMcpCodeBuddy),
+    ("workbuddy", Msg::DoctorMcpWorkBuddy),
 ];
 
 fn daemon(m: &Model) -> Check {
@@ -612,6 +620,10 @@ fn rules(m: &Model) -> Vec<Check> {
                     ("codex", Msg::TileCodex),
                     ("antigravity", Msg::TileAntigravity),
                     ("cursor", Msg::TileCursor),
+                    ("qoder", Msg::TileQoder),
+                    ("qoder_cn", Msg::TileQoderCn),
+                    ("codebuddy", Msg::TileCodeBuddy),
+                    ("workbuddy", Msg::TileWorkBuddy),
                 ]
                 .iter()
                 .filter(|(v, _)| h.of(v, "pre_tool").is_some_and(|s| s.installed))
@@ -655,7 +667,16 @@ fn level(m: &Model) -> Check {
     if !for_project(m, m.selected_project.as_deref()) {
         return unread(m);
     }
-    let names = [Msg::TileClaude, Msg::TileCodex, Msg::TileAntigravity];
+    let names = [
+        Msg::TileClaude,
+        Msg::TileCodex,
+        Msg::TileAntigravity,
+        Msg::TileCursor,
+        Msg::TileQoder,
+        Msg::TileQoderCn,
+        Msg::TileCodeBuddy,
+        Msg::TileWorkBuddy,
+    ];
     let mut parts = vec![];
     let mut levels = vec![];
     for (agent, name) in AGENTS.iter().zip(names) {
@@ -781,6 +802,11 @@ mod tests {
                 hook("claude", true),
                 hook("codex", false),
                 hook("antigravity", true),
+                hook("cursor", false),
+                hook("qoder", false),
+                hook("qoder_cn", false),
+                hook("codebuddy", false),
+                hook("workbuddy", false),
             ],
             ..Default::default()
         });
@@ -797,13 +823,18 @@ mod tests {
                 entry("claude", true),
                 entry("codex", true),
                 entry("antigravity", false),
+                entry("cursor", false),
+                entry("qoder", false),
+                entry("qoder_cn", false),
+                entry("codebuddy", false),
+                entry("workbuddy", false),
             ],
         });
         let c = find(&checks(&m), Msg::DoctorLevel).clone();
         assert_eq!(c.level, Level::Ok);
         assert_eq!(
             c.detail,
-            "Claude Code: Hooks + MCP · recommended; Codex: MCP only · only when the agent calls it; Antigravity: Hooks only · briefed, cannot give back"
+            "Claude Code: Hooks + MCP · recommended; Codex: MCP only · only when the agent calls it; Antigravity: Hooks only · briefed, cannot give back; Cursor: Not connected; Qoder: Not connected; Qoder CN: Not connected; CodeBuddy: Not connected; WorkBuddy: Not connected"
         );
         m.agents.mcp = Some(McpEntries {
             available: true,
@@ -811,6 +842,11 @@ mod tests {
                 entry("claude", false),
                 entry("codex", false),
                 entry("antigravity", false),
+                entry("cursor", false),
+                entry("qoder", false),
+                entry("qoder_cn", false),
+                entry("codebuddy", false),
+                entry("workbuddy", false),
             ],
         });
         assert_eq!(find(&checks(&m), Msg::DoctorLevel).level, Level::Attention);
@@ -856,6 +892,7 @@ mod tests {
                 current: true,
                 ..Default::default()
             }],
+            compact_hooks: vec![],
             gate: true,
         });
         let g = find(&checks(&m), Msg::DoctorGate).clone();

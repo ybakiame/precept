@@ -11,8 +11,18 @@ use std::process::{Command as Process, Stdio};
 use support::*;
 
 fn hook(f: &Fixture, vendor: &str, cap: &std::path::Path, stdin: &str) -> (bool, String, String) {
-    let mut child = Process::new(exe("precept-hook"))
-        .arg("--runtime-dir")
+    hook_event(f, vendor, cap, stdin, None)
+}
+
+fn hook_event(
+    f: &Fixture,
+    vendor: &str,
+    cap: &std::path::Path,
+    stdin: &str,
+    event: Option<&str>,
+) -> (bool, String, String) {
+    let mut cmd = Process::new(exe("precept-hook"));
+    cmd.arg("--runtime-dir")
         .arg(&f.daemon.location.runtime_dir)
         .arg("--endpoint")
         .arg(&f.daemon.location.endpoint)
@@ -23,7 +33,11 @@ fn hook(f: &Fixture, vendor: &str, cap: &std::path::Path, stdin: &str) -> (bool,
             vendor,
             "--capability-file",
         ])
-        .arg(cap)
+        .arg(cap);
+    if let Some(event) = event {
+        cmd.args(["--event", event]);
+    }
+    let mut child = cmd
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -117,6 +131,17 @@ fn session_start_briefing_reaches_each_harness_shape_and_fails_open() {
             .contains("was compacted")
     );
 
+    let (ok, out, _) = hook(&f, "qoder", &cap, r#"{"source":"startup"}"#);
+    assert!(ok);
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["hookSpecificOutput"]["hookEventName"], "SessionStart");
+    assert!(
+        v["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap()
+            .contains("# Precept")
+    );
+
     let (ok, out, _) = hook(&f, "cursor", &cap, "");
     assert!(ok);
     let v: Value = serde_json::from_str(&out).unwrap();
@@ -139,7 +164,15 @@ fn session_start_briefing_reaches_each_harness_shape_and_fails_open() {
         .iter()
         .filter_map(|e| e["client"].as_str())
         .collect();
-    assert_eq!(clients, ["cursor hook", "codex hook", "claude-code hook"]);
+    assert_eq!(
+        clients,
+        [
+            "cursor hook",
+            "qoder hook",
+            "codex hook",
+            "claude-code hook"
+        ]
+    );
 
     // Unshared project: no briefing, exit 0, one stderr line, nothing on stdout.
     f.daemon
@@ -150,4 +183,69 @@ fn session_start_briefing_reaches_each_harness_shape_and_fails_open() {
     assert!(out.is_empty());
     assert!(err.starts_with("precept-hook: no briefing"));
     assert!(!err.contains("Conventional"));
+}
+
+#[test]
+fn pre_compact_reminds_the_agent_to_keep_its_work_session_current() {
+    let f = Fixture::created();
+    let b = f.daemon.enable();
+    f.register(&b, "alpha");
+    f.daemon
+        .control("project.propose", json!({"name":"alpha","enabled":true}))
+        .unwrap();
+    let agent = f.daemon.credential("agent-alpha.cap");
+    let session = f
+        .daemon
+        .call(&agent, "session.start", json!({"goal":"Ship it"}))
+        .unwrap();
+    let id = session["id"].as_str().unwrap();
+    let cap = f.daemon.location.runtime_dir.join("agent-alpha.cap");
+    let stdin = r#"{"hook_event_name":"PreCompact","trigger":"auto"}"#;
+    let (ok, out, _) = hook_event(&f, "qoder", &cap, stdin, Some("pre-compact"));
+    assert!(ok);
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["hookSpecificOutput"]["hookEventName"], "PreCompact");
+    let text = v["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(text.contains(id) && text.contains("expected_rev"), "{text}");
+    assert!(text.contains("get_effective_context"));
+    // Claude Code reads the same shape; the other harnesses get nothing.
+    let (ok, out, _) = hook_event(&f, "claude", &cap, stdin, Some("pre-compact"));
+    assert!(ok);
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["hookSpecificOutput"]["hookEventName"], "PreCompact");
+    let (ok, out, _) = hook_event(&f, "cursor", &cap, stdin, Some("pre-compact"));
+    assert!(ok);
+    assert!(out.is_empty());
+    // The entry is the operator's to add, and only where the harness has the
+    // event.
+    assert_eq!(
+        f.daemon.control(
+            "integration.hooks.apply",
+            json!({"project":"alpha","vendor":"codex","event":"pre_compact","enabled":true,
+                "expected_sha256":null}),
+        ),
+        Err(precept_ipc::Error::Unsupported)
+    );
+    let on = f
+        .daemon
+        .control(
+            "integration.hooks.apply",
+            json!({"project":"alpha","vendor":"qoder","event":"pre_compact","enabled":true,
+                "expected_sha256":null}),
+        )
+        .unwrap();
+    assert_eq!(on["installed"], true);
+    assert!(
+        on["command"]
+            .as_str()
+            .unwrap()
+            .ends_with("--event pre-compact")
+    );
+    let status = f
+        .daemon
+        .control("integration.hooks", json!({"project":"alpha"}))
+        .unwrap();
+    assert_eq!(status["compact_hooks"].as_array().unwrap().len(), 4);
 }

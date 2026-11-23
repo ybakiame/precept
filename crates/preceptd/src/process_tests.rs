@@ -200,8 +200,16 @@ fn s3_independent_daemon_admission_checkpoint() {
 
 #[test]
 fn n_independent_daemon_contract_source_changes_refuse_publication() {
-    for (action, use_mcp) in ["edit", "delete", "rename", "replace", "add", "root"]
-        .into_iter()
+    // Windows refuses to rename a directory that holds an open file, so the
+    // displaced-root race cannot be exercised there.
+    let actions: &[&str] = if cfg!(windows) {
+        &["edit", "delete", "rename", "replace", "add"]
+    } else {
+        &["edit", "delete", "rename", "replace", "add", "root"]
+    };
+    for (action, use_mcp) in actions
+        .iter()
+        .copied()
         .flat_map(|action| [false, true].map(move |bridge| (action, bridge)))
     {
         let temp = tempfile::Builder::new()

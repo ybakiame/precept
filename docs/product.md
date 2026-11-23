@@ -90,7 +90,7 @@ Two channels carry rules to an agent; use both where the harness allows it.
 | What the agent reads | Confirmed preferences, repository rules with their check results, open work sessions (at most 12 KiB, then cut), and project memory in its own 3 KiB | Everything, narrowed by path, language or task; documents on request; Handoffs | Both |
 | Can the agent give back | No (read-only) | Yes: rule suggestions and updates, its work session, project memory | Yes |
 | Continuity across agents and compaction | Sees work others left, cannot record its own | Records its work, may not read others' | The full loop |
-| Harnesses | Those with a session-start hook: Claude Code, Codex, Antigravity, Cursor | Any MCP client | Claude Code, Codex, Antigravity, Cursor |
+| Harnesses | Those with a session-start hook: Claude Code, Codex, Antigravity, Cursor, Qoder, Qoder CN, CodeBuddy, WorkBuddy | Any MCP client | Claude Code, Codex, Antigravity, Cursor, Qoder, Qoder CN, CodeBuddy, WorkBuddy |
 
 Add-ons, for the cases that need them:
 

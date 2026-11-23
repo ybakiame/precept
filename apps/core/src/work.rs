@@ -22,18 +22,58 @@ pub struct WorkSession {
 }
 
 #[derive(Deserialize)]
+struct RawItem {
+    text: String,
+}
+
+/// A session as the daemon reports it: work items are objects; the page
+/// shows their text.
+#[derive(Deserialize)]
+struct RawSession {
+    id: String,
+    agent: Option<String>,
+    conversation: Option<String>,
+    status: String,
+    started_ms: u64,
+    updated_ms: u64,
+    closed_ms: Option<u64>,
+    goal: String,
+    done: Vec<RawItem>,
+    doing: Vec<RawItem>,
+    todo: Vec<RawItem>,
+    summary: Option<String>,
+}
+
+#[derive(Deserialize)]
 struct Reply {
-    sessions: Vec<WorkSession>,
+    sessions: Vec<RawSession>,
 }
 
 /// Parses and bounds a daemon reply; every text is sanitized for display.
 pub fn parse(v: serde_json::Value) -> Result<Vec<WorkSession>, &'static str> {
-    let mut list = serde_json::from_value::<Reply>(v)
-        .map_err(|_| "Unavailable")?
-        .sessions;
-    if list.len() > 50 {
+    let raw = serde_json::from_value::<Reply>(v).map_err(|_| "Unavailable")?;
+    if raw.sessions.len() > 50 {
         return Err("Unavailable");
     }
+    let texts = |items: Vec<RawItem>| items.into_iter().map(|i| i.text).collect();
+    let mut list: Vec<WorkSession> = raw
+        .sessions
+        .into_iter()
+        .map(|s| WorkSession {
+            id: s.id,
+            agent: s.agent,
+            conversation: s.conversation,
+            status: s.status,
+            started_ms: s.started_ms,
+            updated_ms: s.updated_ms,
+            closed_ms: s.closed_ms,
+            goal: s.goal,
+            done: texts(s.done),
+            doing: texts(s.doing),
+            todo: texts(s.todo),
+            summary: s.summary,
+        })
+        .collect();
     for s in &mut list {
         s.id = sanitize(&s.id, 32);
         s.agent = s.agent.as_deref().map(|a| sanitize(a, 64));
@@ -100,8 +140,9 @@ mod tests {
     #[test]
     fn parses_bounds_and_sanitizes() {
         let reply = json!({"sessions":[{"id":"ab","agent":"claude\u{7}","conversation":null,"status":"open",
-            "started_ms":1,"updated_ms":2,"closed_ms":null,"goal":"Add import","done":[],"doing":["tests"],
-            "todo":["docs"],"summary":null}]});
+            "started_ms":1,"updated_ms":2,"closed_ms":null,"goal":"Add import","done":[],
+            "doing":[{"id":"t1","text":"tests"}],
+            "todo":[{"id":"d1","text":"docs"}],"summary":null,"rev":2}]});
         let list = parse(reply).unwrap();
         assert_eq!(list[0].agent.as_deref(), Some("claude"));
         assert_eq!(list[0].doing, ["tests"]);

@@ -731,6 +731,8 @@ fn hook_detail(m: &Model, vendor: &str, event: &str) -> String {
         Msg::HookOnCodex
     } else if event == "post_read" {
         Msg::ReadHookOn
+    } else if event == "pre_compact" {
+        Msg::CompactHookOn
     } else if event == "pre_tool" {
         Msg::GateHookOn
     } else {
@@ -757,6 +759,7 @@ fn hook_tile(
     let spoken = match event {
         "pre_tool" => Msg::GateHookSpoken,
         "post_read" => Msg::ReadHookSpoken,
+        "pre_compact" => Msg::CompactHookSpoken,
         _ => Msg::HookSpoken,
     };
     ui::quick_tile(model, icons::AGENT, installed, move |on| {
@@ -931,6 +934,10 @@ pub(crate) fn level_rows(model: Signal<Model>, heading: bool) -> View {
         .child(row("codex", Msg::TileCodex))
         .child(row("antigravity", Msg::TileAntigravity))
         .child(row("cursor", Msg::TileCursor))
+        .child(row("qoder", Msg::TileQoder))
+        .child(row("qoder_cn", Msg::TileQoderCn))
+        .child(row("codebuddy", Msg::TileCodeBuddy))
+        .child(row("workbuddy", Msg::TileWorkBuddy))
 }
 
 /// The integrations, by mechanism: MCP tools, the session-start briefing and
@@ -950,7 +957,11 @@ fn integrations(model: Signal<Model>) -> impl IntoElement {
                 .child(mcp_tile(model, "claude", Msg::TileClaude))
                 .child(mcp_tile(model, "codex", Msg::TileCodex))
                 .child(mcp_tile(model, "antigravity", Msg::TileAntigravity))
-                .child(mcp_tile(model, "cursor", Msg::TileCursor)),
+                .child(mcp_tile(model, "cursor", Msg::TileCursor))
+                .child(mcp_tile(model, "qoder", Msg::TileQoder))
+                .child(mcp_tile(model, "qoder_cn", Msg::TileQoderCn))
+                .child(mcp_tile(model, "codebuddy", Msg::TileCodeBuddy))
+                .child(mcp_tile(model, "workbuddy", Msg::TileWorkBuddy)),
         ))
         .child(group(
             model,
@@ -966,7 +977,26 @@ fn integrations(model: Signal<Model>) -> impl IntoElement {
                     "session_start",
                     Msg::TileAntigravity,
                 ))
-                .child(hook_tile(model, "cursor", "session_start", Msg::TileCursor)),
+                .child(hook_tile(model, "cursor", "session_start", Msg::TileCursor))
+                .child(hook_tile(model, "qoder", "session_start", Msg::TileQoder))
+                .child(hook_tile(
+                    model,
+                    "qoder_cn",
+                    "session_start",
+                    Msg::TileQoderCn,
+                ))
+                .child(hook_tile(
+                    model,
+                    "codebuddy",
+                    "session_start",
+                    Msg::TileCodeBuddy,
+                ))
+                .child(hook_tile(
+                    model,
+                    "workbuddy",
+                    "session_start",
+                    Msg::TileWorkBuddy,
+                )),
         ))
         .child(group(
             model,
@@ -986,7 +1016,21 @@ fn integrations(model: Signal<Model>) -> impl IntoElement {
                             "pre_tool",
                             Msg::TileAntigravity,
                         ))
-                        .child(hook_tile(model, "cursor", "pre_tool", Msg::TileCursor)),
+                        .child(hook_tile(model, "cursor", "pre_tool", Msg::TileCursor))
+                        .child(hook_tile(model, "qoder", "pre_tool", Msg::TileQoder))
+                        .child(hook_tile(model, "qoder_cn", "pre_tool", Msg::TileQoderCn))
+                        .child(hook_tile(
+                            model,
+                            "codebuddy",
+                            "pre_tool",
+                            Msg::TileCodeBuddy,
+                        ))
+                        .child(hook_tile(
+                            model,
+                            "workbuddy",
+                            "pre_tool",
+                            Msg::TileWorkBuddy,
+                        )),
                 ),
         ))
         .child(group(
@@ -995,6 +1039,27 @@ fn integrations(model: Signal<Model>) -> impl IntoElement {
             Msg::ReadSummary,
             Msg::ReadScope,
             row().child(hook_tile(model, "claude", "post_read", Msg::TileClaude)),
+        ))
+        .child(group(
+            model,
+            Msg::CompactGroup,
+            Msg::CompactSummary,
+            Msg::CompactScope,
+            row()
+                .child(hook_tile(model, "claude", "pre_compact", Msg::TileClaude))
+                .child(hook_tile(model, "qoder", "pre_compact", Msg::TileQoder))
+                .child(hook_tile(
+                    model,
+                    "qoder_cn",
+                    "pre_compact",
+                    Msg::TileQoderCn,
+                ))
+                .child(hook_tile(
+                    model,
+                    "codebuddy",
+                    "pre_compact",
+                    Msg::TileCodeBuddy,
+                )),
         ))
         .child(group(
             model,
@@ -1049,7 +1114,7 @@ fn hook_command(model: Signal<Model>) -> impl IntoElement {
                     .map(|h| {
                         h.command.replace(
                             "--vendor claude",
-                            "--vendor <claude|codex|antigravity|cursor>",
+                            "--vendor <claude|codex|antigravity|cursor|qoder|qoder_cn|codebuddy|workbuddy>",
                         )
                     })
                     .unwrap_or_default()

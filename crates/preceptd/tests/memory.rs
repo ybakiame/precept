@@ -55,6 +55,29 @@ fn agents_keep_project_memory_and_the_operator_governs_it() {
     let hits = call("memory.recall", json!({"query":"很慢"})).unwrap();
     assert_eq!(hits["entries"].as_array().unwrap().len(), 1);
     assert_eq!(hits["entries"][0]["recalls"], 1);
+    // Index mode: one line per note without the body; a fetch by id returns
+    // the full note and counts no recall.
+    let index = call("memory.recall", json!({"query":"很慢","index":true})).unwrap();
+    assert_eq!(index["index"], true);
+    let line = &index["entries"][0];
+    assert!(line.get("body").is_none());
+    assert!(line["weight"].as_f64().is_some());
+    let note_id = line["id"].as_str().unwrap().to_owned();
+    let full = call("memory.get", json!({"id":note_id})).unwrap();
+    assert_eq!(full["entry"]["body"], "/mnt/c 下构建很慢");
+    assert_eq!(full["entry"]["unverified_days"], 0);
+    assert!(full["entry"].get("notice").is_none());
+    assert_eq!(
+        call("memory.get", json!({"id":"zz"})),
+        Err(Error::InvalidRequest)
+    );
+    // A reaffirmation may state what verified the note.
+    let affirmed = call(
+        "memory.reaffirm",
+        json!({"id":note_id,"basis":"checked on this machine"}),
+    )
+    .unwrap();
+    assert_eq!(affirmed["entry"]["basis"], "checked on this machine");
     // Agents cannot use the operator's methods, nor the operator an agent's.
     assert_eq!(
         call("memories.list", json!({"project":"alpha"})),

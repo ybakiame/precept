@@ -448,6 +448,10 @@ impl Service {
                 #[serde(default)]
                 limit: Option<usize>,
                 #[serde(default)]
+                index: Option<bool>,
+                #[serde(default)]
+                basis: Option<String>,
+                #[serde(default)]
                 client: Option<String>,
             }
             let p: P = decode(params)?;
@@ -468,7 +472,9 @@ impl Service {
                 }
                 "memory.reaffirm" => {
                     let id = p.id.ok_or(Error::InvalidRequest)?;
-                    let entry = self.memory.reaffirm(state, &project, &id)?;
+                    let entry = self
+                        .memory
+                        .reaffirm(state, &project, &id, p.basis.as_deref())?;
                     let entry = self.promote(&project, entry);
                     Ok(json!({"entry": entry.view(now)}))
                 }
@@ -485,7 +491,27 @@ impl Service {
                         p.kind,
                         p.limit.unwrap_or(8),
                     )?;
-                    Ok(json!({"entries": entries.iter().map(|e| e.view(now)).collect::<Vec<_>>()}))
+                    if p.index.unwrap_or(false) {
+                        let lines: Vec<_> = entries
+                            .iter()
+                            .map(|e| {
+                                json!({
+                                    "id": e.id, "kind": e.kind, "title": e.title,
+                                    "weight": (e.weight(now) * 10.0).round() / 10.0,
+                                })
+                            })
+                            .collect();
+                        Ok(json!({"entries": lines, "index": true}))
+                    } else {
+                        Ok(
+                            json!({"entries": entries.iter().map(|e| e.view(now)).collect::<Vec<_>>()}),
+                        )
+                    }
+                }
+                "memory.get" => {
+                    let id = p.id.ok_or(Error::InvalidRequest)?;
+                    let entry = self.memory.get(state, &project, &id)?;
+                    Ok(json!({"entry": entry.view(now)}))
                 }
                 _ => Err(Error::Unsupported),
             };
@@ -973,6 +999,28 @@ impl Service {
                         })
                         .collect::<precept_ipc::Result<Vec<_>>>()
                 };
+                let compact_hooks = [
+                    integration::Vendor::Claude,
+                    integration::Vendor::Qoder,
+                    integration::Vendor::QoderCn,
+                    integration::Vendor::CodeBuddy,
+                ]
+                .iter()
+                .map(|v| {
+                    integration::hook_status(
+                        &home,
+                        *v,
+                        &p.project,
+                        &integration::command(
+                            &launch,
+                            *v,
+                            &p.project,
+                            integration::HookEvent::PreCompact,
+                        ),
+                        integration::HookEvent::PreCompact,
+                    )
+                })
+                .collect::<precept_ipc::Result<Vec<_>>>()?;
                 Ok(json!({
                     "available": true,
                     "hooks": status(integration::HookEvent::SessionStart)?,
@@ -990,6 +1038,9 @@ impl Service {
                         ),
                         integration::HookEvent::PostRead,
                     )?],
+                    // The work-state reminder before compaction: Claude Code
+                    // and Qoder.
+                    "compact_hooks": compact_hooks,
                     "gate": self.profiles.gated(&p.project),
                 }))
             }
@@ -1002,6 +1053,17 @@ impl Service {
                 }
                 if p.event == integration::HookEvent::PostRead
                     && vendor != integration::Vendor::Claude
+                {
+                    return Err(Error::Unsupported);
+                }
+                if p.event == integration::HookEvent::PreCompact
+                    && !matches!(
+                        vendor,
+                        integration::Vendor::Claude
+                            | integration::Vendor::Qoder
+                            | integration::Vendor::QoderCn
+                            | integration::Vendor::CodeBuddy
+                    )
                 {
                     return Err(Error::Unsupported);
                 }
@@ -1105,10 +1167,10 @@ impl Service {
                 true,
             )
             .map_err(|_| Error::Unavailable)?;
-        let lines = |items: &[String]| {
+        let lines = |items: &[sessions::Item]| {
             items
                 .iter()
-                .map(|i| format!("- {i}"))
+                .map(|i| format!("- {}", i.text))
                 .collect::<Vec<_>>()
                 .join("\n")
         };
@@ -1370,9 +1432,8 @@ async fn peer(mut stream: Stream, service: Service, permit: Arc<OwnedSemaphorePe
                     Some(activity::Kind::Session)
                 }
                 "gate.check" => Some(activity::Kind::Gate),
-                "memory.remember" | "memory.reaffirm" | "memory.forget" | "memory.recall" => {
-                    Some(activity::Kind::Memory)
-                }
+                "memory.remember" | "memory.reaffirm" | "memory.forget" | "memory.recall"
+                | "memory.get" => Some(activity::Kind::Memory),
                 _ => None,
             };
             if let Some(kind) = kind {

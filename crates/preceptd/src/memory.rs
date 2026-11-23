@@ -15,6 +15,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub const MAX_ENTRIES: usize = 300;
 pub const MAX_TITLE: usize = 120;
 pub const MAX_BODY: usize = 2000;
+/// A reaffirmation's stated basis (what verified the note).
+pub const MAX_BASIS: usize = 300;
 /// Earlier bodies kept per entry.
 pub const MAX_HISTORY: usize = 5;
 /// Environment entries a context carries (all of them, up to this).
@@ -27,6 +29,8 @@ pub const BRIEF_BYTES: usize = 2560;
 const DAY_MS: u64 = 86_400_000;
 /// Days after the last confirmation before an entry starts to fade.
 pub const FADE_AFTER_DAYS: u64 = 60;
+/// Days without confirmation after which reads carry a verify-first notice.
+pub const NOTICE_AFTER_DAYS: u64 = 7;
 /// Confirmations after which a caution, lesson or attempt is filed once as a
 /// suggested project rule (it held in that many more sessions).
 pub const PROPOSE_AFTER: u32 = 3;
@@ -111,6 +115,9 @@ pub struct Entry {
     /// The suggested rule this note was filed as, once.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proposed: Option<String>,
+    /// The basis stated at the last reaffirmation, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub basis: Option<String>,
 }
 
 impl Entry {
@@ -144,6 +151,13 @@ impl Entry {
         v["weight"] = serde_json::json!((self.weight(now) * 10.0).round() / 10.0);
         v["unstable"] = serde_json::json!(self.unstable(now));
         v["fading"] = serde_json::json!(self.fading(now));
+        let idle_days = now.saturating_sub(self.confirmed_ms) / DAY_MS;
+        v["unverified_days"] = serde_json::json!(idle_days);
+        if idle_days >= NOTICE_AFTER_DAYS {
+            v["notice"] = serde_json::json!(format!(
+                "Not verified for {idle_days} days; check it against the current code before relying on it, then reaffirm or correct it."
+            ));
+        }
         v
     }
     /// A new body: the earlier one goes to history; a correction resets
@@ -162,6 +176,7 @@ impl Entry {
         self.by = by;
         self.session = session;
         self.confirmations = 0;
+        self.basis = None;
         self.updated_ms = now;
         self.confirmed_ms = now;
         self.changes
@@ -348,6 +363,7 @@ impl Memory {
                     history: vec![],
                     changes: vec![],
                     proposed: None,
+                    basis: None,
                 };
                 all.push(e.clone());
                 (e, Remembered::Added)
@@ -366,13 +382,34 @@ impl Memory {
         Self::save(state, project, all)?;
         Ok((entry, what))
     }
-    /// An entry is still true: one more confirmation.
-    pub fn reaffirm(&self, state: &StateDir, project: &str, id: &str) -> Result<Entry, Error> {
+    /// An entry is still true: one more confirmation, with the basis that
+    /// verified it when stated (kept until a correction).
+    pub fn reaffirm(
+        &self,
+        state: &StateDir,
+        project: &str,
+        id: &str,
+        basis: Option<&str>,
+    ) -> Result<Entry, Error> {
+        let basis = basis.map(|b| text(b, MAX_BASIS)).transpose()?;
         self.change(state, project, id, |e, now| {
             e.confirmations = e.confirmations.saturating_add(1);
             e.confirmed_ms = now;
+            if basis.is_some() {
+                e.basis = basis;
+            }
             Ok(())
         })
+    }
+    /// One entry by id, in full (a recall index line's follow-up read);
+    /// counts no recall.
+    pub fn get(&self, state: &StateDir, project: &str, id: &str) -> Result<Entry, Error> {
+        if !valid_id(id) {
+            return Err(Error::InvalidRequest);
+        }
+        let _held = self.lock.lock().unwrap();
+        let all = Self::load(state, project)?;
+        all.into_iter().find(|e| e.id == id).ok_or(Error::NotFound)
     }
     /// Whether `e` should now be filed as a suggested rule: a caution, lesson
     /// or attempt confirmed [`PROPOSE_AFTER`] times, not filed before.
@@ -685,6 +722,7 @@ mod tests {
             history: vec![],
             changes: vec![],
             proposed: None,
+            basis: None,
         };
         let env = entry(Kind::Environment, 0);
         let lesson = entry(Kind::Lesson, 0);
@@ -775,6 +813,91 @@ mod tests {
             2,
             "the pnpm query above counted one"
         );
+    }
+
+    #[test]
+    fn get_reads_one_note_and_reaffirm_keeps_a_basis_until_correction() {
+        let (_t, s) = state();
+        let m = Memory::new();
+        let (e, _) = m
+            .remember(
+                &s,
+                "alpha",
+                Kind::Lesson,
+                "Run tests",
+                "cargo test",
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(m.get(&s, "alpha", &e.id).unwrap().body, "cargo test");
+        assert_eq!(m.get(&s, "alpha", "zz").unwrap_err(), Error::InvalidRequest);
+        assert_eq!(
+            m.get(&s, "alpha", &"0".repeat(16)).unwrap_err(),
+            Error::NotFound
+        );
+        let affirmed = m
+            .reaffirm(&s, "alpha", &e.id, Some("ran it on this machine"))
+            .unwrap();
+        assert_eq!(affirmed.confirmations, 1);
+        assert_eq!(affirmed.basis.as_deref(), Some("ran it on this machine"));
+        let again = m.reaffirm(&s, "alpha", &e.id, None).unwrap();
+        assert_eq!(again.confirmations, 2);
+        assert_eq!(again.basis.as_deref(), Some("ran it on this machine"));
+        assert_eq!(
+            m.reaffirm(&s, "alpha", &e.id, Some("bad\u{7}"))
+                .unwrap_err(),
+            Error::InvalidRequest
+        );
+        let (fixed, what) = m
+            .remember(
+                &s,
+                "alpha",
+                Kind::Lesson,
+                "Run tests",
+                "cargo nextest run",
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(what, Remembered::Corrected);
+        assert!(fixed.basis.is_none(), "the basis was for the old text");
+    }
+
+    #[test]
+    fn reads_carry_a_verify_notice_after_a_week_without_confirmation() {
+        let now = 1_000 * DAY_MS;
+        let mut e = Entry {
+            id: "0".repeat(16),
+            kind: Kind::Lesson,
+            title: "t".into(),
+            body: "b".into(),
+            pinned: false,
+            confirmations: 0,
+            recalls: 0,
+            created_ms: 0,
+            updated_ms: 0,
+            confirmed_ms: now - 8 * DAY_MS,
+            edited_by_operator: false,
+            by: None,
+            session: None,
+            history: vec![],
+            changes: vec![],
+            proposed: None,
+            basis: None,
+        };
+        let v = e.view(now);
+        assert_eq!(v["unverified_days"], 8);
+        assert!(
+            v["notice"]
+                .as_str()
+                .unwrap()
+                .contains("Not verified for 8 days")
+        );
+        e.confirmed_ms = now;
+        let v = e.view(now);
+        assert_eq!(v["unverified_days"], 0);
+        assert!(v.get("notice").is_none());
     }
 
     #[test]

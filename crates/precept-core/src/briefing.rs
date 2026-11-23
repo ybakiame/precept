@@ -91,7 +91,7 @@ fn work(context: &Value) -> String {
             .and_then(Value::as_array)
             .into_iter()
             .flatten()
-            .filter_map(Value::as_str)
+            .filter_map(|i| i.get("text").and_then(Value::as_str))
             .map(|t| cut(t, 200).0.to_owned())
             .collect()
     };
@@ -547,8 +547,11 @@ mod tests {
         assert!(b.contains("Applies to languages rust; paths apps/ only."));
         let with_work = json!({"work_sessions":[
             {"id":"ab12","status":"open","agent":"claude-code 2.1","updated_ms":1_763_640_000_000u64,
-             "goal":"Add import","doing":["tests"],"todo":["docs","ship"],"done":[]},
-            {"id":"cd34","status":"closed","updated_ms":0,"goal":"Rename","doing":[],"todo":[],"done":["all"],"summary":"Renamed."}
+             "goal":"Add import","doing":[{"id":"t1","text":"tests"}],
+             "todo":[{"id":"d1","text":"docs"},{"id":"d2","text":"ship","depends_on":["d1"]}],
+             "done":[],"rev":2},
+            {"id":"cd34","status":"closed","updated_ms":0,"goal":"Rename","doing":[],"todo":[],
+             "done":[{"id":"a1","text":"all"}],"summary":"Renamed.","rev":3}
         ]});
         let b = render("alpha", &with_work, Moment::Compact);
         assert!(b.contains("## Work in progress"));

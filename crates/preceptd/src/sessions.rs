@@ -16,9 +16,32 @@ pub const MAX_SESSIONS: usize = 20;
 pub const MAX_GOAL: usize = 500;
 pub const MAX_ITEMS: usize = 12;
 pub const MAX_ITEM: usize = 200;
+pub const MAX_ITEM_ID: usize = 24;
 pub const MAX_SUMMARY: usize = 1000;
 /// The most sessions an agent's context carries.
 pub const IN_CONTEXT: usize = 5;
+
+/// One work item: a stable id (the agent's own, or assigned), its text and,
+/// for a todo, the ids of the items that must finish first.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Item {
+    pub id: String,
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub depends_on: Vec<String>,
+}
+
+/// An item as an agent sends it: the id is optional (assigned when absent).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NewItem {
+    #[serde(default)]
+    pub id: Option<String>,
+    pub text: String,
+    #[serde(default)]
+    pub depends_on: Vec<String>,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -34,10 +57,14 @@ pub struct Session {
     pub updated_ms: u64,
     pub closed_ms: Option<u64>,
     pub goal: String,
-    pub done: Vec<String>,
-    pub doing: Vec<String>,
-    pub todo: Vec<String>,
+    pub done: Vec<Item>,
+    pub doing: Vec<Item>,
+    pub todo: Vec<Item>,
     pub summary: Option<String>,
+    /// Counts every write; an update may name the revision it saw, so two
+    /// agents cannot silently overwrite each other.
+    #[serde(default)]
+    pub rev: u64,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -63,14 +90,51 @@ fn text(raw: &str, max: usize) -> Result<Option<String>, Error> {
     }
     Ok((!t.is_empty()).then(|| t.to_owned()))
 }
-fn items(raw: &[String]) -> Result<Vec<String>, Error> {
+fn valid_item_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= MAX_ITEM_ID
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+/// Bounded items with unique ids (assigned when absent) and dependencies
+/// that name an item of the same list, never the item itself.
+fn items(raw: &[NewItem]) -> Result<Vec<Item>, Error> {
     if raw.len() > MAX_ITEMS {
         return Err(Error::InvalidRequest);
     }
-    raw.iter()
-        .map(|i| text(i, MAX_ITEM))
-        .filter_map(Result::transpose)
-        .collect()
+    let mut out: Vec<Item> = Vec::new();
+    for i in raw {
+        let text = text(&i.text, MAX_ITEM)?.ok_or(Error::InvalidRequest)?;
+        let id = match &i.id {
+            Some(id) if valid_item_id(id) => id.clone(),
+            Some(_) => return Err(Error::InvalidRequest),
+            None => {
+                let mut nonce = [0u8; 4];
+                getrandom::fill(&mut nonce).map_err(|_| Error::Unavailable)?;
+                nonce.iter().map(|b| format!("{b:02x}")).collect()
+            }
+        };
+        if out.iter().any(|e| e.id == id) {
+            return Err(Error::InvalidRequest);
+        }
+        if i.depends_on.len() > MAX_ITEMS
+            || i.depends_on.iter().any(|d| d == &id || !valid_item_id(d))
+        {
+            return Err(Error::InvalidRequest);
+        }
+        out.push(Item {
+            id,
+            text,
+            depends_on: i.depends_on.clone(),
+        });
+    }
+    for i in &out {
+        if i.depends_on.iter().any(|d| !out.iter().any(|e| &e.id == d)) {
+            return Err(Error::InvalidRequest);
+        }
+    }
+    Ok(out)
 }
 
 /// What an agent sends to start or update a session.
@@ -84,13 +148,17 @@ pub struct Update {
     #[serde(default)]
     pub goal: Option<String>,
     #[serde(default)]
-    pub done: Option<Vec<String>>,
+    pub done: Option<Vec<NewItem>>,
     #[serde(default)]
-    pub doing: Option<Vec<String>>,
+    pub doing: Option<Vec<NewItem>>,
     #[serde(default)]
-    pub todo: Option<Vec<String>>,
+    pub todo: Option<Vec<NewItem>>,
     #[serde(default)]
     pub summary: Option<String>,
+    /// The revision this update saw; a mismatch is `Conflict`, never a
+    /// silent overwrite of another agent's write.
+    #[serde(default)]
+    pub expected_rev: Option<u64>,
     /// The MCP client's self-reported name (also the activity label).
     #[serde(default)]
     pub client: Option<String>,
@@ -172,6 +240,7 @@ impl Sessions {
         {
             s.goal = goal;
             s.updated_ms = now;
+            s.rev += 1;
             let found = s.clone();
             Self::save(state, project, all)?;
             return Ok(found);
@@ -191,6 +260,7 @@ impl Sessions {
             doing: items(u.doing.as_deref().unwrap_or(&[]))?,
             todo: items(u.todo.as_deref().unwrap_or(&[]))?,
             summary: None,
+            rev: 1,
         };
         all.push(session.clone());
         Self::save(state, project, all)?;
@@ -212,6 +282,9 @@ impl Sessions {
         if s.status != "open" {
             return Err(Error::InvalidTransition);
         }
+        if u.expected_rev.is_some_and(|r| r != s.rev) {
+            return Err(Error::Conflict);
+        }
         if let Some(g) = &u.goal {
             s.goal = text(g, MAX_GOAL)?.ok_or(Error::InvalidRequest)?;
         }
@@ -226,6 +299,7 @@ impl Sessions {
         }
         let now = now_ms();
         s.updated_ms = now;
+        s.rev += 1;
         if close {
             s.status = "closed".into();
             s.closed_ms = Some(now);
@@ -295,11 +369,22 @@ mod tests {
             .unwrap();
         assert_ne!(other.id, a.id);
         let mut u = update(&a.id);
-        u.doing = Some(vec!["Writing tests".into(), "  ".into()]);
-        u.todo = Some(vec!["Docs".into()]);
+        u.doing = Some(vec![NewItem {
+            id: None,
+            text: "Writing tests".into(),
+            depends_on: vec![],
+        }]);
+        u.todo = Some(vec![NewItem {
+            id: Some("docs".into()),
+            text: "Docs".into(),
+            depends_on: vec![],
+        }]);
         let w = s.update(&st, "alpha", u, false).unwrap();
-        assert_eq!(w.doing, ["Writing tests"]);
+        assert_eq!(w.doing[0].text, "Writing tests");
+        assert_eq!(w.todo[0].id, "docs");
+        assert_eq!(w.rev, 3, "start, resume, update");
         let mut c = update(&a.id);
+        c.expected_rev = Some(w.rev);
         c.summary = Some("Done; docs left.".into());
         let closed = s.update(&st, "alpha", c, true).unwrap();
         assert_eq!(closed.status, "closed");
@@ -314,6 +399,77 @@ mod tests {
         assert!(s.list(&st, "beta").unwrap().is_empty(), "per project");
         s.delete(&st, "alpha", &a.id).unwrap();
         assert_eq!(s.list(&st, "alpha").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn items_carry_ids_and_dependencies_and_updates_are_cas_guarded() {
+        let (_d, st) = state();
+        let s = Sessions::new();
+        let a = s
+            .start(
+                &st,
+                "alpha",
+                Update {
+                    goal: Some("g".into()),
+                    todo: Some(vec![
+                        NewItem {
+                            id: Some("parser".into()),
+                            text: "Parser".into(),
+                            depends_on: vec![],
+                        },
+                        NewItem {
+                            id: None,
+                            text: "Wire it".into(),
+                            depends_on: vec!["parser".into()],
+                        },
+                    ]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(a.todo[0].id, "parser");
+        assert_eq!(a.todo[1].depends_on, ["parser"]);
+        assert!(valid_item_id(&a.todo[1].id), "an id was assigned");
+        let item = |id: Option<&str>, text: &str, deps: &[&str]| NewItem {
+            id: id.map(str::to_owned),
+            text: text.into(),
+            depends_on: deps.iter().map(|d| d.to_string()).collect(),
+        };
+        // Dependencies name an item of the same list, never themselves; ids
+        // are unique and bounded; empty text is refused.
+        for bad in [
+            vec![item(None, "x", &["nope"])],
+            vec![item(Some("a"), "x", &[]), item(Some("a"), "y", &[])],
+            vec![item(Some("a"), "x", &["a"])],
+            vec![item(Some("BAD ID"), "x", &[])],
+            vec![item(None, "  ", &[])],
+        ] {
+            let mut u = update(&a.id);
+            u.todo = Some(bad);
+            assert_eq!(
+                s.update(&st, "alpha", u, false).err(),
+                Some(Error::InvalidRequest)
+            );
+        }
+        assert_eq!(
+            s.list(&st, "alpha").unwrap()[0].rev,
+            a.rev,
+            "refusals write nothing"
+        );
+        // CAS: the revision seen applies; a stale one is refused.
+        let mut ok = update(&a.id);
+        ok.expected_rev = Some(a.rev);
+        ok.goal = Some("renamed".into());
+        let w = s.update(&st, "alpha", ok, false).unwrap();
+        assert_eq!(w.rev, a.rev + 1);
+        let mut stale = update(&a.id);
+        stale.expected_rev = Some(a.rev);
+        stale.goal = Some("clobber".into());
+        assert_eq!(
+            s.update(&st, "alpha", stale, false).err(),
+            Some(Error::Conflict)
+        );
+        assert_eq!(s.list(&st, "alpha").unwrap()[0].goal, "renamed");
     }
 
     #[test]
@@ -333,7 +489,14 @@ mod tests {
             Some(Error::InvalidRequest)
         );
         let mut too_many = goal("g".into());
-        too_many.todo = Some(vec!["t".into(); MAX_ITEMS + 1]);
+        too_many.todo = Some(vec![
+            NewItem {
+                id: None,
+                text: "t".into(),
+                depends_on: vec![],
+            };
+            MAX_ITEMS + 1
+        ]);
         assert_eq!(
             s.start(&st, "alpha", too_many).err(),
             Some(Error::InvalidRequest)

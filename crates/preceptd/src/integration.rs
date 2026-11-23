@@ -150,13 +150,29 @@ pub enum Vendor {
     /// [{command}]}}`; the gate answers `beforeShellExecution` only (Cursor
     /// documents no pre-write input).
     Cursor,
+    /// Qoder (international): `~/.qoder/settings.json`, the same hook shape
+    /// as Claude Code (the file also holds the MCP entry).
+    Qoder,
+    /// Qoder CN: `~/.qoder-cn/settings.json`, the same shape as Qoder.
+    QoderCn,
+    /// CodeBuddy: `~/.codebuddy/settings.json`, the same hook shape as Claude
+    /// Code (its MCP entry lives in `~/.codebuddy/mcp.json`; hook edits made
+    /// outside the CLI are reviewed in its `/hooks` panel before running).
+    CodeBuddy,
+    /// WorkBuddy: `~/.workbuddy/settings.json`, the same hook shape as Claude
+    /// Code (its MCP entry lives in `~/.workbuddy/mcp.json`).
+    WorkBuddy,
 }
 impl Vendor {
-    pub const ALL: [Vendor; 4] = [
+    pub const ALL: [Vendor; 8] = [
         Vendor::Claude,
         Vendor::Codex,
         Vendor::Antigravity,
         Vendor::Cursor,
+        Vendor::Qoder,
+        Vendor::QoderCn,
+        Vendor::CodeBuddy,
+        Vendor::WorkBuddy,
     ];
     fn file(self) -> (&'static str, &'static str) {
         match self {
@@ -164,6 +180,10 @@ impl Vendor {
             Vendor::Codex => (".codex", "hooks.json"),
             Vendor::Antigravity => (".gemini/config", "hooks.json"),
             Vendor::Cursor => (".cursor", "hooks.json"),
+            Vendor::Qoder => (".qoder", "settings.json"),
+            Vendor::QoderCn => (".qoder-cn", "settings.json"),
+            Vendor::CodeBuddy => (".codebuddy", "settings.json"),
+            Vendor::WorkBuddy => (".workbuddy", "settings.json"),
         }
     }
     fn name(self) -> &'static str {
@@ -172,6 +192,10 @@ impl Vendor {
             Vendor::Codex => "codex",
             Vendor::Antigravity => "antigravity",
             Vendor::Cursor => "cursor",
+            Vendor::Qoder => "qoder",
+            Vendor::QoderCn => "qoder_cn",
+            Vendor::CodeBuddy => "codebuddy",
+            Vendor::WorkBuddy => "workbuddy",
         }
     }
 }
@@ -187,6 +211,9 @@ pub enum HookEvent {
     /// After a file read: warn when committed claims about it fail (Claude
     /// Code only; other harnesses document no read hook that passes context).
     PostRead,
+    /// Before the harness compacts the conversation: remind the agent to
+    /// keep its work session current (Claude Code and Qoder).
+    PreCompact,
 }
 impl HookEvent {
     /// The event's key in `vendor`'s configuration.
@@ -197,6 +224,7 @@ impl HookEvent {
             (Self::SessionStart, _) => "SessionStart",
             (Self::PreTool, _) => "PreToolUse",
             (Self::PostRead, _) => "PostToolUse",
+            (Self::PreCompact, _) => "PreCompact",
         }
     }
     /// The tool matcher a pre-tool entry carries: shell commands and file
@@ -204,7 +232,14 @@ impl HookEvent {
     fn matcher(self, vendor: Vendor) -> Option<&'static str> {
         match (self, vendor) {
             (Self::SessionStart, _) => None,
-            (Self::PreTool, Vendor::Claude) => Some("Bash|Write|Edit|MultiEdit|NotebookEdit"),
+            (
+                Self::PreTool,
+                Vendor::Claude
+                | Vendor::Qoder
+                | Vendor::QoderCn
+                | Vendor::CodeBuddy
+                | Vendor::WorkBuddy,
+            ) => Some("Bash|Write|Edit|MultiEdit|NotebookEdit"),
             (Self::PreTool, Vendor::Codex) => Some("Bash|apply_patch"),
             (Self::PreTool, Vendor::Antigravity) => {
                 Some("run_command|write_to_file|replace_file_content|multi_replace_file_content")
@@ -212,6 +247,7 @@ impl HookEvent {
             // beforeShellExecution judges every command.
             (Self::PreTool, Vendor::Cursor) => None,
             (Self::PostRead, _) => Some("Read"),
+            (Self::PreCompact, _) => None,
         }
     }
 }
@@ -227,13 +263,16 @@ pub struct HookLaunch {
     pub root: PathBuf,
 }
 
-/// A POSIX shell word: plain when safe, else single-quoted.
+/// A shell word: plain when safe, else quoted — single quotes for POSIX
+/// shells, double quotes on Windows (cmd.exe does not read single quotes).
 fn word(s: &str) -> String {
     let plain = !s.is_empty()
         && s.bytes()
             .all(|b| b.is_ascii_alphanumeric() || b"-_./:=@+,".contains(&b));
     if plain {
         s.to_owned()
+    } else if cfg!(windows) {
+        format!("\"{}\"", s.replace('"', "\\\""))
     } else {
         format!("'{}'", s.replace('\'', "'\\''"))
     }
@@ -241,7 +280,18 @@ fn word(s: &str) -> String {
 
 /// The exact command written for `vendor`, `project` and `event`.
 pub fn command(launch: &HookLaunch, vendor: Vendor, project: &str, event: HookEvent) -> String {
-    let path = |p: &Path| p.to_string_lossy().into_owned();
+    // Windows shells (cmd and Git Bash alike) read forward slashes; Git Bash
+    // cannot execute a quoted backslash path at all. The canonicalize verbatim
+    // prefix goes first: it is not part of the path a shell should see.
+    let path = |p: &Path| {
+        let s = p.to_string_lossy().into_owned();
+        if cfg!(windows) {
+            let s = s.strip_prefix(r"\\?\").unwrap_or(&s);
+            s.replace('\\', "/")
+        } else {
+            s
+        }
+    };
     let mut words = vec![
         word(&path(&launch.hook)),
         "--vendor".into(),
@@ -261,6 +311,7 @@ pub fn command(launch: &HookLaunch, vendor: Vendor, project: &str, event: HookEv
         HookEvent::SessionStart => {}
         HookEvent::PreTool => words.extend(["--event".into(), "pre-tool".into()]),
         HookEvent::PostRead => words.extend(["--event".into(), "post-read".into()]),
+        HookEvent::PreCompact => words.extend(["--event".into(), "pre-compact".into()]),
     }
     words.join(" ")
 }
@@ -269,6 +320,10 @@ pub fn command(launch: &HookLaunch, vendor: Vendor, project: &str, event: HookEv
 /// of the command).
 fn ours(cmd: &str, project: &str, event: HookEvent) -> bool {
     let first = cmd.split_whitespace().next().unwrap_or("");
+    let first = first.trim_matches(|c| c == '\'' || c == '"');
+    let first = first
+        .strip_suffix(std::env::consts::EXE_SUFFIX)
+        .unwrap_or(first);
     let words: Vec<&str> = cmd.split_whitespace().collect();
     let named = words
         .windows(2)
@@ -278,11 +333,12 @@ fn ours(cmd: &str, project: &str, event: HookEvent) -> bool {
         HookEvent::SessionStart => "session-start",
         HookEvent::PreTool => "pre-tool",
         HookEvent::PostRead => "post-read",
+        HookEvent::PreCompact => "pre-compact",
     };
-    first.trim_matches('\'').ends_with("precept-hook")
+    first.ends_with("precept-hook")
         && words
             .windows(2)
-            .any(|w| w[0] == "--project" && w[1].trim_matches('\'') == project)
+            .any(|w| w[0] == "--project" && w[1].trim_matches(|c| c == '\'' || c == '"') == project)
         && named == wanted
 }
 
@@ -685,9 +741,10 @@ mod tests {
             "alpha",
             HookEvent::SessionStart,
         );
-        assert!(cmd.starts_with(
-            "/usr/bin/precept-hook --vendor claude --project alpha --root '/home/u/my repo'"
-        ));
+        assert!(cmd.starts_with(&format!(
+            "/usr/bin/precept-hook --vendor claude --project alpha --root {}",
+            word("/home/u/my repo")
+        )));
         let s = hook_status(home, Vendor::Claude, "alpha", &cmd, HookEvent::SessionStart).unwrap();
         assert_eq!(s["installed"], false);
         assert_eq!(s["file"], "~/.claude/settings.json");

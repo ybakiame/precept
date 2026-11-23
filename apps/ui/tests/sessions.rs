@@ -173,7 +173,7 @@ fn an_agents_work_session_is_shown_and_deleted() {
             .request(
                 "session.start",
                 json!({"goal":"Add import from files","client":"claude-code 2.1",
-                       "doing":["daemon scan"],"todo":["app dialog"],"done":["parser"]}),
+                       "doing":[{"text":"daemon scan"}],"todo":[{"text":"app dialog"}],"done":[{"text":"parser"}]}),
             )
             .await
             .unwrap()

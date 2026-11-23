@@ -51,7 +51,7 @@ fn work_moves_between_agents_through_their_sessions() {
     let agent = f.daemon.credential("agent-alpha.cap");
     let call = |method: &str, params: Value| f.daemon.call(&agent, method, params);
     let start = json!({"goal":"Add import from files","conversation":"conv-1","client":"claude-code 2.1",
-        "todo":["parser","daemon scan"]});
+        "todo":[{"id":"parser","text":"parser"},{"text":"daemon scan"}]});
     // Off until the operator allows this project's agents to write.
     assert_eq!(
         call("session.start", start.clone()),
@@ -66,15 +66,33 @@ fn work_moves_between_agents_through_their_sessions() {
     assert_eq!(s["agent"], "claude-code 2.1");
     // The same conversation finds its session again.
     assert_eq!(call("session.start", start).unwrap()["id"], id.as_str());
-    call(
+    let updated = call(
         "session.update",
-        json!({"id":id,"done":["parser"],"doing":["daemon scan"],"todo":["app dialog"]}),
+        json!({"id":id,"expected_rev":2,"done":[{"id":"parser","text":"parser"}],
+            "doing":[{"text":"daemon scan"}],"todo":[{"text":"app dialog"}]}),
     )
     .unwrap();
+    assert_eq!(updated["rev"], 3);
+    assert_eq!(
+        updated["todo"][0]["id"].as_str().unwrap().len(),
+        8,
+        "assigned"
+    );
+    // A stale revision never overwrites another agent's write.
+    assert_eq!(
+        call(
+            "session.update",
+            json!({"id":id,"expected_rev":1,"goal":"stale"})
+        ),
+        Err(Error::Conflict)
+    );
     // Every agent of the project reads it back: in context, and in the
     // briefing another harness gets at its session start.
     let context = call("context.get", json!({})).unwrap();
-    assert_eq!(context["work_sessions"][0]["doing"], json!(["daemon scan"]));
+    assert_eq!(
+        context["work_sessions"][0]["doing"][0]["text"],
+        "daemon scan"
+    );
     let out: Value = serde_json::from_str(&briefing(
         &f,
         "antigravity",
@@ -91,16 +109,19 @@ fn work_moves_between_agents_through_their_sessions() {
     // Closing keeps the summary; a closed session takes no more updates.
     let closed = call(
         "session.close",
-        json!({"id":id,"summary":"Parser and scan done; dialog left.","todo":["app dialog"]}),
+        json!({"id":id,"expected_rev":3,"summary":"Parser and scan done; dialog left.","todo":[{"text":"app dialog"}]}),
     )
     .unwrap();
     assert_eq!(closed["status"], "closed");
     assert_eq!(
-        call("session.update", json!({"id":id,"doing":["x"]})),
+        call("session.update", json!({"id":id,"doing":[{"text":"x"}]})),
         Err(Error::InvalidTransition)
     );
     assert_eq!(
-        call("session.update", json!({"id":"nope","doing":["x"]})),
+        call(
+            "session.update",
+            json!({"id":"nope","doing":[{"text":"x"}]})
+        ),
         Err(Error::NotFound)
     );
     // Agents cannot list or delete; the operator can.
@@ -227,7 +248,7 @@ fn a_closed_session_becomes_a_handoff_the_next_agent_resumes() {
         .to_owned();
     call(
         "session.close",
-        json!({"id":id,"summary":"Scan and dialog done.","todo":["Visual check"]}),
+        json!({"id":id,"summary":"Scan and dialog done.","todo":[{"text":"Visual check"}]}),
     )
     .unwrap();
     let handoff = |cap: &str, task: &str| {

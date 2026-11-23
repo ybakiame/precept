@@ -22,6 +22,16 @@ enum Vendor {
     Cursor,
     /// Antigravity's `SessionStart` hook (`~/.gemini/config/hooks.json`).
     Antigravity,
+    /// Qoder (`~/.qoder/settings.json`) and Qoder CN
+    /// (`~/.qoder-cn/settings.json`), which read the same hook shape as
+    /// Claude Code.
+    Qoder,
+    #[value(name = "qoder_cn")]
+    QoderCn,
+    /// CodeBuddy (`~/.codebuddy/settings.json`), Claude Code's hook shape.
+    CodeBuddy,
+    /// WorkBuddy (`~/.workbuddy/settings.json`), Claude Code's hook shape.
+    WorkBuddy,
 }
 impl Vendor {
     fn label(self) -> &'static str {
@@ -30,6 +40,10 @@ impl Vendor {
             Self::Codex => "codex hook",
             Self::Cursor => "cursor hook",
             Self::Antigravity => "antigravity hook",
+            Self::Qoder => "qoder hook",
+            Self::QoderCn => "qoder-cn hook",
+            Self::CodeBuddy => "codebuddy hook",
+            Self::WorkBuddy => "workbuddy hook",
         }
     }
 }
@@ -41,6 +55,9 @@ enum Event {
     /// After the agent read a file: warn when committed rules' claims about
     /// it fail (the document may be stale).
     PostRead,
+    /// Before the conversation is compacted: remind the agent to keep its
+    /// work session current so the work survives compaction.
+    PreCompact,
 }
 
 #[derive(Parser)]
@@ -205,11 +222,57 @@ fn read_output(vendor: Vendor, warning: &str) -> Option<Value> {
     }
 }
 
+/// The reminder shown before compaction: keep the work state in the
+/// project's sessions (the agent's own records), naming the open session
+/// when there is one.
+async fn compact_note(args: &Args) -> precept_ipc::Result<String> {
+    let mut client = connect(args).await?;
+    let context = client
+        .request(
+            "context.get",
+            json!({"include_documents":false,"client":args.vendor.label()}),
+        )
+        .await?;
+    let open = context["work_sessions"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|s| s["status"] == "open");
+    Ok(match open {
+        Some(s) => format!(
+            "Precept: this conversation is about to be compacted. Keep your work state in the project's sessions so it survives: if session `{}` (rev {}) is yours, bring it current with update_work_state (done, doing, todo, expected_rev); otherwise record your own with start_session. After compaction, call get_effective_context again.",
+            s["id"].as_str().unwrap_or("?"),
+            s["rev"].as_u64().unwrap_or(0)
+        ),
+        None => "Precept: this conversation is about to be compacted. If you are mid-task, record it with start_session (goal, done/doing/todo) so the work survives compaction and moves between agents. After compaction, call get_effective_context again.".to_owned(),
+    })
+}
+
+/// The pre-compaction reminder in `vendor`'s shape (`None`: say nothing).
+fn compact_output(vendor: Vendor, note: &str) -> Option<Value> {
+    match vendor {
+        Vendor::Claude | Vendor::Qoder | Vendor::QoderCn | Vendor::CodeBuddy => Some(json!({
+            "hookSpecificOutput": {"hookEventName": "PreCompact", "additionalContext": note}
+        })),
+        _ => None,
+    }
+}
+
 /// `path` relative to `root` (lexically: `.` and `..` resolved), or `None`
 /// when it is outside. A relative path is taken from `cwd`.
 fn repo_relative(root: &std::path::Path, cwd: &std::path::Path, path: &str) -> Option<String> {
     use std::path::Component;
-    let joined = cwd.join(path);
+    // Windows canonicalize yields a \\?\ verbatim prefix; joining an absolute
+    // input path drops it, so compare without it on both sides.
+    let plain = |p: &std::path::Path| -> std::path::PathBuf {
+        let s = p.to_string_lossy();
+        match s.strip_prefix(r"\\?\") {
+            Some(rest) => std::path::PathBuf::from(rest.to_owned()),
+            None => p.to_path_buf(),
+        }
+    };
+    let root = plain(root);
+    let joined = plain(cwd).join(path);
     let mut parts: Vec<std::ffi::OsString> = Vec::new();
     let mut prefix = std::path::PathBuf::new();
     for c in joined.components() {
@@ -224,7 +287,7 @@ fn repo_relative(root: &std::path::Path, cwd: &std::path::Path, path: &str) -> O
     }
     let mut full = prefix;
     full.extend(&parts);
-    let rest = full.strip_prefix(root).ok()?;
+    let rest = full.strip_prefix(&root).ok()?;
     let text: Vec<&str> = rest
         .components()
         .map(|c| c.as_os_str().to_str())
@@ -235,7 +298,12 @@ fn repo_relative(root: &std::path::Path, cwd: &std::path::Path, path: &str) -> O
 /// The gate's denial in `vendor`'s PreToolUse shape (`None`: say nothing).
 fn deny_output(vendor: Vendor, reason: &str) -> Option<Value> {
     match vendor {
-        Vendor::Claude | Vendor::Codex => Some(json!({
+        Vendor::Claude
+        | Vendor::Codex
+        | Vendor::Qoder
+        | Vendor::QoderCn
+        | Vendor::CodeBuddy
+        | Vendor::WorkBuddy => Some(json!({
             "hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
                 "permissionDecision": "deny",
@@ -360,7 +428,12 @@ fn moment(stdin: &[u8]) -> Moment {
 /// The briefing in `vendor`'s output shape.
 fn output(vendor: Vendor, briefing: &str) -> Value {
     match vendor {
-        Vendor::Claude | Vendor::Codex => json!({
+        Vendor::Claude
+        | Vendor::Codex
+        | Vendor::Qoder
+        | Vendor::QoderCn
+        | Vendor::CodeBuddy
+        | Vendor::WorkBuddy => json!({
             "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": briefing}
         }),
         Vendor::Cursor => json!({"additional_context": briefing}),
@@ -430,6 +503,20 @@ async fn main() {
         return;
     }
     if outside {
+        return;
+    }
+    if args.event == Event::PreCompact {
+        let run =
+            tokio::time::timeout(std::time::Duration::from_secs(4), compact_note(&args)).await;
+        match run {
+            Ok(Ok(note)) => {
+                if let Some(out) = compact_output(args.vendor, &note) {
+                    println!("{out}");
+                }
+            }
+            Ok(Err(e)) => eprintln!("precept-hook: compact note skipped ({e})"),
+            Err(_) => eprintln!("precept-hook: compact note skipped (timeout)"),
+        }
         return;
     }
     if args.event == Event::PostRead {
@@ -523,6 +610,22 @@ mod tests {
         assert_eq!(repo_relative(root, cwd, ".."), None);
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn verbatim_prefixes_do_not_hide_the_repository() {
+        let root = Path::new(r"\\?\C:\w\repo");
+        let cwd = Path::new(r"C:\w\repo\src");
+        assert_eq!(
+            repo_relative(root, cwd, "lib.rs").as_deref(),
+            Some("src/lib.rs")
+        );
+        assert_eq!(
+            repo_relative(root, cwd, r"C:\w\repo\docs\a.md").as_deref(),
+            Some("docs/a.md")
+        );
+        assert_eq!(repo_relative(root, cwd, r"C:\other\x"), None);
+    }
+
     #[test]
     fn denials_match_each_vendor() {
         let claude = deny_output(Vendor::Claude, "no").unwrap();
@@ -531,6 +634,10 @@ mod tests {
             claude["hookSpecificOutput"]["permissionDecisionReason"],
             "no"
         );
+        assert_eq!(deny_output(Vendor::Qoder, "no"), Some(claude.clone()));
+        assert_eq!(deny_output(Vendor::QoderCn, "no"), Some(claude.clone()));
+        assert_eq!(deny_output(Vendor::CodeBuddy, "no"), Some(claude.clone()));
+        assert_eq!(deny_output(Vendor::WorkBuddy, "no"), Some(claude.clone()));
         assert_eq!(deny_output(Vendor::Codex, "no"), Some(claude));
         assert_eq!(
             deny_output(Vendor::Antigravity, "no"),
@@ -561,6 +668,31 @@ mod tests {
             output(Vendor::Claude, "b")["hookSpecificOutput"]["additionalContext"],
             "b"
         );
+        assert_eq!(output(Vendor::Qoder, "b"), output(Vendor::Claude, "b"));
+        assert_eq!(output(Vendor::QoderCn, "b"), output(Vendor::Claude, "b"));
+        assert_eq!(output(Vendor::CodeBuddy, "b"), output(Vendor::Claude, "b"));
+        assert_eq!(output(Vendor::WorkBuddy, "b"), output(Vendor::Claude, "b"));
+        assert_eq!(
+            compact_output(Vendor::Qoder, "n"),
+            Some(json!({
+                "hookSpecificOutput": {"hookEventName": "PreCompact", "additionalContext": "n"}
+            }))
+        );
+        assert_eq!(
+            compact_output(Vendor::Claude, "n"),
+            compact_output(Vendor::Qoder, "n")
+        );
+        assert_eq!(
+            compact_output(Vendor::QoderCn, "n"),
+            compact_output(Vendor::Qoder, "n")
+        );
+        assert_eq!(
+            compact_output(Vendor::CodeBuddy, "n"),
+            compact_output(Vendor::Qoder, "n")
+        );
+        assert_eq!(compact_output(Vendor::WorkBuddy, "n"), None);
+        assert_eq!(compact_output(Vendor::Cursor, "n"), None);
+        assert_eq!(compact_output(Vendor::Antigravity, "n"), None);
         assert_eq!(output(Vendor::Cursor, "b")["additional_context"], "b");
         assert_eq!(
             output(Vendor::Antigravity, "b")["injectSteps"][0]["systemMessage"]["systemMessage"],

@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 use std::{fs, io::Write, process::Stdio};
 use support::*;
 
+#[cfg(unix)]
 fn run(cmd: &str, cwd: &std::path::Path) -> String {
     run_with(cmd, &json!({"source":"startup","cwd":cwd}))
 }
@@ -51,6 +52,13 @@ fn hooks_switch_on_brief_inside_the_project_only_and_switch_off() {
         .clone();
     assert_eq!(claude["installed"], false);
     assert_eq!(claude["file"], "~/.claude/settings.json");
+    let qoder = status["hooks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|h| h["vendor"] == "qoder_cn")
+        .unwrap();
+    assert_eq!(qoder["file"], "~/.qoder-cn/settings.json");
 
     let agent = f.daemon.credential("agent-alpha.cap");
     assert_eq!(
@@ -374,6 +382,7 @@ fn git(root: &std::path::Path, args: &[&str]) {
 }
 
 /// The gate entry the daemon wrote for `vendor`.
+#[cfg(unix)]
 fn gate_command(f: &Fixture, vendor: &str) -> String {
     let on = f
         .daemon
@@ -450,6 +459,10 @@ fn the_gate_denies_calls_that_break_a_committed_hard_rule_only_while_switched_on
             .contains("has now blocked 3 tool calls"),
         "{v}"
     );
+    // Qoder CN reads the same shape as Claude Code.
+    let qoder = gate_command(&f, "qoder");
+    let v: Value = serde_json::from_str(&run_with(&qoder, &push)).unwrap();
+    assert_eq!(v["hookSpecificOutput"]["permissionDecision"], "deny");
     // Cursor's beforeShellExecution: an explicit answer every time, since
     // Cursor blocks on empty output.
     let cursor = gate_command(&f, "cursor");
@@ -509,7 +522,7 @@ fn the_gate_denies_calls_that_break_a_committed_hard_rule_only_while_switched_on
     let context = f.daemon.call(&agent, "context.get", json!({})).unwrap();
     let denials = context["gate_denials"].as_array().unwrap();
     assert_eq!(denials[0]["rule"], "release");
-    assert_eq!(denials[0]["count"], 4, "{denials:?}");
+    assert_eq!(denials[0]["count"], 5, "{denials:?}");
     assert_eq!(denials.len(), 1);
     // The edited rule file is not committed: explain says so.
     let why = f

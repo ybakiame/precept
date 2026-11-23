@@ -87,7 +87,10 @@ commits or writes any other file. `precept project pointer` exposes both.
 
 Operator-only `integration.hooks {project}` reports, for Claude Code
 (`~/.claude/settings.json`), Codex (`~/.codex/hooks.json`), Antigravity
-(`~/.gemini/config/hooks.json`) and Cursor (`~/.cursor/hooks.json`) in the daemon user's home: `file`, `exists`, `sha256`, `malformed` (not a JSON object), `installed`,
+(`~/.gemini/config/hooks.json`), Cursor (`~/.cursor/hooks.json`), Qoder
+(`~/.qoder/settings.json`), Qoder CN (`~/.qoder-cn/settings.json`), CodeBuddy
+(`~/.codebuddy/settings.json`) and WorkBuddy (`~/.workbuddy/settings.json`) —
+the last four read the same hook shape as Claude Code — in the daemon user's home: `file`, `exists`, `sha256`, `malformed` (not a JSON object), `installed`,
 `current` (installed exactly as written now) and the exact `command`, or
 `available: false` when no `precept-hook` ships beside `precept-mcp`.
 `integration.hooks.apply {project, vendor, enabled, expected_sha256}` adds
@@ -106,15 +109,20 @@ approve a new hook once.
 
 The same methods take `event: "pre_tool"` (default `session_start`) for the
 pre-tool gate entry: its command adds `--event pre-tool`, and it sits under
-`PreToolUse` in a group with a tool matcher (Claude Code
+`PreToolUse` in a group with a tool matcher (Claude Code, Qoder, Qoder CN,
+CodeBuddy and WorkBuddy
 `Bash|Write|Edit|MultiEdit|NotebookEdit`, Codex `Bash|apply_patch`, Antigravity
 `run_command|write_to_file|replace_file_content|multi_replace_file_content`);
 Cursor's gate entry sits under `beforeShellExecution` without a matcher, so Cursor
 is asked about shell commands only (it documents no hook before a file write).
 `event: "post_read"` (Claude Code only; other vendors are `Unsupported`) adds the
 stale-document warning: `--event post-read` under `PostToolUse` with matcher
-`Read`, listed under `read_hooks`. Session-start, gate and read entries are added
-and removed independently. The status
+`Read`, listed under `read_hooks`. `event: "pre_compact"` (Claude Code, Qoder,
+Qoder CN and CodeBuddy only; other vendors are `Unsupported` — WorkBuddy's
+desktop build has no verified PreCompact firing) adds the work-state reminder
+before the harness compacts the conversation: `--event pre-compact` under
+`PreCompact`, listed under `compact_hooks`. Session-start, gate, read and
+compact entries are added and removed independently. The status
 lists them under `gate_hooks`, with `gate`, the project's switch. Operator-only
 `project.gate {name, enabled}` turns the gate on or off (off by default; persisted
 in daemon state; a project rejoins with it off).
@@ -138,8 +146,10 @@ carry `rule`, and the Sessions page shows it beside a denial.
 Operator-only `integration.mcp {}` reports, for Claude Code
 (`~/.claude.json`, `mcpServers`), Codex (`~/.codex/config.toml`,
 `[mcp_servers."precept"]`), Antigravity
-(`~/.gemini/config/mcp_config.json`, `mcpServers`) and Cursor (`~/.cursor/mcp.json`,
-`mcpServers`) in the daemon user's home:
+(`~/.gemini/config/mcp_config.json`, `mcpServers`), Cursor (`~/.cursor/mcp.json`,
+`mcpServers`), Qoder (`~/.qoder/settings.json`) and Qoder CN
+(`~/.qoder-cn/settings.json`, `mcpServers` beside their hooks), CodeBuddy
+(`~/.codebuddy/mcp.json`) and WorkBuddy (`~/.workbuddy/mcp.json`) in the daemon user's home:
 `file`, `server`, `exists`, `sha256`, `malformed`, `installed` and `current` (the
 entry starts this daemon's `precept-mcp` exactly) and `legacy` (older per-project
 `precept-<name>` entries launching `precept-mcp`), or `available: false` without
@@ -218,30 +228,38 @@ with `outcome` (`delivered` or `not_delivered`), `reason` (`delivered`,
 `context.explain`, is `InvalidRequest`.
 
 Work sessions: `start_session {goal, conversation_id?, done?, doing?, todo?}`,
-`update_work_state {session_id, goal?, done?, doing?, todo?}` (each given list
-replaces the previous one) and `close_session {session_id, summary?, todo?}` call
-agent `session.start` / `session.update` / `session.close`. They are accepted
-only where the operator allows the project's agents to write
-(`project.propose`), need no write grant and never touch the Profile. A start
-with a conversation id returns the agent's open session for it, if any. Bounds:
-goal 500 characters, 12 items of 200 characters per list, summary 1000, 20
-sessions per project (closed ones are dropped first). A closed session takes no
-updates (`InvalidTransition`); an unknown id is `NotFound`. Agent and operator
+`update_work_state {session_id, goal?, expected_rev?, done?, doing?, todo?}`
+(each given list replaces the previous one) and `close_session {session_id,
+summary?, expected_rev?, todo?}` call agent `session.start` / `session.update` /
+`session.close`. They are accepted only where the operator allows the project's
+agents to write (`project.propose`), need no write grant and never touch the
+Profile. A start with a conversation id returns the agent's open session for it,
+if any. Work items are objects `{id?, text, depends_on?}`: the id is a stable
+lowercase label (letters, digits, hyphens, at most 24 characters; assigned when
+omitted), unique within its list; a `depends_on` entry names another item of the
+same list that must finish first (never the item itself). Every session carries
+`rev`, counting its writes; an update or close naming an `expected_rev` that no
+longer matches is `Conflict`, never a silent overwrite of another agent's write.
+Bounds: goal 500 characters, 12 items of 200 characters per list, summary 1000,
+20 sessions per project (closed ones are dropped first). A closed session takes
+no updates (`InvalidTransition`); an unknown id is `NotFound`. Agent and operator
 `context.get` add `work_sessions` (at most five: open first, then recently
 closed, newest first), which the session-start briefing renders as **Work in
-progress**. Operator `sessions.list {project}` returns every session and
-`sessions.delete {project, id}` removes one. Operator-write `sessions.handoff
-{project, id, task_id}` saves a session as a new Handoff through the ordinary
-reviewed write (`put_handoff`, expected absent, so a taken task id is `Conflict`):
-the goal as objective, done items and summary as completed, todo items as next
-action, no validation entries, and the repository's revision, branch, state and
-worktree fingerprint read by the daemon at that moment, never supplied by the
-caller. Calls are in the activity log as
+progress** (the items' text). Operator `sessions.list {project}` returns every
+session and `sessions.delete {project, id}` removes one. Operator-write
+`sessions.handoff {project, id, task_id}` saves a session as a new Handoff
+through the ordinary reviewed write (`put_handoff`, expected absent, so a taken
+task id is `Conflict`): the goal as objective, done items' text and summary as
+completed, todo items' text as next action, no validation entries, and the
+repository's revision, branch, state and worktree fingerprint read by the daemon
+at that moment, never supplied by the caller. Calls are in the activity log as
 `session`.
 
-Project memory: `remember {kind, title, body}`, `recall {query?, kind?, limit?}`,
-`reaffirm {id}` and `forget {id}` call agent `memory.remember` /
-`memory.recall` / `memory.reaffirm` / `memory.forget`. Kinds: `environment`
+Project memory: `remember {kind, title, body}`, `recall {query?, kind?, limit?,
+index?}` (or `recall {id}` alone, which fetches one note's full text through
+agent `memory.get {id}` without counting a recall), `reaffirm {id, basis?}` and
+`forget {id}` call agent `memory.remember` / `memory.recall` / `memory.get` /
+`memory.reaffirm` / `memory.forget`. Kinds: `environment`
 (facts about this machine), `caution`, `lesson`, `attempt`. Memory is agents'
 own notes, unreviewed: accepted only where the operator allows the project's
 agents to write (`project.propose`), needing no write grant, kept in the
@@ -259,7 +277,13 @@ weighted). `recall` splits the query into terms (its words, lowercase; a run of
 more than two CJK characters also gives its overlapping pairs; at most 32),
 returns notes matching at least one term, ranked by matched terms (a title match
 counting double) and then weight, at most 20, and counts a recall for each
-returned note. A caution, lesson or attempt confirmed three times is filed once
+returned note. With `index: true` the matches come back as one-line summaries
+(`id`, `kind`, `title`, `weight`, no body) for the agent to pick from before
+fetching full text by id. Every read carries `unverified_days` (days since the
+last confirmation); from 7 days it also carries a `notice` telling the agent
+to verify the note against the current code before relying on it. `reaffirm`
+may state a `basis` (at most 300 characters: what verified the note), kept on
+the note until a correction. A caution, lesson or attempt confirmed three times is filed once
 as a suggested project rule through the agent-suggestion path (key from its
 title, its text as the value, tags `<kind>` and `memory`; only where agents may
 suggest and writes are on; never confirmed); the note records it as `proposed`.
@@ -279,12 +303,13 @@ pins kept. Agent calls are in the activity log as `memory`.
 `get_effective_context` before planning or editing and again after compaction,
 and that repository files and contracts outrank preferences.
 
-`precept-hook --vendor claude|codex|cursor|antigravity` (same location, project and capability
+`precept-hook --vendor claude|codex|cursor|antigravity|qoder|qoder_cn|codebuddy|workbuddy` (same location, project and capability
 arguments as `precept-mcp`) is the read-only session-start hook. It reads the
 harness's hook input (only `source`; `compact` adds a resume note), calls agent
 `context.get` with the client label `<vendor> hook`, and prints a bounded (12 KiB)
 Markdown briefing of the effective contracts and confirmed preferences in the
-harness's shape: `hookSpecificOutput.additionalContext` for Claude Code and Codex,
+harness's shape: `hookSpecificOutput.additionalContext` for Claude Code, Codex,
+Qoder, Qoder CN, CodeBuddy and WorkBuddy,
 `additional_context` for Cursor, and `injectSteps: [{systemMessage: {systemMessage}}]`
 for Antigravity. With `--root`, a session whose working directory (the input's
 `cwd`, else any of Antigravity's `workspacePaths` or Cursor's `workspace_roots`,
@@ -293,15 +318,16 @@ root gets nothing at all. Any
 refusal or a 4 s timeout prints nothing on stdout, exits 0 and writes one
 sanitized line to stderr (fail-open).
 
-`precept-hook --event pre-tool` reads the PreToolUse input (Claude Code and Codex:
+`precept-hook --event pre-tool` reads the PreToolUse input (Claude Code, Codex,
+Qoder, Qoder CN, CodeBuddy and WorkBuddy:
 `tool_name` / `tool_input` with `Bash` `command`, `Write`/`Edit`/`MultiEdit`
 `file_path`, `NotebookEdit` `notebook_path`, Codex `apply_patch` file headers;
 Antigravity: `toolCall.name` / `toolCall.args` with `run_command` `CommandLine` and
 `write_to_file` / `replace_file_content` / `multi_replace_file_content`
 `TargetFile`; Cursor: `beforeShellExecution` with `command` and `cwd`), makes written paths relative to the project root (dropping paths
 outside it) and asks `gate.check`. A denial prints
-`hookSpecificOutput.permissionDecision: "deny"` with the reason for Claude Code and
-Codex, `{decision: "deny", reason}` for Antigravity and `{permission: "deny",
+`hookSpecificOutput.permissionDecision: "deny"` with the reason for Claude Code,
+Codex, Qoder, Qoder CN, CodeBuddy and WorkBuddy, `{decision: "deny", reason}` for Antigravity and `{permission: "deny",
 user_message, agent_message}` for Cursor; anything else prints nothing
 (fail-open), except for Cursor, which blocks on empty output and is answered
 `{permission: "allow"}`, also outside the project and when Precept cannot answer.
@@ -316,14 +342,23 @@ file, failure}`. When there are any, it prints
 out of date, with each failing claim. Otherwise, and on any error, it prints
 nothing.
 
+`precept-hook --event pre-compact` (Claude Code, Qoder, Qoder CN and CodeBuddy) calls agent
+`context.get` and prints `hookSpecificOutput.additionalContext` (event
+`PreCompact`): the conversation is about to be compacted, so keep the work state
+in the project's sessions — bring the open session current with
+`update_work_state` (its id and `expected_rev` are named) or record one with
+`start_session` — and call `get_effective_context` again after compaction. It
+writes nothing itself: a Handoff stays the operator's write. On any error it
+prints nothing (fail-open); other vendors print nothing.
+
 | Tool | Inputs | Outputs | Side effects |
 | --- | --- | --- | --- |
 | `get_effective_context` | optional boolean `include_documents`; optional `selector` object | compatible confirmed preferences, effective repository contracts, explicit resolution status, bounded metadata and opt-in allowlisted documents | Read-only |
 | `explain_rule` | string `key`; optional `selector` | every rule of the key with outcome and reason | Read-only |
 | `get_handoff` | exact string `task_id` | saved task/revision and historical checks, current Git state and drift warnings | Read-only |
 | `suggest_rule` | `scope`, `key`, `value`, optional `tags`, `applies_to`, `enforcement`, `replaces` | the suggestion's id; never active until confirmed | A `suggested` record, where allowed and writes are on |
-| `start_session`, `update_work_state`, `close_session` | goal and done / doing / todo lists, summary | the session | Daemon-private session record, where allowed |
-| `remember`, `recall`, `reaffirm`, `forget` | kind, title, body; query; note id | the note(s) | Daemon-private project memory, where allowed (`recall` counts recalls) |
+| `start_session`, `update_work_state`, `close_session` | goal and done / doing / todo item lists (`{id?, text, depends_on?}`), optional `expected_rev`, summary | the session with its `rev` | Daemon-private session record, where allowed; a stale `expected_rev` is `Conflict` |
+| `remember`, `recall`, `reaffirm`, `forget` | kind, title, body; query or note id (optional index flag); note id and optional basis | the note(s) or index lines | Daemon-private project memory, where allowed (`recall` counts recalls; a fetch by id does not) |
 
 The optional `selector` contains only `agent_id`, `path`, `language`, `task_tags`.
 These are caller-supplied applicability labels, never authentication or permission

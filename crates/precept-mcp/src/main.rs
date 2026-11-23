@@ -25,6 +25,11 @@ fn tools() -> Value {
         "agent_id":{"type":"string"},"path":{"type":"string"},"language":{"type":"string"},
         "task_tags":{"type":"array","items":{"type":"string"},"maxItems":64}
     },"additionalProperties":false});
+    let item_list = json!({"type":"array","maxItems":12,"items":{"type":"object","properties":{
+        "id":{"type":"string","maxLength":24,"description":"A stable lowercase id (letters, digits, hyphens); assigned when omitted"},
+        "text":{"type":"string","maxLength":200},
+        "depends_on":{"type":"array","maxItems":12,"items":{"type":"string","maxLength":24},"description":"Ids of items in the same list that must finish first"}
+    },"required":["text"],"additionalProperties":false}});
     json!([
         {"name":"get_effective_context","description":"Call this first, before planning or editing in this project: returns the developer's confirmed preferences (with tags) and the repository's effective contracts that apply. Optional selector labels (agent_id, path, language, task_tags) narrow applicability; they are not authorization.","inputSchema":{"type":"object","properties":{"include_documents":{"type":"boolean","default":false},"selector":selector},"additionalProperties":false}},
         {"name":"explain_rule","description":"Why a rule key applies to your request or not: every rule of that key (the developer's, the project's, the repository's), each delivered or not with the reason (not confirmed, switched off, applies elsewhere, replaced by a repository rule, value not allowed, outranked, uncommitted). Use it when a rule you expected is missing or two seem to disagree. Read-only.","inputSchema":{"type":"object","properties":{"key":{"type":"string","maxLength":120},"selector":selector},"required":["key"],"additionalProperties":false}},
@@ -43,33 +48,38 @@ fn tools() -> Value {
             "enforcement":{"type":"string","enum":["advisory","verify","hard"]},
             "replaces":{"type":"integer","minimum":1,"description":"The id of the confirmed rule this updates (same scope); key may then be left out"}
         },"required":["scope","value"],"additionalProperties":false}},
-        {"name":"start_session","description":"Start (or resume) your work session in this project and say what you are working on. Other agents of this project see open sessions at their start, so work can continue across agents and after compaction. Call it once your task is clear; pass the conversation id if you have one, so the same conversation finds its session again.","inputSchema":{"type":"object","properties":{
+        {"name":"start_session","description":"Start (or resume) your work session in this project and say what you are working on. Other agents of this project see open sessions at their start, so work can continue across agents and after compaction. Call it once your task is clear; pass the conversation id if you have one, so the same conversation finds its session again. Work items are objects with a text and an optional stable id; a todo item may name the ids it depends on.","inputSchema":{"type":"object","properties":{
             "goal":{"type":"string","maxLength":500},
             "conversation_id":{"type":"string","maxLength":128},
-            "done":{"type":"array","items":{"type":"string","maxLength":200},"maxItems":12},"doing":{"type":"array","items":{"type":"string","maxLength":200},"maxItems":12},"todo":{"type":"array","items":{"type":"string","maxLength":200},"maxItems":12}
+            "done":item_list,"doing":item_list,"todo":item_list
         },"required":["goal"],"additionalProperties":false}},
-        {"name":"update_work_state","description":"Keep your session's work state current: what is done, what you are doing, what is next (each list replaces the previous one). Update it when a step finishes and before your context is compacted.","inputSchema":{"type":"object","properties":{
+        {"name":"update_work_state","description":"Keep your session's work state current: what is done, what you are doing, what is next (each list replaces the previous one; keep the ids of items that stay). Pass expected_rev from the session's last answer so another agent's update is not silently overwritten; on Conflict, read the session again and retry. Update it when a step finishes and before your context is compacted.","inputSchema":{"type":"object","properties":{
             "session_id":{"type":"string"},
             "goal":{"type":"string","maxLength":500},
-            "done":{"type":"array","items":{"type":"string","maxLength":200},"maxItems":12},"doing":{"type":"array","items":{"type":"string","maxLength":200},"maxItems":12},"todo":{"type":"array","items":{"type":"string","maxLength":200},"maxItems":12}
+            "expected_rev":{"type":"integer","minimum":0},
+            "done":item_list,"doing":item_list,"todo":item_list
         },"required":["session_id"],"additionalProperties":false}},
-        {"name":"close_session","description":"Close your work session when the task is finished or handed over, with a short summary of the outcome and anything left for the next agent.","inputSchema":{"type":"object","properties":{
+        {"name":"close_session","description":"Close your work session when the task is finished or handed over, with a short summary of the outcome and anything left for the next agent. Pass expected_rev from the session's last answer.","inputSchema":{"type":"object","properties":{
             "session_id":{"type":"string"},
             "summary":{"type":"string","maxLength":1000},
-            "todo":{"type":"array","items":{"type":"string","maxLength":200},"maxItems":12}
+            "expected_rev":{"type":"integer","minimum":0},
+            "todo":item_list
         },"required":["session_id"],"additionalProperties":false}},
         {"name":"remember","description":"Keep a note in this project's memory so the next agent, harness or model knows it: kind environment (a fact about this machine: toolchain, path, service), caution (a pitfall or a step that must come first), lesson (a way of working that proved right) or attempt (what you tried and how it went, failures included). Notes are yours to keep current, not reviewed rules: rules and the current code win. Writing the same kind and title again updates that note (the same text reaffirms it). Keep notes short and specific; no secrets or personal data.","inputSchema":{"type":"object","properties":{
             "kind":{"type":"string","enum":["environment","caution","lesson","attempt"]},
             "title":{"type":"string","maxLength":120},
             "body":{"type":"string","maxLength":2000}
         },"required":["kind","title","body"],"additionalProperties":false}},
-        {"name":"recall","description":"Search this project's memory (notes agents kept): by words in the title or text and/or by kind. Your briefing lists the environment and the most relevant notes; recall the rest when a task touches them, before trying something that may have been tried.","inputSchema":{"type":"object","properties":{
+        {"name":"recall","description":"Search this project's memory (notes agents kept): by words in the title or text and/or by kind. With index=true, matches come back as one-line summaries (id, kind, title, weight) instead of full text; pass a note's id alone to fetch its full text. Your briefing lists the environment and the most relevant notes; recall the rest when a task touches them, before trying something that may have been tried.","inputSchema":{"type":"object","properties":{
             "query":{"type":"string","maxLength":200},
             "kind":{"type":"string","enum":["environment","caution","lesson","attempt"]},
-            "limit":{"type":"integer","minimum":1,"maximum":20}
+            "limit":{"type":"integer","minimum":1,"maximum":20},
+            "index":{"type":"boolean","default":false},
+            "id":{"type":"string","description":"Fetch this note's full text instead of searching"}
         },"additionalProperties":false}},
-        {"name":"reaffirm","description":"Mark a memory note (its id from the briefing or recall) as still true, after you relied on it and it held.","inputSchema":{"type":"object","properties":{
-            "id":{"type":"string"}
+        {"name":"reaffirm","description":"Mark a memory note (its id from the briefing or recall) as still true, after you relied on it and it held. Optionally state the basis: what verified it.","inputSchema":{"type":"object","properties":{
+            "id":{"type":"string"},
+            "basis":{"type":"string","maxLength":300}
         },"required":["id"],"additionalProperties":false}},
         {"name":"forget","description":"Remove a memory note (its id) that is no longer true. To change a note, remember it again with the same kind and title instead.","inputSchema":{"type":"object","properties":{
             "id":{"type":"string"}
@@ -120,13 +130,17 @@ fn memory_reply(method: &str, result: Result<Value, Error>) -> Value {
     let text = match result {
         Ok(v) => {
             let line = |e: &Value| {
-                format!(
+                let mut out = format!(
                     "- [{}] {} ({}): {}",
                     e["kind"].as_str().unwrap_or("?"),
                     e["title"].as_str().unwrap_or("?"),
                     e["id"].as_str().unwrap_or("?"),
                     e["body"].as_str().unwrap_or("")
-                )
+                );
+                if let Some(notice) = e["notice"].as_str() {
+                    out.push_str(&format!(" — {notice}"));
+                }
+                out
             };
             let text = match method {
                 "memory.remember" => format!(
@@ -134,10 +148,25 @@ fn memory_reply(method: &str, result: Result<Value, Error>) -> Value {
                     v["status"].as_str().unwrap_or("kept"),
                     line(&v["entry"])
                 ),
+                "memory.get" => format!("Memory note: {}", line(&v["entry"])),
                 "memory.recall" => {
                     let entries = v["entries"].as_array().cloned().unwrap_or_default();
                     if entries.is_empty() {
                         "No memory notes match.".to_owned()
+                    } else if v["index"] == json!(true) {
+                        let mut out = String::from(
+                            "Memory index (agents' notes, unreviewed; fetch a note's full text with recall id=...):\n",
+                        );
+                        for e in &entries {
+                            out.push_str(&format!(
+                                "- [{}] {} ({} weight {})\n",
+                                e["kind"].as_str().unwrap_or("?"),
+                                e["title"].as_str().unwrap_or("?"),
+                                e["id"].as_str().unwrap_or("?"),
+                                e["weight"]
+                            ));
+                        }
+                        out
                     } else {
                         let mut out = String::from(
                             "Memory notes (agents' notes, unreviewed; rules and current code win):\n",
@@ -172,9 +201,11 @@ fn session_reply(result: Result<Value, Error>) -> Value {
     let text = match result {
         Ok(v) => {
             return json!({"content":[{"type":"text","text":format!(
-                "Session `{}` ({}). Keep it current with update_work_state; close it with close_session when done.",
+                "Session `{}` ({}, rev {}). Keep it current with update_work_state, passing expected_rev={} so another agent's update is not overwritten; close it with close_session when done.",
                 v.get("id").and_then(Value::as_str).unwrap_or("?"),
-                v.get("status").and_then(Value::as_str).unwrap_or("?")
+                v.get("status").and_then(Value::as_str).unwrap_or("?"),
+                v.get("rev").and_then(Value::as_u64).unwrap_or(0),
+                v.get("rev").and_then(Value::as_u64).unwrap_or(0)
             )}],"isError":false});
         }
         Err(Error::Unauthorized) => {
@@ -182,8 +213,11 @@ fn session_reply(result: Result<Value, Error>) -> Value {
         }
         Err(Error::NotFound) => "No such session in this project; start one with start_session.",
         Err(Error::InvalidTransition) => "That session is closed; start a new one.",
+        Err(Error::Conflict) => {
+            "Another agent updated this session since you read it. Read the current work_sessions (get_effective_context) and retry with the new expected_rev."
+        }
         Err(Error::InvalidRequest) => {
-            "Invalid work state: a goal is required (at most 500 characters); at most 12 items per list, 200 characters each."
+            "Invalid work state: a goal is required (at most 500 characters); at most 12 items per list, each an object with a text (at most 200 characters), an optional lowercase id and optional depends_on naming ids of the same list."
         }
         Err(_) => "Precept could not record the session. Do not retry; continue your task.",
     };
@@ -287,6 +321,21 @@ fn root_dirs(result: &Value) -> Vec<std::path::PathBuf> {
         .flatten()
         .filter_map(|r| r["uri"].as_str()?.strip_prefix("file://"))
         .map(percent_decode)
+        .map(|s| {
+            // `file:///C:/...` leaves a leading slash before the drive letter;
+            // Windows reads `/C:/...` as drive-relative and loses the folder.
+            let b = s.as_bytes();
+            if cfg!(windows)
+                && b.len() >= 3
+                && b[0] == b'/'
+                && b[1].is_ascii_alphabetic()
+                && b[2] == b':'
+            {
+                s[1..].to_owned()
+            } else {
+                s
+            }
+        })
         .map(std::path::PathBuf::from)
         .take(64)
         .collect()
@@ -405,16 +454,21 @@ impl Bridge {
             Some(tool @ ("remember" | "recall" | "reaffirm" | "forget")) => {
                 let (allowed, required): (&[&str], &[&str]) = match tool {
                     "remember" => (&["kind", "title", "body"], &["kind", "title", "body"]),
-                    "recall" => (&["query", "kind", "limit"], &[]),
+                    "recall" => (&["query", "kind", "limit", "index", "id"], &[]),
+                    "reaffirm" => (&["id", "basis"], &["id"]),
                     _ => (&["id"], &["id"]),
                 };
                 let typed = args.iter().all(|(k, v)| match k.as_str() {
                     "limit" => v.as_u64().is_some_and(|n| (1..=20).contains(&n)),
+                    "index" => v.is_boolean(),
                     _ => v.is_string(),
                 });
+                // Fetching by id takes no search arguments.
+                let exclusive = tool != "recall" || !args.contains_key("id") || args.len() == 1;
                 if args.keys().any(|k| !allowed.contains(&k.as_str()))
                     || required.iter().any(|k| !args.contains_key(*k))
                     || !typed
+                    || !exclusive
                 {
                     diagnose("memory tool refused: invalid arguments");
                     return Ok(tool_error("Invalid arguments: see the tool's schema"));
@@ -422,6 +476,7 @@ impl Bridge {
                 (
                     match tool {
                         "remember" => "memory.remember",
+                        "recall" if args.contains_key("id") => "memory.get",
                         "recall" => "memory.recall",
                         "reaffirm" => "memory.reaffirm",
                         _ => "memory.forget",
@@ -432,17 +487,43 @@ impl Bridge {
             Some(tool @ ("start_session" | "update_work_state" | "close_session")) => {
                 let allowed: &[&str] = match tool {
                     "start_session" => &["goal", "conversation_id", "done", "doing", "todo"],
-                    "update_work_state" => &["session_id", "goal", "done", "doing", "todo"],
-                    _ => &["session_id", "summary", "todo"],
+                    "update_work_state" => &[
+                        "session_id",
+                        "goal",
+                        "expected_rev",
+                        "done",
+                        "doing",
+                        "todo",
+                    ],
+                    _ => &["session_id", "summary", "expected_rev", "todo"],
                 };
                 let lists_ok = ["done", "doing", "todo"].iter().all(|k| {
                     args.get(*k).is_none_or(|v| {
-                        v.as_array().is_some_and(|a| a.iter().all(Value::is_string))
+                        v.as_array().is_some_and(|a| {
+                            a.len() <= 12
+                                && a.iter().all(|i| {
+                                    i.as_object().is_some_and(|o| {
+                                        o.keys().all(|k| {
+                                            ["id", "text", "depends_on"].contains(&k.as_str())
+                                        }) && o.get("text").is_some_and(Value::is_string)
+                                            && o.get("id").is_none_or(Value::is_string)
+                                            && o.get("depends_on").is_none_or(|d| {
+                                                d.as_array().is_some_and(|ds| {
+                                                    ds.len() <= 12
+                                                        && ds.iter().all(Value::is_string)
+                                                })
+                                            })
+                                    })
+                                })
+                        })
                     })
                 });
                 let strings_ok = ["goal", "conversation_id", "session_id", "summary"]
                     .iter()
                     .all(|k| args.get(*k).is_none_or(Value::is_string));
+                let rev_ok = args
+                    .get("expected_rev")
+                    .is_none_or(|v| v.as_u64().is_some());
                 let required = if tool == "start_session" {
                     "goal"
                 } else {
@@ -451,6 +532,7 @@ impl Bridge {
                 if args.keys().any(|k| !allowed.contains(&k.as_str()))
                     || !lists_ok
                     || !strings_ok
+                    || !rev_ok
                     || args.get(required).is_none()
                 {
                     diagnose("session tool refused: invalid arguments");
@@ -750,6 +832,29 @@ mod tests {
                 .unwrap()
                 .contains("No memory")
         );
+        // Index lines carry no body and say how to fetch the full text.
+        let index = memory_reply(
+            "memory.recall",
+            Ok(json!({"index":true,"entries":[
+                {"kind":"caution","title":"WSL","id":"ab","weight":61.0}
+            ]})),
+        );
+        let text = index["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("- [caution] WSL (ab weight 61.0)") && text.contains("recall id="));
+        assert!(!text.contains("slow"));
+        // A fetch by id and a stale notice.
+        let got = memory_reply(
+            "memory.get",
+            Ok(
+                json!({"entry":{"kind":"lesson","title":"Run","id":"cd","body":"cargo test",
+                "notice":"Not verified for 9 days; check it."}}),
+            ),
+        );
+        let text = got["content"][0]["text"].as_str().unwrap();
+        assert!(
+            text.contains("- [lesson] Run (cd): cargo test")
+                && text.contains("Not verified for 9 days")
+        );
         for (e, needle) in [
             (Error::Unauthorized, "Do not retry"),
             (Error::NotFound, "recall"),
@@ -768,6 +873,22 @@ mod tests {
         ]}));
         assert_eq!(dirs, vec![std::path::PathBuf::from("/home/u/my repo")]);
         assert!(root_dirs(&json!({})).is_empty());
+        // A Windows drive URI keeps its drive letter, not a leading slash.
+        let dirs = root_dirs(&json!({"roots":[
+            {"uri":"file:///C:/Users/u/repo"},
+            {"uri":"file:///c%3A/Users/u/other"}
+        ]}));
+        if cfg!(windows) {
+            assert_eq!(
+                dirs,
+                vec![
+                    std::path::PathBuf::from("C:/Users/u/repo"),
+                    std::path::PathBuf::from("c:/Users/u/other")
+                ]
+            );
+        } else {
+            assert_eq!(dirs.len(), 2);
+        }
     }
     #[test]
     fn suggestion_replies_say_it_is_not_active_and_whether_to_retry() {

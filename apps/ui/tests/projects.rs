@@ -458,7 +458,7 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     app.press("Agents").unwrap();
     // The project row shows the selected workspace's root.
     let root_shown = |app: &mut nsh_testing::Headless, name: &str| {
-        let suffix = format!("/{name}");
+        let suffix = format!("{}{name}", std::path::MAIN_SEPARATOR);
         app.wait_until(&format!("{name} on Agents"), Duration::from_secs(10), |s| {
             s.texts().iter().any(|t| t.ends_with(&suffix))
         })
