@@ -244,7 +244,8 @@ export function build(repo, parent, name, cargoProgram, release = null) {
 
   // Builder-private prefixes are remapped in compiler-recorded paths. Later
   // remaps win, so the nested private report directory comes after the checkout.
-  const remaps = [[repo, '/precept/source'], [cargoHome(), '/cargo'], [report, '/precept/build']];
+  const rustupHome = process.env.RUSTUP_HOME || path.join(os.homedir(), '.rustup');
+  const remaps = [[repo, '/precept/source'], [cargoHome(), '/cargo'], [rustupHome, '/rustup'], [report, '/precept/build']];
   const rustflags = remaps.map(([from, to]) => `--remap-path-prefix=${from}=${to}`);
   const env = cargoEnvironment(process.env, rustflags);
   const manifest = { format: 2, layout: 'Precept/{bin,runtime,notices}', version,
@@ -254,7 +255,7 @@ export function build(repo, parent, name, cargoProgram, release = null) {
       vc_tools: vcTools,
       windows_sdk: (process.env.WindowsSDKVersion ?? 'unknown').replace(/\\$/, ''),
       cargo: command(cargoProgram, ['--version'], repo, null, env), rustc: command('rustc', ['-Vv'], repo, null, env) },
-    rustflags: remaps.map(([, to], i) => `--remap-path-prefix=<${['checkout', 'cargo-home', 'build-output'][i]}>=${to}`),
+    rustflags: remaps.map(([, to], i) => `--remap-path-prefix=<${['checkout', 'cargo-home', 'rustup-home', 'build-output'][i]}>=${to}`),
     license: 'Apache-2.0', locks: {}, build_commands: [], binaries: [], prerequisites: [], files: [],
     limitations: [release === null
       ? 'Unsigned product executables; not a release or reproducible-binary claim'
