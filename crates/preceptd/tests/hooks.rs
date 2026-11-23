@@ -618,3 +618,48 @@ fn reading_a_document_whose_committed_claims_fail_warns_the_agent() {
         Some(Error::Unauthorized)
     );
 }
+
+#[cfg(windows)]
+#[test]
+fn integration_reads_find_the_windows_home_without_home_var() {
+    use precept_write::{Command, Expected};
+    let temp = tempfile::Builder::new()
+        .prefix("precept-nohome-")
+        .tempdir()
+        .unwrap();
+    for name in ["alpha", "beta"] {
+        fs::create_dir(temp.path().join(name)).unwrap();
+    }
+    precept_ipc::transport::private_dir(&temp.path().join("state"), true).unwrap();
+    let mut daemon = Daemon::launch_without_home(temp.path(), "run-n", None);
+    daemon.ready();
+    let db = temp.path().join("state/profile.sqlite3");
+    daemon
+        .control("profile.create", json!({"path": db}))
+        .unwrap();
+    let b = daemon.enable();
+    daemon
+        .mutate(
+            &b,
+            "register-alpha",
+            Command::RegisterProject {
+                name: "alpha".into(),
+                root: temp
+                    .path()
+                    .join("alpha")
+                    .canonicalize()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .into(),
+                expected: Expected::Absent,
+            },
+        )
+        .unwrap();
+    let mcp = daemon.control("integration.mcp", json!({})).unwrap();
+    assert_eq!(mcp["available"], true);
+    let hooks = daemon
+        .control("integration.hooks", json!({"project":"alpha"}))
+        .unwrap();
+    assert_eq!(hooks["available"], true);
+}

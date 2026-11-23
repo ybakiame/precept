@@ -372,7 +372,8 @@ async fn gate(args: &Args, stdin: &[u8]) -> precept_ipc::Result<Option<String>> 
 /// working directory.
 fn session_dirs(stdin: &[u8]) -> Vec<std::path::PathBuf> {
     let input = serde_json::from_slice::<Value>(stdin).ok();
-    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    let home_var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    let home = std::env::var_os(home_var).map(std::path::PathBuf::from);
     let path = |s: &str| match (s.strip_prefix("~/"), &home) {
         (Some(rest), Some(home)) => home.join(rest),
         _ => std::path::PathBuf::from(s),

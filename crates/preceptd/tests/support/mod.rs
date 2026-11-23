@@ -100,14 +100,21 @@ pub struct Daemon {
 impl Daemon {
     pub fn launch(base: &Path, id: &str, database: Option<&Path>) -> Self {
         daemon_state(base, &["alpha", "beta"], database);
-        Self::start(base, id)
+        Self::start(base, id, true)
+    }
+    /// A daemon whose environment has no `HOME`: on Windows the integration
+    /// reads must still find the user home through `%USERPROFILE%`.
+    #[allow(dead_code)] // Used by the Windows-only regression.
+    pub fn launch_without_home(base: &Path, id: &str, database: Option<&Path>) -> Self {
+        daemon_state(base, &["alpha", "beta"], database);
+        Self::start(base, id, false)
     }
     /// Starts again on the state the previous daemon left (no rewrite).
     #[allow(dead_code)]
     pub fn relaunch(base: &Path, id: &str) -> Self {
-        Self::start(base, id)
+        Self::start(base, id, true)
     }
-    fn start(base: &Path, id: &str) -> Self {
+    fn start(base: &Path, id: &str, home: bool) -> Self {
         let runtime_dir = base.join(id);
         let endpoint = if cfg!(windows) {
             format!("s2-{}-{id}", base.file_name().unwrap().to_string_lossy())
@@ -133,8 +140,10 @@ impl Daemon {
             .arg(base.join("daemon-state"))
             // The fixture base is the daemon user's home for scope checks
             // (the daemon reads %USERPROFILE% on Windows).
-            .env("HOME", base)
             .env("USERPROFILE", base);
+        if home {
+            command.env("HOME", base);
+        }
         let child = command
             .stdout(Stdio::null())
             .stderr(Stdio::null())

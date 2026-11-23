@@ -973,10 +973,7 @@ impl Service {
         }
         let (_, roots) = self.profiles.read()?;
         let root = roots.get(&p.project).ok_or(Error::NotFound)?.clone();
-        let home = std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .filter(|h| h.is_absolute())
-            .ok_or(Error::Unavailable)?;
+        let home = scope::home().ok_or(Error::Unavailable)?;
         let location = self.profiles.location();
         let Some(hook) = self.hook_path() else {
             return Ok(json!({"available": false, "hooks": []}));
@@ -1229,10 +1226,7 @@ impl Service {
             expected_sha256: Option<String>,
         }
         let p: P = decode(params)?;
-        let home = std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .filter(|h| h.is_absolute())
-            .ok_or(Error::Unavailable)?;
+        let home = scope::home().ok_or(Error::Unavailable)?;
         let Some(command) = self.mcp_path() else {
             return Ok(json!({"available": false, "clients": []}));
         };
