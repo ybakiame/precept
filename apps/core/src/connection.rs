@@ -79,9 +79,9 @@ pub enum DaemonStatus {
 }
 
 /// What a fixed, read-only check of one daemon host reports: who runs there,
-/// the conventional paths of the packaged systemd user unit
-/// (`$XDG_STATE_HOME/precept/runtime`), whether systemd and the unit are present and
-/// whether the daemon answers. No credential, Profile path or preference value.
+/// its conventional runtime, whether its Linux systemd unit or Windows daemon
+/// executable is present and whether the daemon answers. No credential, Profile
+/// path or preference value.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Discovery {
@@ -158,15 +158,26 @@ pub mod discovery_status {
     use crate::i18n::Msg;
     pub const NO_SYSTEMD: &str = "systemd is not running in this Linux environment";
     pub const NO_UNIT: &str = "The preceptd user service is not installed";
+    pub const NO_EXECUTABLE: &str = "preceptd is not installed beside Precept Desktop";
     pub const START_FAILED: &str = "systemd could not start preceptd";
+    pub const LOCAL_START_FAILED: &str = "The local preceptd process could not start";
     pub const START_TIMEOUT: &str = "preceptd did not become ready";
     pub const INVALID_REPORT: &str = "Invalid discovery report";
-    pub const KNOWN: [&str; 4] = [NO_SYSTEMD, NO_UNIT, START_FAILED, START_TIMEOUT];
+    pub const KNOWN: [&str; 6] = [
+        NO_SYSTEMD,
+        NO_UNIT,
+        NO_EXECUTABLE,
+        START_FAILED,
+        LOCAL_START_FAILED,
+        START_TIMEOUT,
+    ];
     pub fn message(reason: &str) -> Option<Msg> {
         Some(match reason {
             NO_SYSTEMD => Msg::HintSystemd,
             NO_UNIT => Msg::HintService,
+            NO_EXECUTABLE => Msg::HintDaemonExecutable,
             START_FAILED => Msg::DiscoveryStartFailed,
+            LOCAL_START_FAILED => Msg::LocalStartFailed,
             START_TIMEOUT => Msg::DiscoveryStartTimeout,
             INVALID_REPORT => Msg::DiscoveryInvalid,
             _ => return None,
@@ -252,8 +263,8 @@ mod tests {
     fn discovery_fills_a_valid_draft_and_refuses_unsafe_reports() {
         let d = report();
         assert!(d.validate(true) && d.ready());
-        // A local (in-process) report exists only on Unix, where these paths are
-        // absolute; on Windows the local target is never discovered.
+        // This Unix local report is valid only on Unix; Windows discovery uses
+        // its own absolute runtime and named-pipe endpoint.
         assert_eq!(d.validate(false), cfg!(unix));
         let mut draft = Connection::default();
         d.fill_wsl(&mut draft, "archlinux");
@@ -299,6 +310,15 @@ mod tests {
             json,
             serde_json::json!({"state":"ready","profile_selected":true})
         );
+    }
+    #[test]
+    fn discovery_reasons_have_localized_messages() {
+        for reason in discovery_status::KNOWN {
+            let msg = discovery_status::message(reason).unwrap();
+            for locale in [crate::i18n::Locale::En, crate::i18n::Locale::ZhCn] {
+                assert!(!crate::i18n::tr(locale, msg).is_empty());
+            }
+        }
     }
     #[test]
     fn saved_connection_round_trips_without_fixture_rows_and_refuses_invalid() {

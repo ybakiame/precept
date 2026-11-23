@@ -2,11 +2,11 @@
 //!
 //! WSL (Windows): choose a detected distribution; a read-only check runs inside
 //! it (`precept-bridge --discover`) and reports systemd, the packaged user unit,
-//! the daemon and the Profile. "Start" is the one explicit write it offers
-//! (`systemctl --user start preceptd.service`). This computer (Linux): the
-//! same check in-process. The manual fields stay available under Advanced for a
-//! non-standard install. The applied choice is saved privately for the next
-//! launch. No shell, TCP or credential crosses any boundary.
+//! the daemon and the Profile. This computer uses the platform's conventional
+//! runtime and an explicit Start action: the systemd user unit on Linux, or the
+//! `preceptd.exe` beside the Desktop on Windows. The manual fields stay available
+//! under Advanced for a non-standard install. The applied choice is saved privately
+//! for the next launch. No shell, TCP or credential crosses any boundary.
 use crate::*;
 use precept_ui_core::{
     Probe,
@@ -65,11 +65,15 @@ fn check(model: Signal<Model>, start: bool) {
     model.update(|m| epoch = m.begin_probe(start));
     let draft = model.get().connection_draft.clone();
     #[cfg(feature = "ipc")]
-    spawn(async move {
-        let result = blocking(move || probe(&draft, start))
-            .await
-            .unwrap_or(Err(wsl_status::LAUNCH_FAILED));
-        model.update(|m| m.finish_probe(epoch, result));
+    Owner::detached().run(|| {
+        // Starting rebuilds the dynamic result region and its Start button;
+        // the probe must outlive that region rather than be cancelled with it.
+        spawn(async move {
+            let result = blocking(move || probe(&draft, start))
+                .await
+                .unwrap_or(Err(wsl_status::LAUNCH_FAILED));
+            model.update(|m| m.finish_probe(epoch, result));
+        });
     });
     #[cfg(not(feature = "ipc"))]
     {
@@ -91,9 +95,9 @@ fn probe(draft: &Connection, start: bool) -> Result<Discovery, &'static str> {
             discover::wsl_start_daemon(&draft.distribution, &draft.user, helper)
         }
         Target::Wsl => discover::wsl_discover(&draft.distribution, helper),
-        #[cfg(unix)]
+        #[cfg(any(unix, target_os = "windows"))]
         Target::Local if start => discover::start_local(),
-        #[cfg(unix)]
+        #[cfg(any(unix, target_os = "windows"))]
         Target::Local => Ok(discover::local()),
         _ => Err(wsl_status::HOST_UNAVAILABLE),
     }
@@ -103,7 +107,7 @@ fn probe(draft: &Connection, start: bool) -> Result<Discovery, &'static str> {
 fn discoverable(target: Target) -> bool {
     match target {
         Target::Wsl => cfg!(target_os = "windows"),
-        Target::Local => cfg!(all(unix, feature = "ipc")),
+        Target::Local => cfg!(all(any(unix, target_os = "windows"), feature = "ipc")),
         Target::Synthetic => false,
     }
 }
@@ -185,7 +189,7 @@ pub(crate) fn connection(model: Signal<Model>) -> impl IntoElement {
         );
     view()
         .gap_6()
-        .max_w(px(scale::layout::FORM))
+        .max_w(px(scale::layout::CONTENT))
         .child(targets)
         .child({
             // Rebuild the body only when the target changes, never per keystroke.
@@ -402,29 +406,38 @@ fn checks(model: Signal<Model>) -> impl IntoElement {
 
 fn found(model: Signal<Model>, d: &Discovery, observed: Option<bool>) -> AnyElement {
     use BadgeVariant::{Danger, Neutral, Success, Warning};
-    let systemd = if d.systemd {
-        row(
-            model,
-            Msg::CheckSystemd,
-            Msg::StateEnabled,
-            Success,
-            None,
-            None,
-        )
+    let windows_local =
+        cfg!(target_os = "windows") && model.get().connection_draft.target == Target::Local;
+    let systemd = (!windows_local).then(|| {
+        if d.systemd {
+            row(
+                model,
+                Msg::CheckSystemd,
+                Msg::StateEnabled,
+                Success,
+                None,
+                None,
+            )
+        } else {
+            row(
+                model,
+                Msg::CheckSystemd,
+                Msg::StateDisabled,
+                Danger,
+                Some(Msg::HintSystemd),
+                None,
+            )
+        }
+    });
+    let service_name = if windows_local {
+        Msg::CheckDaemonExecutable
     } else {
-        row(
-            model,
-            Msg::CheckSystemd,
-            Msg::StateDisabled,
-            Danger,
-            Some(Msg::HintSystemd),
-            None,
-        )
+        Msg::CheckService
     };
     let service = if d.unit_installed {
         row(
             model,
-            Msg::CheckService,
+            service_name,
             Msg::StateInstalled,
             Success,
             None,
@@ -433,14 +446,22 @@ fn found(model: Signal<Model>, d: &Discovery, observed: Option<bool>) -> AnyElem
     } else {
         row(
             model,
-            Msg::CheckService,
+            service_name,
             Msg::StateMissing,
             Warning,
-            Some(Msg::HintService),
+            Some(if windows_local {
+                Msg::HintDaemonExecutable
+            } else {
+                Msg::HintService
+            }),
             None,
         )
     };
-    let startable = d.systemd && d.unit_installed;
+    let startable = if windows_local {
+        d.unit_installed
+    } else {
+        d.systemd && d.unit_installed
+    };
     let daemon = match d.daemon {
         DaemonStatus::Ready { .. } => row(
             model,
@@ -463,7 +484,11 @@ fn found(model: Signal<Model>, d: &Discovery, observed: Option<bool>) -> AnyElem
             Msg::CheckDaemon,
             Msg::StateStopped,
             Warning,
-            startable.then_some(Msg::HintStopped),
+            startable.then_some(if windows_local {
+                Msg::HintStoppedLocal
+            } else {
+                Msg::HintStopped
+            }),
             startable.then(|| {
                 button(model, "")
                     .label_fn(word(model, Msg::StartDaemon))
@@ -518,7 +543,7 @@ fn found(model: Signal<Model>, d: &Discovery, observed: Option<bool>) -> AnyElem
     };
     view()
         .gap_3()
-        .child(systemd)
+        .children(systemd)
         .child(service)
         .child(daemon)
         .child(profile)

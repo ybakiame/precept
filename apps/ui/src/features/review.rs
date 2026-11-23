@@ -1368,8 +1368,47 @@ fn delete_dialog(
         .on_confirm(move || commit_delete(model, delete_open))
         .content_fn(move || {
             view()
-                .gap_1()
+                .gap_3()
                 .child(
+                    view()
+                        .flex_row()
+                        .items_center()
+                        .gap_2()
+                        .child(
+                            text(move || {
+                                let m = model.get();
+                                let id = m.operator.delete_arm.as_ref().map_or(0, |a| a.id);
+                                m.word(Msg::ReviewDeleteId).replace("{id}", &id.to_string())
+                            })
+                            .flex_1()
+                            .font_family("monospace")
+                            .text_size(px(ui::scale::text::BODY)),
+                        )
+                        .child(
+                            ui::copy_button(
+                                model,
+                                move || model.get().word(Msg::ReviewCopyId).into(),
+                                move || model.get().word(Msg::CopiedShort).into(),
+                                move || {
+                                    let id = model
+                                        .get()
+                                        .operator
+                                        .delete_arm
+                                        .as_ref()
+                                        .map_or(0, |a| a.id);
+                                    if id <= 0 {
+                                        return false;
+                                    }
+                                    set_clipboard(id.to_string());
+                                    true
+                                },
+                            )
+                            .size(ui::ButtonSize::Small),
+                        ),
+                )
+                .child(ui::field(
+                    model,
+                    move || model.get().word(Msg::ReviewDeleteRetype).into(),
                     ui::input(model, "")
                         .label_fn(move || model.get().word(Msg::ReviewDeleteRetype).into())
                         .element_ref(&retype_ref)
@@ -1393,7 +1432,7 @@ fn delete_dialog(
                             })
                         })
                         .on_submit(move |_| commit_delete(model, delete_open)),
-                )
+                ))
                 .child(
                     text(move || {
                         let m = model.get();
@@ -1743,7 +1782,7 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
         })
         .gap_4()
         .flex_shrink_0()
-        .max_w(px(ui::scale::layout::FORM + 160.0))
+        .max_w(px(ui::scale::layout::CONTENT))
         .child(offline_view)
         .child(live_body);
     // Toasts report what happened (applied receipts, refusals); the page shows
@@ -2045,6 +2084,35 @@ fn page_toolbar(model: Signal<Model>) -> impl IntoElement {
                 })
                 .on_press(move || open_import(model)),
         )
+        .child(
+            view()
+                .style_when(
+                    move || model.get().operator.mode == ReviewMode::Inbox,
+                    |s| s.hidden(),
+                )
+                .child(ui::switch(
+                    model,
+                    move || model.get().word(Msg::ShowDeprecated).into(),
+                    move || model.get().operator.show_deprecated,
+                    || false,
+                    move |show| {
+                        model.update(|m| {
+                            let close = !show
+                                && m.operator
+                                    .record()
+                                    .is_some_and(|r| r.status == "deprecated");
+                            m.operator.show_deprecated = show;
+                            if close {
+                                m.operator.selected_id = None;
+                                m.operator.inspect = None;
+                                m.operator.inspect_revision = 0;
+                            }
+                            m.operator.review = None;
+                            m.operator.delete_arm = None;
+                        });
+                    },
+                )),
+        )
         .child(view().flex_1())
         .child(
             ui::button(model, "")
@@ -2071,8 +2139,8 @@ fn page_toolbar(model: Signal<Model>) -> impl IntoElement {
         )
 }
 
-/// The scoped pages' list: every record of the scope with its status; a row
-/// opens the record's sheet (and reads the exact record for it).
+/// The scoped pages' list: records matching the status filter; a row opens the
+/// record's sheet (and reads the exact record for it).
 fn records_list(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
     let m = model.get();
     let body = view().gap_1().flex_shrink_0();
@@ -2081,15 +2149,35 @@ fn records_list(model: Signal<Model>, delete_open: Signal<bool>) -> AnyElement {
             .child(ui::empty(model, m.word(Msg::RecordsLoading)))
             .into_element();
     };
-    if page.records.is_empty() {
-        return body
-            .child(
-                ui::empty(model, m.word(Msg::OperatorEmpty))
-                    .description(m.word(Msg::RecordsEmptyHelp)),
+    let records = std::rc::Rc::new(
+        page.records
+            .iter()
+            .filter(|r| m.operator.show_deprecated || r.status != "deprecated")
+            .cloned()
+            .collect::<Vec<_>>(),
+    );
+    let mut body = body;
+    if records.is_empty() {
+        let unfiltered_empty = page.records.is_empty();
+        body = body.child(
+            ui::empty(
+                model,
+                m.word(if unfiltered_empty {
+                    Msg::OperatorEmpty
+                } else {
+                    Msg::RecordsFilteredEmpty
+                }),
             )
-            .into_element();
+            .description(m.word(if unfiltered_empty {
+                Msg::RecordsEmptyHelp
+            } else {
+                Msg::DeprecatedFilterHelp
+            })),
+        );
+        if page.next_after_id.is_none() {
+            return body.into_element();
+        }
     }
-    let records = std::rc::Rc::new(page.records.clone());
     let list = loaded_list(
         model,
         records.iter().map(|r| r.id).collect(),

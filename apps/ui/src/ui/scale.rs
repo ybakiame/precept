@@ -51,8 +51,8 @@ pub mod control {
 
 /// Region widths (points): how wide a column may grow before it stops helping.
 pub mod layout {
-    /// A form or settings column: labels, fields and their help stay scannable.
-    pub const FORM: f32 = 640.0;
+    /// The shared content column for setup, workspace utilities and review.
+    pub const CONTENT: f32 = 800.0;
     /// The narrowest anchored popup (menus, selects).
     pub const POPUP: f32 = 192.0;
     /// The sidebar: wide enough for stable labels, subordinate to the page.

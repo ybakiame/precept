@@ -525,7 +525,7 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
     });
     view()
         .gap_4()
-        .max_w(px(scale::layout::FORM))
+        .max_w(px(scale::layout::CONTENT))
         .child(profile_notice)
         .child(list(model))
         .child(

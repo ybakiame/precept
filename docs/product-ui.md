@@ -37,7 +37,7 @@ with a small, explicit set of writes, not a web dashboard.
 
 Use the shared button, icon button, navigation item, menu, radio group, field,
 properties, input, tabs, badge, status dot, choice card, empty state, surface,
-dialog, sheet, notification, information popup,
+dialog, sheet, notification, information popup, tooltip,
 Markdown input, icon and motion components. Add a variant or size to the shared
 layer when a feature needs a new reusable treatment.
 
@@ -91,7 +91,9 @@ of 960 × 600 so the desktop never falls back to the compact layout). The sideba
 runs from the window's top edge, its brand level with the window buttons; the page
 column's top bar holds the sidebar toggle, the page title with its workspace scope
 and help, the version (`v` + the product version) and the window buttons, and its
-empty space moves the window. The sidebar hides and shows from that toggle or
+empty space moves the window. The sidebar status button's tooltip holds the target,
+last read result and successful-read time, also shown on keyboard focus; page content
+does not repeat them. The sidebar hides and shows from that toggle or
 `Ctrl+B`, and the choice is saved; hidden, the brand mark leads the top bar. The
 terminal layout has no top bar: the title stays in the page header and a wrapped
 destination row replaces the sidebar. The active workspace owns one primary scroll region.
@@ -178,7 +180,7 @@ confirm the exact new record. The add dialog also takes the rule's options: wher
 applies (languages, paths, agents, task tags; optional), its priority and its
 declared enforcement. Record rows show them; a confirmed
 rule's sheet has a **Delivered to agents** switch that takes it out of what agents
-receive without a new review. A preference carries one to five tags (lowercase
+receive without a new review. A preference carries one to ten tags (lowercase
 letters of any script, digits and inner hyphens, up to 32 characters) and an origin
 that is exactly `operator` (typed by the operator) or `agent` (an agent's suggestion
 the operator records). Tags and origin belong to the reviewed proposal: changing
@@ -254,12 +256,15 @@ as zero.
 Pages expose their observed watermark and do not pretend to share one snapshot.
 
 The records list selects; Detail is the immutable-content inspector and owns the
-confirm/reject/deprecate/delete actions. Show exact value, scope, project, tags,
+confirm/reject/deprecate/delete actions. Personal and project lists hide deprecated
+records by default; a **Show deprecated** switch reveals them for inspection and
+deletion. Show exact value, scope, project, tags,
 origin, revision, proposal digest and peer effects before a decision. Stale or missing
 inspection only triggers a fresh read, never an automatic mutation.
 
 Delete requires a separate destructive tier and retyping the exact preference ID.
-Escape cancels consent. Profile, grant, target, project, task, scope, selection,
+The dialog shows that ID beside a **Copy ID** command so the operator does not have
+to find it elsewhere. Escape cancels consent. Profile, grant, target, project, task, scope, selection,
 record content or watermark drift invalidates prepared work and delayed replies. The daemon
 independently rechecks authority at mutation admission.
 

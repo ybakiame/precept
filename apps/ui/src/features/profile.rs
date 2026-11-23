@@ -513,7 +513,7 @@ pub(crate) fn section(model: Signal<Model>) -> impl IntoElement {
             .into_element()
     });
     view()
-        .max_w(px(scale::layout::FORM))
+        .max_w(px(scale::layout::CONTENT))
         .child(
             view()
                 .style_when(move || model.get().live, |s| s.hidden())

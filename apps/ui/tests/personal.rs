@@ -161,6 +161,7 @@ fn writes_on(app: &mut nsh_testing::Headless) {
             let t = s.texts().join("\n");
             (t.contains("No pending suggestions")
                 || t.contains("No records in this exact scope")
+                || t.contains("No records match this filter")
                 || t.contains(" · r"))
                 && !t.contains("Writes are off for this daemon run")
                 && !t.contains("Waiting for Daemon acknowledgement")

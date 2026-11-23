@@ -70,7 +70,7 @@ Tasks, by how often they happen:
 | --- | --- | --- | --- |
 | Title bar | 36 high | `sidebar` above the sidebar, `background` above the page | Drag region, window caption buttons; the close button washes `danger` on hover |
 | Sidebar | 232 wide, the window's full height (a wrapped row below 900) | `sidebar`, trailing hairline | Brand mark and name; **Workspace** (with the app's single workspace switcher above Dashboard, Preferences, Agents, Handoff), **Review** (`Review & preferences` with waiting count pill), **Set up** (`Runtime checks` with `✓` or `n/3` progress); foot destinations; the status row and the keyboard button |
-| Page | the rest, inset 24 (8 when compact) | `background` | Header, page toolbar, one scroll region |
+| Page | the rest, inset 24 (8 when compact); utility/review content at most 800 | `background` | Header, page toolbar, one scroll region |
 | Overlay layer | the window | — | Toasts (bottom-right, 16 from the edges), menus, popovers, dialogs, sheets |
 
 **Sidebar rows.** 32 high, icon 16 in a fixed lane, label, and a trailing lane
@@ -92,6 +92,8 @@ page; it takes no row, so the sidebar reaches the bottom edge.
 opens the Shortcuts panel: an 8 pt dot and a short state word, then
 the target (`Connected · WSL archlinux`). It is the persistent scope indicator for
 the daemon target, and it is a button that opens **Runtime checks → Connection**.
+Its tooltip carries the full target, last read result and successful-read time;
+keyboard focus shows the same tooltip, and the page header does not repeat them.
 
 ![Status dot states](design/live-pulse.svg)
 
@@ -106,8 +108,8 @@ the daemon target, and it is a button that opens **Runtime checks → Connection
 
 **Page header.** Title (20 pt semibold, a header role), a calm read-only scope
 badge naming the active project on workspace-scoped pages (Dashboard, Preferences,
-Agents, Handoff), an information button when the page has a longer
-explanation, then one muted status line with the target and last read. Page-wide
+Agents, Handoff), and an information button when the page has a longer
+explanation. Target and read details live only in the sidebar status tooltip. Page-wide
 actions sit at the trailing edge as small ghost buttons with icons (Reconnect,
 and Copy visible page on copyable snapshot sections). A page's own primary command
 (Add preference…) lives in its toolbar, not in the header.
@@ -285,14 +287,14 @@ Compact layouts tighten padding, never height.
 | `markdown_input` | — | A framed document: a toolbar (undo, redo, bold, italic, strikethrough, inline code, heading, bulleted and numbered lists, quote, code block; each pressed while it applies at the caret), the document styled node by node (classes for type and spacing, palette colors for markers, quotes, code and links), and a status bar with word and character counts and an Edit / Markdown switch showing the stored form. Its height yields between 96 and 280 so its dialog fits the window. A terminal gets a multi-line input over the same Markdown |
 | `field` | Label, control, help or error | Label 12 / 500; help directly under the control |
 | `tabs`, `radio_group` | Segmented; selected | One silhouette; one selected fill |
-| `menu`, `info` (popover) | — | `raised`, hairline, `CONTAINER`, `shadow_lg`; grow from the trigger |
+| `menu`, `info` (popover), `tooltip` | — | `raised`, hairline, `CONTAINER`, `shadow_lg`; grow or fade from the trigger; tooltips also open on keyboard focus |
 | `dialog`, `alert_dialog` | Sizes S 400, M 520, L 640; optional header icon | See below |
 | `sheet` | Trailing, 440 (360 compact) | `raised`; header, scrolling body, pinned footer |
 | `toast` | Success, Info, Error | See below |
 | `badge` | Neutral, Info, Success, Warning, Danger | Tinted fill, 12 / 600 |
 | `tag`, `tag_list` | — | A tag chip: its color's dot and tint, `CAPTION` in `text`, `SMALL` radius; rows wrap |
 | `tag_toggle` | Selected | A small ghost button `#name · count` led by the tag's dot, which turns into a check that pops in while selected; a filter |
-| `tag_editor` | Disabled; invalid draft, at the limit | Chosen tags as chips with a remove button each (they pop in), an input that adds on Enter or a comma, the rule and `n of 5` in its help line (in `danger` when the draft is invalid or the limit is reached), and suggestion buttons (`#name`, in use here first, then a starter set) |
+| `tag_editor` | Disabled; invalid draft, at the limit | Chosen tags as chips with a remove button each (they pop in), an input that adds on Enter or a comma, the rule and `n of 10` in its help line (in `danger` when the draft is invalid or the limit is reached), and suggestion buttons (`#name`, in use here first, then a starter set) |
 | `color_picker` | — | The base ColorPicker styled: a 140-high saturation and brightness area, an OKLCH hue slider, a preview swatch beside a field that reads any CSS color and writes `oklch()`, and ten preset swatches; it previews while dragging and commits once per finished change |
 | `status_dot` | Live, Busy, Idle, Down, Attention | Filled or hollow + color + motion, always with its word beside it; hidden from screen readers |
 | `empty` | Optional icon and action | Icon in a 48 tinted disc; title 16 / 600; one action |
@@ -419,6 +421,9 @@ work is called done. "RM" is what reduced motion does.
 | --- | --- | --- |
 | Check / Start / Connect / Add running | The button dims, holds its width and shows a turning spinner; the label stays | Spinner rests |
 | A check's result arrives | The result fades in rising 4, `BASE`, once per new result | Appears |
+| Local daemon executable found or missing | The same result reveal; no layout-shifting decoration | Appears |
+| Status tooltip opens on hover or keyboard focus | The shared tooltip fades in place; the page does not move | Appears |
+| Deprecated-record filter changes | The existing switch thumb and track transition, `FAST`; the list updates without an entrance replay | Instant |
 | Configuration copied | As every copy button: glyph swap and "Copied" in place, no toast | Swap without scale |
 | Agent activity refreshing | The Refresh button shows its turning spinner; rows stay until the reply replaces them | Spinner rests |
 | Agent activity empty | The empty state arrives (fade, rising 4, `BASE`) | Appears |

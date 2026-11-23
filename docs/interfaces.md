@@ -15,7 +15,7 @@ Preview methods `profile.preferences.list`, `profile.preferences.get`,
 not exposed to agents, OperatorWrite peers or MCP.
 
 `suggest_preference` carries `key`, `value`, `tags` and `origin`. `tags` is one to
-five canonical tags, sorted with no repeats: lowercase letters (any script), digits
+ten canonical tags, sorted with no repeats: lowercase letters (any script), digits
 and inner hyphens, 1–32 characters each. A non-canonical list is refused, never
 rewritten. `origin` is exactly `operator` or `agent`. Both are part of the proposal
 digest. `precept preference-suggest` normalizes `--tag` (repeatable, required) and
@@ -195,10 +195,9 @@ Operator; `precept project suggestions NAME on|off`; off by default, listed as
 `propose` in `project.list`) and writes are on for this run; otherwise
 `Unauthorized` or `Unavailable`, and nothing is queued. The record is created as
 `suggested` with origin `agent` (an untagged one is tagged `agent`; priority 0). The same scope, key and value already suggested
-or confirmed is `Conflict`; more than 20 per project per daemon run or 30 waiting
-agent suggestions in a scope is `Capacity`. The tool's reply says the rule is not
-active until the operator confirms it, and whether to retry. Each call is in the
-activity log as `suggested` with its outcome.
+or confirmed is `Conflict`. There is no separate per-run or waiting-queue count
+limit. The tool's reply says the rule is not active until the operator confirms it,
+and whether to retry. Each call is in the activity log as `suggested` with its outcome.
 
 `explain_rule {key, selector?}` calls agent `context.explain` (also operator
 `context.explain {project, key, selector?}`, CLI `precept explain PROJECT KEY

@@ -148,7 +148,7 @@ pub struct Suggest {
     pub key: String,
     #[arg(long)]
     pub value: String,
-    /// One to five tags (repeat the flag); normalized to lowercase.
+    /// One to ten tags (repeat the flag); normalized to lowercase.
     #[arg(long = "tag", required = true)]
     pub tags: Vec<String>,
     /// Who the proposal comes from: the operator, or an agent's suggestion the

@@ -53,7 +53,7 @@ pub use diff::text_diff;
 pub use disclosure::disclosure;
 pub use empty::empty;
 pub use field::field;
-pub use info::info;
+pub use info::{info, tooltip};
 pub use input::input;
 pub use keycap::{key_parts, keycaps};
 pub use markdown::{markdown_input, markdown_view};

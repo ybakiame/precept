@@ -1,12 +1,13 @@
 //! Connection discovery: a fixed, read-only check of one daemon host, and the
-//! one explicit write it may lead to (starting the packaged systemd user unit).
+//! one explicit daemon start it may lead to.
 //!
 //! Inside Linux (the WSL helper's `--discover` / `--start-daemon` modes, or the
 //! Linux GUI in-process) it reads the conventional paths of the packaged unit
 //! (`$XDG_STATE_HOME/precept/runtime`, default `~/.local/state`), whether systemd and
-//! the unit exist and whether the daemon answers a health read. On Windows it
-//! runs those modes through `wsl.exe --exec` with a fixed argument vector: no
-//! shell, no TCP, no credential in argv, environment or output.
+//! the unit exist and whether the daemon answers a health read. A Windows GUI checks
+//! `%LOCALAPPDATA%\Precept-state\runtime` and can start the `preceptd.exe` beside itself
+//! with fixed arguments. WSL runs through `wsl.exe --exec`: no shell, TCP or credential
+//! in argv, environment or output.
 use precept_ui_core::connection::Discovery;
 #[cfg(target_os = "windows")]
 use precept_ui_core::connection::wsl_status as status;
@@ -16,7 +17,8 @@ pub const UNIT: &str = "preceptd.service";
 /// Where the Arch package installs the helper; the default for discovery.
 pub const DEFAULT_HELPER: &str = "/usr/bin/precept-bridge";
 pub use precept_ui_core::connection::discovery_status::{
-    INVALID_REPORT, NO_SYSTEMD, NO_UNIT, START_FAILED, START_TIMEOUT,
+    INVALID_REPORT, LOCAL_START_FAILED, NO_EXECUTABLE, NO_SYSTEMD, NO_UNIT, START_FAILED,
+    START_TIMEOUT,
 };
 
 #[cfg(unix)]
@@ -138,18 +140,112 @@ mod host {
 #[cfg(unix)]
 pub use host::{report, start_daemon};
 
-/// The in-process report for a daemon on this Linux machine (the Linux GUI's
-/// local target). Blocking; call it off the UI thread.
+#[cfg(target_os = "windows")]
+mod windows_host {
+    use super::*;
+    use precept_ui_core::connection::{DISCOVERY_VERSION, DaemonStatus};
+    use std::path::PathBuf;
+
+    const ENDPOINT: &str = "precept";
+
+    fn state_dir() -> Option<PathBuf> {
+        std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+            .map(|p| p.join("Precept-state"))
+    }
+
+    fn executable() -> Option<PathBuf> {
+        let path = std::env::current_exe().ok()?.parent()?.join("preceptd.exe");
+        path.is_file().then_some(path)
+    }
+
+    pub fn report() -> Discovery {
+        let state = state_dir().unwrap_or_default();
+        let runtime = state.join("runtime");
+        let location = precept_ipc::Location {
+            runtime_dir: runtime.clone(),
+            endpoint: ENDPOINT.into(),
+        };
+        let daemon = match super::current_thread(crate::native::health_at(&location)) {
+            Some(Ok(v)) => DaemonStatus::Ready {
+                profile_selected: v
+                    .get("profile_selected")
+                    .and_then(|p| p.as_bool())
+                    .unwrap_or(false),
+            },
+            Some(Err("Permission denied")) => DaemonStatus::Refused,
+            _ => DaemonStatus::NotRunning,
+        };
+        Discovery {
+            version: DISCOVERY_VERSION,
+            user: std::env::var("USERNAME").unwrap_or_default(),
+            helper: String::new(),
+            runtime: runtime.to_string_lossy().into_owned(),
+            endpoint: ENDPOINT.into(),
+            systemd: false,
+            unit_installed: executable().is_some(),
+            daemon,
+        }
+    }
+
+    pub fn start() -> Result<Discovery, &'static str> {
+        use std::os::windows::process::CommandExt;
+        use std::process::{Command, Stdio};
+
+        let before = report();
+        if before.ready() || matches!(before.daemon, DaemonStatus::Refused) {
+            return Ok(before);
+        }
+        let executable = executable().ok_or(NO_EXECUTABLE)?;
+        let state = state_dir().ok_or(LOCAL_START_FAILED)?;
+        precept_ipc::transport::private_dir(&state, true).map_err(|_| LOCAL_START_FAILED)?;
+        let runtime = state.join("runtime");
+        let mut child = Command::new(executable)
+            .arg("--runtime-dir")
+            .arg(&runtime)
+            .args(["--endpoint", ENDPOINT, "--state-dir"])
+            .arg(state.join("daemon-state"))
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(0x08000000 | 0x00000200)
+            .spawn()
+            .map_err(|_| LOCAL_START_FAILED)?;
+        for _ in 0..40 {
+            if child.try_wait().map_err(|_| LOCAL_START_FAILED)?.is_some() {
+                return Err(LOCAL_START_FAILED);
+            }
+            let now = report();
+            if now.ready() {
+                return Ok(now);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
+        Err(START_TIMEOUT)
+    }
+}
+
+/// The in-process report for a daemon on this machine. Blocking; call it off
+/// the UI thread.
 #[cfg(unix)]
 pub fn local() -> Discovery {
     current_thread(report(String::new())).unwrap_or_default()
 }
-/// Starts the local packaged unit (explicit user action). Blocking.
+#[cfg(target_os = "windows")]
+pub fn local() -> Discovery {
+    windows_host::report()
+}
+/// Starts the local daemon (explicit user action). Blocking.
 #[cfg(unix)]
 pub fn start_local() -> Result<Discovery, &'static str> {
     current_thread(start_daemon(String::new())).unwrap_or(Err(START_FAILED))
 }
-#[cfg(unix)]
+#[cfg(target_os = "windows")]
+pub fn start_local() -> Result<Discovery, &'static str> {
+    windows_host::start()
+}
+#[cfg(any(unix, target_os = "windows"))]
 fn current_thread<T>(f: impl std::future::Future<Output = T>) -> Option<T> {
     Some(
         tokio::runtime::Builder::new_current_thread()

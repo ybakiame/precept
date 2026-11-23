@@ -492,7 +492,7 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
     });
     view()
         .gap_6()
-        .max_w(px(scale::layout::FORM))
+        .max_w(px(scale::layout::CONTENT))
         .child(
             view()
                 .flex_row()

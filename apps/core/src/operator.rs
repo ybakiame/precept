@@ -67,6 +67,8 @@ pub struct Operator {
     pub selected_id: Option<i64>,
     pub global: bool,
     pub after_id: i64,
+    /// Deprecated records are hidden in scoped lists unless explicitly shown.
+    pub show_deprecated: bool,
     pub path: String,
     /// Create/select also remembers the Profile for every daemon start.
     pub remember: bool,
@@ -74,7 +76,7 @@ pub struct Operator {
     pub adding: bool,
     pub key: String,
     pub value: String,
-    /// The draft's tags (canonical, one to five) and the tag being typed.
+    /// The draft's tags (canonical, one to ten) and the tag being typed.
     pub tags: Vec<String>,
     pub tag_draft: String,
     /// Who the draft comes from: the operator, or an agent's suggestion.

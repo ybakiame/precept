@@ -736,11 +736,8 @@ mod tests {
             app.wait_for("Checks").unwrap();
             app.wait_for("Daemon service").unwrap();
         } else {
-            // A Windows-local daemon is not discovered: manual coordinates only.
-            app.wait_for(
-                "Enter the private runtime directory and endpoint of a daemon on this computer.",
-            )
-            .unwrap();
+            // Windows-local discovery checks the daemon beside the Desktop.
+            app.wait_for("Daemon executable").unwrap();
         }
         app.press("Advanced").unwrap();
         // The check may already have filled the fields; replace them by hand.
@@ -763,8 +760,8 @@ mod tests {
         app.wait_for("Invalid connection fields; the active target is unchanged.")
             .unwrap();
         // Invalid drafts cannot clear a usable snapshot or replace its source.
-        app.wait_for("Demo data · Synthetic snapshot ready")
-            .unwrap();
+        app.wait_for("Preview · Demo data").unwrap();
+        assert!(!app.screen().shows("Demo data · Synthetic snapshot ready"));
         app.press("Demo data").unwrap();
         app.press("Use demo data").unwrap();
         app.press_key("Escape").unwrap();

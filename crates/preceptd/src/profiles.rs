@@ -36,13 +36,7 @@ struct State {
     startup_failure: Option<&'static str>,
     /// The operator's per-project switches (agents, suggestions, gate).
     switches: crate::state::Switches,
-    /// Agent suggestions accepted this daemon run, per project.
-    suggested: BTreeMap<String, u32>,
 }
-/// The most suggestions one project's agents may make in one daemon run.
-pub const MAX_AGENT_SUGGESTIONS: u32 = 20;
-/// The most agent suggestions one scope may hold waiting for review.
-pub const MAX_PENDING_AGENT: i64 = 30;
 /// The longest agent suggestion value, in bytes.
 pub const MAX_AGENT_VALUE: usize = 4096;
 /// What the daemon does around a project-set change, outside the Profile.
@@ -210,7 +204,6 @@ impl Profiles {
                 unavailable,
                 startup_failure: None,
                 switches,
-                suggested: BTreeMap::new(),
             }),
             location,
             runtime,
@@ -704,10 +697,6 @@ impl Profiles {
         let s = self.state.lock().unwrap();
         s.switches.gated.contains(project) && s.roots.contains_key(project)
     }
-    /// An agent of `project` suggests a rule. Accepted only while the operator
-    /// allows suggestions for the project and has writes on for this run;
-    /// bounded per run and per scope, duplicates refused. The record lands as
-    /// `suggested` with origin `agent`: confirming it stays the operator's.
     /// A confirmed record of `scope` an agent of `project` may propose an
     /// update to (its own project, or personal).
     pub fn confirmed_record(
@@ -743,6 +732,10 @@ impl Profiles {
         }
         Ok(record)
     }
+    /// An agent of `project` suggests a rule. Accepted only while the operator
+    /// allows suggestions for the project and has writes on for this run;
+    /// duplicates are refused. The record lands as `suggested` with origin
+    /// `agent`: confirming it stays the operator's.
     pub fn agent_suggest(
         &self,
         project: &str,
@@ -752,7 +745,7 @@ impl Profiles {
         tags: Vec<String>,
         rule: precept_core::operator::RuleOptions,
     ) -> Result<Value> {
-        let mut s = self.state.lock().unwrap();
+        let s = self.state.lock().unwrap();
         if !s.switches.proposers.contains(project) || !s.roots.contains_key(project) {
             return Err(Error::Unauthorized);
         }
@@ -770,23 +763,17 @@ impl Profiles {
             // Writes are off for this run: nothing is queued anywhere.
             _ => return Err(Error::Unavailable),
         };
-        if s.suggested.get(project).copied().unwrap_or(0) >= MAX_AGENT_SUGGESTIONS {
-            return Err(Error::Capacity);
-        }
         let reader = s
             .selected
             .as_ref()
             .ok_or(Error::Unavailable)?
             .reader()
             .map_err(storage_error)?;
-        let (duplicate, pending) = reader
+        let (duplicate, _) = reader
             .agent_suggestion_state(&scope, &key, &value)
             .map_err(|_| Error::Unavailable)?;
         if duplicate {
             return Err(Error::Conflict);
-        }
-        if pending >= MAX_PENDING_AGENT {
-            return Err(Error::Capacity);
         }
         let b = owner.binding();
         let request = precept_write::Request {
@@ -814,7 +801,6 @@ impl Profiles {
                     .map_err(|_| precept_write::Error::Unauthorized)
             })
             .map_err(storage_error)?;
-        *s.suggested.entry(project.to_owned()).or_insert(0) += 1;
         let id = receipt
             .affected
             .first()

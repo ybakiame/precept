@@ -25,7 +25,7 @@ impl Origin {
 }
 
 /// The most tags one preference carries, and the longest tag in characters.
-pub const MAX_TAGS: usize = 5;
+pub const MAX_TAGS: usize = 10;
 pub const MAX_TAG_CHARS: usize = 32;
 
 /// One tag in its canonical form: lowercase, a leading `#` dropped, spaces and
@@ -948,7 +948,11 @@ mod tests {
             Some(vec!["git".to_owned(), "style".to_owned()])
         );
         assert_eq!(canonical_tags::<&str>(&[]), None);
-        assert_eq!(canonical_tags(&["a", "b", "c", "d", "e", "f"]), None);
+        assert!(canonical_tags(&["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]).is_some());
+        assert_eq!(
+            canonical_tags(&["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"]),
+            None
+        );
         assert!(tags_canonical(&["a".into(), "b".into()]));
         assert!(!tags_canonical(&["b".into(), "a".into()]));
         assert!(!tags_canonical(&["A".into()]));

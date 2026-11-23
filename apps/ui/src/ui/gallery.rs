@@ -255,7 +255,7 @@ pub fn Gallery() -> impl IntoElement {
         .into_element();
 
     // Overlays and feedback: a dialog commits with primary; a sheet with a
-    // footer; toasts in each tone; an info popover; the Markdown editor.
+    // footer; toasts in each tone; an info popover; a status tooltip; the editor.
     let form_open = signal(false);
     let sheet_open = signal(false);
     let markdown = signal(String::from("Prefer **small** commits."));
@@ -283,6 +283,17 @@ pub fn Gallery() -> impl IntoElement {
             || "About this page".into(),
             || "A longer explanation that would crowd the page.".into(),
         ))
+        .child(
+            view()
+                .tooltip(super::tooltip(
+                    model,
+                    view()
+                        .gap_1()
+                        .child(text("Connected · This computer").font_weight(FontWeight::MEDIUM))
+                        .child(text("Last successful read 12:00:00 UTC")),
+                ))
+                .child(button(model, "Connection status")),
+        )
         .into_element();
     // Status dots beside their words, and icon buttons (square, named).
     let statuses = view()

@@ -65,7 +65,7 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
         .flex_wrap()
         .gap_1()
         .p_1()
-        .max_w(px(scale::layout::FORM))
+        .max_w(px(scale::layout::CONTENT))
         .rounded(px(scale::radius::CONTAINER))
         .border_1()
         .border_color(move || palette(model).hairline)

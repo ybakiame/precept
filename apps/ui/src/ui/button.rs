@@ -50,6 +50,7 @@ pub struct Button {
     leading: Option<AnyElement>,
     trailing: Option<AnyElement>,
     spoken: Option<LabelFn>,
+    tooltip: Option<nsh_base::TooltipElement>,
     // Explicit native-acceptance observer only; never a control or authority.
     probe: Option<(std::path::PathBuf, String)>,
 }
@@ -73,6 +74,7 @@ pub fn button(model: Signal<Model>, label: impl Into<SharedString>) -> Button {
         leading: None,
         trailing: None,
         spoken: None,
+        tooltip: None,
         probe: None,
     }
 }
@@ -143,6 +145,11 @@ impl Button {
     /// keeps its place so rows stay aligned.
     pub fn trailing(mut self, trailing: impl IntoElement) -> Self {
         self.trailing = Some(trailing.into_element());
+        self
+    }
+    /// A hint attached to this button's own hover and keyboard focus.
+    pub fn tooltip(mut self, tooltip: nsh_base::TooltipElement) -> Self {
+        self.tooltip = Some(tooltip);
         self
     }
     /// What activation does.
@@ -284,6 +291,7 @@ impl IntoElement for Button {
         let icon_only = self.icon_only;
         let trailing = self.trailing;
         let leading = self.leading;
+        let tooltip = self.tooltip;
         let (text_size, icon_size, radius) = match size {
             ButtonSize::Small => (scale::text::CAPTION, scale::icon::SM, scale::radius::SMALL),
             ButtonSize::Medium => (scale::text::BODY, scale::icon::MD, scale::radius::CONTROL),
@@ -383,7 +391,10 @@ impl IntoElement for Button {
         } else {
             b
         };
-        let b = motion::feedback(b);
+        let mut b = motion::feedback(b);
+        if let Some(tooltip) = tooltip {
+            nsh_core::element::__hint_tooltip(b.node(), tooltip.into_element());
+        }
         let height = match size {
             ButtonSize::Small => scale::control::SM,
             ButtonSize::Medium => scale::control::MD,

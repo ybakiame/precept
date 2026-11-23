@@ -66,6 +66,13 @@ The secondary WSLg Linux GUI path connects directly to the same WSL daemon over
 Unix IPC and does not use the bridge. WSLg evidence is not standalone Linux support
 evidence.
 
+A Windows Desktop may instead connect to a Windows daemon over its current-user
+named pipe. Its conventional local check uses `%LOCALAPPDATA%\Precept-state\runtime`
+and endpoint `precept`; an explicit Start action launches the `preceptd.exe` beside
+the Desktop with the matching private daemon state directory. This never selects a
+Profile or enables writes. Linux local discovery and explicit start continue to use
+the packaged systemd user unit.
+
 ## Data ownership
 
 | Data | Authority / source of truth | State and change path |

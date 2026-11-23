@@ -197,6 +197,7 @@ fn writes_on(app: &mut nsh_testing::Headless) {
             let t = s.texts().join("\n");
             (t.contains("No pending suggestions")
                 || t.contains("No records in this exact scope")
+                || t.contains("No records match this filter")
                 || t.contains(" · r"))
                 && !t.contains("Writes are off for this daemon run")
                 && !t.contains("Waiting for Daemon acknowledgement")
@@ -297,6 +298,7 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     let confirmed_second = f.assert_decision(&second, "confirm", "desktop", 2, 5);
     let demoted = f.assert_decision(&confirmed_first, "demote", "desktop", 3, 5);
     assert_eq!(demoted["record"]["status"], "deprecated");
+    assert!(!app.screen().shows("#1 · editor · deprecated · r2"));
     open_row(&mut app, "#2 · editor · confirmed · r2");
     app.wait_for("Channel is client-asserted").unwrap();
     // Deprecate the confirmed #2 with its impact disclosure.
@@ -309,11 +311,15 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     contains(&mut app, "commit 6");
     let deprecated_second = f.assert_decision(&confirmed_second, "deprecate", "desktop", 3, 6);
     assert_eq!(deprecated_second["record"]["status"], "deprecated");
+    // Deprecated rows stay hidden until the explicit status filter shows them.
+    app.press("Show deprecated").unwrap();
     // Delete #2 through the destructive tier: a wrong retype refuses, the exact
     // retype arms, and the receipt leaves identity-only proof.
     open_row(&mut app, "#2 · editor · deprecated · r3");
     app.press_key("alt+shift+q").unwrap();
     app.wait_for("Delete project alpha preference #2?").unwrap();
+    app.wait_for("Preference ID: #2").unwrap();
+    app.wait_for("Copy ID").unwrap();
     app.type_text("Retype the exact ID", "9").unwrap();
     app.wait_for("The typed ID does not match").unwrap();
     app.press_key("Enter").unwrap();
@@ -446,6 +452,7 @@ fn keyboard_review_and_revoked_delete(f: &Fixture) {
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 12");
     f.assert_decision(&fourth, "reject", "desktop", 2, 12);
+    app.press("Show deprecated").unwrap();
     open_row(&mut app, "#3 · keyboard-editor · deprecated · r3");
     app.press_key("alt+shift+q").unwrap();
     app.wait_for("Delete project alpha preference #3?").unwrap();

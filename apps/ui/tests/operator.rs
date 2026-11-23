@@ -155,6 +155,7 @@ fn writes_on(app: &mut nsh_testing::Headless) {
             let t = s.texts().join("\n");
             (t.contains("No pending suggestions")
                 || t.contains("No records in this exact scope")
+                || t.contains("No records match this filter")
                 || t.contains(" · r"))
                 && !t.contains("Writes are off for this daemon run")
                 && !t.contains("Waiting for Daemon acknowledgement")
@@ -228,7 +229,7 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
         // Tags are required: one suggestion button, one typed with a comma.
         app.press("Add tag style").unwrap();
         app.type_text("Tags", "Tooling,").unwrap();
-        app.wait_for("One to five short labels, such as style or git. Press Enter or a comma to add one. · 2 of 5").unwrap();
+        app.wait_for("One to ten short labels, such as style or git. Press Enter or a comma to add one. · 2 of 10").unwrap();
         app.press("Save as suggestion").unwrap();
         app.wait_for("Nothing is written until you apply it")
             .unwrap();

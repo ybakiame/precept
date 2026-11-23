@@ -82,7 +82,7 @@ fn without_pointer(text: &str) -> String {
 /// records why it was skipped.
 fn push(out: &mut (Vec<Candidate>, Vec<Skipped>), mut c: Candidate) {
     c.value = c.value.trim().to_owned();
-    // Tags as the writer stores them: normalized, sorted, one to five.
+    // Tags as the writer stores them: normalized, sorted, one to ten.
     c.tags = crate::operator::canonical_tags(&c.tags).unwrap_or_else(|| vec!["imported".into()]);
     let skip = |reason| Skipped {
         source: c.source.clone(),

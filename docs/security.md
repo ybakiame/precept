@@ -81,8 +81,8 @@ separate design with its own threat model.
   the operator allowed to suggest (`project.propose`, off by default, persisted in
   daemon state) and only while the operator has writes on for the daemon run; it
   can create nothing but a `suggested` record with origin `agent` in its own
-  project or the personal scope, bounded per run and per scope,
-  with duplicates refused. Nothing is queued while writes are off.
+  project or the personal scope, with duplicates refused. There is no separate
+  per-run or waiting-queue count limit. Nothing is queued while writes are off.
 - Work sessions are agents' own notes (goal and done / doing / todo), written
   only where the operator allows agent writes for the project, bounded, kept in
   the daemon's private state directory (`sessions-<project>.json`, 0600, never

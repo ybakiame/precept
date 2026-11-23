@@ -223,10 +223,12 @@ fn status_row(model: Signal<Model>) -> impl IntoElement {
         .spoken(move || {
             let m = model.get();
             format!(
-                "{} {} · {}",
+                "{} {} · {} · {} · {}",
                 m.word(Msg::StatusOpensConnection),
                 m.word(status_of(&m).1),
-                target_words(&m)
+                target_words(&m),
+                m.read_label(),
+                m.read_time()
             )
             .into()
         })
@@ -234,11 +236,30 @@ fn status_row(model: Signal<Model>) -> impl IntoElement {
         .size(ui::ButtonSize::Small)
         .full_width()
         .leading(ui::status_dot(model, move || state.get()))
+        .tooltip(ui::tooltip(model, status_details(model)))
         .selected(move || {
             let m = model.get();
             current(&m) == Destination::RuntimeChecks && m.setup_tab == SetupTab::Connection
         })
         .on_press(move || go_setup(model, SetupTab::Connection))
+}
+
+fn status_details(model: Signal<Model>) -> impl IntoElement {
+    view()
+        .gap_1()
+        .child(
+            text(move || {
+                let m = model.get();
+                format!("{} · {}", target_words(&m), m.read_label())
+            })
+            .font_weight(FontWeight::MEDIUM)
+            .text_size(px(ui::scale::text::BODY)),
+        )
+        .child(
+            text(move || model.get().read_time())
+                .text_size(px(ui::scale::text::CAPTION))
+                .text_color(move || palette(model).muted),
+        )
 }
 
 /// Whether a destination displays one workspace's data.
@@ -655,101 +676,43 @@ fn version_badge(model: Signal<Model>) -> impl IntoElement {
         )
 }
 
-/// The page header: the destination's title, calm workspace scope indicator,
-/// one human status line and the page-wide actions.
+/// The page-wide actions. Target and read details stay in the sidebar status
+/// tooltip rather than a second status line in the content area.
 fn header(model: Signal<Model>) -> impl IntoElement {
-    view()
-        .flex_row()
-        .items_start()
-        .gap_3()
-        .child(
-            view().flex_1().min_w_0().gap_1().child(
+    view().flex_row().items_start().justify_end().gap_3().child(
+        view()
+            .flex_row()
+            .gap_2()
+            .child(
+                ui::button(model, "")
+                    .label_fn(move || model.get().word(Msg::Reconnect).into())
+                    .icon(icons::REFRESH)
+                    .variant(ui::ButtonVariant::Ghost)
+                    .size(ui::ButtonSize::Small)
+                    .on_press(move || reconnect(model)),
+            )
+            .child(
                 view()
-                    .accessible(true)
-                    .label("Daemon connection state")
-                    .flex_row()
-                    .flex_wrap()
-                    .gap_2()
-                    .child(
-                        text(move || {
-                            let m = model.get();
-                            if let Some(reason) = m.wsl_reason() {
-                                format!("{} · {}", target_words(&m), m.word(reason))
-                            } else if m.operator.open {
-                                format!(
-                                    "{} · {}",
-                                    target_words(&m),
-                                    m.word(if m.operator.busy {
-                                        Msg::OperatorBusy
-                                    } else if m.operator.error.is_some() {
-                                        Msg::OperatorFailed
-                                    } else if m.operator.info.is_some() {
-                                        Msg::OperatorObserved
-                                    } else {
-                                        Msg::OperatorUnobserved
-                                    })
-                                )
-                            } else {
-                                format!("{} · {}", target_words(&m), m.read_label())
-                            }
-                        })
-                        .text_size(px(ui::scale::text::CAPTION))
-                        .text_color(move || match model.get().phase {
-                            _ if model.get().wsl_reason().is_some() => palette(model).error,
-                            Phase::Error | Phase::Unavailable => palette(model).error,
-                            Phase::Loading => palette(model).warning,
-                            _ => palette(model).muted,
-                        }),
+                    .style_when(
+                        move || !copyable_destination(current(&model.get())),
+                        |s| s.hidden(),
                     )
                     .child(
-                        text(move || {
-                            let m = model.get();
-                            if m.copied {
-                                m.word(Msg::Copied).into()
-                            } else {
-                                m.read_time()
-                            }
-                        })
-                        .style_when(move || model.get().operator.open, |s| s.hidden())
-                        .text_size(px(ui::scale::text::CAPTION))
-                        .text_color(move || palette(model).muted),
-                    ),
-            ),
-        )
-        .child(
-            view()
-                .flex_row()
-                .gap_2()
-                .child(
-                    ui::button(model, "")
-                        .label_fn(move || model.get().word(Msg::Reconnect).into())
-                        .icon(icons::REFRESH)
+                        ui::copy_button(
+                            model,
+                            move || model.get().word(Msg::CopyPage).into(),
+                            move || model.get().word(Msg::CopiedShort).into(),
+                            move || copy_page(model),
+                        )
                         .variant(ui::ButtonVariant::Ghost)
                         .size(ui::ButtonSize::Small)
-                        .on_press(move || reconnect(model)),
-                )
-                .child(
-                    view()
-                        .style_when(
-                            move || !copyable_destination(current(&model.get())),
-                            |s| s.hidden(),
-                        )
-                        .child(
-                            ui::copy_button(
-                                model,
-                                move || model.get().word(Msg::CopyPage).into(),
-                                move || model.get().word(Msg::CopiedShort).into(),
-                                move || copy_page(model),
-                            )
-                            .variant(ui::ButtonVariant::Ghost)
-                            .size(ui::ButtonSize::Small)
-                            .disabled(move || {
-                                let m = model.get();
-                                m.phase != Phase::Ready || !copyable_destination(current(&m))
-                            }),
-                        ),
-                ),
-        )
+                        .disabled(move || {
+                            let m = model.get();
+                            m.phase != Phase::Ready || !copyable_destination(current(&m))
+                        }),
+                    ),
+            ),
+    )
 }
 
 fn task_input(model: Signal<Model>, task_ref: ElementRef) -> impl IntoElement {

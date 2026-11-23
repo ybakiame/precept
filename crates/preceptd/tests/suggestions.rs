@@ -1,6 +1,6 @@
 //! Agent rule suggestions through a real daemon: only where the operator
-//! allowed them, only while writes are on, bounded and deduplicated, always
-//! landing as `suggested` with origin `agent` for the operator to review.
+//! allowed them, only while writes are on, deduplicated, always landing as
+//! `suggested` with origin `agent` for the operator to review.
 #[allow(dead_code)] // Shared harness; this suite uses part of it.
 mod support;
 use precept_ipc::Error;
@@ -74,18 +74,13 @@ fn agents_suggest_only_where_allowed_while_writes_are_on_and_never_confirm() {
         Err(Error::InvalidRequest)
     );
 
-    // A bounded number per daemon run.
+    // Thirty new project suggestions plus the two initial records are all accepted.
     let mut accepted = 2;
-    let mut last = Ok(Value::Null);
     for i in 0..30 {
-        last = suggest(&f, rule(&format!("rule-{i}")));
-        if last.is_err() {
-            break;
-        }
+        suggest(&f, rule(&format!("rule-{i}"))).unwrap();
         accepted += 1;
     }
-    assert_eq!(last, Err(Error::Capacity));
-    assert_eq!(accepted, 20);
+    assert_eq!(accepted, 32);
 
     let events = f
         .daemon
@@ -112,7 +107,7 @@ fn agents_suggest_only_where_allowed_while_writes_are_on_and_never_confirm() {
     f.daemon.enable();
     assert!(
         suggest(&f, rule("after-restart")).is_ok(),
-        "a new run, a new budget"
+        "writes explicitly enabled for this run"
     );
     propose(&f, false);
     assert_eq!(suggest(&f, rule("off-again")), Err(Error::Unauthorized));

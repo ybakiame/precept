@@ -4,6 +4,26 @@
 use super::prelude::*;
 use nsh_base::popover;
 
+/// The shared tooltip surface, shown by its trigger on hover or keyboard focus.
+pub fn tooltip(model: Signal<Model>, content: impl IntoElement) -> nsh_base::TooltipElement {
+    nsh_base::tooltip()
+        .placement(Placement::Top)
+        .offset(px(6.0))
+        .margin(px(8.0))
+        .max_w(px(scale::layout::TOAST))
+        .p_3()
+        .rounded(px(scale::radius::CONTAINER))
+        .border_1()
+        .border_color(move || palette(model).hairline)
+        .bg(move || palette(model).raised)
+        .shadow_lg()
+        .transition()
+        .duration(motion::ms(motion::INSTANT))
+        .starting_style(|s| s.opacity(0.0))
+        .ending_style(|s| s.opacity(0.0))
+        .child(content)
+}
+
 const INFO: &str = "M12 21A9 9 0 1 0 12 3A9 9 0 1 0 12 21M12 11V16M12 8V8.01";
 
 /// An info button named `label` (what it explains) showing `body`.
