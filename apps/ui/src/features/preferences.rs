@@ -460,7 +460,7 @@ pub(crate) fn preferences(model: Signal<Model>) -> impl IntoElement {
                 .text_color(move || palette(model).muted),
             ),
     );
-    // Managing or adding records navigates cleanly to the unified Review hub.
+    // Managing or adding records navigates cleanly to the reviewed Rules page.
     if current.live {
         body = body.child(
             view().items_start().child(

@@ -59,8 +59,8 @@ installed manifest, and keeps unknown files.
    systemctl --user enable --now preceptd.service
    sudo loginctl enable-linger "$USER"
    ```
-2. Create a Profile once, explicitly: the Desktop shows **Set up your Profile**
-   (Dashboard, Workspaces, Connection) with the daemon's suggested path and
+2. Create a Profile once, explicitly: Runtime checks → Profile shows **Set up your Profile**
+   with the daemon's suggested path and
    **Select at start** on, so every daemon start selects it. Or:
    ```sh
    R=~/.local/state/precept/runtime

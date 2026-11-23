@@ -2507,7 +2507,7 @@ dependencies = [
 
 [[package]]
 name = "precept-core"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -2517,7 +2517,7 @@ dependencies = [
 
 [[package]]
 name = "precept-ipc"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "clap",
  "getrandom 0.4.3",
@@ -2533,7 +2533,7 @@ dependencies = [
 
 [[package]]
 name = "precept-ui"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "nsh-base",
  "nsh-core",
@@ -2552,7 +2552,7 @@ dependencies = [
 
 [[package]]
 name = "precept-ui-client"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "clap",
  "precept-core",
@@ -2566,7 +2566,7 @@ dependencies = [
 
 [[package]]
 name = "precept-ui-core"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "precept-core",
  "serde",

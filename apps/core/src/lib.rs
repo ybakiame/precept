@@ -219,7 +219,7 @@ impl Section {
         }
     }
 }
-/// The three runtime-setup tabs inside Runtime checks (Set up).
+/// Connection/Profile in Runtime checks, or the separate Workspaces page.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SetupTab {
     #[default]
@@ -248,7 +248,7 @@ pub struct Model {
     pub connection_draft: connection::Connection,
     pub connection_invalid: bool,
     pub settings: bool,
-    /// The Runtime checks page (Connection, Profile, Workspaces).
+    /// The Runtime checks page (Connection and Profile), or Workspaces.
     pub setup_open: bool,
     pub setup_tab: SetupTab,
     /// The project-scoped Agents (MCP) page.

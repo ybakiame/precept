@@ -54,16 +54,26 @@ pub(crate) enum Destination {
     Memory,
     Handoff,
     Review,
+    ReviewedRules,
     RuntimeChecks,
+    Workspaces,
     Diagnostics,
     Settings,
 }
 
 pub(crate) fn current(m: &Model) -> Destination {
     if m.operator.open {
-        Destination::Review
+        if m.operator.mode == ReviewMode::Inbox {
+            Destination::Review
+        } else {
+            Destination::ReviewedRules
+        }
     } else if m.setup_open {
-        Destination::RuntimeChecks
+        if m.setup_tab == SetupTab::Workspaces {
+            Destination::Workspaces
+        } else {
+            Destination::RuntimeChecks
+        }
     } else if m.agents_page {
         Destination::Agents
     } else if m.sessions_page {
@@ -75,7 +85,7 @@ pub(crate) fn current(m: &Model) -> Destination {
     } else {
         match m.section {
             Section::Dashboard => Destination::Dashboard,
-            Section::Projects => Destination::RuntimeChecks,
+            Section::Projects => Destination::Workspaces,
             Section::Rules => Destination::Rules,
             Section::Handoff => Destination::Handoff,
             Section::Diagnostics => Destination::Diagnostics,
@@ -105,7 +115,7 @@ pub(crate) fn go_setup(model: Signal<Model>, tab: SetupTab) {
     }
 }
 
-/// Opens the unified Review & preferences workspace directly on `mode`.
+/// Opens Context directly on the pending queue or a reviewed record scope.
 pub(crate) fn go_review(model: Signal<Model>, mode: ReviewMode) {
     review::open_mode(model, mode);
 }
@@ -114,10 +124,19 @@ pub(crate) fn go_review(model: Signal<Model>, mode: ReviewMode) {
 pub(crate) fn go(model: Signal<Model>, destination: Destination) {
     match destination {
         Destination::Review => review::open(model),
+        Destination::ReviewedRules => review::open_records(model),
         Destination::RuntimeChecks => {
             let tab = model.get().setup_tab;
-            go_setup(model, tab);
+            go_setup(
+                model,
+                if tab == SetupTab::Workspaces {
+                    SetupTab::Connection
+                } else {
+                    tab
+                },
+            );
         }
+        Destination::Workspaces => go_setup(model, SetupTab::Workspaces),
         Destination::Settings => model.update(|m| {
             leave_workspaces(m);
             m.settings = true;
@@ -162,7 +181,9 @@ fn title_key(destination: Destination) -> Msg {
         Destination::Memory => Msg::MemoryDestination,
         Destination::Handoff => Msg::Handoff,
         Destination::Review => Msg::ReviewHub,
+        Destination::ReviewedRules => Msg::RulesDestination,
         Destination::RuntimeChecks => Msg::RuntimeChecks,
+        Destination::Workspaces => Msg::Projects,
         Destination::Diagnostics => Msg::Diagnostics,
         Destination::Settings => Msg::Settings,
     }
@@ -180,12 +201,13 @@ fn page_help(m: &Model) -> Option<String> {
         Destination::RuntimeChecks => match m.setup_tab {
             SetupTab::Connection => words(&[Msg::RuntimeChecksIntro, Msg::ConnectionHelp]),
             SetupTab::Profile => words(&[Msg::ProfileIntro]),
-            SetupTab::Workspaces => words(&[Msg::WorkspacesIntro]),
+            SetupTab::Workspaces => words(&[Msg::RuntimeChecksIntro]),
         },
+        Destination::Workspaces => words(&[Msg::WorkspacesIntro]),
         Destination::Agents => words(&[Msg::AgentsIntro]),
         Destination::Sessions => words(&[Msg::SessionsIntro]),
         Destination::Memory => words(&[Msg::MemoryIntro]),
-        Destination::Review => words(&[
+        Destination::Review | Destination::ReviewedRules => words(&[
             Msg::OperatorHelp,
             Msg::ReviewProvenanceNote,
             Msg::OperatorCliGate,
@@ -336,7 +358,7 @@ fn destination(model: Signal<Model>, item: Destination, path: &'static str) -> A
         let done = computed(move || setup::completed_count(&model.get()));
         let trailing = dynamic(move || {
             let n = done.get();
-            if n == 3 {
+            if n == 2 {
                 let pop = ui::motion::pop();
                 return view()
                     .text_color(move || palette(model).success)
@@ -344,7 +366,7 @@ fn destination(model: Signal<Model>, item: Destination, path: &'static str) -> A
                     .child(ui::icon::glyph(icons::CHECK, ui::scale::icon::SM))
                     .into_element();
             }
-            text(format!("{n}/3"))
+            text(format!("{n}/2"))
                 .tabular_nums()
                 .text_size(px(ui::scale::text::CAPTION))
                 .text_color(move || palette(model).muted)
@@ -434,10 +456,16 @@ fn sidebar(model: Signal<Model>) -> impl IntoElement {
         (Memory, icons::MEMORY),
         (Handoff, icons::section_path(Section::Handoff)),
     ];
-    // Review: merged pending queue + personal preferences + project preferences.
-    let review_items = [(Review, icons::REVIEW)];
-    // Set up: one guided Runtime checks surface (Connection, Profile, Workspaces).
-    let setup_items = [(RuntimeChecks, icons::CONNECTION)];
+    // Context: pending review separately from the reviewed rule records.
+    let review_items = [
+        (Review, icons::REVIEW),
+        (ReviewedRules, icons::section_path(Section::Rules)),
+    ];
+    // Set up: two runtime checks, then independent workspace management.
+    let setup_items = [
+        (RuntimeChecks, icons::CONNECTION),
+        (Workspaces, icons::section_path(Section::Projects)),
+    ];
     let foot = [
         (Diagnostics, icons::section_path(Section::Diagnostics)),
         (Settings, icons::SETTINGS),
@@ -878,6 +906,14 @@ pub(crate) fn shell(
                                                 )
                                                 .child(
                                                     view()
+                                                        .style_when(
+                                                            on(Destination::Workspaces),
+                                                            |s| s.hidden().invisible(),
+                                                        )
+                                                        .child(projects::page(model)),
+                                                )
+                                                .child(
+                                                    view()
                                                         .style_when(on(Destination::Agents), |s| {
                                                             s.hidden()
                                                         })
@@ -901,14 +937,6 @@ pub(crate) fn shell(
                                                 .child(
                                                     view()
                                                         .style_when(
-                                                            on(Destination::Diagnostics),
-                                                            |s| s.hidden(),
-                                                        )
-                                                        .child(doctor::panel(model)),
-                                                )
-                                                .child(
-                                                    view()
-                                                        .style_when(
                                                             move || {
                                                                 !copyable_destination(current(
                                                                     &model.get(),
@@ -917,6 +945,14 @@ pub(crate) fn shell(
                                                             |s| s.hidden(),
                                                         )
                                                         .child(dynamic(move || page(model))),
+                                                )
+                                                .child(
+                                                    view()
+                                                        .style_when(
+                                                            on(Destination::Diagnostics),
+                                                            |s| s.hidden(),
+                                                        )
+                                                        .child(doctor::panel(model)),
                                                 ),
                                         ),
                                 ),

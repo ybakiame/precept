@@ -212,7 +212,7 @@ fn a_confirmed_convention_is_written_after_its_preview() {
     cfg.viewport = Size::new(px(1080.0), px(1000.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
     app.wait_for("Daemon status").unwrap();
-    app.press("Review & rules").unwrap();
+    app.press("Rules").unwrap();
     app.press("Project conventions · alpha").unwrap();
     app.wait_until("row listed", Duration::from_secs(10), |s| {
         s.count("role:button[#1 · commit-style · confirmed · r2]")

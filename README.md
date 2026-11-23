@@ -74,9 +74,9 @@ Handoff records remain historical and must be revalidated against the current
 checkout.
 
 The desktop app groups navigation into **Workspace** (Dashboard, Preferences &
-contracts, Agents, Sessions, Memory, Handoff for the selected project), **Review**
-(suggestions and rules) and **Set up** (Runtime checks), with Diagnostics and
-Settings at the foot. See the
+contracts, Agents, Sessions, Memory, Handoff for the selected project), **Context**
+(Review for pending suggestions and Rules for reviewed records) and **Set up**
+(Runtime checks and a separate Workspaces page), with Diagnostics and Settings at the foot. See the
 [operator app guide](apps/README.md) for its review workflow.
 
 ## Data and trust

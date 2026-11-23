@@ -27,7 +27,7 @@ use tokens::compact;
 /// The current section's page (Dashboard, Preferences, Handoff, Diagnostics).
 pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
     let current = model.get();
-    let mut body = view()
+    let body = view()
         .flex_shrink_0()
         .gap_3()
         .style_when(compact, |s| s.gap_2())
@@ -59,8 +59,20 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
     }
     let mut lines = current.visible_lines();
     if current.section == Section::Diagnostics {
-        body = body.child(daemon(model));
         lines.extend(super::runtime_lines(current.locale));
+        return body.child(
+            view()
+                .flex_row()
+                .items_start()
+                .gap_3()
+                .style_when(compact, |s| s.flex_col().gap_2())
+                .child(view().flex_1().min_w_0().child(daemon(model)))
+                .child(view().flex_1().min_w_0().child(card(
+                    model,
+                    current.word(Msg::Diagnostics),
+                    lines,
+                ))),
+        );
     }
     let title = match current.section {
         Section::Dashboard => "Selected project / repository snapshot",

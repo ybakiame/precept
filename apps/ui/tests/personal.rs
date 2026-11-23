@@ -201,7 +201,7 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     cfg.viewport = Size::new(px(1080.0), px(1000.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
     app.wait_for("Daemon status").unwrap();
-    app.press("Review & rules").unwrap();
+    app.press("Rules").unwrap();
     app.press("Personal").unwrap();
     writes_on(&mut app);
     // A daemon read finishing afterwards keeps the chosen tab (it must not

@@ -65,7 +65,7 @@ Retain failed attempt directories; use a new name for the next run. Raw build lo
 and tool metadata can contain private developer paths and remain ignored. The ZIP
 contains only the explicit file inventory, provenance, notices and local instructions;
 no Node/PowerShell helper, Rust toolchain, snapshots, raw logs, credentials or data.
-The ZIP name carries its source SHA suffix; the exact archive hash/file list live beside it.
+Windows ZIP names use `x64`; a prototype also carries its source SHA suffix. The exact archive hash/file list live beside it.
 `Precept/runtime/manifest.json` identifies clean source SHA/tree, both locks, target/flags,
 builder, VC++ redistributable version/signer and every other file's hash. This is a reproducible recipe,
 not a deterministic-output, signed, completed-SBOM or complete-license claim.

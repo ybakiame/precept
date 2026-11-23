@@ -56,11 +56,11 @@ Tasks, by how often they happen:
 | Rank | Task | Where | Must be one step from |
 | --- | --- | --- | --- |
 | 1 | See whether the daemon answers and what it last read | Sidebar status row, page header | Every page |
-| 2 | Review a suggestion and confirm or reject the exact record | Review & preferences (`To review`) | The sidebar, Dashboard, toast |
-| 3 | Add a preference (saved as a suggestion) | Review & preferences (`Personal` / `Project`) | Page toolbar, Preferences |
+| 2 | Review a suggestion and confirm or reject the exact record | Review | The sidebar, Dashboard, toast |
+| 3 | Add a preference (saved as a suggestion) | Rules (`Personal` / `Project`) | Page toolbar, Preferences |
 | 4 | Resume a task through Handoff | Handoff | Sidebar, Dashboard |
 | 5 | Share a project with an agent (copy its MCP line) | Agents (under Workspace) | Sidebar, Dashboard |
-| 6 | First-time setup: connection, Profile, workspaces | Runtime checks (`Connection` / `Profile` / `Workspaces`) | Sidebar, Dashboard onboarding |
+| 6 | First-time setup: connection, Profile, workspaces | Runtime checks (`Connection` / `Profile`) and the separate Workspaces page | Sidebar, Dashboard onboarding |
 
 ## 3. The shell
 
@@ -69,19 +69,19 @@ Tasks, by how often they happen:
 | Region | Size | Surface | Contents |
 | --- | --- | --- | --- |
 | Title bar | 36 high | `sidebar` above the sidebar, `background` above the page | Drag region, window caption buttons; the close button washes `danger` on hover |
-| Sidebar | 232 wide, the window's full height (a wrapped row below 900) | `sidebar`, trailing hairline | Brand mark and name; **Workspace** (with the app's single workspace switcher above Dashboard, Preferences, Agents, Handoff), **Review** (`Review & preferences` with waiting count pill), **Set up** (`Runtime checks` with `✓` or `n/3` progress); foot destinations; the status row and the keyboard button |
+| Sidebar | 232 wide, the window's full height (a wrapped row below 900) | `sidebar`, trailing hairline | Brand mark and name; **Workspace** (with the app's single workspace switcher above Dashboard, Preferences, Agents, Handoff), **Context** (`Review` with waiting count pill and `Rules` for reviewed records), **Set up** (`Runtime checks` with `✓` or `n/2` progress, then `Workspaces`); foot destinations; the status row and the keyboard button |
 | Page | the rest, inset 24 (8 when compact); utility/review content at most 800 | `background` | Header, page toolbar, one scroll region |
 | Overlay layer | the window | — | Toasts (bottom-right, 16 from the edges), menus, popovers, dialogs, sheets |
 
 **Sidebar rows.** 32 high, icon 16 in a fixed lane, label, and a trailing lane
-for state: on **Runtime checks**, a success check once all three steps
-(Connection, Profile, Workspaces) are ready or a tabular
-`n/3` count while incomplete; on **Review & preferences**, a `primary` count
+for state: on **Runtime checks**, a success check once both steps
+(Connection and Profile) are ready or a tabular
+`n/2` count while incomplete; on **Review**, a `primary` count
 pill showing the daemon's exact count of suggested records (`profile.review.count`,
 personal scope plus the selected project), read again when the target, project or
 a decision changes. Unknown or refused hides the pill; zero hides it too, and
 nothing ever shows "0" for "not counted". Its spoken name carries the count
-("Review & preferences, 3 waiting"). One `inset` indicator behind the rows marks
+("Review, 3 waiting"). One `inset` indicator behind the rows marks
 the current destination and slides to it; hover is a lighter wash. No leading
 bars. Group labels are `CAPTION` semibold `muted`, never uppercased.
 
@@ -375,7 +375,7 @@ work is called done. "RM" is what reduced motion does.
 | Toast stack expands on hover | The NSH stack's critically damped springs | Instant |
 | Window narrows past 900 | None; the layout follows the resize (the indicator hides) | — |
 
-**Preferences, Personal preferences, To review**
+**Rules, Personal preferences, Review**
 
 | Change | Motion | RM |
 | --- | --- | --- |
@@ -415,7 +415,7 @@ work is called done. "RM" is what reduced motion does.
 | Theme card chosen | Colors switch at once; the chosen card's check pops in, `BASE` | Check appears |
 | Color mode or language segment | One selection fill slides to the chosen segment (NSH tabs indicator) | Instant |
 
-**Connection, Profile, Workspaces, Agents**
+**Connection, Profile, Workspaces page, Agents**
 
 | Change | Motion | RM |
 | --- | --- | --- |

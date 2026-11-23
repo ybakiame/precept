@@ -255,7 +255,9 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     writes_on(&mut app);
     f.register();
     app.press_key("mod+r").unwrap();
-    // The newly registered project becomes the current one.
+    // The newly registered project becomes the current one; reviewed rules
+    // are a separate destination from the pending queue.
+    app.press("Rules").unwrap();
     app.wait_for("Project conventions · alpha").unwrap();
     writes_on(&mut app);
     // Project → Preferences → Manage project preferences: alpha's records.
@@ -368,12 +370,12 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     app.wait_for_gone("Show full digest", Duration::from_secs(5))
         .unwrap();
     // To review is empty: a valid pending-review state, never "unavailable".
-    app.press("To review").unwrap();
+    app.press("Review").unwrap();
     app.wait_for("No pending suggestions").unwrap();
     assert!(!app.screen().shows("Unavailable"));
     // Both locales ship the review copy.
     app.press_key("mod+l").unwrap();
-    app.wait_for("待审阅").unwrap();
+    app.wait_for("审阅").unwrap();
     app.wait_for("没有待审建议").unwrap();
     drop(app);
     keyboard_review_and_revoked_delete(&f);

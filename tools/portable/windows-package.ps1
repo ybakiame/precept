@@ -34,9 +34,9 @@ try {
     $packageRoot = Join-Path $report 'package'
     $source = Get-Content -LiteralPath (Join-Path $packageRoot 'Precept/runtime/manifest.json') -Raw | ConvertFrom-Json
     $zip = if ($Release) {
-        Join-Path $report ("precept-" + $Release + "-windows-x86_64.zip")
+        Join-Path $report ("precept-" + $Release + "-windows-x64.zip")
     } else {
-        Join-Path $report ("precept-windows-x86_64-prototype-" + $source.source_sha.Substring(0,12) + ".zip")
+        Join-Path $report ("precept-windows-x64-prototype-" + $source.source_sha.Substring(0,12) + ".zip")
     }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     # Entries are Precept/...; extraction always creates one product directory.

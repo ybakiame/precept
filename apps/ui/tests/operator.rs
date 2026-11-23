@@ -213,11 +213,13 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     writes_on(&mut app);
     f.register();
     app.press_key("mod+r").unwrap();
-    // The newly registered project becomes the current one.
+    // The newly registered project becomes the current one; its reviewed rules
+    // live separately from the pending Review queue.
+    app.press("Rules").unwrap();
     app.wait_for("Project conventions · alpha").unwrap();
     writes_on(&mut app);
-    // Workspace → Preferences → Manage & add preferences opens the unified
-    // Review hub on alpha's project tab; Add preference saves a suggestion.
+    // Workspace → Preferences → Manage & add preferences opens Rules on alpha;
+    // Add preference saves a suggestion.
     app.press_key("alt+3").unwrap();
     app.press("Manage & add preferences").unwrap();
     writes_on(&mut app);
@@ -254,7 +256,7 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
         })
         .unwrap();
     };
-    waiting(&mut app, "Review & rules, 1 waiting");
+    waiting(&mut app, "Review, 1 waiting");
     // The saved suggestion opens as the exact record; confirming it is the
     // second explicit step.
     app.wait_for("Show full digest").unwrap();
@@ -265,7 +267,7 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 3");
     // Confirmed: nothing waits, and the count leaves rather than showing 0.
-    waiting(&mut app, "Review & rules");
+    waiting(&mut app, "Review");
     add(&mut app);
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 4");

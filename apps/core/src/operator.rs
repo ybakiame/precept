@@ -37,7 +37,7 @@ impl std::fmt::Debug for DeleteArm {
         f.write_str("DeleteArm(redacted)")
     }
 }
-/// Which tab is active in the unified Review & preferences workspace.
+/// Which pending-review or reviewed-record scope is active in Context.
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub enum ReviewMode {
     /// To review: pending suggestions across personal or current-project scope.

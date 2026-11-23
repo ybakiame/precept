@@ -6,6 +6,8 @@ data between schemas with the versioned Profile export and import.
 
 ## Unreleased
 
+## 0.4.1
+
 - **Two harnesses, done well.** Precept sets up and supports Claude Code and
   Codex. The integrations for Antigravity, Cursor, Qoder, Qoder CN, CodeBuddy
   and WorkBuddy are removed; remove their Precept entries from those tools'
@@ -20,6 +22,12 @@ data between schemas with the versioned Profile export and import.
   compaction to keep its work session current.
 - Windows: integration reads and hook paths use the Windows home; hook
   commands quote for cmd; MCP roots parse Windows drive URIs.
+- Operator: recognize and explicitly start a local daemon on Windows or Linux;
+  allow up to ten tags per rule and remove the agent-suggestion queue caps.
+  Review pending suggestions separately from reviewed Rules, keep Workspaces
+  independent, align list content, and consolidate daemon details in Diagnostics.
+  Deprecated records are hidden until enabled, and destructive preference deletion
+  displays and copies the exact ID.
 
 ## 0.4.0
 

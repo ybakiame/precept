@@ -591,19 +591,19 @@ mod tests {
             app.screen()
                 .shows(&format!("v{}", env!("CARGO_PKG_VERSION")))
         );
-        assert!(app.screen().shows("Review & rules"));
+        assert!(app.screen().shows("Rules"));
         app.press("Hide the sidebar").unwrap();
         app.wait_until("sidebar hidden", std::time::Duration::from_secs(5), |s| {
-            !s.shows("Review & rules")
+            !s.shows("Rules")
         })
         .unwrap();
         app.press("Show the sidebar").unwrap();
-        app.wait_for("Review & rules").unwrap();
+        app.wait_for("Rules").unwrap();
         app.press_key("mod+b").unwrap();
         app.wait_until(
             "hidden by keyboard",
             std::time::Duration::from_secs(5),
-            |s| !s.shows("Review & rules"),
+            |s| !s.shows("Rules"),
         )
         .unwrap();
     }
@@ -852,21 +852,19 @@ mod tests {
     }
 
     #[test]
-    fn runtime_checks_tabs_and_merged_review_hub_provide_clear_offline_guidance() {
+    fn navigation_separates_workspaces_review_rules_and_diagnostics() {
         let mut app = nsh_testing::Headless::start(EngineConfig::new(Root::of::<App>())).unwrap();
         app.wait_for("Project: alpha").unwrap();
-        // Runtime checks unifies Connection, Profile and Workspaces in one destination.
+        // Runtime checks holds only Connection and Profile; Workspaces is independent.
         app.press("Runtime checks").unwrap();
         app.wait_for("Connection").unwrap();
         app.wait_for("Profile").unwrap();
-        app.wait_for("Workspaces").unwrap();
+        app.wait_for("1/2").unwrap();
         assert!(!app.screen().shows("Checks only read status."));
-        // Profile tab shows a designed offline empty state guiding back to Connection.
         app.press("Profile").unwrap();
         app.wait_for("Connect to a daemon first").unwrap();
         app.press("Go to Connection").unwrap();
         app.wait_for("Use demo data").unwrap();
-        // Workspaces tab manages workspaces only: no bottom card, no click-to-switch.
         app.press("Workspaces").unwrap();
         app.wait_for("Registered workspaces").unwrap();
         assert!(
@@ -874,9 +872,18 @@ mod tests {
                 .shows("Only the daemon's projects; switching clears the task lookup.")
         );
         assert_eq!(app.screen().count("role:button[beta]").unwrap(), 0);
-        // Merged Review & rules hub shows offline guidance on Demo data.
-        app.press("Review & rules").unwrap();
+        // Pending review and reviewed records are separate Context destinations.
+        app.press("Rules").unwrap();
         app.wait_for("Live daemon required").unwrap();
+        app.press("Review").unwrap();
+        app.wait_for("Live daemon required").unwrap();
+        assert!(!app.screen().shows("Review & rules"));
+        // The two diagnostic cards precede Doctor.
+        app.press("Diagnostics").unwrap();
+        let texts = app.screen().texts();
+        let daemon = texts.iter().position(|t| *t == "Daemon status").unwrap();
+        let doctor = texts.iter().position(|t| *t == "Doctor").unwrap();
+        assert!(daemon < doctor);
         // Agents page lives under Workspace and shows offline guidance on Demo data.
         app.press("Agents").unwrap();
         app.wait_for("Connect to a daemon first").unwrap();

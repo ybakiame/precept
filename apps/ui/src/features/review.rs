@@ -17,9 +17,19 @@ use tokens::{mix, palette};
 pub(crate) fn open(model: Signal<Model>) {
     open_mode(model, ReviewMode::Inbox);
 }
-/// Opens the unified Review & rules workspace on one of its three tabs:
-/// To review (pending suggestions), Personal (global records) or Project
-/// (records for the currently selected workspace).
+/// Opens the reviewed rule records, retaining the project scope when one is active.
+pub(crate) fn open_records(model: Signal<Model>) {
+    let mode = if model.get().operator.mode == ReviewMode::Project
+        && model.get().selected_project.is_some()
+    {
+        ReviewMode::Project
+    } else {
+        ReviewMode::Personal
+    };
+    open_mode(model, mode);
+}
+/// Opens Context on the pending queue or one of the reviewed scopes:
+/// Personal (global records) or Project (the selected workspace).
 pub(crate) fn open_mode(model: Signal<Model>, mode: ReviewMode) {
     model.update(|m| {
         let global = match mode {
@@ -825,7 +835,7 @@ fn loaded_list(
         list = list.on_load_more(move || load());
     }
     body.child(list)
-        .child(view().items_center().child(footer))
+        .child(view().items_start().child(footer))
         .into_element()
 }
 /// The Detail tab: the exact inspected record, digest prefix with explicit
@@ -1672,7 +1682,7 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
             move || !matches!(model.get().connection.target, Target::Local | Target::Wsl),
             |s| s.hidden().invisible(),
         )
-        .child(mode_tabs(model))
+        .child(record_scope_tabs(model))
         .child(writes_notice(model))
         .child(page_toolbar(model))
         .child(batch_bar(model))
@@ -1920,35 +1930,36 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
         .child(delete_dialog(model, delete_open, retype_ref))
 }
 
-/// The unified hub tabs: pending review queue, personal preferences, and
-/// current project's preferences.
-fn mode_tabs(model: Signal<Model>) -> impl IntoElement {
-    ui::tabs(model)
-        .add_fn(
-            move || model.get().word(Msg::ProfileReview).into(),
+/// The Rules page's two reviewed scopes; the pending queue has its own destination.
+fn record_scope_tabs(model: Signal<Model>) -> impl IntoElement {
+    view()
+        .style_when(
             move || model.get().operator.mode == ReviewMode::Inbox,
-            move || open_mode(model, ReviewMode::Inbox),
+            |s| s.hidden().invisible(),
         )
-        .add_fn(
-            move || model.get().word(Msg::ReviewTabPersonal).into(),
-            move || model.get().operator.mode == ReviewMode::Personal,
-            move || open_mode(model, ReviewMode::Personal),
-        )
-        .add_fn(
-            move || {
-                let m = model.get();
-                match m.selected_project.as_deref() {
-                    Some(name) => format!(
-                        "{} · {}",
-                        m.word(Msg::ReviewTabConventions),
-                        sanitize(name, 32)
-                    )
-                    .into(),
-                    None => m.word(Msg::ReviewTabConventions).into(),
-                }
-            },
-            move || model.get().operator.mode == ReviewMode::Project,
-            move || open_mode(model, ReviewMode::Project),
+        .child(
+            ui::tabs(model)
+                .add_fn(
+                    move || model.get().word(Msg::ReviewTabPersonal).into(),
+                    move || model.get().operator.mode == ReviewMode::Personal,
+                    move || open_mode(model, ReviewMode::Personal),
+                )
+                .add_fn(
+                    move || {
+                        let m = model.get();
+                        match m.selected_project.as_deref() {
+                            Some(name) => format!(
+                                "{} · {}",
+                                m.word(Msg::ReviewTabConventions),
+                                sanitize(name, 32)
+                            )
+                            .into(),
+                            None => m.word(Msg::ReviewTabConventions).into(),
+                        }
+                    },
+                    move || model.get().operator.mode == ReviewMode::Project,
+                    move || open_mode(model, ReviewMode::Project),
+                ),
         )
 }
 
@@ -1992,39 +2003,36 @@ fn writes_notice(model: Signal<Model>) -> impl IntoElement {
 /// The page's commands: the scope switch (To review), Add preference (Personal
 /// and Project tabs), and Refresh.
 fn page_toolbar(model: Signal<Model>) -> impl IntoElement {
-    let scope = |global: bool| {
-        ui::button(model, "")
-            .label_fn(move || {
-                let m = model.get();
-                if global {
-                    m.word(Msg::ScopePersonal).into()
-                } else {
-                    match m.selected_project.as_deref() {
-                        Some(name) => {
-                            format!("{} · {}", m.word(Msg::ScopeThisProject), sanitize(name, 32))
-                                .into()
-                        }
-                        None => m.word(Msg::ScopeThisProject).into(),
-                    }
-                }
-            })
-            .size(ui::ButtonSize::Small)
-            .selected(move || model.get().operator.global == global)
-            .disabled(move || {
-                !available(model) || (!global && model.get().selected_project.is_none())
-            })
-            .on_press(move || {
-                model.update(|m| {
-                    if m.operator.global != global {
-                        m.operator.invalidate();
-                        m.operator.batch.clear();
-                        m.operator.global = global;
-                        m.operator.after_id = 0;
-                        m.operator.queue_after_id = 0;
-                    }
-                })
-            })
+    let set_scope = move |global: bool| {
+        model.update(|m| {
+            if m.operator.global != global {
+                m.operator.invalidate();
+                m.operator.batch.clear();
+                m.operator.global = global;
+                m.operator.after_id = 0;
+                m.operator.queue_after_id = 0;
+            }
+        })
     };
+    let inbox_tabs = ui::tabs(model)
+        .add_fn(
+            move || model.get().word(Msg::ScopePersonal).into(),
+            move || model.get().operator.global,
+            move || set_scope(true),
+        )
+        .add_fn(
+            move || {
+                let m = model.get();
+                match m.selected_project.as_deref() {
+                    Some(name) => {
+                        format!("{} · {}", m.word(Msg::ScopeThisProject), sanitize(name, 32)).into()
+                    }
+                    None => m.word(Msg::ScopeThisProject).into(),
+                }
+            },
+            move || !model.get().operator.global,
+            move || set_scope(false),
+        );
     view()
         .flex_row()
         .flex_wrap()
@@ -2032,14 +2040,11 @@ fn page_toolbar(model: Signal<Model>) -> impl IntoElement {
         .gap_2()
         .child(
             view()
-                .flex_row()
-                .gap_1()
                 .style_when(
                     move || model.get().operator.mode != ReviewMode::Inbox,
-                    |s| s.hidden(),
+                    |s| s.hidden().invisible(),
                 )
-                .child(scope(true))
-                .child(scope(false)),
+                .child(inbox_tabs),
         )
         .child(
             view()

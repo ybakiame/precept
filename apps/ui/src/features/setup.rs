@@ -1,5 +1,5 @@
-//! Runtime checks: one guided setup surface combining Connection, Profile and
-//! Workspaces as three tabs with live completion state.
+//! Runtime checks: one guided setup surface combining Connection and Profile
+//! as two tabs with live completion state. Workspaces has its own page.
 use crate::*;
 use precept_ui_core::{SetupTab, i18n::Msg};
 use tokens::palette;
@@ -18,16 +18,12 @@ pub(crate) fn step_done(m: &Model, tab: SetupTab) -> bool {
     }
 }
 
-/// How many of the three runtime-setup steps are currently complete (0..=3).
+/// How many of the two runtime-check steps are currently complete (0..=2).
 pub(crate) fn completed_count(m: &Model) -> u8 {
-    [
-        SetupTab::Connection,
-        SetupTab::Profile,
-        SetupTab::Workspaces,
-    ]
-    .into_iter()
-    .filter(|tab| step_done(m, *tab))
-    .count() as u8
+    [SetupTab::Connection, SetupTab::Profile]
+        .into_iter()
+        .filter(|tab| step_done(m, *tab))
+        .count() as u8
 }
 
 fn tab_label(tab: SetupTab) -> Msg {
@@ -58,7 +54,7 @@ fn step_tab(model: Signal<Model>, tab: SetupTab) -> impl IntoElement {
     )
 }
 
-/// The Runtime checks page (Connection, Profile, Workspaces).
+/// The Runtime checks page (Connection and Profile).
 pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
     let bar = view()
         .flex_row()
@@ -81,12 +77,6 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
                 .flex_1()
                 .min_w(px(140.0))
                 .child(step_tab(model, SetupTab::Profile)),
-        )
-        .child(
-            view()
-                .flex_1()
-                .min_w(px(140.0))
-                .child(step_tab(model, SetupTab::Workspaces)),
         );
 
     view()
@@ -107,13 +97,5 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
                     |s| s.hidden().invisible(),
                 )
                 .child(super::profile::section(model)),
-        )
-        .child(
-            view()
-                .style_when(
-                    move || model.get().setup_tab != SetupTab::Workspaces,
-                    |s| s.hidden().invisible(),
-                )
-                .child(super::projects::page(model)),
         )
 }

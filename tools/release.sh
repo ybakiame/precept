@@ -86,7 +86,7 @@ mkdir -p "$artifacts"
 (cd "$build" && pwsh.exe -NoProfile -File 'tools\portable\windows-package.ps1' \
   -OutputParent "$(wslpath -w "$artifacts")" -Name "$tag" -Release "$version") >"$out/windows.log" 2>&1 \
   || die "Windows package failed; see $out/windows.log"
-cp "$artifacts/$tag/precept-$version-windows-x86_64.zip" "$out/"
+cp "$artifacts/$tag/precept-$version-windows-x64.zip" "$out/"
 
 (cd "$out" && sha256sum precept-* >SHA256SUMS)
 awk -v v="## $version" '$0==v{on=1;next} on&&/^## /{exit} on' CHANGELOG.md >"$out/notes.md"

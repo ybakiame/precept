@@ -68,16 +68,14 @@ Organize navigation around three clear operational paths plus utilities:
   effective confirmed rows), **Agents** (MCP
   access and recent activity) and **Handoff** for that active project. There is one workspace switcher in the app; workspace-scoped headers
   display a calm read-only scope badge rather than a second switcher.
-- **Review:** one unified **Review & rules** hub (To review, Personal and Project
-  conventions) combining the pending
-  review queue (`To review`, with personal vs current-project scope toggle),
-  **Personal** preferences (global scope) and **Project conventions** (active
-  project scope: the repository's shared conventions, not anyone's personal taste). Its sidebar item carries the live count pill of waiting
-  suggestions.
-- **Set up:** **Runtime checks**, uniting **Connection**, **Profile** and
-  **Workspaces** as three step tabs with live completion indicators (`✓` or
-  `n/3`). Workspaces strictly manages registration and removal; clicking a
-  workspace row never switches the active project.
+- **Context:** **Review** holds only the pending queue (with personal vs
+  current-project scope toggle) and carries its live count pill. **Rules** holds the
+  reviewed records: **Personal** preferences (global scope) and **Project
+  conventions** (active project scope), including hidden-by-default deprecated rows.
+- **Set up:** **Runtime checks** unites **Connection** and **Profile** as two step
+  tabs with live completion indicators (`✓` or `n/2`). **Workspaces** is a separate
+  management page directly below it, strictly for registration and removal; clicking
+  a workspace row never switches the active project.
 - **Foot:** **Diagnostics**, **Settings**, the persistent daemon status button
   (opens Runtime checks → Connection) and the keyboard shortcuts button.
 
@@ -218,7 +216,7 @@ effective rows, with no pages. Repository rules (committed `.precept/rules` file
 the current check result (checks pass n/m, check failing with the file, or checks
 could not run), declared enforcement and guard count, and for guarded rules whether
 the gate is on; uncommitted and invalid files
-are named below them. In Review → Project conventions, a confirmed record offers
+are named below them. In Rules → Project conventions, a confirmed record offers
 **Write to repository…**: a dialog previews the exact file and path and writes it;
 when the file exists and differs it shows the change as a diff and **Update file**
 keeps the checks, guards and allowed values written in the file. The operator
@@ -229,7 +227,8 @@ column, then the title (key, number and revision; it wraps, and its accessible n
 is the full record label), the value's first line and the tags beneath it, with the
 status on the right. Tag filters above it narrow to rows carrying every selected tag; the filter
 text matches key, value, scope or tag, and a leading `#` matches tags only. Review
-lists (the queue and a scope's records) load further batches as the list nears its
+lists (the queue and a scope's records) use segmented scope selectors and align
+list footers to the content's leading edge. They load further batches as the list nears its
 end, with a visible Load more control for keyboard and terminal use. The queue
 loads when To review opens, like the record lists, and the page's Refresh reads it
 again; a Profile change since it loaded is named ("The Profile changed N time(s)…").
@@ -286,8 +285,10 @@ success badge. Historical PASS remains labeled historical.
 
 ### Diagnostics (Doctor)
 
-Diagnostics opens with **Doctor**: one row per link an agent needs to receive the
-selected workspace's context, in the order a fix usually has to happen (daemon,
+Diagnostics opens with two equal-width cards, **Daemon** and **Diagnostics**, side by
+side above **Doctor** (stacked in the compact layout). Doctor has one row per link an
+agent needs to receive the selected workspace's context, in the order a fix usually
+has to happen (daemon,
 Profile and writes, workspace registration and agent sharing, preferences
 delivered and waiting, repository rules (invalid files, failing checks, files not
 committed) and the pre-tool gate (switch, gate hooks; reported as set up, never as
