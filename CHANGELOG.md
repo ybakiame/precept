@@ -4,8 +4,15 @@ Precept follows [semantic versioning](https://semver.org/). While the version is
 0.x, a minor release may change the Profile schema or the local interfaces; move
 data between schemas with the versioned Profile export and import.
 
-## Unreleased
+## 0.4.4
 
+- **Pinned repository isolation:** registered projects retain their root identity
+  across restarts. Inventory, selector probes, checked files and fixed import
+  sources traverse pinned directory handles with no-follow semantics on Unix and
+  Windows; missing, legacy or replaced roots stay listed but unavailable without
+  automatic repair. Repository writes use private temporary files, recheck
+  expected bytes before replacement, refuse no-replace collisions and preserve
+  existing Windows DACLs. This narrows same-user races but is not an OS sandbox.
 - **Manual personal sync:** confirmed global preferences can move between paired
   devices through age-encrypted files with per-device keys or a passphrase.
   Sender signatures, owner-fingerprint pairing, vector clocks, explicit delete
