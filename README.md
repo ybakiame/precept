@@ -15,13 +15,17 @@ an MCP server, harness hooks and an NSH desktop operator app.
   contract sources.
 - Personal preferences with global or project scope, provenance and exact-record
   human review.
+- Bounded, read-only import from known AGENTS.md, CLAUDE.md, Cursor, Continue and
+  Copilot rule files, with source provenance and explicit skips; selected rules
+  become suggestions and still require exact review.
 - Effective context that explains applicable, masked, conflicting and unknown rules
   without letting personal or session state override repository contracts.
 - One `precept` MCP server for every registered project, bound to the session's
   folder: `get_effective_context`, `explain_rule` (why a rule applies or not) and
   `get_handoff`, and, where you allow it, `suggest_rule` (suggestions and updates
   for your review), work-session tools and project memory (`remember`, `recall`,
-  `reaffirm`, `forget`).
+  `reaffirm`, `forget`). Work sessions use one goal plus structured milestone/task
+  items, single-item CAS updates and full-state reads for parallel agents.
 - Session-start briefings, an opt-in pre-tool gate and a stale-document warning
   through harness hooks, and repository rules (`.precept/rules/`) with checks.
   Precept sets up Claude Code and Codex; other agents connect themselves with
@@ -114,7 +118,7 @@ project/startup records and the suggested Profile; runtime holds credentials and
 endpoint coordinates. Environment roots must be absolute. Durable state never
 uses a cache directory.
 
-Version 0.4.2 replaces the old Windows `Precept-state` default with the separated
+Version 0.4.2 replaced the old Windows `Precept-state` default with the separated
 layout above. Precept never moves or discovers old data automatically. Before
 upgrading, stop the Desktop and daemon and keep a backup. Move `connection.json`
 and `settings.toml` into `precept\config`, move daemon state into `precept\state`,

@@ -6,6 +6,28 @@ data between schemas with the versioned Profile export and import.
 
 ## Unreleased
 
+## 0.4.3
+
+- **Structured work sessions:** one goal now coordinates flat milestone/task
+  items with explicit state, session-wide acyclic dependencies, owner and blocked
+  reason. Agents add, start, complete, defer, block, reopen, update or remove one
+  item at a time with required CAS, read full state with `get_work_session`, and
+  resume an open session from another conversation. Briefings, the Sessions page
+  and Handoffs preserve item metadata; validation errors name the exact field.
+- **Source modularization:** daemon IPC dispatch, MCP protocol/binding/session
+  handling, daemon session model/store/API, CLI diagnostics/transfer, UI domains
+  and native acceptance stages now live in cohesive modules instead of oversized
+  entrypoint files; every maintained Rust source is below 800 lines.
+- **Native acceptance:** the harness no longer pulls the unused `unicode-width`
+  dependency.
+- **Multi-source rule import:** Review can preview known AGENTS.md, CLAUDE.md,
+  Cursor, Continue and Copilot rule files from one registered project. The
+  daemon uses fixed non-recursive paths, refuses links, bounds reads and output,
+  preserves source provenance, and reports malformed metadata, unsupported
+  glob/manual activation, duplicates and budget exhaustion explicitly. Selected
+  items remain suggestions until exact operator confirmation; source files are
+  never changed.
+
 ## 0.4.2
 
 - **Guided activation and diagnostics:** `precept setup --plan` previews the

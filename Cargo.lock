@@ -368,7 +368,7 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
 name = "precept"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "clap",
  "precept-ipc",
@@ -380,7 +380,7 @@ dependencies = [
 
 [[package]]
 name = "precept-core"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -391,7 +391,7 @@ dependencies = [
 
 [[package]]
 name = "precept-ipc"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "clap",
  "getrandom",
@@ -408,7 +408,7 @@ dependencies = [
 
 [[package]]
 name = "precept-mcp"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "clap",
  "precept-core",
@@ -423,7 +423,7 @@ dependencies = [
 
 [[package]]
 name = "precept-store"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "precept-core",
  "precept-ipc",
@@ -436,7 +436,7 @@ dependencies = [
 
 [[package]]
 name = "precept-write"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "getrandom",
  "libc",
@@ -452,7 +452,7 @@ dependencies = [
 
 [[package]]
 name = "preceptd"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "clap",
  "getrandom",
