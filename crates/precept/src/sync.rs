@@ -207,12 +207,13 @@ pub async fn run(location: &Location, command: Command) -> Result<Value> {
         Command::Apply(args) => apply(location, args).await,
         Command::Abort { operation_id } => {
             valid_operation_id(&operation_id)?;
-            write(
+            let value = write(
                 location,
                 "profile.sync.abort",
                 json!({"operation_id":operation_id}),
             )
-            .await
+            .await?;
+            correlated(value, &operation_id)
         }
     }
 }
@@ -413,13 +414,27 @@ async fn apply(location: &Location, args: ApplyArgs) -> Result<Value> {
         device_id: prepared.device_id,
         selections: prepared.selections,
     };
-    write_scoped(
+    let value = write_scoped(
         location,
         "profile.sync.apply",
         serde_json::to_value(submission).map_err(|_| Error::InvalidRequest)?,
         prepared.scope,
     )
-    .await
+    .await?;
+    correlated(value, &args.operation_id)
+}
+
+fn correlated(value: Value, expected: &str) -> Result<Value> {
+    #[derive(Deserialize)]
+    struct Operation {
+        operation_id: String,
+    }
+    let operation: Operation =
+        serde_json::from_value(value.clone()).map_err(|_| Error::OutcomeUnknown)?;
+    if operation.operation_id != expected {
+        return Err(Error::OutcomeUnknown);
+    }
+    Ok(value)
 }
 
 fn select(

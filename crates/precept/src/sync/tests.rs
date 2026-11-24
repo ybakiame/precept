@@ -143,6 +143,20 @@ fn unknown_and_duplicate_key_filters_are_refused() {
 }
 
 #[test]
+fn settlement_replies_must_name_the_requested_operation() {
+    let value = json!({"operation_id":"operation-1","applied":1});
+    assert_eq!(correlated(value.clone(), "operation-1").unwrap(), value);
+    assert_eq!(
+        correlated(value.clone(), "operation-2"),
+        Err(Error::OutcomeUnknown)
+    );
+    assert_eq!(
+        correlated(json!({}), "operation-1"),
+        Err(Error::OutcomeUnknown)
+    );
+}
+
+#[test]
 fn prepared_files_round_trip_the_exact_retry_input_without_overwriting() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("prepared.json");
