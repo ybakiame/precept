@@ -57,6 +57,11 @@ enum Query {
         #[arg(long)]
         out: Option<std::path::PathBuf>,
     },
+    /// Redacted, read-only diagnostics for one project's repository rules.
+    LintRules {
+        /// Exact registered project name.
+        project: String,
+    },
     /// Redacted, read-only installation and project diagnostics.
     Doctor {
         /// Emit the versioned machine-readable report.
@@ -143,6 +148,7 @@ async fn run(args: Args) -> precept_ipc::Result<serde_json::Value> {
     let (method, params) = match args.command {
         Query::Health => ("daemon.health", json!({})),
         Query::Projects => ("project.list", json!({})),
+        Query::LintRules { project } => ("rules.lint", json!({"project":project})),
         Query::Activity { project, before } => {
             let mut p = json!({});
             if let Some(project) = project {

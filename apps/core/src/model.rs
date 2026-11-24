@@ -42,6 +42,7 @@ impl Model {
             sidebar_collapsed: false,
             selected_preference: None,
             selected_rule: None,
+            rule_lint: Default::default(),
             detail_page: 0,
             copied: false,
             data: None,
@@ -162,6 +163,7 @@ impl Model {
         self.detail_page = 0;
         self.selected_preference = None;
         self.selected_rule = None;
+        self.rule_lint.invalidate();
         self.copied = false;
         self.last_read_ms = None;
         self.last_duration_ms = None;
@@ -176,6 +178,7 @@ impl Model {
         self.data = None;
         self.selected_preference = None;
         self.selected_rule = None;
+        self.rule_lint.invalidate();
         self.copied = false;
         self.permission_denied = false;
         self.read_failure = None;
@@ -281,6 +284,7 @@ impl Model {
             self.page = 0;
             self.selected_preference = None;
             self.selected_rule = None;
+            self.rule_lint.invalidate();
             self.detail_page = 0;
         }
     }
@@ -483,6 +487,7 @@ impl Model {
         )
     }
     pub fn cancel_read(&mut self) {
+        self.rule_lint.invalidate();
         if self.phase == Phase::Loading {
             self.epoch += 1;
             self.phase = Phase::Unavailable;

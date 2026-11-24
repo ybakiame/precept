@@ -4,6 +4,7 @@
 mod bridge;
 mod checks;
 pub mod gate;
+mod lint;
 mod parser;
 mod snapshot;
 
@@ -12,6 +13,7 @@ pub use checks::{
     CheckCache, CheckIo, MAX_CHECK_BYTES, MAX_CHECK_READS, MAX_CHECKED_BYTES, evaluate,
     evaluate_cached,
 };
+pub use lint::{Diagnostic, LintFile, LintReport, LintStatus, LintSummary, Severity, lint};
 pub use parser::{
     Check, DIR, Guard, GuardTool, InvalidSource, MAX_BYTES, MAX_FILES, RuleFile, heading_title,
     id_for, parse, relative_path, render, valid_id, valid_key,

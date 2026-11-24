@@ -160,6 +160,115 @@ fn assert_safe(v: &Value) {
 }
 
 #[test]
+fn operator_rule_lint_is_project_bound_redacted_and_read_only() {
+    let (f, _) = setup();
+    assert_eq!(
+        f.daemon.call(
+            &f.daemon.credential("operator-write.cap"),
+            "rules.lint",
+            json!({"project":"alpha"})
+        ),
+        Err(precept_ipc::Error::Unauthorized)
+    );
+    f.daemon
+        .control("profile.write.disable", json!({}))
+        .unwrap();
+    assert_eq!(
+        f.daemon
+            .control("rules.lint", json!({"project":"alpha"}))
+            .unwrap()["status"],
+        "not_configured"
+    );
+    assert_eq!(
+        f.daemon.control("rules.lint", json!({"project":"missing"})),
+        Err(precept_ipc::Error::NotFound)
+    );
+    assert_eq!(
+        f.daemon.control(
+            "rules.lint",
+            json!({"project":"alpha","root":"caller-must-not-supply-a-root"})
+        ),
+        Err(precept_ipc::Error::InvalidRequest)
+    );
+    assert_eq!(
+        f.daemon.call(
+            &f.daemon.credential("agent-alpha.cap"),
+            "rules.lint",
+            json!({"project":"alpha"})
+        ),
+        Err(precept_ipc::Error::Unauthorized)
+    );
+
+    let dir = f.temp.path().join("alpha").join(DIR);
+    fs::create_dir_all(&dir).unwrap();
+    let bad = "+++\nkey = \"PRIVATE_SOURCE_65\"\npriority = 1000\n[[check]]\nfile = \"/absolute/private/source\"\n+++\nPRIVATE_SOURCE_65\n";
+    let good = "+++\nkey = \"PRIVATE_SOURCE_65\"\nenforcement = \"verify\"\n[applies_to]\npaths = [\"future/\"]\n+++\nA valid rule.\n";
+    let twin = "+++\nkey = \"PRIVATE_SOURCE_65\"\nenforcement = \"verify\"\n[applies_to]\npaths = [\"future/\"]\n+++\nAnother valid rule.\n";
+    for (name, raw) in [("bad.md", bad), ("good.md", good), ("twin.md", twin)] {
+        fs::write(dir.join(name), raw).unwrap();
+    }
+    let before: Vec<_> = ["bad.md", "good.md", "twin.md"]
+        .into_iter()
+        .map(|name| fs::read(dir.join(name)).unwrap())
+        .collect();
+    let report = f
+        .daemon
+        .control("rules.lint", json!({"project":"alpha"}))
+        .unwrap();
+    assert_eq!(report["format"], "precept-rules-lint");
+    assert_eq!(report["version"], 1);
+    assert_eq!(report["status"], "issues");
+    assert_eq!(report["summary"]["files"], 3);
+    assert!(report["summary"]["errors"].as_u64().unwrap() > 0);
+    assert!(report["summary"]["warnings"].as_u64().unwrap() > 0);
+    let text = report.to_string();
+    for code in [
+        "priority.invalid",
+        "check.invalid",
+        "selector.path_not_present",
+        "enforcement.no_verification",
+        "rule.duplicate_key",
+        "rule.priority_tie",
+    ] {
+        assert!(text.contains(code), "missing {code}: {text}");
+    }
+    let root = f.temp.path().to_string_lossy();
+    let encoded_root = serde_json::to_string(root.as_ref()).unwrap();
+    let escaped_root = &encoded_root[1..encoded_root.len() - 1];
+    for private in [
+        "PRIVATE_SOURCE_65",
+        "/absolute/private/source",
+        "future/",
+        escaped_root,
+    ] {
+        assert!(!text.contains(private), "lint leaked {private}: {text}");
+    }
+    for (name, raw) in ["bad.md", "good.md", "twin.md"].into_iter().zip(before) {
+        assert_eq!(fs::read(dir.join(name)).unwrap(), raw);
+    }
+    assert_eq!(
+        f.daemon
+            .control("rules.lint", json!({"project":"beta"}))
+            .unwrap()["status"],
+        "not_configured"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn rule_lint_refuses_a_replaced_project_root() {
+    let (f, _) = setup();
+    let root = f.temp.path().join("alpha").canonicalize().unwrap();
+    let moved = f.temp.path().join("moved-alpha");
+    fs::rename(&root, &moved).unwrap();
+    std::os::unix::fs::symlink(&moved, &root).unwrap();
+    assert_eq!(
+        f.daemon.control("rules.lint", json!({"project":"alpha"})),
+        Err(precept_ipc::Error::UnsafeRuntime)
+    );
+}
+
+#[test]
 fn production_ipc_and_mcp_mask_contract_conflicts_and_preserve_fallback_privacy() {
     let (f, b) = setup();
     init(&f);

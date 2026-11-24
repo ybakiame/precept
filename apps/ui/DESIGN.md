@@ -390,6 +390,11 @@ work is called done. "RM" is what reduced motion does.
 | Record sheet opens / closes | The NSH sheet's own presentation from the trailing edge, over a fading scrim | Appears |
 | Decision prepared | The Apply dialog, as Add preference | Appears |
 | Empty or loading list | The empty state arrives: rise 8 and fade, `SLOWER` | Appears |
+| Check rules starts | The button keeps its label; a separate loading row fades in rising 4, `BASE` | Appears |
+| Rule state arrives | The result, waiting, connection or error region fades in rising 4, `BASE`, once per state change | Appears |
+| Templates… opens / closes | The existing dialog scrim fades in `FAST`; the panel grows from 0.97 and rises 8, `SLOW` | Appears |
+| Template choice changes | The shared Tabs selection fill slides natively; label color uses `INSTANT`; no layout motion | Instant selection |
+| Rule report or template copied | The existing toast reports the copy; no data motion | Appears |
 
 **Shortcuts panel**
 

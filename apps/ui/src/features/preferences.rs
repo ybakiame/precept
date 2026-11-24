@@ -474,6 +474,7 @@ pub(crate) fn preferences(model: Signal<Model>) -> impl IntoElement {
             ),
         );
     }
+    body = body.child(features::rule_lint::panel(model));
     body = body.child(contracts(model, &current));
     body = body.child(tag_filters(model, &current));
     if rows.is_empty() {

@@ -78,6 +78,10 @@ bounded native and optional WSL checks.
 The actual `--operation-prefix` import still needs writes enabled for the run and
 creates suggestions that require exact operator review.
 
+`precept lint-rules PROJECT` reports redacted, read-only repository-rule diagnostics
+with stable codes and line/column positions. It uses the registered project root,
+requires no write grant, and is also available to the Desktop Rules page.
+
 
 ## Operator model
 

@@ -27,6 +27,7 @@ mod process_tests;
 mod profiles;
 mod rpc;
 mod rule_export;
+mod rule_lint;
 mod scope;
 mod sessions;
 mod state;

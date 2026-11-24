@@ -151,6 +151,9 @@ impl Service {
                 _ => Err(Error::InvalidRequest),
             };
         }
+        if request.method == "rules.lint" {
+            return rule_lint::report(access, params, &self.profiles);
+        }
         // A confirmed project convention written as a repository rule file:
         // a preview, then an explicit write guarded by the previewed digest.
         if matches!(

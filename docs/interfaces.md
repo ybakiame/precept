@@ -487,6 +487,35 @@ from the context. Agent projections omit origin, review history, losing values a
 raw typed explanations. No repository files are
 created or modified by this read path.
 
+Operator-only `rules.lint {project}` (CLI `precept lint-rules PROJECT`) reads the
+registered project's `.precept/rules` without a write grant and returns the
+versioned `precept-rules-lint` report. It accepts no caller-supplied root, path,
+source text or selector. The daemon rechecks the pinned canonical project root,
+uses the same bounded no-follow inventory as context resolution, and never starts
+a daemon, changes a file or exposes the method to agents/MCP.
+
+The report contains `status` (`ok`, `issues`, `not_configured` or `unavailable`),
+`summary {files, errors, warnings}` and per-file diagnostics. Each diagnostic has
+a stable `code`, `severity`, fixed English `message`, 1-based `line` / `column`
+and exclusive `end_line` / `end_column`; cross-file findings may name one related
+repository-relative rule file. Reports never contain source lines, field values,
+rule keys, absolute roots, commands, link targets or raw parser errors. Invalid
+file names are represented by deterministic `.precept/rules/invalid-<hash>.md`
+entries without the original name; a numeric suffix is added only when needed to
+avoid a collision with a real rule path or another sanitized entry. Each file
+returns at most 32 diagnostics; if
+more were found, `diagnostics.truncated` explicitly reports that additional
+findings were omitted. Syntax and semantic errors identify what to fix; duplicate
+keys and identical canonical applicability plus priority are warnings, not claims
+of semantic contradiction or partial-scope overlap. A path selector with no current
+repository entry is a warning that explicitly allows future matches, never proof
+that the rule can never match. Lint does not change strict parsing, rule review,
+delivery or enforcement. The daemon rechecks project-root identity after the
+bounded read and refuses a changed root; the serialized report is capped at 768
+KiB, with a larger report returned as `TooLarge` rather than an oversized or
+partial IPC frame. These path checks are not a same-user filesystem race sandbox;
+see the security limitations for swap/restore races.
+
 Operator `rules.export` previews writing one confirmed convention of a served
 project as `.precept/rules/<id>.md`: path, exact text (key, `title` from the text's
 first heading, tags, options, the text), the current text, its digest, and
@@ -557,13 +586,14 @@ explicit inputs; project, task and request data never appear in argv.
 - **Hello:** the helper's first frame is `{"version":1,"id":0,"ok":{"bridge":"precept-bridge","version":1}}`;
   any other identity or version refuses the connection.
 - **Requests:** `{"version":1,"id":N,"op":{...}}`, strict fields, `id` ≥ 1, at most
-  8 in flight. `op.type` is exactly one of `snapshot`, `control` (the Operator
-  read/control allowlist: `profile.info|create|select|write.enable|write.disable`,
-  `profile.preferences.list|get`, `profile.review.queue|count|inspect`, `profile.handoff.get|list`),
-  `mutate` (one OperatorWrite `Mutation`), `project_write` (`project.add|register|remove`),
-  `health` (daemon health with the Operator credential, for the GUI's live WSL
-  status) or `cancel` (abandon an in-flight id; no reply of its own). Anything else is
-  `Unsupported`/`InvalidRequest`. There is no generic IPC forwarding or shell.
+  8 in flight. `op.type` is exactly one of `snapshot`, `control` (the shared
+  `precept_ipc::operator::CONTROL_METHODS` Operator read/control allowlist, including
+  Profile review, project/integration reads, `rules.lint`, import and session/memory
+  reads), `mutate` (one OperatorWrite `Mutation`), `project_write`
+  (`project.add|register|remove`), `health` (daemon health with the Operator
+  credential, for the GUI's live WSL status) or `cancel` (abandon an in-flight id;
+  no reply of its own). Anything else is `Unsupported`/`InvalidRequest`. There is
+  no generic IPC forwarding or shell.
 - **Replies:** `{"version":1,"id":N,"ok":…}` or `{"version":1,"id":N,"error":"Code"}`,
   exactly one of the two. Error codes are a fixed vocabulary; the Windows side maps
   anything else to `Unavailable` and never displays helper text verbatim. An

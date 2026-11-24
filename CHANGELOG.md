@@ -6,6 +6,14 @@ data between schemas with the versioned Profile export and import.
 
 ## Unreleased
 
+- **Rule authoring diagnostics:** Operator-only `precept lint-rules PROJECT` and
+  the Desktop Rules page report bounded, redacted syntax and semantic diagnostics
+  with stable codes and line/column positions. Duplicate keys, identical canonical
+  applicability plus priority, and currently missing path selectors are
+  conservative warnings; reports never expose source snippets, values or absolute
+  paths. Rust, Git, security and testing templates are previewed and copied for
+  repository review, never written automatically.
+
 ## 0.4.3
 
 - **Structured work sessions:** one goal now coordinates flat milestone/task

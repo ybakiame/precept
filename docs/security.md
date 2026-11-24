@@ -118,6 +118,13 @@ separate design with its own threat model.
   targets. Agents and OperatorWrite peers cannot scan. Imported text is untrusted:
   front matter is strictly bounded, unsupported activation/applicability is
   disclosed rather than guessed, and selected items can become only suggestions.
+- Operator rule lint uses the same project-bound, bounded no-follow rule inventory.
+  It accepts no caller root, path or source text, needs no write grant, rechecks the
+  pinned canonical project root, and is unavailable to agents/MCP. Diagnostics carry
+  only repository-relative filenames, stable codes, fixed messages and positions;
+  source lines, values, rule keys, absolute roots, commands, link targets and raw
+  parser errors never leave the daemon. Duplicate/scope and missing-path findings
+  are conservative warnings, not semantic proof or enforcement claims.
 - Handoff validation is historical. Bounded Fingerprint v1 stores only a digest,
   not raw diffs/files; overflow or missing observations remain unverified.
 - No product network listener, telemetry, automatic model call, history ingestion,
@@ -134,6 +141,13 @@ separate design with its own threat model.
   and explicitly selected repositories; historical Handoff does not authorize actions.
 - Fingerprints are bounded, can race concurrent edits and do not attest ignored
   files, submodule internals, builds, devices or complete repository state.
+- Rule inventory and selector probes refuse observed symlinks and Windows
+  reparse points by path, but traversal is not handle-relative and is not an OS
+  sandbox. A same-user process that can rename directories or perform a
+  junction/symlink swap-and-restore during a read can race those checks. Root
+  identity rechecks detect ordinary replacement, not every swap/restore race;
+  persistent registration identity and handle-relative no-follow traversal remain
+  necessary before claiming race-safe repository isolation.
 - No production activation, in-place migration/repair, encryption, full review/provenance,
   retention/recovery or release guarantee follows from this validation stage.
 

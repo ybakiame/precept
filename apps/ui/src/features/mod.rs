@@ -10,6 +10,7 @@ pub(crate) mod preferences;
 pub(crate) mod profile;
 pub(crate) mod projects;
 pub(crate) mod review;
+pub(crate) mod rule_lint;
 pub(crate) mod sessions;
 pub(crate) mod settings;
 pub(crate) mod setup;

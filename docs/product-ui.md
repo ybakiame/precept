@@ -243,6 +243,20 @@ end, with a visible Load more control for keyboard and terminal use. The queue
 loads when To review opens, like the record lists, and the page's Refresh reads it
 again; a Profile change since it loaded is named ("The Profile changed N time(s)…").
 
+**Check rules** runs the Operator-only, read-only lint report for the selected
+repository. It shows loading, waiting-for-project, connection-error, clean,
+not-configured, issue and unavailable states; issue rows name the
+repository-relative file, stable code, severity and line/column, with the daemon's
+fixed message and any related rule file. The report can be copied; copy output is
+bounded and explicitly discloses count- or size-based omissions.
+A missing current path is described as a warning that future files may still match,
+not proof that a rule can never apply. **Templates…** opens Rust, Git, security and
+testing starting points in a keyboard-navigable tab group: the operator selects
+one, reads the exact target path and text, and copies it for repository review.
+Precept never writes a template, and the dialog says so. Both actions use the
+existing button, badge, tabs, dialog, scroll and toast motion; all status is carried
+by text as well as color, and the whole flow is keyboard operable.
+
 The Dashboard keeps one line per fact: the effective context (what it promises and
 does not is behind its info button, in the operator's language), the daemon's
 target, state and last read (transport, versions and timing are in Diagnostics),

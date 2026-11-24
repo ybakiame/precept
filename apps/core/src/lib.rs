@@ -24,6 +24,8 @@ pub mod operator;
 pub mod presentation;
 pub mod profile;
 pub mod projects;
+pub mod rule_lint;
+pub mod rule_templates;
 pub mod settings;
 pub mod tag_colors;
 pub mod work;
@@ -311,6 +313,8 @@ pub struct Model {
     pub selected_preference: Option<usize>,
     /// The repository rule whose details are open (index into the project's rules).
     pub selected_rule: Option<usize>,
+    /// Operator-only repository diagnostics and the copy-only template dialog.
+    pub rule_lint: rule_lint::RuleLintState,
     pub detail_page: usize,
     pub copied: bool,
     pub data: Option<Arc<Snapshot>>,

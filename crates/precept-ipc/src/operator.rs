@@ -34,6 +34,7 @@ pub const CONTROL_METHODS: &[&str] = &[
     "integration.mcp.apply",
     "rules.export",
     "rules.export.apply",
+    "rules.lint",
     "import.scan",
     "sessions.list",
     "memories.list",

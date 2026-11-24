@@ -159,7 +159,9 @@ the truth.
 
 1. **Set up a project.** Register a checkout explicitly, share it with agents,
    apply the integrations you choose from a preview, import existing rule files
-   as suggestions.
+   as suggestions, and lint repository rules with line/column diagnostics. Rust,
+   Git, security and testing templates are previewed and copied for review; Precept
+   does not write them.
 2. **Review.** Inspect suggestions from you or agents with their source, scope,
    tags and conflicts; confirm or reject the exact record, singly or in bulk.
 3. **Work with any agent.** Agents receive the applicable rules at session start

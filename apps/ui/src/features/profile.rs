@@ -206,6 +206,7 @@ fn create_or_select(model: Signal<Model>, method: &'static str) {
     model.update(|m| {
         m.profile_setup.busy = true;
         m.profile_setup.error = None;
+        m.rule_lint.invalidate();
     });
     let done = if method == "profile.create" {
         Msg::ToastProfileCreated
