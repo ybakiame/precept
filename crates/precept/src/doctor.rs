@@ -1385,6 +1385,43 @@ fn boolean_capability(
     }
 }
 
+#[cfg(windows)]
+fn normalized_windows_path(path: &Path) -> PathBuf {
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+
+    // Windows accepts both separators, including in verbatim paths.
+    let units = path
+        .as_os_str()
+        .encode_wide()
+        .map(|unit| {
+            if unit == b'/' as u16 {
+                b'\\' as u16
+            } else {
+                unit
+            }
+        })
+        .collect::<Vec<_>>();
+    PathBuf::from(std::ffi::OsString::from_wide(&units))
+}
+
+fn same_path_argument(expected: &Path, actual: &str) -> bool {
+    #[cfg(windows)]
+    {
+        let expected = normalized_windows_path(expected);
+        let actual = normalized_windows_path(Path::new(actual));
+        expected.is_absolute()
+            && actual.is_absolute()
+            && expected.components().eq(actual.components())
+    }
+    #[cfg(not(windows))]
+    {
+        let actual = Path::new(actual);
+        expected.is_absolute()
+            && actual.is_absolute()
+            && expected.components().eq(actual.components())
+    }
+}
+
 fn project_mcp_check(
     result: &Option<Result<Value>>,
     project: Option<&str>,
@@ -1419,7 +1456,9 @@ fn project_mcp_check(
                 .is_some_and(|args| {
                     args.len() == 4
                         && args[0].as_str() == Some("--runtime-dir")
-                        && args[1].as_str() == location.runtime_dir.to_str()
+                        && args[1]
+                            .as_str()
+                            .is_some_and(|actual| same_path_argument(&location.runtime_dir, actual))
                         && args[2].as_str() == Some("--endpoint")
                         && args[3].as_str() == Some(location.endpoint.as_str())
                 });
@@ -1432,7 +1471,9 @@ fn project_mcp_check(
                             && args[0].as_str() == Some("--project")
                             && args[1].as_str() == Some(name)
                             && args[2].as_str() == Some("--capability-file")
-                            && args[3].as_str() == capability.to_str()
+                            && args[3]
+                                .as_str()
+                                .is_some_and(|actual| same_path_argument(capability, actual))
                     })
             });
             let available = ["executable", "hook"].iter().all(|key| {
@@ -2648,6 +2689,76 @@ mod tests {
             assert_eq!(check.status, status);
             assert_eq!(check.reason, reason);
         }
+    }
+
+    #[test]
+    fn path_arguments_compare_components_without_widening_scope() {
+        let expected = PathBuf::from(if cfg!(windows) {
+            r"C:\Precept\runtime"
+        } else {
+            "/precept/runtime"
+        });
+        let equivalent = if cfg!(windows) {
+            "C:/Precept//runtime"
+        } else {
+            "/precept//runtime"
+        };
+        let different = if cfg!(windows) {
+            "C:/Precept/other"
+        } else {
+            "/precept/other"
+        };
+        assert!(same_path_argument(&expected, equivalent));
+        assert!(!same_path_argument(&expected, different));
+        assert!(!same_path_argument(&expected, "runtime"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn project_mcp_accepts_equivalent_windows_separator_spellings() {
+        let temp = TestDir::new("mcp-paths");
+        let runtime = temp.0.join("runtime");
+        precept_ipc::transport::private_dir(&runtime, true).unwrap();
+        let location = Location {
+            runtime_dir: PathBuf::from(runtime.to_string_lossy().replace('\\', "/")),
+            endpoint: "doctor".into(),
+        };
+        let root = location.root().unwrap();
+        let capability = location.credential_path(Some("alpha")).unwrap();
+        let native_runtime = runtime.to_string_lossy().replace('/', "\\");
+        let slash_capability = capability.to_string_lossy().replace('\\', "/");
+        assert!(same_path_argument(&location.runtime_dir, &native_runtime));
+        assert!(same_path_argument(&capability, &slash_capability));
+        let value = json!({
+            "executable":"precept-mcp.exe",
+            "hook":"precept-hook.exe",
+            "shared":true,
+            "args":["--runtime-dir",native_runtime,"--endpoint","doctor"],
+            "project_args":["--project","alpha","--capability-file",slash_capability]
+        });
+        let checks = project_mcp_check(
+            &Some(Ok(value.clone())),
+            Some("alpha"),
+            &location,
+            Some(&root),
+            Blocker::None,
+        );
+        assert_eq!(find(&checks, "project.mcp").status, Status::Ok);
+
+        let mut different = value;
+        different["args"][1] = json!(runtime.join("other").to_string_lossy().replace('\\', "/"));
+        let checks = project_mcp_check(
+            &Some(Ok(different)),
+            Some("alpha"),
+            &location,
+            Some(&root),
+            Blocker::None,
+        );
+        assert_eq!(find(&checks, "project.mcp").status, Status::Problem);
+        assert_eq!(
+            find(&checks, "project.mcp").reason,
+            Reason::ProjectMcpMismatch
+        );
     }
 
     fn write_package(temp: &TestDir) -> PathBuf {
