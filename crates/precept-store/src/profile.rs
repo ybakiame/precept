@@ -527,6 +527,7 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
     // (receipt, preference, revision) steps a write passed over: each must be
     // a decision's `from` in that same receipt.
     let mut skipped: Vec<(i64, String, i64)> = Vec::new();
+    let mut created_preference_steps: BTreeMap<String, usize> = BTreeMap::new();
     let receipts = rows(
         db,
         "SELECT operation_id,generation,request_digest,commit_sequence,result_json FROM acp_receipts ORDER BY commit_sequence",
@@ -586,13 +587,22 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
                 valid(!version.deleted)?;
                 1
             };
-            // One write advances a record one revision, except a preference
-            // created and confirmed at once (an edit of a confirmed record):
-            // two, each step then explained by a decision of this receipt.
-            let two_steps = version.kind == "preference" && version.revision == wanted + 1;
-            valid(version.revision == wanted || two_steps)?;
-            if two_steps {
-                skipped.push((i as i64 + 1, version.record_id.clone(), wanted));
+            // Only a newly created preference may pass through confirmation and
+            // an immediate disable in one receipt. Existing records advance once.
+            let extra_steps = version
+                .revision
+                .checked_sub(wanted)
+                .ok_or(Error::InvalidRecord)?;
+            let allowed = match version.kind.as_str() {
+                "preference" if !history.contains_key(&key) => 2,
+                _ => 0,
+            };
+            valid(extra_steps <= allowed)?;
+            if extra_steps > 0 {
+                created_preference_steps.insert(version.record_id.clone(), extra_steps as usize);
+            }
+            for revision in wanted..version.revision {
+                skipped.push((i as i64 + 1, version.record_id.clone(), revision));
             }
             history.insert(key, version);
         }
@@ -616,6 +626,7 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
     // status must both be explained by this chain; a suggestion with no
     // decision stays `suggested` at revision 1.
     let mut decision_state: BTreeMap<i64, (i64, String)> = BTreeMap::new();
+    let mut decision_actions: BTreeMap<i64, Vec<String>> = BTreeMap::new();
     for r in &decisions {
         let did = positive(&r[0])?;
         max_review_id = max_review_id.max(did);
@@ -679,7 +690,11 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
         valid(referenced.affected.iter().any(|v| {
             v.kind == "preference"
                 && v.record_id == pref_id.to_string()
-                && v.revision == to
+                && v.revision >= to
+                && (v.revision == to
+                    || skipped.iter().any(|(seq, record, revision)| {
+                        *seq == rseq && record == &v.record_id && *revision == to
+                    }))
                 && !v.deleted
         }))?;
         valid(["cli", "desktop"].contains(&string(&r[9])?))?;
@@ -703,6 +718,10 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
         }
         entry.0 = to;
         entry.1 = next_status.to_owned();
+        decision_actions
+            .entry(pref_id)
+            .or_default()
+            .push(action.to_owned());
     }
     for (seq, record, revision) in &skipped {
         let explained = decisions.iter().any(|r| {
@@ -719,6 +738,12 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
             .unwrap_or((1, "suggested".to_owned()));
         valid(*revision == expected_rev)?;
         valid(pref_statuses[pref_id] == expected_status)?;
+        if let Some(steps) = created_preference_steps.get(&pref_id.to_string()) {
+            valid(decision_actions.get(pref_id).is_some_and(|actions| {
+                actions.first().is_some_and(|action| action == "confirm")
+                    && (*steps != 2 || actions.get(1).is_some_and(|action| action == "disable"))
+            }))?;
+        }
         // On unless the last switch turned it off.
         valid(pref_enabled[pref_id] == decision_enabled.get(pref_id).copied().unwrap_or(true))?;
     }

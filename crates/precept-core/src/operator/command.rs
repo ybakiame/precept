@@ -1,4 +1,4 @@
-use super::{Channel, Origin, RuleOptions};
+use super::{Channel, Origin, PersonalSyncChange, RuleOptions};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -194,6 +194,14 @@ pub enum Command {
         proposal_digest: String,
         channel: Channel,
         expected: Expected,
+    },
+    ApplyPersonalSync {
+        bundle_id: String,
+        bundle_digest: String,
+        device_id: String,
+        expected_commit: i64,
+        channel: Channel,
+        changes: Vec<PersonalSyncChange>,
     },
     PutHandoff {
         project: String,

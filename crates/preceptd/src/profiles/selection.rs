@@ -82,6 +82,7 @@ impl Profiles {
         )
     }
     pub fn disable(&self) -> Result<Value> {
+        let _sync = self.sync_lock.lock().unwrap();
         self.grants.close(); // Close before waiting for already-admitted work.
         let mut s = self.state.lock().unwrap();
         self.grants.close();

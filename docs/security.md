@@ -48,6 +48,27 @@ separate design with its own threat model.
   config/state with `~/.config/precept` and `~/.local/state/precept` defaults,
   and runtime uses `state/runtime`. Roots must be absolute, durable state never
   uses a cache directory, and no old-name fallback or automatic data move is allowed.
+- Personal preference sync is manual encrypted file exchange, not a network
+  service. Per-Profile identity secrets, trusted-device public keys, clocks,
+  tombstones and recovery records live in an owner-only daemon sidecar capped at
+  4 MiB; preference values are not copied into routine clock records. Pairing
+  requires a signed invitation plus independently checked owner and complete-
+  invitation fingerprints; the latter binds the device id and both public keys,
+  so a self-signed substitution cannot inherit the owner fingerprint.
+  Export supports per-device age encryption or a user passphrase, and every
+  envelope carries an Ed25519 sender signature even in passphrase mode. Preview
+  and new applies accept only a currently trusted, non-revoked sender for the
+  same owner; apply reopens the signed envelope instead of trusting submitted
+  plaintext. Identity, trust, rotation, reset and export require OperatorWrite.
+  Apply requires the same current grant, persists pending state before the
+  daemon-owned Profile write, and uses exact writer-request receipt lookup plus
+  identical retry for crash recovery. A committed receipt can settle after
+  write-disable/restart; a proven-uncommitted request is rebound only while the
+  destination commit is unchanged. Explicit abort uses the same receipt proof,
+  so a lost envelope or passphrase cannot force a blind rollback. Revocation
+  prevents new imports while allowing an already admitted pending operation to
+  settle. Same-user access to daemon state remains outside the cooperative
+  security boundary.
 - External agent access is switched per project by the operator
   (`project.agents`): an unshared project has no agent credential, and a held
   token is refused. `precept-mcp` is stdio-only (no port); the GUI shows client
@@ -148,8 +169,8 @@ separate design with its own threat model.
   identity rechecks detect ordinary replacement, not every swap/restore race;
   persistent registration identity and handle-relative no-follow traversal remain
   necessary before claiming race-safe repository isolation.
-- No production activation, in-place migration/repair, encryption, full review/provenance,
-  retention/recovery or release guarantee follows from this validation stage.
+- No production activation, in-place migration/repair, automatic Profile-at-rest
+  encryption, full review/provenance, retention/recovery or release guarantee follows from this validation stage.
 
 Never persist secrets, raw transcripts or private identifiers in tracked fixtures.
 Source retirement does not delete real databases, local auth or runtime directories.

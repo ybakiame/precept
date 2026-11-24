@@ -1,4 +1,5 @@
 //! Typed data/revision/allocator/receipt updates in one bounded transaction.
+mod personal_sync;
 use crate::{
     Binding, Command, Error, Expected, Fault, Profile, Receipt, RecordVersion, Request, Result,
     Scope,
@@ -212,9 +213,9 @@ fn mutate(
     db: &Connection,
     command: &Command,
     now: &str,
-    allocated: i64,
+    mut allocated: i64,
     sequence: i64,
-    next_review_id: i64,
+    mut next_review_id: i64,
 ) -> Result<BTreeMap<Key, (i64, bool)>> {
     let mut versions = BTreeMap::new();
     match command {
@@ -680,6 +681,25 @@ fn mutate(
                 [review_id],
             )
             .map_err(crate::sql_error)?;
+        }
+        Command::ApplyPersonalSync {
+            expected_commit,
+            changes,
+            channel,
+            ..
+        } => {
+            if *expected_commit != sequence - 1 {
+                return Err(Error::Conflict);
+            }
+            versions = personal_sync::apply(
+                db,
+                changes,
+                now,
+                &mut allocated,
+                sequence,
+                &mut next_review_id,
+                *channel,
+            )?;
         }
         Command::SuggestBatch { items } => {
             for item in items {

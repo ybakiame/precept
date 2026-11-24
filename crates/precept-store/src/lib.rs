@@ -93,6 +93,37 @@ impl SqliteStore {
     pub fn metadata(&self) -> Result<profile::Metadata> {
         self.snapshot(Ok)
     }
+    pub fn operator_receipt(
+        &self,
+        operation_id: &str,
+    ) -> Result<Option<(Vec<u8>, profile::Receipt)>> {
+        if !profile::operation_valid(operation_id) {
+            return Err(Error::InvalidRecord);
+        }
+        self.snapshot(|_| {
+            let raw: Option<(Vec<u8>, String)> = self
+                .db
+                .query_row(
+                    "SELECT request_digest,result_json FROM acp_receipts WHERE operation_id=?1",
+                    [operation_id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()
+                .map_err(|_| Error::InvalidRecord)?;
+            raw.map(|(digest, result)| {
+                if digest.len() != 32 {
+                    return Err(Error::InvalidRecord);
+                }
+                let receipt: profile::Receipt =
+                    serde_json::from_str(&result).map_err(|_| Error::InvalidRecord)?;
+                if receipt.operation_id != operation_id {
+                    return Err(Error::InvalidRecord);
+                }
+                Ok((digest, receipt))
+            })
+            .transpose()
+        })
+    }
     pub fn schema(&self) -> Result<Schema> {
         self.snapshot(|_| Ok(Schema::Version1))
     }

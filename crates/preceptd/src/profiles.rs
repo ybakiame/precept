@@ -4,6 +4,7 @@ mod agent;
 mod handler;
 mod projects;
 mod selection;
+mod sync;
 
 use crate::state::StateDir;
 use precept_ipc::{
@@ -61,6 +62,7 @@ pub struct Profiles {
     pub location: Location,
     runtime: PathBuf,
     state_dir: StateDir,
+    sync_lock: Mutex<()>,
     pub grants: Registry,
 }
 #[derive(Deserialize)]
@@ -210,6 +212,7 @@ impl Profiles {
             location,
             runtime,
             state_dir,
+            sync_lock: Mutex::new(()),
             grants,
         };
         {

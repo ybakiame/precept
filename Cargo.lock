@@ -1156,6 +1156,7 @@ dependencies = [
  "precept-core",
  "precept-ipc",
  "precept-store",
+ "precept-sync",
  "precept-write",
  "rusqlite",
  "serde",

@@ -89,6 +89,7 @@ or move existing data automatically.
 | Data | Authority / source of truth | State and change path |
 | --- | --- | --- |
 | Personal preferences, including project-scoped choices | Human-reviewed user-local SQLite | Explicit operator action; never tracked Profile files |
+| Personal sync identity, trust, clocks, tombstones and apply recovery | Daemon-private per-Profile sidecar (`personal-sync-<profile_id>.json`, format 1) | Explicit OperatorWrite pairing/trust/export; preference changes use the current OperatorWrite grant and daemon-owned writer |
 | Project contracts | Repository-owned AGENTS/docs and reviewed engineering configuration | Bounded live reads; no automatic prose interpretation or file creation |
 | Work sessions | Daemon-private state (`sessions-<project>.json`, format 2) | Agent `session.*` with flat structured items, single-item operations and required CAS; operator `sessions.delete`; format 1 coordination lists normalize on read |
 | Project memory (environment, cautions, lessons, attempts) | Daemon-private state (`memory-<project>.json`); agents' notes, unreviewed, below rules and code | Agent `memory.*` where the operator allows agent writes; operator `memories.*` edits, restores, pins, deletes and clears; confirmed environment notes move in by one operator-write |

@@ -114,23 +114,12 @@ fn file_name(project: &str) -> String {
 }
 
 fn load(state: &StateDir, project: &str) -> Result<Chain, Error> {
-    let path = state.path().join(file_name(project));
-    let meta = match std::fs::symlink_metadata(&path) {
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(Chain {
-                base: GENESIS.into(),
-                ..Default::default()
-            });
-        }
-        Err(_) => return Err(Error::UnsafeRuntime),
-        Ok(m) => m,
+    let Some(text) = state.read_bounded(&file_name(project), MAX_FILE)? else {
+        return Ok(Chain {
+            base: GENESIS.into(),
+            ..Default::default()
+        });
     };
-    if !meta.file_type().is_file() || meta.len() > MAX_FILE {
-        return Err(Error::UnsafeRuntime);
-    }
-    let mut file = precept_ipc::transport::open_private(&path, false)?;
-    let mut text = String::new();
-    std::io::Read::read_to_string(&mut file, &mut text).map_err(|_| Error::InvalidRequest)?;
     let mut lines = text.lines();
     let header: Header = lines
         .next()
@@ -168,7 +157,7 @@ fn rewrite(state: &StateDir, project: &str, chain: &Chain) -> Result<(), Error> 
         body.push_str(&serde_json::to_string(l).map_err(|_| Error::Unavailable)?);
         body.push('\n');
     }
-    state.write(&file_name(project), body.as_bytes())
+    state.write_bounded(&file_name(project), body.as_bytes(), MAX_FILE)
 }
 
 /// One entry to append (the chain fills in its number and hashes).

@@ -6,6 +6,12 @@ data between schemas with the versioned Profile export and import.
 
 ## Unreleased
 
+- **Manual personal sync:** confirmed global preferences can move between paired
+  devices through age-encrypted files with per-device keys or a passphrase.
+  Sender signatures, owner-fingerprint pairing, vector clocks, explicit delete
+  tombstones, selective import and conflict resolutions prevent silent overwrite.
+  The daemon keeps private per-Profile sync state and applies content through its
+  typed writer with pending/receipt recovery; no listener or automatic sync runs.
 - **Review evidence:** the queue marks possible duplicates in loaded records
   without reordering or auto-selecting them. Detail shows source, affected files,
   bounded same-scope duplicate/same-key/same-value pointers, and retained project

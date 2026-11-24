@@ -20,7 +20,28 @@ impl std::fmt::Debug for Request {
 }
 impl Request {
     pub fn from_json(bytes: &[u8]) -> Result<Self> {
-        if bytes.len() > 128 * 1024 {
+        Self::from_json_bounded(bytes, 128 * 1024)
+    }
+
+    pub fn from_sync_json(bytes: &[u8]) -> Result<Self> {
+        const MAX_SYNC_COMMAND: usize = 768 * 1024;
+        if bytes.len() > MAX_SYNC_COMMAND {
+            return Err(Error::InvalidCommand);
+        }
+        #[derive(Deserialize)]
+        struct CommandOnly {
+            command: Command,
+        }
+        let outer: CommandOnly =
+            serde_json::from_slice(bytes).map_err(|_| Error::InvalidCommand)?;
+        if !matches!(outer.command, Command::ApplyPersonalSync { .. }) {
+            return Err(Error::InvalidCommand);
+        }
+        Self::from_json_bounded(bytes, MAX_SYNC_COMMAND)
+    }
+
+    fn from_json_bounded(bytes: &[u8], max: usize) -> Result<Self> {
+        if bytes.len() > max {
             return Err(Error::InvalidCommand);
         }
         let request: Self = serde_json::from_slice(bytes).map_err(|_| Error::InvalidCommand)?;
@@ -189,6 +210,29 @@ impl Request {
                 }
                 (&items[0].expected, Some(&items[0].scope))
             }
+            Command::ApplyPersonalSync {
+                bundle_id,
+                bundle_digest,
+                device_id,
+                expected_commit,
+                channel: _,
+                changes,
+            } => {
+                let mut keys = std::collections::BTreeSet::new();
+                if !hex(bundle_id)
+                    || !digest(bundle_digest)
+                    || !hex(device_id)
+                    || *expected_commit < 0
+                    || changes.is_empty()
+                    || changes.len() > precept_core::operator::MAX_SYNC_ITEMS
+                    || changes
+                        .iter()
+                        .any(|change| !change.valid() || !keys.insert(change.key.as_str()))
+                {
+                    return Err(Error::InvalidCommand);
+                }
+                (&Expected::Absent, None)
+            }
             Command::PutHandoff {
                 project,
                 task_id,
@@ -226,10 +270,15 @@ impl Request {
         {
             return Err(Error::InvalidCommand);
         }
+        let max = if matches!(self.command, Command::ApplyPersonalSync { .. }) {
+            768 * 1024
+        } else {
+            128 * 1024
+        };
         if serde_json::to_vec(self)
             .map_err(|_| Error::InvalidCommand)?
             .len()
-            > 128 * 1024
+            > max
         {
             return Err(Error::InvalidCommand);
         }

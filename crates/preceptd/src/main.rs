@@ -22,6 +22,7 @@ mod memory;
 mod ojson;
 #[cfg(test)]
 mod ownership_tests;
+mod personal_sync;
 #[cfg(test)]
 mod process_tests;
 mod profiles;
@@ -509,7 +510,15 @@ async fn peer(mut stream: Stream, service: Service, permit: Arc<OwnedSemaphorePe
                 auth.check()?;
                 service.query(&auth, request)
             });
-            match tokio::time::timeout(Duration::from_secs(5), job).await {
+            let limit = if matches!(
+                method.as_str(),
+                "profile.sync.export" | "profile.sync.preview"
+            ) {
+                Duration::from_secs(15)
+            } else {
+                Duration::from_secs(5)
+            };
+            match tokio::time::timeout(limit, job).await {
                 Ok(Ok(r)) => r,
                 Ok(Err(_)) => Err(Error::Unavailable),
                 Err(_) => Err(if uncertain_mutation(&method) {
@@ -712,7 +721,10 @@ fn main() {
 }
 
 fn uncertain_mutation(method: &str) -> bool {
-    matches!(method, "profile.mutate" | "sessions.handoff")
+    matches!(
+        method,
+        "profile.mutate" | "sessions.handoff" | "profile.sync.apply"
+    )
 }
 
 /// Test state: writes the project set and the remembered startup Profile into

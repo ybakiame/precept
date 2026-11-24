@@ -35,6 +35,9 @@ impl Profiles {
             {
                 return Err(Error::Unauthorized);
             }
+            if matches!(request.command, Command::ApplyPersonalSync { .. }) {
+                return Err(Error::InvalidRequest);
+            }
             let mut s = self.state.lock().unwrap();
             authority.check()?;
             let owner = s.owner.as_ref().ok_or(Error::Unauthorized)?;
@@ -51,6 +54,7 @@ impl Profiles {
                     Some(name)
                 }
                 Command::PutHandoff { project, .. } => Some(project),
+                Command::ApplyPersonalSync { .. } => None,
                 // Every item's project must be served; the first is the one
                 // whose root is rechecked at admission.
                 Command::DecideBatch { .. } | Command::SuggestBatch { .. } => {
@@ -141,6 +145,9 @@ impl Profiles {
                 s.roots.insert(name.clone(), PathBuf::from(root));
             }
             return serde_json::to_value(receipt).map_err(|_| Error::Unavailable);
+        }
+        if method.starts_with("profile.sync.") {
+            return self.sync(authority, method, params);
         }
         if method == "project.add" {
             return self.add(authority, params, hooks);

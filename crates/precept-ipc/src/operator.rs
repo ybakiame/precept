@@ -19,6 +19,9 @@ pub const CONTROL_METHODS: &[&str] = &[
     "profile.handoff.get",
     "profile.handoff.list",
     "profile.startup.forget",
+    "profile.sync.status",
+    "profile.sync.invitation",
+    "profile.sync.preview",
     "project.check",
     "project.list",
     "project.agents",
@@ -51,6 +54,15 @@ pub const PROJECT_WRITES: &[&str] = &[
     "project.register",
     "project.remove",
     "sessions.handoff",
+    "profile.sync.init",
+    "profile.sync.pair",
+    "profile.sync.trust",
+    "profile.sync.revoke",
+    "profile.sync.rotate",
+    "profile.sync.reset",
+    "profile.sync.export",
+    "profile.sync.abort",
+    "profile.sync.apply",
 ];
 
 pub async fn control(location: &Location, method: &str, params: Value) -> Result<Value> {

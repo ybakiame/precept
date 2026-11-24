@@ -94,8 +94,19 @@ pub fn owner_fingerprint(owner_id: &str) -> Result<String, Error> {
 }
 
 pub fn generate_identity() -> Result<GeneratedIdentity, Error> {
-    let owner_id = random_hex(16)?;
-    let device_id = random_hex(16)?;
+    rotate_identity(&random_hex(16)?, &random_hex(16)?)
+}
+
+pub fn generate_identity_for_owner(owner_id: &str) -> Result<GeneratedIdentity, Error> {
+    rotate_identity(owner_id, &random_hex(16)?)
+}
+
+pub fn rotate_identity(owner_id: &str, device_id: &str) -> Result<GeneratedIdentity, Error> {
+    if !precept_core::operator::valid_identity(owner_id)
+        || !precept_core::operator::valid_identity(device_id)
+    {
+        return Err(Error::InvalidRequest);
+    }
     let age_identity = AgeIdentity::generate()
         .to_string()
         .expose_secret()
@@ -109,9 +120,9 @@ pub fn generate_identity() -> Result<GeneratedIdentity, Error> {
         .verifying_key()
         .as_bytes());
     Ok(GeneratedIdentity {
-        owner_fingerprint: owner_fingerprint(&owner_id)?,
-        owner_id,
-        device_id,
+        owner_fingerprint: owner_fingerprint(owner_id)?,
+        owner_id: owner_id.to_owned(),
+        device_id: device_id.to_owned(),
         age_identity,
         age_recipient,
         signing_secret,
@@ -182,6 +193,14 @@ pub fn invitation(identity: &GeneratedIdentity) -> Result<PersonalSyncInvitation
         return Err(Error::InvalidRequest);
     }
     Ok(invitation)
+}
+
+pub fn invitation_fingerprint(invitation: &PersonalSyncInvitation) -> Result<String, Error> {
+    if !invitation.valid() {
+        return Err(Error::InvalidRequest);
+    }
+    let digest = Sha256::digest(invitation_bytes(invitation)?);
+    Ok(hex(&digest[..16]))
 }
 
 pub fn verify_invitation(invitation: &PersonalSyncInvitation) -> bool {
@@ -502,6 +521,31 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn invitation_fingerprints_bind_the_complete_device_keys() {
+        let first = generate_identity().unwrap();
+        let second = generate_identity_for_owner(&first.owner_id).unwrap();
+        let first_invitation = invitation(&first).unwrap();
+        let second_invitation = invitation(&second).unwrap();
+        assert_eq!(first.owner_fingerprint, second.owner_fingerprint);
+        assert_ne!(
+            invitation_fingerprint(&first_invitation).unwrap(),
+            invitation_fingerprint(&second_invitation).unwrap()
+        );
+    }
+
+    #[test]
+    fn key_rotation_preserves_owner_and_device_identity() {
+        let before = generate_identity().unwrap();
+        let after = rotate_identity(&before.owner_id, &before.device_id).unwrap();
+        assert_eq!(after.owner_id, before.owner_id);
+        assert_eq!(after.device_id, before.device_id);
+        assert_eq!(after.owner_fingerprint, before.owner_fingerprint);
+        assert_ne!(after.age_identity, before.age_identity);
+        assert_ne!(after.signing_secret, before.signing_secret);
+        assert!(verify_invitation(&invitation(&after).unwrap()));
     }
 
     #[test]

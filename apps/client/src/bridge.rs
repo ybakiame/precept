@@ -15,8 +15,9 @@ use std::io::{Read, Write};
 /// Protocol identity and version, checked in the helper's first frame.
 pub const PROTOCOL: &str = "precept-bridge";
 pub const VERSION: u32 = 1;
-/// Client -> helper frame limit (a mutation is capped at 128 KiB by the daemon client).
-pub const MAX_REQUEST: usize = 256 * 1024;
+/// Client -> helper frame limit, matched to the daemon's 1 MiB IPC bound so
+/// encrypted sync envelopes and previews cross the WSL bridge without chunking.
+pub const MAX_REQUEST: usize = 1024 * 1024;
 /// Helper -> client frame limit (a Snapshot is capped at 4 MiB).
 pub const MAX_REPLY: usize = 5 * 1024 * 1024;
 /// Concurrent in-flight requests the helper accepts (UI reads and page refreshes).

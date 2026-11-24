@@ -55,7 +55,8 @@ impl crate::native::Inputs {
     /// A project-set request: `project.check` / `profile.startup.forget`
     /// (Operator) or `project.add` / `project.remove` (OperatorWrite), locally
     /// or through the WSL bridge. Explicit user actions, so a lost bridge may be
-    /// restarted; a write whose reply is lost is `OutcomeUnknown`.
+    /// restarted. Only personal-sync apply has durable operation-id settlement;
+    /// other lost writes remain unavailable until the operator inspects state.
     pub fn project_call(&self, method: &str, params: Value) -> Result<Value, &'static str> {
         use crate::bridge::{CallError, Op, PROJECT_WRITES};
         let write = PROJECT_WRITES.contains(&method);
@@ -81,7 +82,11 @@ impl crate::native::Inputs {
                 .call(op, std::time::Duration::from_secs(30))
                 .map_err(|e| match e {
                     CallError::Remote(code) => code,
-                    CallError::Lost | CallError::Timeout if write => "OutcomeUnknown",
+                    CallError::Lost | CallError::Timeout
+                        if write && method == "profile.sync.apply" =>
+                    {
+                        "OutcomeUnknown"
+                    }
                     _ => "Unavailable",
                 });
         }
@@ -118,13 +123,23 @@ impl crate::native::Inputs {
                     },
                     std::time::Duration::from_secs(30),
                 ),
-                None => (
-                    Op::Control {
-                        method: request.method.clone(),
-                        params: request.params.clone(),
-                    },
-                    std::time::Duration::from_secs(15),
-                ),
+                None => {
+                    let timeout = if matches!(
+                        request.method.as_str(),
+                        "profile.sync.export" | "profile.sync.preview"
+                    ) {
+                        std::time::Duration::from_secs(30)
+                    } else {
+                        std::time::Duration::from_secs(15)
+                    };
+                    (
+                        Op::Control {
+                            method: request.method.clone(),
+                            params: request.params.clone(),
+                        },
+                        timeout,
+                    )
+                }
             };
             return bridge.call(op, timeout).map_err(|e| match e {
                 CallError::Remote(code) => code,

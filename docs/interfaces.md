@@ -265,6 +265,73 @@ import, with the defaults.
 This explicit versioned export/import is how preferences move between Profile
 schemas: there is no in-place migration, downgrade or fallback.
 
+### Personal preference sync
+
+Personal sync moves only confirmed `global` preferences, including disabled
+records, through manual encrypted files. It never carries project preferences,
+repository rules, memory, Handoffs, credentials, Desktop settings or local numeric
+preference ids. There is no listener, account, cloud service, folder watcher or
+automatic retry.
+
+Operator `profile.sync.status`, `profile.sync.invitation` and
+`profile.sync.preview {envelope, passphrase?}` read the selected Profile's
+private sidecar. `profile.sync.init`, `profile.sync.pair`,
+`profile.sync.trust {invitation, expected_owner_fingerprint,
+expected_invitation_fingerprint}`, `profile.sync.revoke {device_id}`, `profile.sync.rotate`,
+`profile.sync.reset {confirm}` and
+`profile.sync.export {recipient?, passphrase?, keys?}` require the current
+OperatorWrite capability because they change identity, trust or clock state.
+`profile.sync.abort {operation_id}` uses the same capability to settle an exact
+committed receipt or discard a pending operation proven absent from the Profile;
+it does not require the original envelope or passphrase.
+Pairing verifies the invitation signature and the operator's out-of-band owner
+and complete-invitation fingerprints. The invitation fingerprint binds the
+owner, device id, age recipient and signing key; the owner fingerprint alone is
+not device authentication. Only the public age recipient and signing key are
+shared; private identity material stays daemon-side and passphrases remain
+user-supplied.
+Reset is an explicit replacement of sync identity, trust, clocks and tombstones;
+it does not change Profile preferences. Rotation keeps the device id; peers must
+explicitly revoke the old invitation before trusting its replacement keys.
+
+`profile.sync.export` returns a `precept-personal-sync` v1 age envelope. Automatic
+mode encrypts to the chosen paired device; passphrase mode uses scrypt and still
+requires the authenticated sender signature. Files are written by the client,
+never implicitly overwritten by the daemon. At most 50 keys are exported per
+bundle; larger sets require an explicit key selection. The sidecar tracks at most
+500 keys, 15 trusted devices, 5000 applied-entry records and 4096 operation
+records, and is capped at 4 MiB.
+
+`profile.sync.preview` decrypts with the local daemon-held age identity or the
+supplied passphrase, verifies owner/device/signing-key trust and returns the
+bounded comparison, selectable entries, conflict resolutions, exact local
+versions and destination commit. Equal-clock drift and concurrent edits are
+conflicts; absence never means deletion. Only explicit tombstones delete.
+Keeping local or merging manually creates a clock that dominates both inputs.
+
+`profile.sync.apply` requires the current OperatorWrite capability and accepts an
+immutable operation id, the original signed envelope and optional passphrase,
+plus compact previewed local version references, selections and destination
+commit. The daemon reopens the envelope and verifies the sender signature on
+every new apply and pending retry; plaintext bundle substitution is not accepted.
+It persists a pending record before calling the writer, rechecks destination
+state, and commits compact typed `apply_personal_sync` changes only when Profile
+content changes. A writer receipt finalizes the sidecar. Recovery first looks up
+the exact original writer request digest: a committed receipt settles across
+write-disable/restart epochs, while a proven-uncommitted request may be rebound
+only when the destination commit is unchanged. Uncertain results still require
+an identical retry; a changed destination safely abandons the pending operation.
+Revocation blocks new imports but permits an already admitted pending operation
+to settle. Clock-only/no-op applications require OperatorWrite but do not invent
+a Profile receipt. Direct `profile.mutate` use of the internal sync command is refused. A
+stale destination commit or local digest refuses the whole apply. Partial
+selection is recorded per `(bundle_id, key, digest)`, so skipped entries can be
+imported later.
+
+The Windows→WSL bridge carries these typed Control/ProjectWrite operations with
+a 1 MiB client→helper frame limit, matching native IPC. Tokens never cross the
+bridge, and the helper does not decrypt files or approve mutations.
+
 ## MCP stdio
 
 The Rust `precept-mcp` binary uses newline-delimited UTF-8 JSON-RPC; stdout contains only
@@ -598,16 +665,17 @@ Operator action) as `wsl.exe --distribution D --user U --exec /abs/precept-bridg
 --runtime-dir R --endpoint E`. The distribution, user and three paths are validated
 explicit inputs; project, task and request data never appear in argv.
 
-- **Framing:** u32 big-endian length + JSON. Client→helper frames ≤ 256 KiB;
+- **Framing:** u32 big-endian length + JSON. Client→helper frames ≤ 1 MiB;
   helper→client ≤ 5 MiB. Empty or oversized frames end the stream.
 - **Hello:** the helper's first frame is `{"version":1,"id":0,"ok":{"bridge":"precept-bridge","version":1}}`;
   any other identity or version refuses the connection.
 - **Requests:** `{"version":1,"id":N,"op":{...}}`, strict fields, `id` ≥ 1, at most
   8 in flight. `op.type` is exactly one of `snapshot`, `control` (the shared
   `precept_ipc::operator::CONTROL_METHODS` Operator read/control allowlist, including
-  Profile review, project/integration reads, `rules.lint`, import and session/memory
-  reads), `mutate` (one OperatorWrite `Mutation`), `project_write`
-  (`project.add|register|remove`), `health` (daemon health with the Operator
+  Profile review, project/integration reads, `rules.lint`, import, personal-sync
+  control/preview and session/memory reads), `mutate` (one OperatorWrite `Mutation`), `project_write`
+  (`project.add|register|remove`, `sessions.handoff`, and personal-sync
+  init/pair/trust/revoke/rotate/reset/export/abort/apply), `health` (daemon health with the Operator
   credential, for the GUI's live WSL status) or `cancel` (abandon an in-flight id;
   no reply of its own). Anything else is `Unsupported`/`InvalidRequest`. There is
   no generic IPC forwarding or shell.

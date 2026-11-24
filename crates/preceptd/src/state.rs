@@ -96,6 +96,9 @@ impl StateDir {
         &self.dir
     }
     pub(crate) fn read(&self, name: &str) -> Result<Option<String>> {
+        self.read_bounded(name, MAX_FILE)
+    }
+    pub(crate) fn read_bounded(&self, name: &str, max: u64) -> Result<Option<String>> {
         let path = self.dir.join(name);
         match std::fs::symlink_metadata(&path) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -103,17 +106,26 @@ impl StateDir {
             Ok(_) => {}
         }
         let mut file = open_private(&path, false)?;
-        if file.metadata().map_err(|_| Error::Unavailable)?.len() > MAX_FILE {
+        if file.metadata().map_err(|_| Error::Unavailable)?.len() > max {
             return Err(Error::TooLarge);
         }
         let mut text = String::new();
         Read::by_ref(&mut file)
-            .take(MAX_FILE + 1)
+            .take(max + 1)
             .read_to_string(&mut text)
             .map_err(|_| Error::InvalidRequest)?;
+        if text.len() as u64 > max {
+            return Err(Error::TooLarge);
+        }
         Ok(Some(text))
     }
     pub(crate) fn write(&self, name: &str, body: &[u8]) -> Result<()> {
+        self.write_bounded(name, body, MAX_FILE)
+    }
+    pub(crate) fn write_bounded(&self, name: &str, body: &[u8], max: u64) -> Result<()> {
+        if body.len() as u64 > max {
+            return Err(Error::TooLarge);
+        }
         let temporary = self.dir.join(format!(".{name}.{}.tmp", std::process::id()));
         let _ = std::fs::remove_file(&temporary);
         let written = new_private(&temporary).and_then(|mut f| {

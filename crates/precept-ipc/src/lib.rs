@@ -408,7 +408,10 @@ impl Client {
         self.next += 1;
         let id = self.next.to_string();
         let transport_error = |e| {
-            if matches!(method, "profile.mutate" | "sessions.handoff") {
+            if matches!(
+                method,
+                "profile.mutate" | "sessions.handoff" | "profile.sync.apply"
+            ) {
                 Error::OutcomeUnknown
             } else {
                 e
@@ -516,7 +519,7 @@ mod tests {
         let mut listener = transport::Listener::bind(&location).await.unwrap();
         let cap = load_credential(&location, &location.credential_path(None).unwrap()).unwrap();
         let server = tokio::spawn(async move {
-            for method in ["profile.mutate", "sessions.handoff"] {
+            for method in ["profile.mutate", "sessions.handoff", "profile.sync.apply"] {
                 for denied in [true, false] {
                     let mut stream = listener.accept().await.unwrap();
                     accept_handshake(&mut stream, &credentials).await.unwrap();
@@ -535,7 +538,7 @@ mod tests {
                 }
             }
         });
-        for method in ["profile.mutate", "sessions.handoff"] {
+        for method in ["profile.mutate", "sessions.handoff", "profile.sync.apply"] {
             let mut client = Client::connect(&location, &cap).await.unwrap();
             assert_eq!(
                 client.request(method, json!({})).await,

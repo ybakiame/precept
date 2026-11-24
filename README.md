@@ -141,7 +141,8 @@ and update any explicit GUI, shortcut or MCP `--runtime-dir` arguments to
 - Agent-reported actions, daemon observations and independent verification are
   different claims. A saved PASS is not a current PASS.
 - Precept does not provide OS sandboxing, credential isolation from same-user processes,
-  hidden telemetry, remote synchronization or automatic repository rewriting.
+  hidden telemetry, automatic/network synchronization or automatic repository rewriting.
+  Personal preference sync is manual encrypted file exchange.
 - Keep secrets, credentials, raw conversations, device identifiers and real Profile
   data out of tracked files.
 
