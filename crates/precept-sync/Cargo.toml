@@ -1,0 +1,17 @@
+[package]
+name = "precept-sync"
+version.workspace = true
+edition = "2024"
+rust-version = "1.99"
+license = "Apache-2.0"
+publish = false
+description = "Versioned encrypted personal preference sync format and sender authentication"
+
+[dependencies]
+precept-core = { path = "../precept-core" }
+age = { version = "0.11", features = ["armor"] }
+ed25519-dalek = "2"
+getrandom = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
