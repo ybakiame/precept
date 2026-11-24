@@ -73,7 +73,11 @@ pub(crate) fn open_mode(model: Signal<Model>, mode: ReviewMode) {
             m.operator.follow_up = Some("profile.review.queue");
         }
     });
-    refresh(model, "profile.info");
+    // A snapshot completion changes the read guard. Starting an Operator read
+    // before it settles would fence that reply and leave the workspace busy.
+    if model.get().phase != precept_ui_core::Phase::Loading {
+        refresh(model, "profile.info");
+    }
 }
 fn available(model: Signal<Model>) -> bool {
     let m = model.get();
