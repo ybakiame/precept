@@ -116,7 +116,7 @@ separate design with its own threat model.
   and explicitly selected repositories; historical Handoff does not authorize actions.
 - Fingerprints are bounded, can race concurrent edits and do not attest ignored
   files, submodule internals, builds, devices or complete repository state.
-- No production activation, migration/import/repair, encryption, full review/provenance,
+- No production activation, in-place migration/repair, encryption, full review/provenance,
   retention/recovery or release guarantee follows from this validation stage.
 
 Never persist secrets, raw transcripts or private identifiers in tracked fixtures.

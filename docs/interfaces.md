@@ -185,10 +185,22 @@ rule options, enabled state,
 tags, origin and source status per record. With `--with-memory` it also carries
 the served projects' memory (project, kind, title, body, pinned), cautions,
 lessons and attempts only; `--with-environment` adds this machine's environment
-notes. Handoffs are not carried. `precept
-profile import FILE --operation-prefix P` needs writes on and only ever creates
-suggestions through the ordinary reviewed write path (`<P>-<index>` operation
-ids, so an uncertain write can be retried exactly). It skips other statuses, records
+notes. Handoffs are not carried. `precept profile import FILE --preflight` is a
+read-only, redacted plan and needs no write grant. It reports source format/version,
+destination Profile binding/schema and commit watermark, every record's original
+`file_index` and planned action, duplicates/other skips, unserved projects,
+retired `environment`-scope omissions, Handoffs as not carried (with bounded
+destination counts and count completeness), environment-memory omission and
+per-note memory changes. It exposes no preference values, memory bodies, Handoff
+bodies, paths, credentials or raw errors. The plan is not a transaction: operation
+receipts are not readable by preflight, and apply-time authority/capacity/storage
+refusals remain authoritative.
+
+`precept profile import FILE --operation-prefix P` needs writes on and only ever creates
+suggestions through the ordinary reviewed write path (`<P>-<file_index>` operation
+ids, so an uncertain write can be retried exactly). Import reruns preflight and
+refuses a changed destination binding, write state, project set, records, memory or
+commit watermark before its first write. It skips other statuses, records
 the Profile already holds (same scope, key, value and tags) and project records
 whose project is not served; the operator confirms imported suggestions again.
 Records of the retired `environment` scope are skipped (`file_index`, reason
@@ -196,7 +208,8 @@ Records of the retired `environment` scope are skipped (`file_index`, reason
 `memories.import` (reported per project; a project it does not serve is
 `not_served`), never through review. Version 1 files (before rule options) still
 import, with the defaults.
-This is how preferences move between Profile schemas: there is no migration.
+This explicit versioned export/import is how preferences move between Profile
+schemas: there is no in-place migration, downgrade or fallback.
 
 ## MCP stdio
 

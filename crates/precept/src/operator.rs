@@ -69,9 +69,12 @@ pub enum Profile {
     /// confirm again; a repeat with the same prefix replays, adding nothing.
     Import {
         file: PathBuf,
-        /// Operation-id prefix (letters, digits, - and _); keep it to retry.
+        /// Print the redacted read-only plan; do not enable writes or import.
         #[arg(long)]
-        operation_prefix: String,
+        preflight: bool,
+        /// Operation-id prefix (letters, digits, - and _); keep it to retry.
+        #[arg(long, required_unless_present = "preflight")]
+        operation_prefix: Option<String>,
     },
     Write {
         #[command(subcommand)]
@@ -238,9 +241,14 @@ pub async fn profile(location: &Location, command: Profile) -> Result<Value> {
         }
         Profile::Import {
             file,
+            preflight,
             operation_prefix,
         } => {
             let export = crate::transfer::read(&file)?;
+            if preflight {
+                return crate::transfer::preflight(location, &export).await;
+            }
+            let operation_prefix = operation_prefix.ok_or(Error::InvalidRequest)?;
             return crate::transfer::import(location, &export, &operation_prefix).await;
         }
         Profile::Create { path, remember } => {

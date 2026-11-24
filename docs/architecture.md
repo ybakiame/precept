@@ -97,8 +97,9 @@ scan directories.
 
 Only fresh Rust-native Profile v1 (`PRAGMA user_version=1`) is accepted. It is not
 compatible with the retired Python prototype's v1 or the historical synthetic v2.
-There are no legacy readers, migrations, downgrades, import/repair paths or
-runtime fallback.
+There are no legacy readers, in-place migrations, downgrades, repair paths or
+runtime fallbacks. Moving data between schemas uses only the operator's explicit,
+versioned Profile export and import; imported rules still require exact review.
 
 Profile creation is explicit and never overwrites an existing file. Startup selects
 a Profile only when the operator requested that exact path. Write enablement is

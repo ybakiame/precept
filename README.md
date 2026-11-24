@@ -70,6 +70,11 @@ With the daemon already addressed by `--runtime-dir` and `--endpoint`,
 Windows package verifier `tools/portable/windows-doctor.ps1` additionally supports
 bounded native and optional WSL checks.
 
+`precept profile import FILE --preflight` reports a redacted, read-only import plan.
+The actual `--operation-prefix` import still needs writes enabled for the run and
+creates suggestions that require exact operator review.
+
+
 ## Operator model
 
 Create or select a Profile explicitly. Startup selection and per-run write
