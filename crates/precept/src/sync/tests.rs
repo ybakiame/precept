@@ -150,6 +150,10 @@ fn prepared_files_round_trip_the_exact_retry_input_without_overwriting() {
     let prepared = Prepared {
         format: PREPARED_FORMAT.into(),
         version: PREPARED_VERSION,
+        scope: precept_ipc::operator::PersonalSyncProfileScope {
+            profile_id: "a".repeat(32),
+            generation: "b".repeat(32),
+        },
         envelope: PersonalSyncEnvelope {
             format: precept_ipc::operator::PERSONAL_SYNC_FORMAT.into(),
             version: precept_ipc::operator::PERSONAL_SYNC_VERSION,

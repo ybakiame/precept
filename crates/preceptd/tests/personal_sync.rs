@@ -17,15 +17,31 @@ fn operation(prefix: &str) -> String {
     format!("{prefix}-{}", OPERATIONS.fetch_add(1, Ordering::SeqCst))
 }
 
+fn bound_params(fixture: &support::Fixture, mut params: Value) -> Value {
+    let info = fixture.daemon.control("profile.info", json!({})).unwrap();
+    let binding = &info["binding"];
+    params["expected_binding"] = json!({
+        "profile_id":binding["profile_id"],
+        "generation":binding["generation"],
+    });
+    params
+}
+
 fn write_call(fixture: &support::Fixture, method: &str, params: Value) -> Value {
     fixture
         .daemon
         .call(
             &fixture.daemon.credential("operator-write.cap"),
             method,
-            params,
+            bound_params(fixture, params),
         )
         .unwrap()
+}
+
+fn preview_call(fixture: &support::Fixture, params: Value) -> precept_ipc::Result<Value> {
+    fixture
+        .daemon
+        .control("profile.sync.preview", bound_params(fixture, params))
 }
 
 fn trust_params(invitation: &PersonalSyncInvitation) -> Value {
@@ -218,13 +234,7 @@ fn export(fixture: &support::Fixture, recipient: &str) -> Value {
 
 fn open_preview(fixture: &support::Fixture, envelope: &Value) -> PersonalSyncPreview {
     serde_json::from_value(
-        fixture
-            .daemon
-            .control(
-                "profile.sync.preview",
-                json!({"envelope":envelope,"passphrase":null}),
-            )
-            .unwrap(),
+        preview_call(fixture, json!({"envelope":envelope,"passphrase":null})).unwrap(),
     )
     .unwrap()
 }
@@ -249,14 +259,11 @@ fn submission(
 }
 
 fn apply(fixture: &support::Fixture, submission: PersonalSyncApplySubmission) -> Value {
-    fixture
-        .daemon
-        .call(
-            &fixture.daemon.credential("operator-write.cap"),
-            "profile.sync.apply",
-            serde_json::to_value(submission).unwrap(),
-        )
-        .unwrap()
+    write_call(
+        fixture,
+        "profile.sync.apply",
+        serde_json::to_value(submission).unwrap(),
+    )
 }
 
 fn confirmed(fixture: &support::Fixture, key: &str) -> Option<Value> {
@@ -418,7 +425,7 @@ fn authority_tampering_and_revocation_are_refused() {
         b.daemon.call(
             &b.daemon.credential("operator-write.cap"),
             "profile.sync.trust",
-            forged_pair,
+            bound_params(&b, forged_pair),
         ),
         Err(Error::InvalidRequest)
     );
@@ -428,7 +435,7 @@ fn authority_tampering_and_revocation_are_refused() {
         b.daemon.call(
             &b.daemon.credential("operator-write.cap"),
             "profile.sync.apply",
-            serde_json::to_value(forged).unwrap(),
+            bound_params(&b, serde_json::to_value(forged).unwrap()),
         ),
         Err(Error::InvalidRequest)
     );
@@ -444,10 +451,7 @@ fn authority_tampering_and_revocation_are_refused() {
     let mut tampered = envelope.clone();
     tampered["ciphertext"] = json!(format!("{}x", tampered["ciphertext"].as_str().unwrap()));
     assert_eq!(
-        b.daemon.control(
-            "profile.sync.preview",
-            json!({"envelope":tampered,"passphrase":null}),
-        ),
+        preview_call(&b, json!({"envelope":tampered,"passphrase":null})),
         Err(Error::InvalidRequest)
     );
     write_call(
@@ -456,10 +460,7 @@ fn authority_tampering_and_revocation_are_refused() {
         json!({"device_id":a.daemon.control("profile.sync.status", json!({})).unwrap()["device_id"]}),
     );
     assert_eq!(
-        b.daemon.control(
-            "profile.sync.preview",
-            json!({"envelope":envelope,"passphrase":null}),
-        ),
+        preview_call(&b, json!({"envelope":envelope,"passphrase":null})),
         Err(Error::Unauthorized)
     );
 }
@@ -521,9 +522,31 @@ fn a_local_edit_after_preview_refuses_the_stale_apply() {
         b.daemon.call(
             &b.daemon.credential("operator-write.cap"),
             "profile.sync.apply",
-            serde_json::to_value(submit).unwrap(),
+            bound_params(&b, serde_json::to_value(submit).unwrap()),
         ),
         Err(Error::Conflict)
+    );
+}
+
+#[test]
+fn sync_requests_refuse_a_different_profile_binding() {
+    let fixture = support::Fixture::created();
+    fixture.daemon.enable();
+    let wrong = json!({"profile_id":"f".repeat(32),"generation":"e".repeat(32)});
+    assert_eq!(
+        fixture.daemon.call(
+            &fixture.daemon.credential("operator-write.cap"),
+            "profile.sync.export",
+            json!({"recipient":null,"passphrase":null,"keys":null,"expected_binding":wrong}),
+        ),
+        Err(Error::Unauthorized)
+    );
+    assert_eq!(
+        fixture.daemon.control(
+            "profile.sync.preview",
+            json!({"envelope":null,"passphrase":null,"expected_binding":wrong}),
+        ),
+        Err(Error::Unauthorized)
     );
 }
 
@@ -560,7 +583,7 @@ fn rotated_keys_replace_trust_only_after_explicit_revocation() {
         b.daemon.call(
             &b.daemon.credential("operator-write.cap"),
             "profile.sync.trust",
-            trust_params(&rotated),
+            bound_params(&b, trust_params(&rotated)),
         ),
         Err(Error::Conflict)
     );
@@ -587,12 +610,7 @@ fn passphrase_bundles_use_the_same_sender_trust_and_apply_path() {
         json!({"recipient":null,"passphrase":passphrase,"keys":null}),
     );
     let preview: PersonalSyncPreview = serde_json::from_value(
-        b.daemon
-            .control(
-                "profile.sync.preview",
-                json!({"envelope":envelope,"passphrase":passphrase}),
-            )
-            .unwrap(),
+        preview_call(&b, json!({"envelope":envelope,"passphrase":passphrase})).unwrap(),
     )
     .unwrap();
     let _ = b.daemon.enable();

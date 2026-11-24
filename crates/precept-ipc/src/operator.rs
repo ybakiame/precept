@@ -107,7 +107,37 @@ pub async fn mutate(location: &Location, request: &Mutation) -> Result<Value> {
 }
 /// Adds or removes a project in the daemon's set: an operator write, sent with
 /// the current write credential (the daemon re-checks the exact grant).
-pub async fn project_write(location: &Location, method: &str, params: Value) -> Result<Value> {
+fn bind_sync_write(method: &str, params: &mut Value, access: &Access) -> Result<()> {
+    if !method.starts_with("profile.sync.") {
+        return Ok(());
+    }
+    let Access::OperatorWrite {
+        profile_id,
+        generation,
+        ..
+    } = access
+    else {
+        return Err(Error::Unauthorized);
+    };
+    let Some(fields) = params.as_object_mut() else {
+        return Err(Error::InvalidRequest);
+    };
+    if let Some(expected) = fields.get("expected_binding") {
+        let expected: precept_core::operator::PersonalSyncProfileScope =
+            serde_json::from_value(expected.clone()).map_err(|_| Error::InvalidRequest)?;
+        if expected.profile_id != *profile_id || expected.generation != *generation {
+            return Err(Error::Unauthorized);
+        }
+    } else {
+        fields.insert(
+            "expected_binding".into(),
+            serde_json::json!({"profile_id":profile_id,"generation":generation}),
+        );
+    }
+    Ok(())
+}
+
+pub async fn project_write(location: &Location, method: &str, mut params: Value) -> Result<Value> {
     if !PROJECT_WRITES.contains(&method) {
         return Err(Error::Unsupported);
     }
@@ -120,6 +150,7 @@ pub async fn project_write(location: &Location, method: &str, params: Value) -> 
     if !matches!(cap.access, Access::OperatorWrite { .. }) {
         return Err(Error::Unauthorized);
     }
+    bind_sync_write(method, &mut params, &cap.access)?;
     let mut client = Client::connect(location, &cap)
         .await
         .map_err(connect_error)?;
@@ -139,5 +170,38 @@ fn connect_error(e: Error) -> Error {
         Error::Unavailable
     } else {
         e
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn access() -> Access {
+        Access::OperatorWrite {
+            profile_id: "a".repeat(32),
+            generation: "b".repeat(32),
+            owner_epoch: 1,
+        }
+    }
+
+    #[test]
+    fn sync_writes_bind_the_credential_profile_before_connecting() {
+        let mut params = serde_json::json!({"passphrase":"secret"});
+        bind_sync_write("profile.sync.export", &mut params, &access()).unwrap();
+        assert_eq!(params["expected_binding"]["profile_id"], "a".repeat(32));
+        assert_eq!(params["expected_binding"]["generation"], "b".repeat(32));
+        assert_eq!(params["passphrase"], "secret");
+    }
+
+    #[test]
+    fn a_stale_sync_profile_is_refused_locally() {
+        let mut params = serde_json::json!({
+            "expected_binding":{"profile_id":"c".repeat(32),"generation":"b".repeat(32)}
+        });
+        assert!(matches!(
+            bind_sync_write("profile.sync.export", &mut params, &access()),
+            Err(Error::Unauthorized)
+        ));
     }
 }

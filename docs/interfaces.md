@@ -273,17 +273,19 @@ repository rules, memory, Handoffs, credentials, Desktop settings or local numer
 preference ids. There is no listener, account, cloud service, folder watcher or
 automatic retry.
 
-Operator `profile.sync.status`, `profile.sync.invitation` and
-`profile.sync.preview {envelope, passphrase?}` read the selected Profile's
-private sidecar. `profile.sync.init`, `profile.sync.pair`,
+Operator `profile.sync.status` and `profile.sync.invitation` read the selected
+Profile's private sidecar. `profile.sync.preview {envelope, passphrase?,
+expected_binding}` also requires the expected Profile id and generation; the
+daemon checks them before decrypting. `profile.sync.init`, `profile.sync.pair`,
 `profile.sync.trust {invitation, expected_owner_fingerprint,
-expected_invitation_fingerprint}`, `profile.sync.revoke {device_id}`, `profile.sync.rotate`,
-`profile.sync.reset {confirm}` and
-`profile.sync.export {recipient?, passphrase?, keys?}` require the current
-OperatorWrite capability because they change identity, trust or clock state.
-`profile.sync.abort {operation_id}` uses the same capability to settle an exact
-committed receipt or discard a pending operation proven absent from the Profile;
-it does not require the original envelope or passphrase.
+expected_invitation_fingerprint}`, `profile.sync.revoke {device_id}`,
+`profile.sync.rotate`, `profile.sync.reset {confirm}`,
+`profile.sync.export {recipient?, passphrase?, keys?}`,
+`profile.sync.abort {operation_id}` and `profile.sync.apply` require the current OperatorWrite
+capability and the same expected Profile binding. The native write client checks
+that binding against its credential before connecting, so a stale request is not
+sent to a newly selected Profile. These operations change identity, trust or clock
+state; abort does not require the original envelope or passphrase.
 Pairing verifies the invitation signature and the operator's out-of-band owner
 and complete-invitation fingerprints. The invitation fingerprint binds the
 owner, device id, age recipient and signing key; the owner fingerprint alone is
@@ -350,8 +352,9 @@ duplicate keys are refused.
 
 `precept sync preview ENVELOPE --out PREPARED.json` writes the client-side
 `precept-personal-sync-prepared` v1 template. It preserves the original signed
-envelope, compact local versions, sender/device ids, destination commit and exact
-selections; it never stores a passphrase. `precept sync apply PREPARED.json
+envelope, expected Profile binding, compact local versions, sender/device ids,
+destination commit and exact selections; it never stores a passphrase. A prepared
+file cannot be applied to another Profile. `precept sync apply PREPARED.json
 --operation-id ID [--passphrase-file FILE]` submits those immutable inputs. An
 uncertain result is retried with the identical template, operation id and
 passphrase. The CLI includes the operation id in mutation error output.

@@ -2,14 +2,32 @@ use super::*;
 use crate::personal_sync;
 use precept_core::operator::{
     PersonalSyncAbortRequest, PersonalSyncApplySubmission, PersonalSyncExportRequest,
-    PersonalSyncOpenRequest, PersonalSyncResetRequest, PersonalSyncRevokeRequest,
-    PersonalSyncTrustRequest,
+    PersonalSyncOpenRequest, PersonalSyncProfileScope, PersonalSyncResetRequest,
+    PersonalSyncRevokeRequest, PersonalSyncTrustRequest,
 };
 use precept_ipc::{Access, peer::Peer};
 use serde_json::Value;
 
+fn bind_profile(params: Value, binding: &precept_write::Binding) -> Result<Value> {
+    let Value::Object(mut fields) = params else {
+        return Err(Error::InvalidRequest);
+    };
+    let expected = fields
+        .remove("expected_binding")
+        .ok_or(Error::InvalidRequest)?;
+    let expected: PersonalSyncProfileScope = crate::decode(expected)?;
+    if !expected.valid()
+        || expected.profile_id != binding.profile_id
+        || expected.generation != binding.generation
+    {
+        return Err(Error::Unauthorized);
+    }
+    Ok(Value::Object(fields))
+}
+
 impl Profiles {
     pub(super) fn sync(&self, authority: &Peer, method: &str, params: Value) -> Result<Value> {
+        let mut params = params;
         let write = matches!(
             method,
             "profile.sync.init"
@@ -52,6 +70,7 @@ impl Profiles {
             {
                 return Err(Error::Unauthorized);
             }
+            params = bind_profile(params, binding)?;
             let lookup = |request: &precept_write::Request| {
                 store
                     .operator_receipt(&request.operation_id)
@@ -89,6 +108,9 @@ impl Profiles {
         }
         drop(state);
         let metadata = store.metadata().map_err(|_| Error::Unavailable)?;
+        if method == "profile.sync.preview" {
+            params = bind_profile(params, &metadata.binding)?;
+        }
         let current = personal_sync::current_globals(&store)?;
         macro_rules! reply {
             ($value:expr) => {

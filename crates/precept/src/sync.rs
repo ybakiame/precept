@@ -1,7 +1,8 @@
 use clap::{Args, Subcommand};
 use precept_ipc::operator::{
     PersonalSyncApplySubmission, PersonalSyncEnvelope, PersonalSyncInvitation,
-    PersonalSyncLocalVersion, PersonalSyncPreview, PersonalSyncResolution, PersonalSyncSelection,
+    PersonalSyncLocalVersion, PersonalSyncPreview, PersonalSyncProfileScope,
+    PersonalSyncResolution, PersonalSyncSelection,
 };
 use precept_ipc::{Error, Location, Result};
 use serde::{Deserialize, Serialize};
@@ -134,6 +135,7 @@ struct InvitationFile {
 struct Prepared {
     format: String,
     version: u32,
+    scope: PersonalSyncProfileScope,
     envelope: PersonalSyncEnvelope,
     local_versions: Vec<PersonalSyncLocalVersion>,
     sender_device_id: String,
@@ -219,7 +221,34 @@ async fn control(location: &Location, method: &str, params: Value) -> Result<Val
     precept_ipc::operator::control(location, method, params).await
 }
 
+async fn current_scope(location: &Location) -> Result<PersonalSyncProfileScope> {
+    let info = control(location, "profile.info", json!({})).await?;
+    let binding = info.get("binding").ok_or(Error::Unauthorized)?;
+    serde_json::from_value(serde_json::json!({
+        "profile_id":binding.get("profile_id").ok_or(Error::Unauthorized)?,
+        "generation":binding.get("generation").ok_or(Error::Unauthorized)?,
+    }))
+    .map_err(|_| Error::InvalidRequest)
+}
+
 async fn write(location: &Location, method: &str, params: Value) -> Result<Value> {
+    let scope = current_scope(location).await?;
+    write_scoped(location, method, params, scope).await
+}
+
+async fn write_scoped(
+    location: &Location,
+    method: &str,
+    mut params: Value,
+    scope: PersonalSyncProfileScope,
+) -> Result<Value> {
+    let Some(fields) = params.as_object_mut() else {
+        return Err(Error::InvalidRequest);
+    };
+    fields.insert(
+        "expected_binding".into(),
+        serde_json::to_value(scope).map_err(|_| Error::InvalidRequest)?,
+    );
     precept_ipc::operator::project_write(location, method, params).await
 }
 
@@ -303,11 +332,16 @@ async fn preview(location: &Location, args: PreviewArgs) -> Result<Value> {
         Some(path) => Some(read_passphrase(path)?),
         None => None,
     };
+    let scope = current_scope(location).await?;
     let mut preview: PersonalSyncPreview = serde_json::from_value(
         control(
             location,
             "profile.sync.preview",
-            json!({"envelope":envelope,"passphrase":passphrase}),
+            json!({
+                "envelope":envelope,
+                "passphrase":passphrase,
+                "expected_binding":scope,
+            }),
         )
         .await?,
     )
@@ -330,6 +364,7 @@ async fn preview(location: &Location, args: PreviewArgs) -> Result<Value> {
         let prepared = Prepared {
             format: PREPARED_FORMAT.into(),
             version: PREPARED_VERSION,
+            scope,
             envelope,
             local_versions: preview.local_versions,
             sender_device_id: preview.sender_device_id,
@@ -350,6 +385,7 @@ async fn apply(location: &Location, args: ApplyArgs) -> Result<Value> {
     let prepared: Prepared = read(&args.prepared)?;
     if prepared.format != PREPARED_FORMAT
         || prepared.version != PREPARED_VERSION
+        || !prepared.scope.valid()
         || !prepared.envelope.valid()
         || prepared.expected_commit < 0
         || prepared.selections.is_empty()
@@ -377,10 +413,11 @@ async fn apply(location: &Location, args: ApplyArgs) -> Result<Value> {
         device_id: prepared.device_id,
         selections: prepared.selections,
     };
-    write(
+    write_scoped(
         location,
         "profile.sync.apply",
         serde_json::to_value(submission).map_err(|_| Error::InvalidRequest)?,
+        prepared.scope,
     )
     .await
 }

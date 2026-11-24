@@ -388,6 +388,19 @@ impl PersonalSyncLocalVersion {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PersonalSyncProfileScope {
+    pub profile_id: String,
+    pub generation: String,
+}
+
+impl PersonalSyncProfileScope {
+    pub fn valid(&self) -> bool {
+        super::valid_identity(&self.profile_id) && super::valid_identity(&self.generation)
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PersonalSyncApplySubmission {
