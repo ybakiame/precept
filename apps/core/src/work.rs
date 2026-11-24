@@ -1,52 +1,86 @@
 //! Work sessions as the daemon reports them (`sessions.list`): agents' own
-//! notes on what they are doing in one project. Parsed and bounded here;
-//! the Sessions page shows them and the operator can delete one.
+//! structured coordination notes. Parsed and bounded here; the Sessions page
+//! shows the items and the operator can delete a session.
 use crate::presentation::sanitize;
 use serde::Deserialize;
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum WorkItemKind {
+    Milestone,
+    Task,
+}
+
+impl WorkItemKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Milestone => "milestone",
+            Self::Task => "task",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum WorkItemState {
+    Todo,
+    Doing,
+    Blocked,
+    Deferred,
+    Done,
+}
+
+impl WorkItemState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Todo => "todo",
+            Self::Doing => "doing",
+            Self::Blocked => "blocked",
+            Self::Deferred => "deferred",
+            Self::Done => "done",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct WorkItem {
+    pub id: String,
+    pub text: String,
+    pub kind: WorkItemKind,
+    pub state: WorkItemState,
+    #[serde(default)]
+    pub depends_on: Vec<String>,
+    #[serde(default)]
+    pub owner: Option<String>,
+    #[serde(default)]
+    pub blocked_reason: Option<String>,
+}
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct WorkSession {
     pub id: String,
     pub agent: Option<String>,
     pub conversation: Option<String>,
-    /// `open` or `closed`.
     pub status: String,
     pub started_ms: u64,
     pub updated_ms: u64,
     pub closed_ms: Option<u64>,
     pub goal: String,
-    pub done: Vec<String>,
-    pub doing: Vec<String>,
-    pub todo: Vec<String>,
+    pub items: Vec<WorkItem>,
     pub summary: Option<String>,
 }
 
 #[derive(Deserialize)]
-struct RawItem {
-    text: String,
-}
-
-/// A session as the daemon reports it: work items are objects; the page
-/// shows their text.
-#[derive(Deserialize)]
-struct RawSession {
-    id: String,
-    agent: Option<String>,
-    conversation: Option<String>,
-    status: String,
-    started_ms: u64,
-    updated_ms: u64,
-    closed_ms: Option<u64>,
-    goal: String,
-    done: Vec<RawItem>,
-    doing: Vec<RawItem>,
-    todo: Vec<RawItem>,
-    summary: Option<String>,
-}
-
-#[derive(Deserialize)]
 struct Reply {
-    sessions: Vec<RawSession>,
+    sessions: Vec<WorkSession>,
+}
+
+fn valid_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 24
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
 /// Parses and bounds a daemon reply; every text is sanitized for display.
@@ -55,36 +89,29 @@ pub fn parse(v: serde_json::Value) -> Result<Vec<WorkSession>, &'static str> {
     if raw.sessions.len() > 50 {
         return Err("Unavailable");
     }
-    let texts = |items: Vec<RawItem>| items.into_iter().map(|i| i.text).collect();
-    let mut list: Vec<WorkSession> = raw
-        .sessions
-        .into_iter()
-        .map(|s| WorkSession {
-            id: s.id,
-            agent: s.agent,
-            conversation: s.conversation,
-            status: s.status,
-            started_ms: s.started_ms,
-            updated_ms: s.updated_ms,
-            closed_ms: s.closed_ms,
-            goal: s.goal,
-            done: texts(s.done),
-            doing: texts(s.doing),
-            todo: texts(s.todo),
-            summary: s.summary,
-        })
-        .collect();
-    for s in &mut list {
-        s.id = sanitize(&s.id, 32);
-        s.agent = s.agent.as_deref().map(|a| sanitize(a, 64));
-        s.goal = sanitize(&s.goal, 500);
-        for l in [&mut s.done, &mut s.doing, &mut s.todo] {
-            l.truncate(12);
-            for i in l.iter_mut() {
-                *i = sanitize(i, 200);
-            }
+    let mut list = raw.sessions;
+    for session in &mut list {
+        session.id = sanitize(&session.id, 32);
+        session.agent = session.agent.as_deref().map(|a| sanitize(a, 64));
+        session.goal = sanitize(&session.goal, 500);
+        if session.items.len() > 36 {
+            return Err("Unavailable");
         }
-        s.summary = s.summary.as_deref().map(|t| sanitize(t, 1000));
+        for item in &mut session.items {
+            if !valid_id(&item.id) {
+                return Err("Unavailable");
+            }
+            item.text = sanitize(&item.text, 200);
+            if item.depends_on.len() > 36 || item.depends_on.iter().any(|id| !valid_id(id)) {
+                return Err("Unavailable");
+            }
+            item.owner = item.owner.as_deref().map(|owner| sanitize(owner, 64));
+            item.blocked_reason = item
+                .blocked_reason
+                .as_deref()
+                .map(|reason| sanitize(reason, 200));
+        }
+        session.summary = session.summary.as_deref().map(|t| sanitize(t, 1000));
     }
     Ok(list)
 }
@@ -105,6 +132,7 @@ pub struct SessionsPage {
     pub handoff: Option<String>,
     pub task: String,
 }
+
 /// A Handoff task id from a goal: lowercase ASCII words joined by hyphens.
 pub fn task_id(goal: &str) -> String {
     let mut out = String::new();
@@ -125,6 +153,7 @@ pub fn task_id(goal: &str) -> String {
         out
     }
 }
+
 impl SessionsPage {
     pub fn opened(&self) -> Option<&WorkSession> {
         let id = self.open.as_deref()?;
@@ -138,14 +167,17 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn parses_bounds_and_sanitizes() {
+    fn parses_bounds_and_sanitizes_structured_items() {
         let reply = json!({"sessions":[{"id":"ab","agent":"claude\u{7}","conversation":null,"status":"open",
-            "started_ms":1,"updated_ms":2,"closed_ms":null,"goal":"Add import","done":[],
-            "doing":[{"id":"t1","text":"tests"}],
-            "todo":[{"id":"d1","text":"docs"}],"summary":null,"rev":2}]});
+            "started_ms":1,"updated_ms":2,"closed_ms":null,"goal":"Add import","items":[
+                {"id":"t1","text":"tests\u{7}","kind":"task","state":"doing","owner":"agent\u{7}"},
+                {"id":"d1","text":"docs","kind":"milestone","state":"todo","depends_on":["t1"]}
+            ],"summary":null}]});
         let list = parse(reply).unwrap();
         assert_eq!(list[0].agent.as_deref(), Some("claude"));
-        assert_eq!(list[0].doing, ["tests"]);
+        assert_eq!(list[0].items[0].text, "tests");
+        assert_eq!(list[0].items[0].owner.as_deref(), Some("agent"));
+        assert_eq!(list[0].items[1].kind, WorkItemKind::Milestone);
         assert!(parse(json!({"sessions":"x"})).is_err());
     }
 }

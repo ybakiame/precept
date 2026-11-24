@@ -219,11 +219,11 @@ async fn compact_note(args: &Args) -> precept_ipc::Result<String> {
         .find(|s| s["status"] == "open");
     Ok(match open {
         Some(s) => format!(
-            "Precept: this conversation is about to be compacted. Keep your work state in the project's sessions so it survives: if session `{}` (rev {}) is yours, bring it current with update_work_state (done, doing, todo, expected_rev); otherwise record your own with start_session. After compaction, call get_effective_context again.",
+            "Precept: this conversation is about to be compacted. Keep your work state in the project's sessions so it survives: read session `{}` with get_work_session, then bring it current with update_work_state (single-item operations, expected_rev={}); otherwise record your own with start_session (goal, items). After compaction, call get_effective_context again.",
             s["id"].as_str().unwrap_or("?"),
             s["rev"].as_u64().unwrap_or(0)
         ),
-        None => "Precept: this conversation is about to be compacted. If you are mid-task, record it with start_session (goal, done/doing/todo) so the work survives compaction and moves between agents. After compaction, call get_effective_context again.".to_owned(),
+        None => "Precept: this conversation is about to be compacted. If you are mid-task, record it with start_session (goal, structured items) so the work survives compaction and moves between agents. After compaction, call get_effective_context again.".to_owned(),
     })
 }
 

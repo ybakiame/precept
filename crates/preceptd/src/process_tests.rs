@@ -26,7 +26,7 @@ fn checkpoint(base: &Path, marker: &str) {
     }
     fs::write(base.join("reached-pending"), std::process::id().to_string()).unwrap();
     fs::rename(base.join("reached-pending"), base.join("reached")).unwrap();
-    let deadline = Instant::now() + Duration::from_secs(4);
+    let deadline = Instant::now() + Duration::from_secs(7);
     while !base.join("release").exists() {
         assert!(Instant::now() < deadline, "checkpoint release deadline");
         thread::sleep(Duration::from_millis(5));
@@ -196,6 +196,107 @@ fn s3_independent_daemon_admission_checkpoint() {
         assert_eq!(inspect(revision), before_inspect);
         daemon.control("profile.write.disable", json!({})).unwrap();
     }
+}
+
+#[test]
+fn sessions_handoff_timeout_is_unknown_and_the_commit_survives() {
+    let temp = tempfile::Builder::new()
+        .prefix("precept-handoff-timeout-")
+        .tempdir()
+        .unwrap();
+    let base = temp.path().canonicalize().unwrap();
+    let root = base.join("alpha");
+    fs::create_dir(&root).unwrap();
+    precept_ipc::transport::private_dir(&base.join("state"), true).unwrap();
+    let db = base.join("state/profile.sqlite3");
+    let child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--ignored",
+            "--exact",
+            "process_tests::checkpoint_daemon_child",
+        ])
+        .env("PRECEPT_TEST_CHECKPOINT_ROOT", &base)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    assert_ne!(child.id(), std::process::id());
+    let mut daemon = support::Daemon {
+        child,
+        location: location(&base),
+        runtime: tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap(),
+    };
+    daemon.ready();
+    daemon
+        .control("profile.create", json!({"path":db}))
+        .unwrap();
+    let binding = daemon.enable();
+    daemon
+        .call(
+            &daemon.credential("operator-write.cap"),
+            "profile.mutate",
+            json!({"version":2,"binding":binding,"operation_id":"register","command":{
+                "command":"register_project","name":"alpha","root":root,"expected":{"kind":"absent"}
+            }}),
+        )
+        .unwrap();
+    daemon
+        .control("project.propose", json!({"name":"alpha","enabled":true}))
+        .unwrap();
+    let agent = daemon.credential("agent-alpha.cap");
+    let session = daemon
+        .call(
+            &agent,
+            "session.start",
+            json!({"goal":"Handoff timeout","items":[{"id":"ship","text":"Ship"}]}),
+        )
+        .unwrap();
+    daemon
+        .call(
+            &agent,
+            "session.close",
+            json!({"id":session["id"],"expected_rev":1,"summary":"Ready."}),
+        )
+        .unwrap();
+    fs::write(base.join("armed"), []).unwrap();
+    let credential = daemon.credential("operator-write.cap");
+    let mut client = daemon.client(&credential).unwrap();
+    let result = daemon.runtime.block_on(async {
+        client
+            .request(
+                "sessions.handoff",
+                json!({"project":"alpha","id":session["id"],"task_id":"timeout"}),
+            )
+            .await
+    });
+    assert_eq!(result, Err(Error::OutcomeUnknown));
+    assert!(base.join("reached").exists(), "mutation reached admission");
+    fs::write(base.join("release"), []).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let saved = loop {
+        match daemon.control(
+            "profile.handoff.get",
+            json!({"project":"alpha","task_id":"timeout"}),
+        ) {
+            Ok(value) => break value,
+            Err(Error::NotFound) if Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(10));
+            }
+            other => panic!("Handoff did not settle after OutcomeUnknown: {other:?}"),
+        }
+    };
+    assert_eq!(saved["record"]["objective"], "Handoff timeout");
+    assert_eq!(
+        daemon.call(
+            &credential,
+            "sessions.handoff",
+            json!({"project":"alpha","id":session["id"],"task_id":"timeout"}),
+        ),
+        Err(Error::Conflict)
+    );
 }
 
 #[test]

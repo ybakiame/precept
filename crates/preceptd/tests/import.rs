@@ -103,3 +103,144 @@ fn a_scan_suggests_and_the_operator_files_picks_as_suggestions() {
         .control("profile.select", json!({"path":f.db}))
         .expect("imported suggestions verify");
 }
+
+#[test]
+fn known_sources_are_project_scoped_read_only_and_suggestion_only() {
+    let f = Fixture::created();
+    let b = f.daemon.enable();
+    f.register(&b, "alpha");
+    f.register(&b, "beta");
+    let alpha = f.temp.path().join("alpha");
+    let beta = f.temp.path().join("beta");
+    let sources = [
+        ("AGENTS.md", "## Shared\n\nAlpha shared instructions.\n"),
+        ("CLAUDE.md", "## Claude\n\nAlpha Claude instructions.\n"),
+        (".cursorrules", "Legacy Cursor instructions.\n"),
+        (
+            ".cursor/rules/style.mdc",
+            "---\nalwaysApply: true\n---\nCursor style instructions.\n",
+        ),
+        (".continue/rules/test.md", "Continue test instructions.\n"),
+        (
+            ".github/copilot-instructions.md",
+            "Copilot repository instructions.\n",
+        ),
+        (
+            ".github/instructions/api.instructions.md",
+            "---\napplyTo: src/\n---\nCopilot API instructions.\n",
+        ),
+        (
+            ".claude/rules/rust.md",
+            "---\npaths: crates/\n---\nClaude Rust instructions.\n",
+        ),
+        (
+            ".cursor/rules/glob.mdc",
+            "---\nglobs: src/**/*.rs\n---\nUnsupported glob instructions.\n",
+        ),
+    ];
+    for (source, text) in sources {
+        let path = alpha.join(source);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+    }
+    fs::write(
+        beta.join("AGENTS.md"),
+        "## Beta\n\nBeta only instructions.\n",
+    )
+    .unwrap();
+
+    let before = logical(&f.db);
+    let found = f
+        .daemon
+        .control("import.scan", json!({"project":"alpha"}))
+        .unwrap();
+    assert_eq!(logical(&f.db), before, "scan is read-only");
+    let candidates = found["candidates"].as_array().unwrap();
+    assert_eq!(candidates.len(), 8);
+    assert!(candidates.iter().all(|c| {
+        c["scope"] == json!({"kind":"project","name":"alpha"}) && c["exists"] == false
+    }));
+    let kinds: Vec<&str> = candidates
+        .iter()
+        .map(|c| c["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            "agents_md",
+            "claude_md",
+            "cursor",
+            "copilot",
+            "cursor",
+            "continue",
+            "copilot",
+            "claude"
+        ]
+    );
+    assert!(found["skipped"].as_array().unwrap().iter().any(|s| {
+        s["source"] == ".cursor/rules/glob.mdc"
+            && s["reason"] == "unsupported_applicability"
+            && s["detail"] == "src/**/*.rs"
+    }));
+
+    let agent = f.daemon.credential("agent-alpha.cap");
+    for credential in [&agent, &f.daemon.credential("operator-write.cap")] {
+        assert_eq!(
+            f.daemon
+                .call(credential, "import.scan", json!({"project":"alpha"})),
+            Err(Error::Unauthorized)
+        );
+    }
+    assert_eq!(
+        f.daemon
+            .control("import.scan", json!({"project":"missing"})),
+        Err(Error::NotFound)
+    );
+    assert_eq!(
+        f.daemon
+            .control("import.scan", json!({"project":"alpha","root":alpha})),
+        Err(Error::InvalidRequest)
+    );
+
+    let other = f
+        .daemon
+        .control("import.scan", json!({"project":"beta"}))
+        .unwrap();
+    let other = other.to_string();
+    assert!(other.contains("Beta only instructions."));
+    assert!(!other.contains("Alpha shared instructions."));
+    assert!(!other.contains(".cursor/rules/style.mdc"));
+
+    let cursor = candidates
+        .iter()
+        .find(|c| c["source"] == ".cursor/rules/style.mdc")
+        .unwrap();
+    let item = SuggestItem {
+        scope: serde_json::from_value(cursor["scope"].clone()).unwrap(),
+        key: cursor["key"].as_str().unwrap().into(),
+        value: cursor["value"].as_str().unwrap().into(),
+        tags: serde_json::from_value(cursor["tags"].clone()).unwrap(),
+        origin: Origin::Operator,
+        rule: serde_json::from_value(cursor["rule"].clone()).unwrap(),
+    };
+    f.daemon
+        .mutate(
+            &b,
+            "import-cursor",
+            Command::SuggestBatch { items: vec![item] },
+        )
+        .unwrap();
+    let context = f.daemon.call(&agent, "context.get", json!({})).unwrap();
+    assert!(!context.to_string().contains("Cursor style instructions."));
+    let again = f
+        .daemon
+        .control("import.scan", json!({"project":"alpha"}))
+        .unwrap();
+    assert!(
+        again["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| { c["source"] == ".cursor/rules/style.mdc" && c["exists"] == true })
+    );
+}

@@ -2,7 +2,11 @@
 //! (goal, doing / next / done, summary). Read-only for the operator except
 //! Delete; agents write them through MCP where the operator allows it.
 use crate::*;
-use precept_ui_core::{activity::date_time, i18n::Msg, work::WorkSession};
+use precept_ui_core::{
+    activity::date_time,
+    i18n::Msg,
+    work::{WorkItem, WorkItemState, WorkSession},
+};
 use tokens::palette;
 use ui::{BadgeVariant, ButtonSize, ButtonVariant, badge, button, scale, surface};
 
@@ -17,17 +21,21 @@ pub(crate) fn load(model: Signal<Model>, project: String) {
         if s.project.as_deref() != Some(project.as_str()) {
             s.list = None;
             s.open = None;
+            s.delete = None;
+            s.handoff = None;
+            s.task.clear();
         }
         s.project = Some(project.clone());
         s.busy = true;
         s.error = None;
     });
+    let epoch = model.get().epoch;
     super::profile::call(
         model,
         "sessions.list",
         serde_json::json!({ "project": project }),
         move |_, m, r| {
-            if m.sessions.project.as_deref() != Some(project.as_str()) {
+            if m.epoch != epoch || m.sessions.project.as_deref() != Some(project.as_str()) {
                 return;
             }
             m.sessions.busy = false;
@@ -42,18 +50,33 @@ pub(crate) fn load(model: Signal<Model>, project: String) {
 /// Saves the session as the typed Handoff (writes are turned on first when
 /// off, as Add does).
 fn save_handoff(model: Signal<Model>) {
-    if model.get().project_add.write_enabled == Some(true) {
-        save_handoff_now(model);
-    } else {
-        super::profile::enable_writes(model, save_handoff_now);
-    }
-}
-fn save_handoff_now(model: Signal<Model>) {
     let m = model.get();
     let (Some(project), Some(id)) = (m.sessions.project.clone(), m.sessions.handoff.clone()) else {
         return;
     };
     let task = m.sessions.task.trim().to_owned();
+    let epoch = m.epoch;
+    let expected_project = project.clone();
+    let expected_id = id.clone();
+    let save = move |model: Signal<Model>| {
+        let current = model.get();
+        if current.epoch == epoch
+            && current.sessions.project.as_deref() == Some(expected_project.as_str())
+            && current.sessions.handoff.as_deref() == Some(expected_id.as_str())
+        {
+            save_handoff_now(model, project, id, task);
+        }
+    };
+    if model.get().project_add.write_enabled == Some(true) {
+        save(model);
+    } else {
+        super::profile::enable_writes(model, save);
+    }
+}
+fn save_handoff_now(model: Signal<Model>, project: String, id: String, task: String) {
+    let epoch = model.get().epoch;
+    let request_project = project.clone();
+    let request_id = id.clone();
     model.update(|m| {
         m.sessions.busy = true;
         m.sessions.error = None;
@@ -63,6 +86,12 @@ fn save_handoff_now(model: Signal<Model>) {
         "sessions.handoff",
         serde_json::json!({ "project": project, "id": id, "task_id": task }),
         move |_, m, r| {
+            if m.epoch != epoch
+                || m.sessions.project.as_deref() != Some(request_project.as_str())
+                || m.sessions.handoff.as_deref() != Some(request_id.as_str())
+            {
+                return;
+            }
             m.sessions.busy = false;
             match r {
                 Ok(_) => {
@@ -119,6 +148,7 @@ fn handoff_dialog(model: Signal<Model>) -> impl IntoElement {
         .on_cancel(move || {
             model.update(|m| {
                 m.sessions.handoff = None;
+                m.sessions.busy = false;
                 m.sessions.error = None;
             })
         })
@@ -130,12 +160,21 @@ fn delete(model: Signal<Model>) {
     let (Some(project), Some(id)) = (m.sessions.project.clone(), m.sessions.delete.clone()) else {
         return;
     };
+    let epoch = m.epoch;
+    let request_project = project.clone();
+    let request_id = id.clone();
     model.update(|m| m.sessions.busy = true);
     super::profile::call(
         model,
         "sessions.delete",
         serde_json::json!({ "project": project, "id": id }),
         move |model, m, r| {
+            if m.epoch != epoch
+                || m.sessions.project.as_deref() != Some(request_project.as_str())
+                || m.sessions.delete.as_deref() != Some(request_id.as_str())
+            {
+                return;
+            }
             m.sessions.busy = false;
             m.sessions.delete = None;
             match r {
@@ -145,7 +184,14 @@ fn delete(model: Signal<Model>) {
                 }
                 Err(code) => m.sessions.error = Some(code.into()),
             }
-            spawn(async move { load(model, project) });
+            spawn(async move {
+                let current = model.get();
+                if current.epoch == epoch
+                    && current.sessions.project.as_deref() == Some(request_project.as_str())
+                {
+                    load(model, project);
+                }
+            });
         },
     );
 }
@@ -211,9 +257,30 @@ fn row(model: Signal<Model>, index: usize, s: &WorkSession) -> AnyElement {
     let id = s.id.clone();
     let counts = m
         .word(Msg::SessionCounts)
-        .replace("{doing}", &s.doing.len().to_string())
-        .replace("{todo}", &s.todo.len().to_string())
-        .replace("{done}", &s.done.len().to_string());
+        .replace(
+            "{doing}",
+            &s.items
+                .iter()
+                .filter(|item| item.state == WorkItemState::Doing)
+                .count()
+                .to_string(),
+        )
+        .replace(
+            "{todo}",
+            &s.items
+                .iter()
+                .filter(|item| item.state == WorkItemState::Todo)
+                .count()
+                .to_string(),
+        )
+        .replace(
+            "{done}",
+            &s.items
+                .iter()
+                .filter(|item| item.state == WorkItemState::Done)
+                .count()
+                .to_string(),
+        );
     view()
         .gap_1()
         .py_2()
@@ -241,7 +308,7 @@ fn row(model: Signal<Model>, index: usize, s: &WorkSession) -> AnyElement {
         .into_element()
 }
 
-fn section(model: Signal<Model>, title: Msg, items: &[String]) -> AnyElement {
+fn section(model: Signal<Model>, title: Msg, items: &[WorkItem]) -> AnyElement {
     if items.is_empty() {
         return view().into_element();
     }
@@ -249,11 +316,42 @@ fn section(model: Signal<Model>, title: Msg, items: &[String]) -> AnyElement {
     view()
         .gap_1()
         .child(text(m.word(title)).font_weight(FontWeight::SEMIBOLD))
-        .children(items.iter().map(|i| {
-            text(format!("• {i}"))
-                .text_size(px(scale::text::BODY))
-                .into_element()
+        .children(items.iter().map(|item| {
+            let mut line = format!("• {} {}", item.id, item.text);
+            if item.kind == precept_ui_core::work::WorkItemKind::Milestone {
+                line.push_str(&format!(" [{}]", m.word(Msg::SessionMilestone)));
+            }
+            if !item.depends_on.is_empty() {
+                line.push_str(&format!(
+                    " · {}",
+                    m.word(Msg::SessionDependsOn)
+                        .replace("{ids}", &item.depends_on.join(", "))
+                ));
+            }
+            if let Some(owner) = &item.owner {
+                line.push_str(&format!(
+                    " · {}",
+                    m.word(Msg::SessionOwner).replace("{owner}", owner)
+                ));
+            }
+            if let Some(reason) = &item.blocked_reason {
+                line.push_str(&format!(
+                    " · {}",
+                    m.word(Msg::SessionBlockedReason)
+                        .replace("{reason}", reason)
+                ));
+            }
+            text(line).text_size(px(scale::text::BODY)).into_element()
         }))
+        .into_element()
+}
+
+fn summary_section(model: Signal<Model>, summary: &str) -> AnyElement {
+    let m = model.get_untracked();
+    view()
+        .gap_1()
+        .child(text(m.word(Msg::SessionSummary)).font_weight(FontWeight::SEMIBOLD))
+        .child(text(format!("• {summary}")).text_size(px(scale::text::BODY)))
         .into_element()
 }
 
@@ -281,6 +379,36 @@ fn detail(model: Signal<Model>) -> impl IntoElement {
                 let Some(s) = m.sessions.opened().cloned() else {
                     return view().into_element();
                 };
+                let doing = s
+                    .items
+                    .iter()
+                    .filter(|item| item.state == WorkItemState::Doing)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                let blocked = s
+                    .items
+                    .iter()
+                    .filter(|item| item.state == WorkItemState::Blocked)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                let todo = s
+                    .items
+                    .iter()
+                    .filter(|item| item.state == WorkItemState::Todo)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                let deferred = s
+                    .items
+                    .iter()
+                    .filter(|item| item.state == WorkItemState::Deferred)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                let done = s
+                    .items
+                    .iter()
+                    .filter(|item| item.state == WorkItemState::Done)
+                    .cloned()
+                    .collect::<Vec<_>>();
                 let mut body = view()
                     .gap_4()
                     .child(
@@ -303,15 +431,13 @@ fn detail(model: Signal<Model>) -> impl IntoElement {
                                 .text_color(move || palette(model).muted),
                             ),
                     )
-                    .child(section(model, Msg::SessionDoing, &s.doing))
-                    .child(section(model, Msg::SessionTodo, &s.todo))
-                    .child(section(model, Msg::SessionDone, &s.done));
+                    .child(section(model, Msg::SessionDoing, &doing))
+                    .child(section(model, Msg::SessionBlocked, &blocked))
+                    .child(section(model, Msg::SessionTodo, &todo))
+                    .child(section(model, Msg::SessionDeferred, &deferred))
+                    .child(section(model, Msg::SessionDone, &done));
                 if let Some(sum) = &s.summary {
-                    body = body.child(section(
-                        model,
-                        Msg::SessionSummary,
-                        std::slice::from_ref(sum),
-                    ));
+                    body = body.child(summary_section(model, sum));
                 }
                 // The calls this session made, from the project's evidence.
                 let calls: Vec<precept_ui_core::activity::Event> = m

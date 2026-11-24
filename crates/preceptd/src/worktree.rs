@@ -165,7 +165,7 @@ fn fingerprint_mode(path: &Path, metadata: &std::fs::Metadata) -> u32 {
 }
 
 #[cfg(unix)]
-fn confined_file(root: &Path, relative: &Path) -> Option<std::fs::File> {
+pub(crate) fn confined_file(root: &Path, relative: &Path) -> Option<std::fs::File> {
     use std::{
         ffi::CString,
         os::{
@@ -200,7 +200,7 @@ fn confined_file(root: &Path, relative: &Path) -> Option<std::fs::File> {
     Some(directory)
 }
 #[cfg(windows)]
-fn confined_file(root: &Path, relative: &Path) -> Option<std::fs::File> {
+pub(crate) fn confined_file(root: &Path, relative: &Path) -> Option<std::fs::File> {
     use std::os::windows::{ffi::OsStringExt, fs::OpenOptionsExt, io::AsRawHandle};
     use windows_sys::Win32::Storage::FileSystem::{
         FILE_FLAG_OPEN_REPARSE_POINT, FILE_NAME_NORMALIZED, GetFinalPathNameByHandleW,

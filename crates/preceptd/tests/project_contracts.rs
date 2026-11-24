@@ -273,7 +273,7 @@ fn production_ipc_and_mcp_mask_contract_conflicts_and_preserve_fallback_privacy(
     assert_eq!(logical(&f.db), before);
     let tools = mcp.request("tools/list", json!({}));
     let tools = tools["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 11);
+    assert_eq!(tools.len(), 12);
     assert_eq!(tools[0]["name"], "get_effective_context");
     assert_eq!(tools[1]["name"], "explain_rule");
     assert_eq!(tools[2]["name"], "get_handoff");

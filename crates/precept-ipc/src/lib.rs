@@ -19,9 +19,10 @@ pub const MAX_FRAME: usize = 1024 * 1024;
 pub const MAX_PEERS: usize = 16;
 pub const MAX_REQUESTS: usize = 32;
 pub const FRAME_TIMEOUT: Duration = Duration::from_secs(2);
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Error {
     InvalidRequest,
+    InvalidWorkState { field: String, reason: String },
     Version,
     Unauthorized,
     Unsupported,
@@ -407,7 +408,7 @@ impl Client {
         self.next += 1;
         let id = self.next.to_string();
         let transport_error = |e| {
-            if method == "profile.mutate" {
+            if matches!(method, "profile.mutate" | "sessions.handoff") {
                 Error::OutcomeUnknown
             } else {
                 e
@@ -515,34 +516,38 @@ mod tests {
         let mut listener = transport::Listener::bind(&location).await.unwrap();
         let cap = load_credential(&location, &location.credential_path(None).unwrap()).unwrap();
         let server = tokio::spawn(async move {
-            for denied in [true, false] {
-                let mut stream = listener.accept().await.unwrap();
-                accept_handshake(&mut stream, &credentials).await.unwrap();
-                let request: Request =
-                    serde_json::from_value(read_frame(&mut stream).await.unwrap()).unwrap();
-                assert_eq!(request.method, "profile.mutate");
-                if denied {
-                    write_frame(
-                        &mut stream,
-                        &Response::error(Some(request.id), Error::InvalidRequest),
-                    )
-                    .await
-                    .unwrap();
+            for method in ["profile.mutate", "sessions.handoff"] {
+                for denied in [true, false] {
+                    let mut stream = listener.accept().await.unwrap();
+                    accept_handshake(&mut stream, &credentials).await.unwrap();
+                    let request: Request =
+                        serde_json::from_value(read_frame(&mut stream).await.unwrap()).unwrap();
+                    assert_eq!(request.method, method);
+                    if denied {
+                        write_frame(
+                            &mut stream,
+                            &Response::error(Some(request.id), Error::InvalidRequest),
+                        )
+                        .await
+                        .unwrap();
+                    }
+                    // Second connection consumes submission, then loses its reply.
                 }
-                // Second connection consumes submission, then loses its reply.
             }
         });
-        let mut client = Client::connect(&location, &cap).await.unwrap();
-        assert_eq!(
-            client.request("profile.mutate", json!({})).await,
-            Err(Error::InvalidRequest)
-        );
-        drop(client);
-        let mut client = Client::connect(&location, &cap).await.unwrap();
-        assert_eq!(
-            client.request("profile.mutate", json!({})).await,
-            Err(Error::OutcomeUnknown)
-        );
+        for method in ["profile.mutate", "sessions.handoff"] {
+            let mut client = Client::connect(&location, &cap).await.unwrap();
+            assert_eq!(
+                client.request(method, json!({})).await,
+                Err(Error::InvalidRequest)
+            );
+            drop(client);
+            let mut client = Client::connect(&location, &cap).await.unwrap();
+            assert_eq!(
+                client.request(method, json!({})).await,
+                Err(Error::OutcomeUnknown)
+            );
+        }
         server.await.unwrap();
     }
     #[test]

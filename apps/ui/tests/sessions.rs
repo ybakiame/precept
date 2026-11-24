@@ -173,7 +173,15 @@ fn an_agents_work_session_is_shown_and_deleted() {
             .request(
                 "session.start",
                 json!({"goal":"Add import from files","client":"claude-code 2.1",
-                       "doing":[{"text":"daemon scan"}],"todo":[{"text":"app dialog"}],"done":[{"text":"parser"}]}),
+                "items":[
+                    {"id":"parser","text":"parser","state":"done"},
+                    {"id":"scan","text":"daemon scan","state":"doing"},
+                    {"id":"dialog","text":"app dialog","state":"todo"},
+                    {"id":"audit","text":"security review","state":"blocked",
+                        "blocked_reason":"Waiting for review"},
+                    {"id":"later","text":"follow-up","state":"deferred"},
+                    {"id":"release","text":"ship","kind":"milestone","depends_on":["parser"]}
+                ]}),
             )
             .await
             .unwrap()
@@ -194,11 +202,21 @@ fn an_agents_work_session_is_shown_and_deleted() {
     app.press("Sessions").unwrap();
     contains(&mut app, "Add import from files");
     contains(&mut app, "claude-code 2.1 · updated ");
-    contains(&mut app, "1 doing · 1 next · 1 done");
+    contains(&mut app, "1 doing · 2 next · 1 done");
     app.press("Add import from files").unwrap();
     app.wait_for("Doing").unwrap();
-    contains(&mut app, "• daemon scan");
-    contains(&mut app, "• app dialog");
+    contains(&mut app, "• scan daemon scan · Owner: claude-code 2.1");
+    contains(&mut app, "• dialog app dialog");
+    contains(
+        &mut app,
+        "• audit security review · Owner: claude-code 2.1 · Blocked: Waiting for review",
+    );
+    contains(&mut app, "• later follow-up");
+    contains(&mut app, "• release ship [Milestone] · Depends on parser");
+    let texts = app.screen().texts();
+    let at = |needle: &str| texts.iter().position(|text| *text == needle).unwrap();
+    assert!(at("Deferred") < at("• later follow-up · Owner: claude-code 2.1"));
+    assert!(at("• later follow-up · Owner: claude-code 2.1") < at("Done"));
     // The session becomes a Handoff, its task id taken from the goal.
     app.press("Save as Handoff…").unwrap();
     app.wait_for("Save this session as a Handoff").unwrap();

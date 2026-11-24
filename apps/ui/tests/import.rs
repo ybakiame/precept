@@ -1,6 +1,6 @@
-//! Import from AGENTS.md over a real daemon: the scan lists its sections,
-//! picks become suggestions in one write. Real NSH components and IPC; not
-//! native GUI/Wayland/TTY evidence.
+//! Import known project rule files over a real daemon: the scan lists sources
+//! and explicit skips, picks become suggestions in one write. Real NSH
+//! components and IPC; not native GUI/Wayland/TTY evidence.
 #![cfg(feature = "native")]
 use nsh_core::prelude::*;
 use nsh_engine::{EngineConfig, Root};
@@ -183,6 +183,40 @@ fn rules_in_the_projects_files_are_picked_and_filed_as_suggestions() {
         "# Alpha\n\n## Commits\n\nUse conventional commits.\n\n## Testing\n\nRun the gates.\n",
     )
     .unwrap();
+    std::fs::write(
+        f.root.path().join("alpha/CLAUDE.md"),
+        "## Claude\n\nClaude instructions.\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(f.root.path().join("alpha/.cursor/rules")).unwrap();
+    std::fs::write(
+        f.root.path().join("alpha/.cursor/rules/style.mdc"),
+        "---\ndescription: Cursor style\nalwaysApply: true\n---\nCursor style instructions.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        f.root.path().join("alpha/.cursor/rules/glob.mdc"),
+        "---\nglobs: src/**/*.rs\n---\nUnsupported glob instructions.\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(f.root.path().join("alpha/.continue/rules")).unwrap();
+    std::fs::write(
+        f.root.path().join("alpha/.continue/rules/test.md"),
+        "Continue test instructions.\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(f.root.path().join("alpha/.github")).unwrap();
+    std::fs::write(
+        f.root.path().join("alpha/.github/copilot-instructions.md"),
+        "Copilot instructions.\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(f.root.path().join("alpha/.claude/rules")).unwrap();
+    std::fs::write(
+        f.root.path().join("alpha/.claude/rules/rust.md"),
+        "---\npaths: crates/\n---\nClaude Rust instructions.\n",
+    )
+    .unwrap();
     precept_ui::INPUTS
         .set(precept_ui_client::native::Inputs {
             runtime_dir: Some(f.location.runtime_dir.clone()),
@@ -197,20 +231,40 @@ fn rules_in_the_projects_files_are_picked_and_filed_as_suggestions() {
     app.wait_for("Daemon status").unwrap();
     app.press_key("alt+o").unwrap();
     writes_on(&mut app);
-    app.press("Import from AGENTS.md…").unwrap();
-    app.wait_for("Import rules from alpha's AGENTS.md").unwrap();
+    app.press("Import rule files…").unwrap();
+    app.wait_for("Import rule files from alpha").unwrap();
     contains(&mut app, "agents-commits");
     contains(&mut app, "AGENTS.md · Commits");
+    contains(&mut app, "Cursor");
+    contains(&mut app, ".cursor/rules/style.mdc");
+    contains(&mut app, "Cursor style");
+    contains(&mut app, "Continue");
+    contains(&mut app, "Copilot");
+    contains(&mut app, ".github/copilot-instructions.md");
+    contains(&mut app, ".claude/rules/rust.md");
+    contains(&mut app, "applicability cannot be represented exactly");
+    contains(&mut app, "src/**/*.rs");
+
+    app.press("Cancel").unwrap();
+    app.wait_for("Import rule files…").unwrap();
+    for source in [".cursor", ".continue", ".github", ".claude", "CLAUDE.md"] {
+        let path = f.root.path().join("alpha").join(source);
+        if path.is_dir() {
+            std::fs::remove_dir_all(path).unwrap();
+        } else {
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+    app.press("Import rule files…").unwrap();
+    app.wait_for("Import rule files from alpha").unwrap();
+    contains(&mut app, "agents-commits");
     // New rules start picked; leave Testing out.
     app.press("Import agents-testing").unwrap();
     app.wait_for("Suggest 1…").unwrap();
     app.press("Suggest 1…").unwrap();
     app.wait_for("Nothing is written until you apply it")
         .unwrap();
-    contains(
-        &mut app,
-        "Suggest 1 sections of AGENTS.md as project conventions",
-    );
+    contains(&mut app, "Suggest 1 imported rules as project conventions");
     app.press_key("alt+shift+v").unwrap();
     let queue = || {
         f.call(
@@ -233,7 +287,7 @@ fn rules_in_the_projects_files_are_picked_and_filed_as_suggestions() {
     assert_eq!(records[0]["status"], "suggested");
     assert_eq!(records[0]["value"], "Use conventional commits.");
     // A second scan marks it as already in Precept and leaves it unpicked.
-    app.press("Import from AGENTS.md…").unwrap();
+    app.press("Import rule files…").unwrap();
     contains(&mut app, "Already in Precept");
     app.wait_for("Suggest 1…").unwrap();
 }

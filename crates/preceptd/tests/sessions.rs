@@ -1,11 +1,9 @@
-//! Work sessions through a real daemon: an agent records its goal and work
-//! state (only where the operator allows agent writes), every agent of the
-//! project reads it back in context and in the session-start briefing (the
-//! continuity between agents and after compaction), and the operator lists
-//! and deletes sessions. Kept outside the Profile.
+//! Work sessions through a real daemon: an agent records a goal and flat,
+//! structured work items, every agent of the project reads them in context and
+//! briefing, and single-item CAS updates preserve parallel work.
 #[path = "support/mcp.rs"]
 mod mcp;
-#[allow(dead_code)] // Shared harness; this suite uses part of it.
+#[allow(dead_code)]
 mod support;
 use mcp::Mcp;
 use precept_ipc::Error;
@@ -51,8 +49,11 @@ fn work_moves_between_agents_through_their_sessions() {
     let agent = f.daemon.credential("agent-alpha.cap");
     let call = |method: &str, params: Value| f.daemon.call(&agent, method, params);
     let start = json!({"goal":"Add import from files","conversation":"conv-1","client":"claude-code 2.1",
-        "todo":[{"id":"parser","text":"parser"},{"text":"daemon scan"}]});
-    // Off until the operator allows this project's agents to write.
+    "items":[
+        {"id":"design","text":"Design","state":"done"},
+        {"id":"implement","text":"Implement","depends_on":["design"]},
+        {"id":"dialog","text":"Dialog","kind":"milestone"}
+    ]});
     assert_eq!(
         call("session.start", start.clone()),
         Err(Error::Unauthorized)
@@ -60,25 +61,51 @@ fn work_moves_between_agents_through_their_sessions() {
     f.daemon
         .control("project.propose", json!({"name":"alpha","enabled":true}))
         .unwrap();
-    let s = call("session.start", start.clone()).unwrap();
+    let s = call("session.start", start).unwrap();
     let id = s["id"].as_str().unwrap().to_owned();
     assert_eq!(s["status"], "open");
     assert_eq!(s["agent"], "claude-code 2.1");
-    // The same conversation finds its session again.
-    assert_eq!(call("session.start", start).unwrap()["id"], id.as_str());
+    assert_eq!(s["items"].as_array().unwrap().len(), 3);
+    let resumed = call(
+        "session.start",
+        json!({"id":id,"expected_rev":1,"goal":"Add bounded import from files","client":"codex 1.0"}),
+    )
+    .unwrap();
+    assert_eq!(resumed["id"], id.as_str());
+    assert_eq!(resumed["rev"], 2);
+    for (method, params) in [
+        ("session.start", json!({"goal":"Null","operations":null})),
+        ("session.get", json!({"id":id,"client":null})),
+        (
+            "session.start",
+            json!({"goal":"Null","items":[{"text":"Item","owner":null}]}),
+        ),
+        (
+            "session.update",
+            json!({"id":id,"expected_rev":2,"goal":"Null","items":null}),
+        ),
+        (
+            "session.update",
+            json!({"id":id,"expected_rev":2,"goal":"Null","summary":null}),
+        ),
+        (
+            "session.close",
+            json!({"id":id,"expected_rev":2,"goal":null}),
+        ),
+    ] {
+        assert_eq!(call(method, params), Err(Error::InvalidRequest));
+    }
     let updated = call(
         "session.update",
-        json!({"id":id,"expected_rev":2,"done":[{"id":"parser","text":"parser"}],
-            "doing":[{"text":"daemon scan"}],"todo":[{"text":"app dialog"}]}),
+        json!({"id":id,"expected_rev":2,"client":"codex 1.0","operations":[
+            {"op":"update","id":"implement","owner":"codex 1.0"},
+            {"op":"start","id":"implement"}
+        ]}),
     )
     .unwrap();
     assert_eq!(updated["rev"], 3);
-    assert_eq!(
-        updated["todo"][0]["id"].as_str().unwrap().len(),
-        8,
-        "assigned"
-    );
-    // A stale revision never overwrites another agent's write.
+    assert_eq!(updated["items"][1]["state"], "doing");
+    assert_eq!(updated["items"][1]["owner"], "codex 1.0");
     assert_eq!(
         call(
             "session.update",
@@ -86,12 +113,13 @@ fn work_moves_between_agents_through_their_sessions() {
         ),
         Err(Error::Conflict)
     );
-    // Every agent of the project reads it back: in context, and in the
-    // briefing another harness gets at its session start.
     let context = call("context.get", json!({})).unwrap();
-    assert_eq!(
-        context["work_sessions"][0]["doing"][0]["text"],
-        "daemon scan"
+    assert!(
+        context["work_sessions"][0]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["id"] == "implement" && item["state"] == "doing")
     );
     let out: Value = serde_json::from_str(&briefing(
         &f,
@@ -103,31 +131,38 @@ fn work_moves_between_agents_through_their_sessions() {
         .as_str()
         .unwrap();
     assert!(text.contains("## Work in progress"));
-    assert!(text.contains("**Add import from files** (open, claude-code 2.1"));
-    assert!(text.contains("Doing: daemon scan"));
-    assert!(text.contains("Next: app dialog"));
-    // Closing keeps the summary; a closed session takes no more updates.
+    assert!(text.contains("**Add bounded import from files** (open, claude-code 2.1"));
+    assert!(text.contains("Doing:"));
+    assert!(text.contains("Implement"));
+    assert!(text.contains("Next:"));
     let closed = call(
         "session.close",
-        json!({"id":id,"expected_rev":3,"summary":"Parser and scan done; dialog left.","todo":[{"text":"app dialog"}]}),
+        json!({"id":id,"expected_rev":3,"summary":"Design complete; implementation and dialog remain."}),
     )
     .unwrap();
     assert_eq!(closed["status"], "closed");
     assert_eq!(
-        call("session.update", json!({"id":id,"doing":[{"text":"x"}]})),
+        call(
+            "session.update",
+            json!({"id":id,"expected_rev":4,"operations":[{"op":"add","item":{"text":"x"}}]})
+        ),
         Err(Error::InvalidTransition)
     );
     assert_eq!(
         call(
             "session.update",
-            json!({"id":"nope","doing":[{"text":"x"}]})
+            json!({"id":"nope","expected_rev":1,"operations":[{"op":"add","item":{"text":"x"}}]})
         ),
         Err(Error::NotFound)
     );
-    // Agents cannot list or delete; the operator can.
     assert_eq!(
         call("sessions.list", json!({"project":"alpha"})),
         Err(Error::Unauthorized)
+    );
+    assert_eq!(
+        f.daemon
+            .control("sessions.list", json!({"project":"alpha","id":null})),
+        Err(Error::InvalidRequest)
     );
     let listed = f
         .daemon
@@ -135,7 +170,7 @@ fn work_moves_between_agents_through_their_sessions() {
         .unwrap();
     assert_eq!(
         listed["sessions"][0]["summary"],
-        "Parser and scan done; dialog left."
+        "Design complete; implementation and dialog remain."
     );
     let events = f
         .daemon
@@ -159,12 +194,151 @@ fn work_moves_between_agents_through_their_sessions() {
             .unwrap()
             .is_empty()
     );
-    // Sessions never touch the Profile file.
     assert!(
         f.temp
             .path()
             .join("daemon-state/sessions-alpha.json")
             .exists()
+    );
+}
+
+#[test]
+fn another_session_can_resume_and_parallel_adds_conflict_without_losing_work() {
+    let f = Fixture::created();
+    let b = f.daemon.enable();
+    f.register(&b, "alpha");
+    f.daemon
+        .control("project.propose", json!({"name":"alpha","enabled":true}))
+        .unwrap();
+    let agent = f.daemon.credential("agent-alpha.cap");
+    let call = |method: &str, params: Value| f.daemon.call(&agent, method, params);
+    let started = call(
+        "session.start",
+        json!({"goal":"Shared architecture","client":"agent-a 1.0","items":[{"id":"api","text":"API"}]}),
+    )
+    .unwrap();
+    let id = started["id"].as_str().unwrap().to_owned();
+    let resumed = call(
+        "session.start",
+        json!({"id":id,"expected_rev":1,"goal":"Shared architecture and UI","client":"agent-b 1.0"}),
+    )
+    .unwrap();
+    assert_eq!(resumed["id"], id.as_str());
+    assert_eq!(resumed["agent"], "agent-a 1.0");
+    call(
+        "session.update",
+        json!({"id":id,"expected_rev":2,"client":"agent-b 1.0","operations":[
+            {"op":"add","item":{"id":"ui","text":"UI","depends_on":["api"]}}
+        ]}),
+    )
+    .unwrap();
+    assert_eq!(
+        call(
+            "session.update",
+            json!({"id":id,"expected_rev":2,"operations":[
+                {"op":"add","item":{"id":"docs","text":"Docs"}}
+            ]})
+        ),
+        Err(Error::Conflict)
+    );
+    let current = call("session.get", json!({"id":id})).unwrap();
+    assert_eq!(current["rev"], 3);
+    assert_eq!(
+        call("session.get", json!({"id":id,"operations":[]})),
+        Err(Error::InvalidRequest)
+    );
+    call(
+        "session.update",
+        json!({"id":id,"expected_rev":3,"operations":[
+            {"op":"add","item":{"id":"docs","text":"Docs","depends_on":["ui"]}}
+        ]}),
+    )
+    .unwrap();
+    let current = call("session.get", json!({"id":id})).unwrap();
+    assert_eq!(current["items"].as_array().unwrap().len(), 3);
+    assert_eq!(current["items"][2]["depends_on"][0], "ui");
+}
+
+#[test]
+fn mcp_structured_session_round_trip_returns_full_state_and_precise_errors() {
+    let f = Fixture::created();
+    let b = f.daemon.enable();
+    f.register(&b, "alpha");
+    f.daemon
+        .control("project.propose", json!({"name":"alpha","enabled":true}))
+        .unwrap();
+    let mut mcp = Mcp::start(&f.daemon, "alpha");
+    let started = mcp.request(
+        "tools/call",
+        json!({"name":"start_session","arguments":{
+            "goal":"Structured MCP",
+            "items":[{"id":"api","text":"API","kind":"milestone","state":"doing"}]
+        }}),
+    );
+    assert_eq!(started["result"]["isError"], false);
+    let text = started["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(
+        text.contains("rev 1") && text.contains("\"items\""),
+        "{text}"
+    );
+    let listed = f
+        .daemon
+        .control("sessions.list", json!({"project":"alpha"}))
+        .unwrap();
+    let id = listed["sessions"][0]["id"].as_str().unwrap().to_owned();
+    let updated = mcp.request(
+        "tools/call",
+        json!({"name":"update_work_state","arguments":{
+            "session_id":id,
+            "expected_rev":1,
+            "operations":[{"op":"add","item":{"id":"docs","text":"Docs","depends_on":["api"]}}]
+        }}),
+    );
+    assert_eq!(updated["result"]["isError"], false);
+    assert!(
+        updated["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("rev 2")
+    );
+    let bad = mcp.request(
+        "tools/call",
+        json!({"name":"update_work_state","arguments":{
+            "session_id":id,
+            "expected_rev":2,
+            "operations":[{"op":"start","id":"missing"}]
+        }}),
+    );
+    assert_eq!(bad["result"]["isError"], true);
+    assert!(
+        bad["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("operations[0].id")
+    );
+    let current = mcp.request(
+        "tools/call",
+        json!({"name":"get_work_session","arguments":{"session_id":id}}),
+    );
+    assert_eq!(current["result"]["isError"], false);
+    assert!(
+        current["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("\"docs\"")
+    );
+    let closed = mcp.request(
+        "tools/call",
+        json!({"name":"close_session","arguments":{
+            "session_id":id,"expected_rev":2,"summary":"API remains in progress."
+        }}),
+    );
+    assert_eq!(closed["result"]["isError"], false);
+    assert!(
+        closed["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("\"closed\"")
     );
 }
 
@@ -209,7 +383,6 @@ fn a_sessions_calls_are_kept_as_a_chain_that_survives_restart_and_shows_edits() 
         ["context", "session"],
         "newest first, both of this session"
     );
-    // A new daemon still has it, chain intact.
     f.daemon.kill();
     f.daemon = Daemon::relaunch(f.temp.path(), "run-b");
     f.daemon.ready();
@@ -219,7 +392,6 @@ fn a_sessions_calls_are_kept_as_a_chain_that_survives_restart_and_shows_edits() 
     let a = activity(&f);
     assert_eq!(a["chain"]["ok"], true);
     assert!(a["events"].as_array().unwrap().len() >= 3);
-    // Editing an entry shows as a break.
     let path = f.temp.path().join("daemon-state/evidence-alpha.jsonl");
     let text = fs::read_to_string(&path).unwrap();
     fs::write(
@@ -233,7 +405,7 @@ fn a_sessions_calls_are_kept_as_a_chain_that_survives_restart_and_shows_edits() 
 }
 
 #[test]
-fn a_closed_session_becomes_a_handoff_the_next_agent_resumes() {
+fn a_closed_session_becomes_a_structured_handoff_the_next_agent_resumes() {
     let f = Fixture::created();
     let b = f.daemon.enable();
     f.register(&b, "alpha");
@@ -242,13 +414,17 @@ fn a_closed_session_becomes_a_handoff_the_next_agent_resumes() {
         .unwrap();
     let agent = f.daemon.credential("agent-alpha.cap");
     let call = |method: &str, params: Value| f.daemon.call(&agent, method, params);
-    let id = call("session.start", json!({"goal":"Add import from AGENTS.md"})).unwrap()["id"]
+    let id = call(
+        "session.start",
+        json!({"goal":"Add import from AGENTS.md","items":[{"id":"visual","text":"Visual check"}]}),
+    )
+    .unwrap()["id"]
         .as_str()
         .unwrap()
         .to_owned();
     call(
         "session.close",
-        json!({"id":id,"summary":"Scan and dialog done.","todo":[{"text":"Visual check"}]}),
+        json!({"id":id,"expected_rev":1,"summary":"Scan and dialog done."}),
     )
     .unwrap();
     let handoff = |cap: &str, task: &str| {
@@ -258,25 +434,24 @@ fn a_closed_session_becomes_a_handoff_the_next_agent_resumes() {
             json!({"project":"alpha","id":id,"task_id":task}),
         )
     };
-    // The operator's write only.
     assert_eq!(handoff("operator.cap", "import"), Err(Error::Unauthorized));
     assert_eq!(
         handoff("agent-alpha.cap", "import"),
         Err(Error::Unauthorized)
     );
     handoff("operator-write.cap", "import").unwrap();
-    // A task id is taken once.
     assert_eq!(
         handoff("operator-write.cap", "import"),
         Err(Error::Conflict)
     );
-    // The next agent resumes it with get_handoff's daemon call.
     let resumed = call("handoff.get", json!({"task_id":"import"})).unwrap();
     let text = resumed.to_string();
     assert!(text.contains("Add import from AGENTS.md"), "{text}");
     assert!(text.contains("Scan and dialog done."));
-    assert!(text.contains("- Visual check"));
-    // The operator lists the project's saved handoffs; agents cannot.
+    assert!(
+        text.contains("- [task] visual Visual check (state: todo)"),
+        "{text}"
+    );
     let listed = f
         .daemon
         .control("profile.handoff.list", json!({"project":"alpha"}))
