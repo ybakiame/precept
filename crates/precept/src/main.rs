@@ -1,3 +1,4 @@
+mod doctor;
 mod operator;
 mod skill;
 mod transfer;
@@ -54,6 +55,15 @@ enum Query {
         /// A directory to write SKILL.md into (created; never overwritten).
         #[arg(long)]
         out: Option<std::path::PathBuf>,
+    },
+    /// Redacted, read-only installation and project diagnostics.
+    Doctor {
+        /// Emit the versioned machine-readable report.
+        #[arg(long)]
+        json: bool,
+        /// Diagnose one exact registered project binding.
+        #[arg(long)]
+        project: Option<String>,
     },
     Health,
     Projects,
@@ -178,6 +188,23 @@ async fn run(args: Args) -> precept_ipc::Result<serde_json::Value> {
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let args = Args::parse();
+    if let Query::Doctor { json, project } = &args.command {
+        let report = doctor::run(&args.location, project.as_deref(), *json).await;
+        let status = if *json {
+            serde_json::from_str::<serde_json::Value>(&report)
+                .ok()
+                .and_then(|value| value["summary"]["status"].as_str().map(str::to_owned))
+        } else {
+            None
+        };
+        print!("{report}");
+        std::process::exit(match status.as_deref() {
+            Some("problem") => 2,
+            Some("incomplete") => 3,
+            Some("attention") => 1,
+            _ => 0,
+        });
+    }
     if let Query::Skill { project, out } = &args.command {
         let result = match skill::render(&args.location, project.as_deref()).await {
             Ok(text) => match out {

@@ -34,10 +34,43 @@ try {
     $driver = Join-Path $repo 'tools/native-acceptance/target/debug/precept-portable-smoke.exe'
     & $driver $package ([IO.Path]::GetFullPath($ReportDir)) (Join-Path $repo 'tools/native_window.ps1')
     $smokeExit = $LASTEXITCODE
+    $doctorStatus = 'NOT_RUN'
+    $doctorExit = 3
+    $doctorBlocked = $smokeExit -ne 0
+    $doctorFallbackJson = '{"format":"precept-doctor-verification","version":1,"platform":"windows","summary":{"status":"incomplete","targets":2,"ok":0,"attention":0,"problem":0,"incomplete":0,"unknown":1,"not_run":1},"targets":[{"target":"native","status":"unknown","reason":"doctor_not_run","remediation":"review_installation","report":null},{"target":"wsl","status":"not_run","reason":"wsl_not_requested","remediation":"none","report":null}]}'
+    $doctorJson = $doctorFallbackJson
+    if ($smokeExit -eq 0) {
+        try {
+            $fixtureRecord = Join-Path $ReportDir 'private-fixture-root.txt'
+            if (-not (Test-Path -LiteralPath $fixtureRecord)) { throw 'Synthetic fixture record missing' }
+            $fixtureRoot = (Get-Content -LiteralPath $fixtureRecord -Raw).Trim()
+            if (-not $fixtureRoot) { throw 'Synthetic fixture record empty' }
+            $doctorRuntime = Join-Path $fixtureRoot 'private/runtime'
+            $doctorOutput = @(& (Join-Path $repo 'tools/portable/windows-doctor.ps1') `
+                -PreceptDir (Join-Path $package 'Precept') -RuntimeDir $doctorRuntime -Endpoint 'private')
+            $doctorExit = $LASTEXITCODE
+            $doctorJson = ($doctorOutput -join [Environment]::NewLine)
+            if (-not $doctorJson) { throw 'Doctor produced no report' }
+        } catch {
+            $doctorBlocked = $true
+            $doctorExit = 3
+            $doctorJson = $doctorFallbackJson
+        }
+    }
+    $doctorStatus = switch ($doctorExit) {
+        0 { 'OK' }
+        1 { 'ATTENTION' }
+        2 { 'PROBLEM' }
+        3 { if ($doctorBlocked) { 'NOT_RUN' } else { 'INCOMPLETE' } }
+        default { 'NOT_RUN' }
+    }
     if (Test-Path -LiteralPath $ReportDir) {
-        @{ harness_sha = (& git rev-parse HEAD); harness_sha256 = (Get-FileHash -LiteralPath $driver -Algorithm SHA256).Hash.ToLowerInvariant(); package_source_sha = $manifest.source_sha; os_build = [Environment]::OSVersion.Version.ToString(); actor = 'automated owned synthetic smoke'; environment = 'Developer host; not isolated clean target'; exit_code = $smokeExit } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $ReportDir 'harness.json')
+        $doctorJson | Set-Content -LiteralPath (Join-Path $ReportDir 'doctor.json')
+        @{ harness_sha = (& git rev-parse HEAD); harness_sha256 = (Get-FileHash -LiteralPath $driver -Algorithm SHA256).Hash.ToLowerInvariant(); package_source_sha = $manifest.source_sha; os_build = [Environment]::OSVersion.Version.ToString(); actor = 'automated owned synthetic smoke'; environment = 'Developer host; not isolated clean target'; exit_code = $smokeExit; doctor_status = $doctorStatus; doctor_exit_code = $doctorExit } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $ReportDir 'harness.json')
     }
     if ($smokeExit -ne 0) { throw 'Packaged process smoke failed; preserve owned state and partial reports' }
+    if ($doctorBlocked -or $doctorExit -notin @(0, 1, 2, 3)) { throw 'Packaged doctor did not run; preserve owned state and partial reports' }
+    if ($doctorExit -eq 2) { throw 'Packaged doctor found a problem; preserve owned state and partial reports' }
 } finally {
     Pop-Location
     foreach ($key in @([Environment]::GetEnvironmentVariables('Process').Keys)) {

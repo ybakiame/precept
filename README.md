@@ -55,6 +55,15 @@ cargo build --manifest-path apps/Cargo.toml --workspace \
 ```
 
 
+## Operator CLI
+
+With the daemon already addressed by `--runtime-dir` and `--endpoint`,
+`precept doctor --json` reports redacted, read-only installation diagnostics. Add
+`--project NAME` to check a bound project. Exit codes are 0 (ok), 1 (attention), 2
+(problem) and 3 (incomplete); it never starts the daemon or changes state. The
+Windows package verifier `tools/portable/windows-doctor.ps1` additionally supports
+bounded native and optional WSL checks.
+
 ## Operator model
 
 Create or select a Profile explicitly. Startup selection and per-run write

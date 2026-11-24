@@ -112,10 +112,48 @@ $link.WorkingDirectory = $Destination
 $link.Description = 'Precept Desktop connected to the Precept daemon in WSL2'
 $link.Save()
 
+# 5. Observe the deployed binaries and the explicitly selected WSL runtime.
+# No daemon is started and no Profile or integration is changed. A stopped or
+# uninitialized daemon is reported as incomplete, not as successful verification.
+$doctorExit = 3
+try {
+  $doctorOutput = @(& (Join-Path $PSScriptRoot '../portable/windows-doctor.ps1') `
+    -PreceptDir $Destination -WslOnly -VerifyWsl -Distribution $Distribution -User $User `
+    -WslRuntimeDir "$WslStateDir/runtime" -WslEndpoint "$WslStateDir/runtime/control.sock")
+  $doctorExit = $LASTEXITCODE
+  $doctorText = ($doctorOutput -join [Environment]::NewLine)
+  if (-not $doctorText) { throw 'Doctor produced no report' }
+  $doctorReport = $doctorText | ConvertFrom-Json -Depth 12
+} catch {
+  $doctorExit = 3
+  $doctorReport = [pscustomobject]@{
+    format = 'precept-doctor-verification'
+    version = 1
+    platform = 'windows'
+    summary = [pscustomobject]@{ status = 'incomplete'; targets = 2; ok = 0; attention = 0; problem = 0; incomplete = 0; unknown = 1; not_run = 1 }
+    targets = @(
+      [pscustomobject]@{ target = 'native'; status = 'not_run'; reason = 'native_not_requested'; remediation = 'none'; report = $null },
+      [pscustomobject]@{ target = 'wsl'; status = 'unknown'; reason = 'doctor_not_run'; remediation = 'review_wsl_configuration'; report = $null }
+    )
+  }
+}
+$doctorStatus = switch ($doctorExit) {
+  0 { 'OK' }
+  1 { 'ATTENTION' }
+  2 { 'PROBLEM' }
+  3 { 'INCOMPLETE' }
+  default { 'NOT_RUN' }
+}
+
+$deploymentStatus = if ($doctorExit -eq 2) { 'DEPLOYED_WITH_PROBLEM' } else { 'DEPLOYED' }
 [pscustomobject]@{
   destination_files = (Get-ChildItem -LiteralPath $Destination -Recurse -File).Count
   source_sha = $manifest.source_sha
   archive_sha256 = $result.archive_sha256
   shortcut = 'Precept Desktop (WSL).lnk'
-  status = 'DEPLOYED'
-} | ConvertTo-Json
+  status = $deploymentStatus
+  doctor_status = $doctorStatus
+  doctor_exit_code = $doctorExit
+  doctor_report = $doctorReport
+} | ConvertTo-Json -Depth 12
+if ($doctorExit -eq 2) { exit 2 }

@@ -10,6 +10,24 @@ profile/generation/epoch-bound write credential. Only the daemon invokes the
 private writer. No SQL/JSON patch, default Profile, automatic grant/startup,
 generic bridge forwarding or direct database fallback.
 
+`precept --runtime-dir R --endpoint E doctor [--project NAME] [--json]` checks an
+explicit installation without changing it. It never starts the daemon, creates or
+selects a Profile, enables writes, registers a project, repairs an integration or
+writes a report. JSON output is `format: precept-doctor`, version 1, with a redacted
+summary and checks carrying stable `id`, `status`, `reason` and `remediation`
+fields plus bounded diagnostic facts. Statuses are `ok`, `attention`, `problem`,
+`off` and `unknown`; the overall status can also be `incomplete`. Exit codes are
+0 for ok, 1 for attention, 2 for problem and 3 for incomplete. Paths, raw OS/IPC
+errors, commands, Profile values, Handoff bodies and credentials are not emitted.
+Package inventory checks verify manifest metadata and file sizes, not content
+hashes. Hook and gate observations describe configuration, never achieved OS-level
+enforcement.
+
+On Windows, `tools/portable/windows-doctor.ps1` validates one extracted package and
+optionally an explicitly addressed WSL distribution/user. It bounds subprocess time
+and output and re-emits only fixed redacted tokens. WSL verification needs a
+matching `precept` executable available to `wsl.exe`; the script never installs one.
+
 Preview methods `profile.preferences.list`, `profile.preferences.get`,
 `profile.handoff.get` and `profile.handoff.list {project}` (newest first, at most 50: task, objective's first line, branch, revision, saved time) are Operator-only, bounded and exact-scope/revision. They are
 not exposed to agents, OperatorWrite peers or MCP.
