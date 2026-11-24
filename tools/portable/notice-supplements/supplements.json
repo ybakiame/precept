@@ -203,6 +203,67 @@
       "reason": "Declared MIT OR Apache-2.0; the published crate ships no license files. Both verbatim texts come from the Cargo VCS pin for age-core 0.11.0"
     },
     {
+      "package": "bech32",
+      "version": "0.9.1",
+      "texts": [
+        {
+          "file": "9877c7b48cde1462f4e8688263aa96f3f1bd9717250718d3d2d9ebb031414fb9.txt",
+          "sha256": "9877c7b48cde1462f4e8688263aa96f3f1bd9717250718d3d2d9ebb031414fb9",
+          "source": "https://github.com/rust-bitcoin/rust-bech32/blob/ded35fe58b33eb9459c7ddd9f833acaccaf02829/LICENSE-MIT"
+        }
+      ],
+      "reason": "Declared MIT; the 0.9.1 crate and its VCS pin ship no license file. This is the upstream MIT text added later, with the package author's copyright, pinned to the commit that introduced it"
+    },
+    {
+      "package": "cookie-factory",
+      "version": "0.3.3",
+      "texts": [
+        {
+          "file": "d09216dc1ea5f273997667935a8d6514d80f00b89fb6954ecc3a43e0a6e360de.txt",
+          "sha256": "d09216dc1ea5f273997667935a8d6514d80f00b89fb6954ecc3a43e0a6e360de",
+          "source": "https://github.com/rust-bakery/cookie-factory/blob/d36b805dbd7dd65f2df947235c5bcc573afe2c76/LICENSES/MIT.txt"
+        }
+      ],
+      "reason": "Declared MIT; the published crate omits its LICENSES directory. The verbatim MIT text comes from the Cargo VCS pin for cookie-factory 0.3.3"
+    },
+    {
+      "package": "fluent-langneg",
+      "version": "0.13.1",
+      "election": "Apache-2.0",
+      "texts": [
+        {
+          "file": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1.txt",
+          "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1",
+          "source": "https://github.com/projectfluent/fluent-langneg-rs/blob/7fdc590466ea63ca2367ac10fb1b881fe561f1a8/LICENSE-APACHE"
+        }
+      ],
+      "reason": "Declared Apache-2.0 OR MIT; Apache-2.0 is elected. The published crate omits license files, so the verbatim text comes from the Cargo VCS pin for fluent-langneg 0.13.1"
+    },
+    {
+      "package": "intl_pluralrules",
+      "version": "7.0.2",
+      "election": "Apache-2.0",
+      "texts": [
+        {
+          "file": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a.txt",
+          "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+          "source": "https://github.com/zbraniecki/pluralrules/blob/d0715d5b7cca72e228d6e6c4de154bd30dfdd06a/intl_pluralrules/LICENSE-APACHE"
+        }
+      ],
+      "reason": "Declared Apache-2.0/MIT; Apache-2.0 is elected. The published crate omits license files, so the verbatim text comes from the Cargo VCS pin for intl_pluralrules 7.0.2"
+    },
+    {
+      "package": "io_tee",
+      "version": "0.1.1",
+      "election": "Apache-2.0",
+      "texts": [
+        {
+          "repository_license": true
+        }
+      ],
+      "reason": "Declared MIT OR Apache-2.0; upstream ships no license file or copyright line. Apache-2.0 is elected; its verbatim text is the hash-checked Precept/LICENSE.txt"
+    },
+    {
       "package": "hexf-parse",
       "version": "0.2.1",
       "no_text_required": "CC0-1.0",
