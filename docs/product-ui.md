@@ -205,7 +205,15 @@ picked, a bar above the list shows the count, an optional note and **Confirm N�
 / **Reject N…** / **Clear**; the prepared operation lists every picked record (id,
 key, digest prefix) before one write decides them all, each as its own decision.
 If any picked record changed since it was listed, nothing is written. Switching
-tab or scope clears the selection.
+tab or scope clears the selection. Possible duplicates in the loaded queue are
+marked without reordering records or selecting them implicitly.
+
+Detail names the record's source and affected files, then shows conservative
+duplicate/similar pointers from the same scope. Exact content duplicates are
+distinguished from same-key and same-value records; the preview is bounded and
+never replaces exact inspection. Project-scoped Detail also shows retained gate
+denial count and last denial for the key, explicitly scoped to retained evidence;
+global records say that no single project history applies.
 
 **Import rule files…** in Review reads the selected project's fixed AGENTS.md,
 CLAUDE.md, Cursor, Continue and Copilot inventory. Each candidate shows a

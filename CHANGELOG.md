@@ -6,6 +6,11 @@ data between schemas with the versioned Profile export and import.
 
 ## Unreleased
 
+- **Review evidence:** the queue marks possible duplicates in loaded records
+  without reordering or auto-selecting them. Detail shows source, affected files,
+  bounded same-scope duplicate/same-key/same-value pointers, and retained project
+  gate-denial count and last hit; exact-record and exact-revision decisions are
+  unchanged.
 - **Index-first briefings:** session-start briefings now list every applicable
   repository rule with its key, title, enforcement, check state and an explicit
   full-text pointer instead of spending the 12 KiB budget on rule bodies. Full

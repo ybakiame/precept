@@ -3,8 +3,8 @@ use super::delete::delete_dialog;
 use super::*;
 use nsh_engine::{EngineConfig, Root};
 use precept_ui_core::operator::{
-    Binding, PeerDemotion, PreferencePage, PreferenceRecord, ProfileInfo, ReviewInspect,
-    ReviewQueue, digest_hex, proposal_digest,
+    Binding, PeerDemotion, PreferencePage, PreferenceRecord, ProfileInfo, ReviewEvidence,
+    ReviewInspect, ReviewQueue, ReviewRelated, ReviewRelation, digest_hex, proposal_digest,
 };
 use std::time::Duration;
 
@@ -77,6 +77,9 @@ fn queue_model() -> Model {
         decisions: vec![],
         peer_demotions: vec![],
         peer_demotion_total: 0,
+        related: vec![],
+        related_total: 0,
+        evidence: None,
     });
     m.operator.inspect_revision = 1;
     observe_inspect(&mut m);
@@ -110,6 +113,9 @@ fn confirmed_model() -> Model {
         decisions: vec![],
         peer_demotions: vec![],
         peer_demotion_total: 0,
+        related: vec![],
+        related_total: 0,
+        evidence: None,
     });
     m.operator.inspect_revision = 2;
     observe_inspect(&mut m);
@@ -158,6 +164,45 @@ fn SelectedListConsole() -> impl IntoElement {
 #[component]
 fn PeerConsole() -> impl IntoElement {
     crate::console(signal(peer_model()))
+}
+#[component]
+fn DuplicateQueueConsole() -> impl IntoElement {
+    let mut m = queue_model();
+    let mut duplicate = record(8, "suggested", 1);
+    duplicate.key = record(7, "suggested", 1).key;
+    duplicate.value = record(7, "suggested", 1).value;
+    m.operator.queue.as_mut().unwrap().records.push(duplicate);
+    crate::console(signal(m))
+}
+#[component]
+fn EvidenceConsole() -> impl IntoElement {
+    let mut m = queue_model();
+    m.selected_project = Some("alpha".into());
+    m.operator.global = false;
+    m.operator.mode = ReviewMode::Project;
+    m.operator.review_tab = ReviewTab::Detail;
+    let scope = Scope::Project {
+        name: "alpha".into(),
+    };
+    let mut inspected = record(7, "suggested", 1);
+    inspected.scope = scope.clone();
+    inspected.rule.applies_to.paths = vec!["src/".into(), "Cargo.toml".into()];
+    m.operator.queue.as_mut().unwrap().records[0] = inspected.clone();
+    let inspect = m.operator.inspect.as_mut().unwrap();
+    inspect.record = inspected;
+    inspect.related = vec![ReviewRelated {
+        id: 8,
+        revision: 1,
+        key: "synthetic-key-7".into(),
+        relation: ReviewRelation::Duplicate,
+    }];
+    inspect.related_total = 1;
+    inspect.evidence = Some(ReviewEvidence {
+        gate_denials: 2,
+        last_gate_denial_ms: Some(1_763_640_000_000),
+    });
+    observe_inspect(&mut m);
+    crate::console(signal(m))
 }
 #[component]
 fn ConfirmedConsole() -> impl IntoElement {
@@ -250,6 +295,32 @@ fn detail_digest_prefix_expands_and_peer_disclosure_names_total() {
     // A truncated peer preview still discloses the authoritative total.
     app.wait_for("Deprecates 20 same-key confirmed records (ids 100, 101, …)")
         .unwrap();
+}
+
+#[test]
+fn duplicate_queue_rows_are_marked_without_implicit_selection() {
+    let mut app = start::<DuplicateQueueConsole>();
+    app.wait_for("Duplicates ×2").unwrap();
+    app.wait_for("Possible duplicates in the loaded queue are marked; each record still requires its own exact review.")
+        .unwrap();
+    assert!(app.screen().shows("#7 · synthetic-key-7"));
+    assert!(!app.screen().shows("Confirm 2…"));
+}
+
+#[test]
+fn detail_shows_scope_related_records_and_retained_gate_evidence() {
+    let mut app = start::<EvidenceConsole>();
+    app.wait_for("Affected files").unwrap();
+    app.wait_for("src/\nCargo.toml").unwrap();
+    app.wait_for("Duplicate content · #8 · synthetic-key-7 · r1")
+        .unwrap();
+    app.wait_until("gate evidence", Duration::from_secs(5), |s| {
+        s.texts().iter().any(|t| {
+            t.contains("2 gate denial(s) exist in retained project evidence.")
+                && t.contains("Last gate denial: 2025-11-20 12:00 UTC")
+        })
+    })
+    .unwrap();
 }
 
 #[test]
@@ -420,7 +491,7 @@ fn exact_detail_preserves_value_characters_and_explains_authority() {
     );
     app.wait_for("synthetic").unwrap();
     app.wait_until("origin named", Duration::from_secs(5), |s| {
-        s.texts().iter().any(|t| t.ends_with("· Agent"))
+        s.texts().iter().any(|t| t.ends_with("· Source Agent"))
     })
     .unwrap();
     app.press_key("mod+l").unwrap();

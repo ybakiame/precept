@@ -185,6 +185,63 @@ fn inspect_exact_revision_history_bound_and_peer_preview() {
     }
 }
 #[test]
+fn inspect_relations_are_bounded_ordered_and_evidence_matches_scope() {
+    let record = synthetic_record(7, &Scope::Global, "suggested", 1);
+    let mut valid = inspect_of(record.clone(), vec![], vec![], 0);
+    valid.related = vec![
+        ReviewRelated {
+            id: 8,
+            revision: 1,
+            key: record.key.clone(),
+            relation: ReviewRelation::Duplicate,
+        },
+        ReviewRelated {
+            id: 9,
+            revision: 2,
+            key: "other".into(),
+            relation: ReviewRelation::SameValue,
+        },
+    ];
+    valid.related_total = 2;
+    let mut m = inspect_model();
+    assert!(complete_inspect(&mut m, valid.clone()));
+    assert_eq!(m.operator.inspect.unwrap().related.len(), 2);
+
+    let mut wrong_total = valid.clone();
+    wrong_total.related_total = 3;
+    let mut wrong_order = valid.clone();
+    wrong_order.related.swap(0, 1);
+    let mut wrong_relation_key = valid.clone();
+    wrong_relation_key.related[0].key = "different".into();
+    let mut wrong_same_value_key = valid.clone();
+    wrong_same_value_key.related[1].relation = ReviewRelation::SameValue;
+    wrong_same_value_key.related[1].key = record.key.clone();
+    let mut global_evidence = valid.clone();
+    global_evidence.evidence = Some(ReviewEvidence {
+        gate_denials: 0,
+        last_gate_denial_ms: None,
+    });
+    let mut impossible_evidence = valid;
+    impossible_evidence.evidence = Some(ReviewEvidence {
+        gate_denials: 0,
+        last_gate_denial_ms: Some(1),
+    });
+    for bad in [
+        wrong_total,
+        wrong_order,
+        wrong_relation_key,
+        wrong_same_value_key,
+        global_evidence,
+        impossible_evidence,
+    ] {
+        let mut m = inspect_model();
+        assert!(complete_inspect(&mut m, bad));
+        assert_eq!(m.operator.error.as_deref(), Some("InvalidRequest"));
+        assert!(m.operator.inspect.is_none());
+    }
+}
+
+#[test]
 fn project_and_global_scope_isolation() {
     let mut m = model();
     // A global queue never accepts project rows.
@@ -242,18 +299,17 @@ fn project_and_global_scope_isolation() {
         request.params["scope"],
         json!({"kind":"project","name":"alpha"})
     );
-    assert!(
-        m.complete_operator(
-            &request,
-            Ok(serde_json::to_value(inspect_of(
-                synthetic_record(1, &scope, "suggested", 1),
-                vec![],
-                vec![],
-                0
-            ))
-            .unwrap())
-        )
+    let mut inspect = inspect_of(
+        synthetic_record(1, &scope, "suggested", 1),
+        vec![],
+        vec![],
+        0,
     );
+    inspect.evidence = Some(ReviewEvidence {
+        gate_denials: 0,
+        last_gate_denial_ms: None,
+    });
+    assert!(m.complete_operator(&request, Ok(serde_json::to_value(inspect).unwrap())));
     assert!(m.operator.error.is_none());
     // A cross-scope record can never prepare a decision.
     m.operator.page = Some(PreferencePage {

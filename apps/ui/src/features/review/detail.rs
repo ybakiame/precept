@@ -82,8 +82,9 @@ pub(super) fn detail_tab(model: Signal<Model>, delete_open: Signal<bool>) -> Any
                     )
                     .child(ui::badge(model, status_word(&m, &r.status)).variant(variant))
                     .child(caption(format!(
-                        "{} · {}",
+                        "{} · {} {}",
                         scope_label(m.locale, &r.scope),
+                        m.word(Msg::ReviewSource),
                         origin_label(m.locale, r.origin)
                     ))),
             )
@@ -103,6 +104,9 @@ pub(super) fn detail_tab(model: Signal<Model>, delete_open: Signal<bool>) -> Any
             })
             .child(record_meta(model, r)),
     );
+    body = body.child(review_scope_section(model, r));
+    body = body.child(review_related_section(model, inspect));
+    body = body.child(review_evidence_section(model, inspect));
     // What only matters when checking exactly what is decided: one quiet
     // line, the notes behind its info button.
     body = body.child(
@@ -248,6 +252,103 @@ pub(super) fn detail_tab(model: Signal<Model>, delete_open: Signal<bool>) -> Any
     );
     body.into_element()
 }
+fn review_section(model: Signal<Model>, title: String, lines: Vec<String>) -> AnyElement {
+    view()
+        .gap_1()
+        .p_3()
+        .rounded(px(ui::scale::radius::CONTAINER))
+        .bg(move || palette(model).panel)
+        .border_1()
+        .border_color(move || palette(model).hairline)
+        .child(text(title).font_weight(FontWeight::SEMIBOLD))
+        .child(
+            text(lines.join("\n"))
+                .text_size(px(ui::scale::text::CAPTION))
+                .text_color(move || palette(model).muted)
+                .selectable(true),
+        )
+        .into_element()
+}
+
+fn review_scope_section(
+    model: Signal<Model>,
+    record: &precept_ui_core::operator::PreferenceRecord,
+) -> AnyElement {
+    let m = model.get();
+    let files = if record.rule.applies_to.paths.is_empty() {
+        vec![m.word(Msg::ReviewEverywhere).to_owned()]
+    } else {
+        record
+            .rule
+            .applies_to
+            .paths
+            .iter()
+            .map(|path| sanitize(path, 256))
+            .collect()
+    };
+    review_section(model, m.word(Msg::ReviewAffectedFiles).into(), files)
+}
+
+fn review_related_section(
+    model: Signal<Model>,
+    inspect: &precept_ui_core::operator::ReviewInspect,
+) -> AnyElement {
+    let m = model.get();
+    let title = m
+        .word(Msg::ReviewRelated)
+        .replace("{count}", &inspect.related_total.to_string());
+    if inspect.related.is_empty() {
+        return review_section(model, title, vec![m.word(Msg::ReviewRelatedEmpty).into()]);
+    }
+    let mut lines: Vec<String> = inspect
+        .related
+        .iter()
+        .map(|related| {
+            let relation = match related.relation {
+                precept_ui_core::operator::ReviewRelation::Duplicate => Msg::ReviewDuplicate,
+                precept_ui_core::operator::ReviewRelation::SameKey => Msg::ReviewSameKey,
+                precept_ui_core::operator::ReviewRelation::SameValue => Msg::ReviewSameValue,
+            };
+            format!(
+                "{} · #{} · {} · r{}",
+                m.word(relation),
+                related.id,
+                sanitize(&related.key, 120),
+                related.revision
+            )
+        })
+        .collect();
+    if inspect.related_total > inspect.related.len() as i64 {
+        lines.push(m.word(Msg::ReviewRelatedTruncated).into());
+    }
+    review_section(model, title, lines)
+}
+
+fn review_evidence_section(
+    model: Signal<Model>,
+    inspect: &precept_ui_core::operator::ReviewInspect,
+) -> AnyElement {
+    let m = model.get();
+    let title = m.word(Msg::ReviewEvidence).to_owned();
+    let Some(evidence) = inspect.evidence else {
+        return review_section(model, title, vec![m.word(Msg::ReviewEvidenceGlobal).into()]);
+    };
+    if evidence.gate_denials == 0 {
+        return review_section(model, title, vec![m.word(Msg::ReviewEvidenceNone).into()]);
+    }
+    let mut lines = vec![
+        m.word(Msg::ReviewEvidenceCount)
+            .replace("{count}", &evidence.gate_denials.to_string()),
+    ];
+    if let Some(last) = evidence.last_gate_denial_ms {
+        lines.push(
+            m.word(Msg::ReviewLastGateDenial)
+                .replace("{time}", &precept_ui_core::activity::date_time(last)),
+        );
+    }
+    review_section(model, title, lines)
+}
+
 /// Reads the confirmed rule `id` an inspected suggestion would replace.
 pub(super) fn fetch_update_of(
     model: Signal<Model>,

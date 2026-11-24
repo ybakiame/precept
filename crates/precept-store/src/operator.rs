@@ -187,7 +187,45 @@ impl SqliteStore {
                 .map_err(|_|Error::InvalidRecord)?;
             let peer_demotion_total: i64 = self.db.query_row("SELECT COUNT(*) FROM preferences WHERE scope=?1 AND project IS ?2 AND status='confirmed' AND pref_key=?3 AND id<>?4", (kind, project, record.key.as_str(), id), |row| row.get(0))
                 .map_err(|_|Error::ReadFailed)?;
-            Ok(ReviewInspect { binding: metadata.binding, commit_sequence: metadata.commit_sequence, record, decisions, peer_demotions, peer_demotion_total })
+            let related_total: i64 = self.db.query_row(
+                "SELECT COUNT(*) FROM preferences WHERE scope=?1 AND project IS ?2 AND status IN ('suggested','confirmed') AND id<>?3 AND (pref_key=?4 OR value=?5)",
+                (kind, project, id, record.key.as_str(), record.value.as_str()),
+                |row| row.get(0),
+            ).map_err(|_|Error::ReadFailed)?;
+            let mut stmt = self.db.prepare(&format!(
+                "SELECT {PREFERENCE_COLUMNS} FROM preferences WHERE scope=?1 AND project IS ?2 AND status IN ('suggested','confirmed') AND id<>?3 AND (pref_key=?4 OR value=?5) ORDER BY CASE WHEN pref_key=?4 AND value=?5 AND tags=?6 AND applies_to=?7 AND priority=?8 AND enforcement=?9 THEN 0 WHEN pref_key=?4 THEN 1 ELSE 2 END, id LIMIT 12"
+            )).map_err(|_|Error::ReadFailed)?;
+            let related: Vec<ReviewRelated> = stmt.query_map((
+                kind,
+                project,
+                id,
+                record.key.as_str(),
+                record.value.as_str(),
+                precept_core::operator::tags_json(&record.tags),
+                record.rule.applies_to.json(),
+                record.rule.priority,
+                record.rule.enforcement.as_str(),
+            ), preference)
+                .map_err(|_|Error::ReadFailed)?
+                .collect::<std::result::Result<Vec<_>,_>>()
+                .map_err(|_|Error::InvalidRecord)?
+                .into_iter()
+                .map(|other| {
+                    let relation = if other.key == record.key
+                        && other.value == record.value
+                        && other.tags == record.tags
+                        && other.rule == record.rule
+                    {
+                        ReviewRelation::Duplicate
+                    } else if other.key == record.key {
+                        ReviewRelation::SameKey
+                    } else {
+                        ReviewRelation::SameValue
+                    };
+                    ReviewRelated { id: other.id, revision: other.revision, key: other.key, relation }
+                })
+                .collect();
+            Ok(ReviewInspect { binding: metadata.binding, commit_sequence: metadata.commit_sequence, record, decisions, peer_demotions, peer_demotion_total, related, related_total, evidence: None })
         })
     }
     /// A project's saved Handoffs, newest first, at most 50.

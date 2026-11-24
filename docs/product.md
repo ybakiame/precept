@@ -163,7 +163,8 @@ the truth.
    Git, security and testing templates are previewed and copied for review; Precept
    does not write them.
 2. **Review.** Inspect suggestions from you or agents with their source, scope,
-   tags and conflicts; confirm or reject the exact record, singly or in bulk.
+   tags, affected files, conservative duplicate/similar pointers and retained
+   project gate evidence; confirm or reject the exact record, singly or in bulk.
 3. **Work with any agent.** Agents receive the applicable rules at session start
    and on request, and propose what they learn.
 4. **Keep it true.** Run contract checks and documentation claims against the

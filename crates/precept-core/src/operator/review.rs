@@ -94,6 +94,41 @@ pub struct ReviewInspect {
     pub decisions: Vec<ReviewDecisionRecord>,
     pub peer_demotions: Vec<PeerDemotion>,
     pub peer_demotion_total: i64,
+    #[serde(default)]
+    pub related: Vec<ReviewRelated>,
+    #[serde(default)]
+    pub related_total: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<ReviewEvidence>,
+}
+
+/// Why another scoped record is relevant to this exact review.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewRelation {
+    Duplicate,
+    SameKey,
+    SameValue,
+}
+
+/// One bounded related-record pointer. Opening it still requires a fresh exact
+/// revision inspection; this is evidence, never decision authority.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReviewRelated {
+    pub id: i64,
+    pub revision: i64,
+    pub key: String,
+    pub relation: ReviewRelation,
+}
+
+/// Project-scoped evidence retained by the daemon. This is not a complete
+/// history and says nothing about global records outside one project.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReviewEvidence {
+    pub gate_denials: u64,
+    pub last_gate_denial_ms: Option<u64>,
 }
 
 /// SHA-256 over canonical compact JSON of the immutable proposal fields

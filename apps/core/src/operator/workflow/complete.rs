@@ -193,6 +193,33 @@ impl Model {
                             .peer_demotions
                             .iter()
                             .any(|p| p.id <= 0 || p.id == id || p.revision <= 0)
+                        || inspect.related.len() > 12
+                        || inspect.related_total < 0
+                        || inspect.related.len() as i64 != inspect.related_total.min(12)
+                        || inspect
+                            .related
+                            .windows(2)
+                            .any(|w| (w[0].relation, w[0].id) >= (w[1].relation, w[1].id))
+                        || inspect.related.iter().any(|p| {
+                            p.id <= 0
+                                || p.id == id
+                                || p.revision <= 0
+                                || p.key.is_empty()
+                                || p.key.chars().count() > 120
+                                || match p.relation {
+                                    ReviewRelation::Duplicate | ReviewRelation::SameKey => {
+                                        p.key != r.key
+                                    }
+                                    ReviewRelation::SameValue => p.key == r.key,
+                                }
+                        })
+                        || !matches!(
+                            (&r.scope, &inspect.evidence),
+                            (Scope::Project { .. }, Some(_)) | (Scope::Global, None)
+                        )
+                        || inspect.evidence.is_some_and(|e| {
+                            (e.gate_denials == 0) != e.last_gate_denial_ms.is_none()
+                        })
                     {
                         return Err("InvalidRequest");
                     }

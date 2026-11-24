@@ -11,6 +11,7 @@ impl Profiles {
         method: &str,
         params: Value,
         hooks: &dyn Hooks,
+        evidence: &crate::evidence::Evidence,
     ) -> Result<Value> {
         authority.check()?;
         let access = authority.access();
@@ -270,7 +271,7 @@ impl Profiles {
                         return Err(Error::InvalidRequest);
                     }
                     check_scope(&p.scope)?;
-                    let inspect =
+                    let mut inspect =
                         store
                             .operator_review_inspect(&p.scope, p.id)
                             .map_err(|e| match e {
@@ -281,6 +282,11 @@ impl Profiles {
                     // record is a conflict, never a silently different preview.
                     if inspect.record.revision != p.revision {
                         return Err(Error::Conflict);
+                    }
+                    if let Scope::Project { name } = &p.scope {
+                        let key = inspect.record.key.clone();
+                        inspect.evidence =
+                            Some(evidence.rule_evidence(self.state_dir(), name, &key)?);
                     }
                     serde_json::to_value(inspect)
                 }

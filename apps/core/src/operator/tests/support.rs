@@ -135,6 +135,13 @@ pub(super) fn inspect_of(
     peer_demotions: Vec<PeerDemotion>,
     peer_demotion_total: i64,
 ) -> ReviewInspect {
+    let evidence = match record.scope {
+        Scope::Project { .. } => Some(ReviewEvidence {
+            gate_denials: 0,
+            last_gate_denial_ms: None,
+        }),
+        Scope::Global => None,
+    };
     ReviewInspect {
         binding: binding(),
         commit_sequence: 8,
@@ -142,6 +149,9 @@ pub(super) fn inspect_of(
         decisions,
         peer_demotions,
         peer_demotion_total,
+        related: vec![],
+        related_total: 0,
+        evidence,
     }
 }
 pub(super) fn complete_inspect(m: &mut Model, inspect: ReviewInspect) -> bool {

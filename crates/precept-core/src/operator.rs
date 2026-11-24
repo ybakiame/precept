@@ -16,7 +16,8 @@ pub use record::{
 };
 pub use review::{
     Channel, DecisionAction, MAX_NOTE, PeerDemotion, ReviewCount, ReviewDecisionRecord,
-    ReviewInspect, ReviewQueue, canonical_note, digest_from_hex, digest_hex, proposal_digest,
+    ReviewEvidence, ReviewInspect, ReviewQueue, ReviewRelated, ReviewRelation, canonical_note,
+    digest_from_hex, digest_hex, proposal_digest,
 };
 pub use rule::{
     AppliesTo, Enforcement, MAX_APPLIES, MAX_TAG_CHARS, MAX_TAGS, Origin, PRIORITY_MAX,

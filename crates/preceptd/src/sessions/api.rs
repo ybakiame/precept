@@ -160,9 +160,13 @@ pub fn handoff(
             "expected": {"kind":"absent"},
         },
     });
-    service
-        .profiles
-        .handle(authority, "profile.mutate", request, service)
+    service.profiles.handle(
+        authority,
+        "profile.mutate",
+        request,
+        service,
+        &service.evidence,
+    )
 }
 
 fn render_items(session: &Session, state: ItemState) -> String {

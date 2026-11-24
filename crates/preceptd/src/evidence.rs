@@ -312,6 +312,34 @@ impl Evidence {
             Ok(out)
         })
     }
+    /// Retained gate-denial evidence for one exact rule key in one project.
+    pub fn rule_evidence(
+        &self,
+        state: &StateDir,
+        project: &str,
+        key: &str,
+    ) -> Result<precept_core::operator::ReviewEvidence, Error> {
+        self.with(state, project, |chain| {
+            if chain.broken_at.is_some() {
+                return Err(Error::UnsafeRuntime);
+            }
+            let mut count = 0_u64;
+            let mut last = None;
+            for line in &chain.lines {
+                if line.body.kind == Kind::Gate
+                    && line.body.outcome == "deny"
+                    && line.body.rule.as_deref() == Some(key)
+                {
+                    count += 1;
+                    last = Some(last.map_or(line.body.at_ms, |ms: u64| ms.max(line.body.at_ms)));
+                }
+            }
+            Ok(precept_core::operator::ReviewEvidence {
+                gate_denials: count,
+                last_gate_denial_ms: last,
+            })
+        })
+    }
     /// Reads the file again and verifies the whole chain.
     pub fn status(&self, state: &StateDir, project: &str) -> Result<Status, Error> {
         let mut chains = self.chains.lock().unwrap_or_else(|e| e.into_inner());
@@ -343,6 +371,47 @@ mod tests {
             at_ms: 1_000,
             rule: None,
         }
+    }
+
+    #[test]
+    fn rule_evidence_counts_only_matching_retained_denials() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = StateDir::open(&temp.path().join("state")).unwrap();
+        let ev = Evidence::new();
+        for (key, at) in [("fmt", 10), ("other", 20), ("fmt", 30)] {
+            let mut e = entry(Kind::Gate, None);
+            e.outcome = "deny".into();
+            e.rule = Some(key.into());
+            e.at_ms = at;
+            ev.append(&state, "a", e).unwrap();
+        }
+        let evidence = ev.rule_evidence(&state, "a", "fmt").unwrap();
+        assert_eq!(evidence.gate_denials, 2);
+        assert_eq!(evidence.last_gate_denial_ms, Some(30));
+        let none = ev.rule_evidence(&state, "a", "missing").unwrap();
+        assert_eq!(none.gate_denials, 0);
+        assert_eq!(none.last_gate_denial_ms, None);
+    }
+
+    #[test]
+    fn rule_evidence_refuses_a_broken_chain() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = StateDir::open(&temp.path().join("state")).unwrap();
+        let mut denial = entry(Kind::Gate, None);
+        denial.outcome = "deny".into();
+        denial.rule = Some("fmt".into());
+        Evidence::new().append(&state, "a", denial).unwrap();
+        let path = state.path().join("evidence-a.jsonl");
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(
+            &path,
+            text.replacen("\"outcome\":\"deny\"", "\"outcome\":\"ok\"", 1),
+        )
+        .unwrap();
+        assert_eq!(
+            Evidence::new().rule_evidence(&state, "a", "fmt"),
+            Err(Error::UnsafeRuntime)
+        );
     }
 
     #[test]

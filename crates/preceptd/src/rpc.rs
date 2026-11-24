@@ -28,7 +28,7 @@ impl Service {
         {
             return self
                 .profiles
-                .handle(authority, &request.method, params, self);
+                .handle(authority, &request.method, params, self, &self.evidence);
         }
         // A work session becomes a Handoff: the operator's write, through the
         // ordinary reviewed write path, with the repository snapshot taken

@@ -85,6 +85,19 @@ as its own decision with the note; any stale item, or two items touching one rec
 `suggest_batch {items: [{scope, key, value, tags, origin, rule}]}` files 1 to 50
 suggestions in one write (an import the operator picked); none is confirmed.
 
+Operator-only `profile.review.queue` remains suggested-only, ascending-id and
+bounded paging with a disclosed commit watermark. `profile.review.inspect
+{scope, id, revision}` adds bounded review evidence: `related` and `related_total`
+point to suggested or confirmed records in the same scope with the same key or
+value. A relation is `duplicate` only when key, value, tags and rule options all
+match; otherwise it is `same_key` or `same_value`. At most 12 pointers are
+returned, duplicates first, and opening one still requires a fresh exact-revision
+inspection. Project-scoped inspections also carry retained project evidence:
+`gate_denials` and `last_gate_denial_ms` for that exact key. Global records have no
+single-project gate history. Evidence covers only the retained chain, never
+claims complete history, and a broken chain refuses the inspection instead of
+presenting unverified counts. None of these fields grants decision authority.
+
 Operator-only `import.scan {project}` reads a fixed inventory in the served
 project's root: `AGENTS.md`, `CLAUDE.md`, `.claude/CLAUDE.md`, `.cursorrules`,
 `.github/copilot-instructions.md`, direct `*.mdc` children of `.cursor/rules`,

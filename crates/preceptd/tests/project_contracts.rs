@@ -394,6 +394,88 @@ fn production_ipc_and_mcp_mask_contract_conflicts_and_preserve_fallback_privacy(
 }
 
 #[test]
+fn review_inspect_groups_conservative_relations_and_scopes_gate_evidence() {
+    let (f, b) = setup();
+    let alpha = Scope::Project {
+        name: "alpha".into(),
+    };
+    let beta = Scope::Project {
+        name: "beta".into(),
+    };
+    let first = preference(&f, &b, alpha.clone(), "shared", "same text", None);
+    let same_key = preference(&f, &b, alpha.clone(), "shared", "other text", None);
+    let same_value = preference(&f, &b, alpha.clone(), "other", "same text", None);
+    let duplicate = preference(&f, &b, alpha.clone(), "shared", "same text", None);
+    preference(&f, &b, beta, "shared", "same text", None);
+
+    let inspect = f
+        .daemon
+        .control(
+            "profile.review.inspect",
+            json!({"scope":alpha,"id":first,"revision":1}),
+        )
+        .unwrap();
+    assert_eq!(inspect["related_total"], 3);
+    let related = inspect["related"].as_array().unwrap();
+    assert_eq!(related.len(), 3);
+    assert_eq!(related[0]["id"], duplicate);
+    assert_eq!(related[0]["relation"], "duplicate");
+    assert_eq!(related[1]["id"], same_key);
+    assert_eq!(related[1]["relation"], "same_key");
+    assert_eq!(related[2]["id"], same_value);
+    assert_eq!(related[2]["relation"], "same_value");
+    assert_eq!(inspect["evidence"]["gate_denials"], 0);
+    assert!(inspect["evidence"]["last_gate_denial_ms"].is_null());
+
+    let global = preference(&f, &b, Scope::Global, "global", "value", None);
+    let inspect = f
+        .daemon
+        .control(
+            "profile.review.inspect",
+            json!({"scope":{"kind":"global"},"id":global,"revision":1}),
+        )
+        .unwrap();
+    assert!(inspect.get("evidence").is_none());
+}
+
+#[test]
+fn review_relation_ranking_precedes_the_preview_limit() {
+    let (f, b) = setup();
+    let alpha = Scope::Project {
+        name: "alpha".into(),
+    };
+    let first = preference(&f, &b, alpha.clone(), "shared", "same text", None);
+    for i in 0..65 {
+        preference(
+            &f,
+            &b,
+            alpha.clone(),
+            &format!("other-{i}"),
+            "same text",
+            None,
+        );
+    }
+    let duplicate = preference(&f, &b, alpha.clone(), "shared", "same text", None);
+    let inspect = f
+        .daemon
+        .control(
+            "profile.review.inspect",
+            json!({"scope":alpha,"id":first,"revision":1}),
+        )
+        .unwrap();
+    assert_eq!(inspect["related_total"], 66);
+    let related = inspect["related"].as_array().unwrap();
+    assert_eq!(related.len(), 12);
+    assert_eq!(related[0]["id"], duplicate);
+    assert_eq!(related[0]["relation"], "duplicate");
+    assert!(
+        related[1..]
+            .iter()
+            .all(|row| row["relation"] == "same_value")
+    );
+}
+
+#[test]
 fn actual_absence_invalidity_dirty_edit_and_unreviewed_profile_text_are_distinct() {
     let (f, b) = setup();
     preference(
