@@ -101,6 +101,28 @@ contracts, Agents, Sessions, Memory, Handoff for the selected project), **Contex
 
 ## Data and trust
 
+### Data directories
+
+| Kind | Unix | Windows |
+| --- | --- | --- |
+| Config | `$XDG_CONFIG_HOME/precept` (default `~/.config/precept`) | `%LOCALAPPDATA%\precept\config` |
+| State | `$XDG_STATE_HOME/precept` (default `~/.local/state/precept`) | `%LOCALAPPDATA%\precept\state` |
+| Runtime | `<state>/runtime` | `<state>/runtime` |
+
+Config holds `connection.json` and `settings.toml`. State holds daemon-private
+project/startup records and the suggested Profile; runtime holds credentials and
+endpoint coordinates. Environment roots must be absolute. Durable state never
+uses a cache directory.
+
+Version 0.4.2 replaces the old Windows `Precept-state` default with the separated
+layout above. Precept never moves or discovers old data automatically. Before
+upgrading, stop the Desktop and daemon and keep a backup. Move `connection.json`
+and `settings.toml` into `precept\config`, move daemon state into `precept\state`,
+and update any explicit GUI, shortcut or MCP `--runtime-dir` arguments to
+`precept\state\runtime`. Validate the new layout before removing the backup.
+
+### Authority and privacy
+
 - Only the native daemon writes Profile state, through typed local IPC and an
   independent epoch-bound write grant. CLI and UI clients never open writable
   SQLite connections.

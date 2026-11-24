@@ -6,6 +6,28 @@ data between schemas with the versioned Profile export and import.
 
 ## Unreleased
 
+## 0.4.2
+
+- **Guided activation and diagnostics:** `precept setup --plan` previews the
+  first-activation steps, and `precept setup` asks before each change.
+  `precept doctor --json` and the Windows package verifier report redacted,
+  read-only installation diagnostics with stable reasons and remediation.
+- **Safer Profile transfer:** `precept profile import FILE --preflight` reports
+  duplicates, skips, omissions and destination state without writing. Apply
+  rechecks the destination and still creates only suggestions for exact review.
+- **Bounded repository checks:** one context resolution shares checked-file and
+  parsed TOML/JSON reads, with 256 KiB per file, 64 files and 1 MiB in aggregate.
+  Exhausted checks are unavailable, never verified, and `check_io` reports usage.
+- **Separated Windows data directories:** configuration uses
+  `%LOCALAPPDATA%\precept\config`, daemon state uses `precept\state`, and runtime
+  uses `precept\state\runtime`. Unix keeps XDG config/state defaults. Old data is
+  never moved automatically; see the README for the manual upgrade steps.
+- **Desktop and tooling fixes:** Doctor accepts equivalent Windows path separator
+  spellings without widening scope; Personal records no longer remain stuck
+  loading when a workspace snapshot completes during the first Profile read;
+  MCP metadata matches the package version; pull requests run both workspace
+  quality gates on Windows and Linux.
+
 ## 0.4.1
 
 - **Two harnesses, done well.** Precept sets up and supports Claude Code and
