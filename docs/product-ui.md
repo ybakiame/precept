@@ -143,11 +143,14 @@ off.
 
 **Sessions** (in the Workspace group) lists the selected project's work sessions
 as agents recorded them: the goal, open or closed, which agent and when, and how
-many items are doing, next and done. A session opens a sheet with its lists and
-summary, **Save as Handoff…** (a task id prefilled from the goal; saving turns
-writes on for the run first when they are off, and a taken id says so) and
-**Delete session…** behind a confirmation; nothing else is editable here. The page explains that sessions are agents' notes, not rules, and that
-agents write them only where agent writes are allowed.
+many items are doing, next and done. A session opens a sheet grouped by Doing,
+Blocked, Next, Deferred and Done. Each item shows its stable id, milestone/task
+kind, dependencies, owner and blocked reason; the summary follows. **Save as
+Handoff…** (a task id prefilled from the goal; saving turns writes on for the run
+first when they are off, and a taken id says so) preserves that structured item
+metadata in the Handoff text. **Delete session…** stays behind a confirmation;
+nothing else is editable here. The page explains that sessions are agents'
+notes, not rules, and that agents write them only where agent writes are allowed.
 
 **Memory** (in the Workspace group, after Sessions) shows the selected project's
 memory: a counts line by kind with Refresh and **Clear all…** (confirmed), then
@@ -204,11 +207,18 @@ key, digest prefix) before one write decides them all, each as its own decision.
 If any picked record changed since it was listed, nothing is written. Switching
 tab or scope clears the selection.
 
-**Import from AGENTS.md…** in Review reads the selected project's AGENTS.md and
-lists each section with a checkbox, its key, source heading and first line; new
-ones start picked, ones already in Precept are marked and cannot be picked, and
-sections that could not be imported say why. Saving prepares one write that
-files the picks as suggestions; they are confirmed like any other.
+**Import rule files…** in Review reads the selected project's fixed AGENTS.md,
+CLAUDE.md, Cursor, Continue and Copilot inventory. Each candidate shows a
+checkbox, source-kind badge, relative path, title, description (or first body
+line), key and project scope. New ones start picked; ones already in Precept are
+marked and cannot be picked. Skipped entries name the source and fixed reason,
+with bounded detail for duplicates, unsupported metadata or applicability, and
+budget exhaustion. The dialog says that reads are non-recursive, links are not
+followed, source files are unchanged and unsupported glob/manual activation is
+not guessed. Literal source paths are shown as Precept path filters, not as a
+claim of identical source-tool auto-attachment. Saving prepares one write that files the picks as suggestions; they
+are confirmed like any other. Loading, empty, partial-skip and over-batch states
+use the existing dialog motion and do not introduce a separate import workflow.
 
 The Preferences & contracts page starts with the repository's effective contracts
 (read-only; changed in the repository), then one virtualized list of the confirmed

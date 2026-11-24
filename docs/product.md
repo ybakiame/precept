@@ -80,6 +80,12 @@ confirms the exact record; editing a reviewed value is a new suggestion.
 Automatic learning (for example, a repeated gate denial or test failure becoming a
 suggested rule) may only create suggestions, never bind a rule.
 
+An Operator can explicitly preview rules from known AGENTS.md, CLAUDE.md, Cursor,
+Continue and Copilot files in one registered project. The bounded import keeps
+source provenance, reports anything it cannot represent exactly, changes no
+source file and creates only selected suggestions. Confirmation remains a
+separate exact-record/revision action; import is never an import-to-confirm path.
+
 ## Connecting agents
 
 Two channels carry rules to an agent; use both where the harness allows it.
@@ -91,6 +97,13 @@ Two channels carry rules to an agent; use both where the harness allows it.
 | Can the agent give back | No (read-only) | Yes: rule suggestions and updates, its work session, project memory | Yes |
 | Continuity across agents and compaction | Sees work others left, cannot record its own | Records its work, may not read others' | The full loop |
 | Harnesses | Claude Code and Codex, set up by Precept; others with Claude Code's hook format connect themselves through the `precept-connect` skill | Any MCP client | Claude Code and Codex |
+
+A work session keeps one large `goal` and a flat list of milestone/task items.
+Items carry explicit state, dependencies, optional owner and blocked reason;
+agents update them through single-item operations with revision checks instead
+of replacing whole lists. Another conversation can read the full session, resume
+it explicitly, or append work without deleting unrelated items. Briefings group
+items by state, and an operator-saved Handoff preserves their metadata.
 
 Precept sets up and supports Claude Code and Codex. Any other agent connects
 itself: `precept skill` prints the `precept-connect` skill with this machine's

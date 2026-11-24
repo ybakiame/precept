@@ -85,14 +85,51 @@ as its own decision with the note; any stale item, or two items touching one rec
 `suggest_batch {items: [{scope, key, value, tags, origin, rule}]}` files 1 to 50
 suggestions in one write (an import the operator picked); none is confirmed.
 
-Operator-only `import.scan {project}` reads the served project's `AGENTS.md` (the
-instruction file agents share; a regular file only, never a link, at most 256 KiB)
-and returns `candidates`, one per `##` section or per `###` inside one, outside
-Precept's own block and code fences (`source`, `title`, `key` `agents-…`, `value`,
-tags `agents-md` and `imported`, default `rule`, project `scope`, and `exists`: the
-Profile already holds that key and value suggested or confirmed), and `skipped`
-sections (`too_long`, `empty`, `unreadable`). Nothing is written; AGENTS.md is not
-changed. Precept's own `.precept/rules` is never an import source.
+Operator-only `import.scan {project}` reads a fixed inventory in the served
+project's root: `AGENTS.md`, `CLAUDE.md`, `.claude/CLAUDE.md`, `.cursorrules`,
+`.github/copilot-instructions.md`, direct `*.mdc` children of `.cursor/rules`,
+direct `*.md` children of `.continue/rules`, direct `*.instructions.md`
+children of `.github/instructions`, and direct `*.md` children of
+`.claude/rules`. Root AGENTS.md and both CLAUDE.md files produce one candidate per `##`
+section or `###` subsection; every other supported file produces one candidate.
+Precept's pointer block and fenced headings are handled as for AGENTS.md.
+`.precept/rules`, nested instruction files, unknown extensions and recursive
+directory walks are never import sources.
+
+The daemon checks every path component, refuses links and Windows reparse
+points, reads regular files only and never accepts a caller-supplied root or
+source. One file is at most 256 KiB; a scan reads at most 1 MiB, checks at most
+64 direct entries per rule directory, takes at most 16 matching files per
+directory, and returns at most 200 candidates and 255 explicit skips. Candidate
+values are at most 4096 bytes. The core bounds the candidate/skip payload to
+640 KiB, including per-candidate reserve for daemon-added scope and duplicate
+state; the daemon refuses a final serialized reply above 640 KiB, and the
+Desktop applies the same bound before parsing.
+
+Candidates carry `source`, `kind` (`agents_md`, `claude_md`, `cursor`,
+`continue`, `copilot`, `claude`), `title`, optional `description`, `key`,
+`value`, tags (`imported` plus the source kind), `rule`, project `scope`, and
+`exists` (the Profile already holds that exact key/value suggested or
+confirmed). Cursor/Continue front matter supports `description`, `globs` and
+`alwaysApply` (Continue also supports `name`); Copilot path instructions support
+`description` and `applyTo`; Claude rule files support `description` and
+`paths`. The parser accepts a strict scalar/list subset. Unknown fields,
+malformed front matter, manual-only activation and selectors that cannot be
+represented exactly are skipped. Only literal repository-relative selectors
+become `applies_to.paths`; this maps source path activation to Precept's
+request-selector filter and does not claim identical auto-attachment behavior.
+Globs are never silently widened, narrowed or discarded. Duplicate candidate
+value plus rule options keep the earliest source and report the later source as
+`duplicate`.
+
+`skipped` entries carry `source`, `title`, a closed reason (`empty`, `too_long`,
+`unreadable`, `malformed_frontmatter`, `unsupported_metadata`,
+`unsupported_applicability`, `duplicate`, `budget_exhausted`) and an optional
+bounded detail. No raw OS error, absolute path, link target or file body is
+reported as a skip detail. Nothing is written; source files are not changed.
+Precept's own `.precept/rules` is never an import source. The Desktop presents
+these candidates for explicit selection and files them through `suggest_batch`;
+import never confirms, enables or creates a repository contract.
 
 Effective context keeps a confirmed, enabled rule unless the request's selector
 definitely mismatches its `applies_to` (a dimension the request does not name
@@ -253,33 +290,68 @@ with `outcome` (`delivered` or `not_delivered`), `reason` (`delivered`,
 `context.get` serves. A key on `context.get`, or documents on
 `context.explain`, is `InvalidRequest`.
 
-Work sessions: `start_session {goal, conversation_id?, done?, doing?, todo?}`,
-`update_work_state {session_id, goal?, expected_rev?, done?, doing?, todo?}`
-(each given list replaces the previous one) and `close_session {session_id,
-summary?, expected_rev?, todo?}` call agent `session.start` / `session.update` /
-`session.close`. They are accepted only where the operator allows the project's
-agents to write (`project.propose`), need no write grant and never touch the
-Profile. A start with a conversation id returns the agent's open session for it,
-if any. Work items are objects `{id?, text, depends_on?}`: the id is a stable
-lowercase label (letters, digits, hyphens, at most 24 characters; assigned when
-omitted), unique within its list; a `depends_on` entry names another item of the
-same list that must finish first (never the item itself). Every session carries
-`rev`, counting its writes; an update or close naming an `expected_rev` that no
-longer matches is `Conflict`, never a silent overwrite of another agent's write.
-Bounds: goal 500 characters, 12 items of 200 characters per list, summary 1000,
-20 sessions per project (closed ones are dropped first). A closed session takes
-no updates (`InvalidTransition`); an unknown id is `NotFound`. Agent and operator
-`context.get` add `work_sessions` (at most five: open first, then recently
-closed, newest first), which the session-start briefing renders as **Work in
-progress** (the items' text). Operator `sessions.list {project}` returns every
-session and `sessions.delete {project, id}` removes one. Operator-write
-`sessions.handoff {project, id, task_id}` saves a session as a new Handoff
-through the ordinary reviewed write (`put_handoff`, expected absent, so a taken
-task id is `Conflict`): the goal as objective, done items' text and summary as
-completed, todo items' text as next action, no validation entries, and the
-repository's revision, branch, state and worktree fingerprint read by the daemon
-at that moment, never supplied by the caller. Calls are in the activity log as
-`session`.
+Work sessions: `start_session {goal, conversation_id?, resume_session_id?,
+expected_rev?, items?}`, `update_work_state {session_id, expected_rev, goal?,
+operations?}`, `close_session {session_id, expected_rev, summary?}` and
+`get_work_session {session_id}` call agent `session.start` / `session.update` /
+`session.close` / `session.get`. They are accepted only where the operator allows
+the project's agents to write (`project.propose`), need no write grant and never
+touch the Profile. A start with a conversation id returns the agent's open session
+for it; `resume_session_id` explicitly resumes any open session in the same
+project and requires its `expected_rev`. Optional fields may be omitted, not
+explicitly `null`. The session's `goal` is the large objective; work is a flat
+list of at most 36 items, not a parent/child tree.
+
+A work item is `{id, text, kind, state, depends_on?, owner?, blocked_reason?}`.
+`kind` is `milestone` or `task` (default `task`); `state` is `todo`, `doing`,
+`blocked`, `deferred` or `done` (default `todo`). Ids are stable lowercase labels
+(letters, digits and hyphens, at most 24 characters; assigned when omitted),
+unique within the session. Text and blocked reasons are at most 200 characters;
+owners are at most 64. Dependencies may name items in any state of the same
+session, never the item itself, and must form an acyclic graph. A blocked item
+requires a reason; other states reject one.
+
+`update_work_state` applies ordered single-item operations atomically instead of
+replacing whole lists: `add {item}`, `update {id, text?, kind?, depends_on?,
+owner?, blocked_reason?}`, `start {id}`, `complete {id}`, `defer {id}`,
+`block {id, reason}`, `reopen {id}` and `remove {id}`. `start` accepts todo,
+blocked or deferred items; `complete` accepts any non-done item; `defer` and
+`block` reject done items until reopened; `reopen` accepts done, blocked or
+deferred items. Initial and added items inherit the calling client as owner when
+one is known and no owner is supplied; an explicit owner is preserved. Starting
+an unowned item also claims it for the calling client. Closing returns doing
+items to todo and keeps unfinished work.
+
+Updates, closes and explicit resumes require `expected_rev`; a mismatch is
+`Conflict`, never a silent overwrite. Work-state validation failures are
+`InvalidWorkState {field, reason}` with a redacted field path such as
+`operations[0].id` or `items[2].depends_on`, never the rejected value. Bounds:
+goal 500 characters, 36 items per session, summary 1000, 20 sessions per project
+(closed ones are dropped first, otherwise the oldest other open session). A
+closed session takes no updates (`InvalidTransition`); an unknown id is
+`NotFound`. The daemon-private
+`sessions-<project>.json` store uses format 2; format 1 coordination lists are
+normalized into states on read, with duplicate cross-list ids renamed
+deterministically, invalid legacy started dependencies deferred, duplicate
+dependency entries removed, missing legacy references dropped and cycle-closing
+edges removed deterministically. This is not a Profile schema migration.
+
+Agent and operator `context.get` add `work_sessions` (at most five: open first,
+then recently closed, newest first), which the session-start briefing groups by
+state with item ids, kind, dependencies, owners and blocked reasons.
+`get_work_session` returns the full current record, including `rev`, for conflict
+recovery and cross-conversation resume. Operator `sessions.list {project}`
+returns every session and `sessions.delete {project, id}` removes one.
+Operator-write `sessions.handoff {project, id, task_id}` saves a session as a new
+Handoff through the ordinary reviewed write (`put_handoff`, expected absent, so
+a taken task id is `Conflict`): goal as objective, done items and summary as
+completed, and non-done items as next action. Handoff text preserves each item's
+id, kind, state, dependencies, owner and blocked reason; validation entries stay
+empty. The repository's revision, branch, state and worktree fingerprint are
+read by the daemon at that moment, never supplied by the caller. Like
+`profile.mutate`, a Handoff timeout is `OutcomeUnknown` because the write may
+already have committed; inspect the task id before retrying. Agent session calls
+are in the activity log as `session`.
 
 Project memory: `remember {kind, title, body}`, `recall {query?, kind?, limit?,
 index?}` (or `recall {id}` alone, which fetches one note's full text through
@@ -370,12 +442,12 @@ nothing.
 
 `precept-hook --event pre-compact` (Claude Code) calls agent
 `context.get` and prints `hookSpecificOutput.additionalContext` (event
-`PreCompact`): the conversation is about to be compacted, so keep the work state
-in the project's sessions — bring the open session current with
-`update_work_state` (its id and `expected_rev` are named) or record one with
-`start_session` — and call `get_effective_context` again after compaction. It
-writes nothing itself: a Handoff stays the operator's write. On any error it
-prints nothing (fail-open); other vendors print nothing.
+`PreCompact`): the conversation is about to be compacted, so read the open
+session with `get_work_session`, then bring it current with single-item
+`update_work_state` operations and its `expected_rev`, or record one with
+`start_session` (`goal`, structured `items`). Call `get_effective_context` again
+after compaction. It writes nothing itself: a Handoff stays the operator's
+write. On any error it prints nothing (fail-open); other vendors print nothing.
 
 | Tool | Inputs | Outputs | Side effects |
 | --- | --- | --- | --- |
@@ -383,7 +455,7 @@ prints nothing (fail-open); other vendors print nothing.
 | `explain_rule` | string `key`; optional `selector` | every rule of the key with outcome and reason | Read-only |
 | `get_handoff` | exact string `task_id` | saved task/revision and historical checks, current Git state and drift warnings | Read-only |
 | `suggest_rule` | `scope`, `key`, `value`, optional `tags`, `applies_to`, `enforcement`, `replaces` | the suggestion's id; never active until confirmed | A `suggested` record, where allowed and writes are on |
-| `start_session`, `update_work_state`, `close_session` | goal and done / doing / todo item lists (`{id?, text, depends_on?}`), optional `expected_rev`, summary | the session with its `rev` | Daemon-private session record, where allowed; a stale `expected_rev` is `Conflict` |
+| `start_session`, `update_work_state`, `close_session`, `get_work_session` | goal and structured `items`; ordered single-item `operations`; required `expected_rev` for update/close/explicit resume; summary; session id | full session state including `rev` | Daemon-private session record, where allowed; a stale `expected_rev` is `Conflict` |
 | `remember`, `recall`, `reaffirm`, `forget` | kind, title, body; query or note id (optional index flag); note id and optional basis | the note(s) or index lines | Daemon-private project memory, where allowed (`recall` counts recalls; a fetch by id does not) |
 
 The optional `selector` contains only `agent_id`, `path`, `language`, `task_tags`.

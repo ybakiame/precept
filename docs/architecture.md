@@ -90,7 +90,7 @@ or move existing data automatically.
 | --- | --- | --- |
 | Personal preferences, including project-scoped choices | Human-reviewed user-local SQLite | Explicit operator action; never tracked Profile files |
 | Project contracts | Repository-owned AGENTS/docs and reviewed engineering configuration | Bounded live reads; no automatic prose interpretation or file creation |
-| Work sessions | Daemon-private state (`sessions-<project>.json`) | Agent `session.*` where the operator allows agent writes; operator `sessions.delete` |
+| Work sessions | Daemon-private state (`sessions-<project>.json`, format 2) | Agent `session.*` with flat structured items, single-item operations and required CAS; operator `sessions.delete`; format 1 coordination lists normalize on read |
 | Project memory (environment, cautions, lessons, attempts) | Daemon-private state (`memory-<project>.json`); agents' notes, unreviewed, below rules and code | Agent `memory.*` where the operator allows agent writes; operator `memories.*` edits, restores, pins, deletes and clears; confirmed environment notes move in by one operator-write |
 | Project registration | User-local Profile plus daemon-private project state | Operator-write `project.add` / `project.remove` after checking one chosen path; `project.register` records a listed project in a newly selected Profile at its pinned root |
 | Suggestions and reviews | User-local SQLite proposal/review records | Approval binds exact content, revision and scope; repository changes still need repository review |
@@ -149,8 +149,12 @@ Exhaustion marks the affected checks `unavailable` with `budget_exhausted`, neve
 `verified`, and `contract_resolution.check_io` reports reads, bytes, cache size
 and exhaustion. Each served rule carries `verified`, `failing` (with the first failure),
 `unchecked` or `unavailable`. Existing allowlisted documents remain valid document
-sources. Ordinary repository prose is not parsed into rules, and onboarding never
-scaffolds or rewrites `AGENTS.md` or rule files.
+sources. Ordinary repository prose is not automatically parsed into rules. The
+only prose-import path is an explicit Operator `import.scan` over the fixed,
+bounded agent-rule inventory in [interfaces](interfaces.md); it remains a read,
+and selected text enters the Profile only as suggestions through the normal
+reviewed write path. Onboarding never scans, scaffolds or rewrites AGENTS.md or
+rule files.
 
 The resolver binds one registered project, rechecks registration and reads live
 Git/allowlisted metadata. A compatible project preference masks a global preference

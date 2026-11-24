@@ -89,12 +89,17 @@ separate design with its own threat model.
   can create nothing but a `suggested` record with origin `agent` in its own
   project or the personal scope, with duplicates refused. There is no separate
   per-run or waiting-queue count limit. Nothing is queued while writes are off.
-- Work sessions are agents' own notes (goal and done / doing / todo), written
-  only where the operator allows agent writes for the project, bounded, kept in
-  the daemon's private state directory (`sessions-<project>.json`, 0600, never
-  in the Profile or the repository) and deleted by the operator at will. They
-  are read back by the project's agents as context, never as rules, and grant
-  nothing.
+- Work sessions are agents' own coordination notes: one goal plus a bounded,
+  flat list of milestone/task items with explicit state, dependencies, owner and
+  blocked reason. Single-item operations and required revision checks prevent
+  parallel agents from silently replacing each other's work. They are written
+  only where the operator allows agent writes for the project, kept in the
+  daemon's private state directory (`sessions-<project>.json`, 0600, never in the
+  Profile or the repository) and deleted by the operator at will. Format 1
+  coordination lists normalize into item states on read; Profile data is never
+  migrated. Sessions are read back by the project's agents as context, never as
+  rules, and grant nothing. Validation errors name only the field and reason,
+  never rejected values.
 - Project memory follows the same boundary: agents' notes written only where
   the operator allows agent writes, bounded, kept in `memory-<project>.json`
   (0600) in the daemon's private state, never in the Profile or the repository,
@@ -106,6 +111,13 @@ separate design with its own threat model.
 - Document bodies are opt-in, narrowly allowlisted, bounded and contained. Native
   Git commands are shell-free and bounded; configured external filters/submodules
   are refused before status/fingerprint. No repository rewriting or credential scraping.
+- Operator rule import reads only the fixed project-relative inventory in
+  [interfaces](interfaces.md). The daemon checks each component, refuses links and
+  Windows reparse points, never recurses, bounds entries/files/bytes/output, and
+  reports only closed skip reasons without OS errors, absolute paths or link
+  targets. Agents and OperatorWrite peers cannot scan. Imported text is untrusted:
+  front matter is strictly bounded, unsupported activation/applicability is
+  disclosed rather than guessed, and selected items can become only suggestions.
 - Handoff validation is historical. Bounded Fingerprint v1 stores only a digest,
   not raw diffs/files; overflow or missing observations remain unverified.
 - No product network listener, telemetry, automatic model call, history ingestion,
