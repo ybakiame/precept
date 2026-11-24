@@ -435,6 +435,19 @@ work is called done. "RM" is what reduced motion does.
 | A switch or quick tile turns on or off | The thumb slides and the track, icon well and edge cross-fade to `primary` (`FAST`); disabled while the daemon writes | Instant |
 | AGENTS.md tile switched on | The confirmation dialog opens as every dialog (scale and fade from 0.96, `BASE`), previewing the exact block; switching off removes at once | Appears |
 
+**Personal sync**
+
+| Change | Motion | RM |
+| --- | --- | --- |
+| Status or trusted-device list arrives | The result fades in rising 4, `BASE`, once per new result; rows do not replay an entrance on refresh | Appears |
+| Create identity, export, preview, apply, revoke, rotate or reset running | The invoking button dims, holds its width and shows a turning spinner; its label stays | Spinner rests |
+| Invitation, pair, export or import dialog opens / closes | The existing dialog scrim fades in `FAST`; the panel grows from 0.97 and rises 8, `SLOW` | Appears |
+| Import mode or conflict choice changes | The shared segmented selection fill slides natively, `BASE`; the preview updates without a page entrance | Instant selection |
+| Preview replaces an earlier preview | The comparison region cross-fades in rising 4, `BASE`; the file and passphrase fields keep their contents | Appears |
+| Apply succeeds or is refused | The inline outcome fades in rising 4, `BASE`; an uncertain outcome keeps its exact retry action visible | Appears |
+| Revoke, rotate or reset confirmation | The shared alert dialog presents the exact device or identity consequence; no custom motion | Appears |
+| Empty, unavailable or writes-off state arrives | The existing empty/status region fades in rising 4, `BASE` | Appears |
+
 Sound: none. Precept is a quiet developer tool.
 
 ## 10. Words

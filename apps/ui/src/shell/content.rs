@@ -6,7 +6,8 @@ use super::{
 };
 use crate::*;
 use features::{
-    agents, doctor, memory, page, profile, projects, review, sessions, settings, setup,
+    agents, doctor, memory, page, personal_sync, profile, projects, review, sessions, settings,
+    setup,
 };
 use tokens::{compact, palette};
 
@@ -20,6 +21,7 @@ pub(crate) fn shell(
     agents::watch(model);
     sessions::watch(model);
     memory::watch(model);
+    personal_sync::watch(model);
     features::handoff::watch(model);
     let on = move |d: Destination| move || current(&model.get()) != d;
     // A new destination starts at its top and its content settles in with a
@@ -85,6 +87,7 @@ pub(crate) fn shell(
                                 .child(projects::remove_dialog(model))
                                 .child(features::preferences::detail_dialog(model))
                                 .child(features::rule_lint::templates_dialog(model))
+                                .child(personal_sync::dialogs(model))
                                 .child(features::review::export_dialog(model))
                                 .child(agents::pointer_dialog(model))
                                 .child(
@@ -124,6 +127,14 @@ pub(crate) fn shell(
                                                             |s| s.hidden().invisible(),
                                                         )
                                                         .child(projects::page(model)),
+                                                )
+                                                .child(
+                                                    view()
+                                                        .style_when(
+                                                            on(Destination::PersonalSync),
+                                                            |s| s.hidden(),
+                                                        )
+                                                        .child(personal_sync::page(model)),
                                                 )
                                                 .child(
                                                     view()

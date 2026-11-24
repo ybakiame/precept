@@ -6,6 +6,7 @@ pub(crate) mod doctor;
 pub(crate) mod handoff;
 pub(crate) mod memory;
 pub(crate) mod overview;
+pub(crate) mod personal_sync;
 pub(crate) mod preferences;
 pub(crate) mod profile;
 pub(crate) mod projects;

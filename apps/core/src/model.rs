@@ -5,12 +5,17 @@ impl Model {
         Self {
             operator: Default::default(),
             epoch: 0,
+            connection_epoch: 0,
+            profile_epoch: 0,
+            profile_read_epoch: 0,
             connection: Default::default(),
             connection_draft: Default::default(),
             connection_invalid: false,
             settings: false,
             setup_open: false,
             setup_tab: SetupTab::Connection,
+            sync_open: false,
+            sync: Default::default(),
             agents_page: false,
             sessions_page: false,
             memory_page: false,
@@ -148,7 +153,25 @@ impl Model {
             return false;
         }
         self.epoch = self.epoch.checked_add(1).expect("request epoch exhausted");
+        self.connection_epoch = self
+            .connection_epoch
+            .checked_add(1)
+            .expect("connection epoch exhausted");
+        self.profile_epoch = self
+            .profile_epoch
+            .checked_add(1)
+            .expect("Profile epoch exhausted");
+        self.profile_read_epoch = self
+            .profile_read_epoch
+            .checked_add(1)
+            .expect("Profile read epoch exhausted");
         self.operator.invalidate();
+        self.sync.clear();
+        self.profile_info = Default::default();
+        self.profile_setup.busy = false;
+        self.profile_setup.error = None;
+        self.project_add.write_enabled = None;
+        self.project_add.profile_selected = None;
         self.connection = self.connection_draft.clone();
         self.connection_invalid = false;
         self.live = self.connection.target != connection::Target::Synthetic;

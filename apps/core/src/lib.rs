@@ -21,6 +21,7 @@ pub mod keys;
 pub mod mcp;
 pub mod memory;
 pub mod operator;
+pub mod personal_sync;
 pub mod presentation;
 pub mod profile;
 pub mod projects;
@@ -254,6 +255,9 @@ pub enum Probe {
 pub struct Model {
     pub operator: operator::Operator,
     pub epoch: u64,
+    pub connection_epoch: u64,
+    pub profile_epoch: u64,
+    pub profile_read_epoch: u64,
     pub connection: connection::Connection,
     pub connection_draft: connection::Connection,
     pub connection_invalid: bool,
@@ -261,6 +265,9 @@ pub struct Model {
     /// The Runtime checks page (Connection and Profile), or Workspaces.
     pub setup_open: bool,
     pub setup_tab: SetupTab,
+    /// Profile-scoped manual personal sync.
+    pub sync_open: bool,
+    pub sync: personal_sync::State,
     /// The project-scoped Agents (MCP) page.
     pub agents_page: bool,
     pub agents: mcp::AgentsPage,

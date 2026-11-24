@@ -10,6 +10,7 @@ description = "Operator app transport: native IPC to the daemon and the Windows 
 precept-ui-core = { path = "../core" }
 precept-core = { path = "../../crates/precept-core" }
 precept-ipc = { path = "../../crates/precept-ipc" }
+precept-sync = { path = "../../crates/precept-sync" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt", "net", "time", "process", "io-util", "io-std", "sync", "macros"] }
@@ -26,3 +27,4 @@ name = "precept-ui-snapshot"
 path = "src/bin/precept_ui_snapshot.rs"
 
 [dev-dependencies]
+tempfile = "3"

@@ -213,10 +213,11 @@ pub(super) fn sidebar(model: Signal<Model>) -> impl IntoElement {
         (Review, icons::REVIEW),
         (ReviewedRules, icons::section_path(Section::Rules)),
     ];
-    // Set up: two runtime checks, then independent workspace management.
+    // Set up: runtime checks, independent workspace management and device sync.
     let setup_items = [
         (RuntimeChecks, icons::CONNECTION),
         (Workspaces, icons::section_path(Section::Projects)),
+        (PersonalSync, icons::SYNC),
     ];
     let foot = [
         (Diagnostics, icons::section_path(Section::Diagnostics)),

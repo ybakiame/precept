@@ -32,13 +32,24 @@ impl RadioGroup {
     /// Add an option: its label, whether it is the chosen one, and what
     /// choosing it does. The app owns the value; choosing never unchecks.
     pub fn option(
-        mut self,
+        self,
         label: impl Into<SharedString>,
         checked: impl Fn() -> bool + 'static,
         on_select: impl Fn() + 'static,
     ) -> Self {
-        let model = self.model;
         let label: SharedString = label.into();
+        self.option_fn(move || label.clone(), checked, on_select)
+    }
+
+    /// An option whose localized label follows the current model.
+    pub fn option_fn(
+        mut self,
+        label: impl Fn() -> SharedString + 'static,
+        checked: impl Fn() -> bool + 'static,
+        on_select: impl Fn() + 'static,
+    ) -> Self {
+        let model = self.model;
+        let label: LabelFn = Rc::new(label);
         let checked: StateFn = Rc::new(checked);
         let on_select: PressFn = Rc::new(on_select);
         let (c_row, c_dot, c_text, c_a11y) = (
@@ -49,7 +60,7 @@ impl RadioGroup {
         );
         let row = base_radio()
             .checked(move || checked())
-            .accessibility_label(move || Some(c_a11y.clone()))
+            .accessibility_label(move || Some(c_a11y()))
             .on_change(move |_: &bool| on_select())
             .flex_row()
             .items_center()
@@ -72,7 +83,7 @@ impl RadioGroup {
             .focus(move |s| s.border_color(move || palette(model).primary))
             .child(indicator(model, c_dot))
             .child(
-                text(label.clone())
+                text(move || label())
                     .text_size(px(scale::text::BODY))
                     .text_color(move || {
                         if c_text() {

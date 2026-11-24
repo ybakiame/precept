@@ -73,9 +73,10 @@ Organize navigation around three clear operational paths plus utilities:
   reviewed records: **Personal** preferences (global scope) and **Project
   conventions** (active project scope), including hidden-by-default deprecated rows.
 - **Set up:** **Runtime checks** unites **Connection** and **Profile** as two step
-  tabs with live completion indicators (`✓` or `n/2`). **Workspaces** is a separate
-  management page directly below it, strictly for registration and removal; clicking
-  a workspace row never switches the active project.
+  tabs with live completion indicators (`✓` or `n/2`). **Personal sync** manages
+  this Profile's encrypted device pairing and manual file exchange. **Workspaces**
+  is a separate management page directly below it, strictly for registration and
+  removal; clicking a workspace row never switches the active project.
 - **Foot:** **Diagnostics**, **Settings**, the persistent daemon status button
   (opens Runtime checks → Connection) and the keyboard shortcuts button.
 
@@ -173,6 +174,43 @@ project was last read, or that a client started but never called a tool; a line
 says whether the evidence chain is intact (with how many entries) or broken at
 which entry. It persists across daemon restarts. A session's sheet lists the calls
 made in that session. Refresh is explicit.
+
+### Personal sync
+
+**Personal sync** is explicitly Profile-scoped, never project-scoped. It shows
+whether sync identity exists, this device's public identifiers, tracked-key and
+trusted-device counts, and every trusted device with its revocation state. Status
+absence, unavailability and writes-off are distinct textual states; an unread or
+refused count is never shown as zero.
+
+Creating identity prints a new public invitation and complete-invitation
+fingerprint. Pairing and re-trusting require an invitation file plus separately
+entered owner and complete-invitation fingerprints; the UI shows the exact public
+invitation before the operator copies or saves it. Private identity material is
+never displayed. Revocation, key rotation and identity reset name the exact device
+or identity they affect and require deliberate confirmation. Rotation explains
+that peers must revoke and re-trust; reset explains that preferences remain while
+sync identity, trust, clocks and tombstones are replaced.
+
+Export is a manual encrypted file for one paired recipient or a passphrase file.
+The operator chooses a new output path; Precept never overwrites it. Import reads
+an encrypted envelope and optional private passphrase file, then shows the bounded
+per-key comparison before any write. Already-applied entries stay excluded.
+Non-conflicting entries start selected; every conflict requires an explicit
+Accept remote, Keep local or Manual merge choice, and manual content is inspected
+before Apply. Partial selection is named by key and count. Absence is never shown
+as deletion; only an explicit tombstone is described as a delete.
+
+Apply shows the destination Profile, sender, selected keys, conflict choices and
+exact operation id before one OperatorWrite request. Passphrases remain transient
+and are never persisted in settings, templates, logs or clipboard. An uncertain
+apply keeps the exact envelope, local versions, selections, commit, operation id
+and passphrase source available for identical retry; it never silently changes
+inputs or starts a new operation. Changed inputs require a fresh preview. Abort is
+available for the exact pending operation and reports whether a receipt settled or
+a proven-uncommitted operation was discarded. Every sync mutation requires writes
+on for the run; the UI may offer the existing explicit enable action but never
+remembers the grant.
 
 ### Preferences and review
 

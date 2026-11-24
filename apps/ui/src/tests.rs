@@ -308,3 +308,22 @@ fn navigation_separates_workspaces_review_rules_and_diagnostics() {
     app.press("Agents").unwrap();
     app.wait_for("Connect to a daemon first").unwrap();
 }
+
+#[test]
+fn personal_sync_is_a_separate_setup_destination_with_honest_offline_state() {
+    let mut config = EngineConfig::new(Root::of::<App>());
+    config.viewport = Size::new(px(760.0), px(640.0));
+    let mut app = nsh_testing::Headless::start(config).unwrap();
+    app.wait_for("Project: alpha").unwrap();
+    app.press("Personal sync").unwrap();
+    app.wait_for("Move confirmed global preferences between paired devices through manual encrypted files. Nothing syncs automatically.")
+        .unwrap();
+    assert!(app.screen().shows("Status not read"));
+    assert!(
+        app.screen()
+            .shows("Connect to a live daemon before using personal sync.")
+    );
+    assert!(app.screen().shows("Personal sync requires a live daemon."));
+    app.press("Runtime checks").unwrap();
+    app.wait_for("Connection").unwrap();
+}

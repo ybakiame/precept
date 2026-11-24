@@ -9,13 +9,13 @@ publish = false
 crate-type = ["rlib", "cdylib"]
 
 [features]
-ipc = ["dep:precept-ui-client"]
+ipc = []
 native = ["ipc", "dep:nsh-platform-linux", "dep:nsh-platform-macos", "dep:nsh-platform-windows"]
 
 [dependencies]
 serde_json = "1"
 precept-ui-core = { path = "../core" }
-precept-ui-client = { path = "../client", optional = true }
+precept-ui-client = { path = "../client" }
 # NSH v0.6.0, owner-approved immutable revision. 0.6.0 gates SVG rendering
 # behind the platform crates' `svg` feature (default off here): the native
 # platforms enable it, or every icon silently draws nothing.

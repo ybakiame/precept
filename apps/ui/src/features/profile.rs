@@ -55,17 +55,49 @@ pub(crate) fn read(model: Signal<Model>) {
     if !model.get_untracked().live {
         return;
     }
-    call(model, "profile.info", serde_json::json!({}), |_, m, r| {
-        let Ok(value) = r else { return };
-        let Ok(info) = serde_json::from_value::<precept_ui_core::operator::ProfileInfo>(value)
-        else {
-            return;
-        };
-        m.project_add.write_enabled = Some(info.write_enabled);
-        m.project_add.profile_selected = Some(info.selected);
-        m.profile_setup.suggest(info.suggested_path.as_deref());
-        *m.profile_info = Some(info);
+    let connection_epoch = model.get_untracked().connection_epoch;
+    let mut read_epoch = 0;
+    model.update(|m| {
+        m.profile_read_epoch = m
+            .profile_read_epoch
+            .checked_add(1)
+            .expect("Profile read epoch exhausted");
+        read_epoch = m.profile_read_epoch;
     });
+    call(
+        model,
+        "profile.info",
+        serde_json::json!({}),
+        move |_, m, r| {
+            if m.connection_epoch != connection_epoch || m.profile_read_epoch != read_epoch {
+                return;
+            }
+            let Ok(value) = r else { return };
+            let Ok(info) = serde_json::from_value::<precept_ui_core::operator::ProfileInfo>(value)
+            else {
+                return;
+            };
+            let previous = m
+                .profile_info
+                .as_ref()
+                .and_then(|i| i.binding.as_ref())
+                .map(|b| (&b.profile_id, &b.generation));
+            let current = info
+                .binding
+                .as_ref()
+                .map(|b| (&b.profile_id, &b.generation));
+            if previous != current {
+                m.profile_epoch = m
+                    .profile_epoch
+                    .checked_add(1)
+                    .expect("Profile epoch exhausted");
+            }
+            m.project_add.write_enabled = Some(info.write_enabled);
+            m.project_add.profile_selected = Some(info.selected);
+            m.profile_setup.suggest(info.suggested_path.as_deref());
+            *m.profile_info = Some(info);
+        },
+    );
 }
 
 /// Counts the suggestions waiting (personal, then the selected project's) for
@@ -182,6 +214,10 @@ fn after_selection(
 ) -> impl FnOnce(Signal<Model>, &mut Model, Result<serde_json::Value, &'static str>) {
     move |model, m, r| {
         if settle(m, r) {
+            m.profile_read_epoch = m
+                .profile_read_epoch
+                .checked_add(1)
+                .expect("Profile read epoch exhausted");
             ui::notify(ui::Tone::Success, m.word(done));
         }
         spawn(async move { load(model) });
@@ -204,6 +240,17 @@ fn create_or_select(model: Signal<Model>, method: &'static str) {
         return;
     };
     model.update(|m| {
+        m.profile_epoch = m
+            .profile_epoch
+            .checked_add(1)
+            .expect("Profile epoch exhausted");
+        m.profile_read_epoch = m
+            .profile_read_epoch
+            .checked_add(1)
+            .expect("Profile read epoch exhausted");
+        m.profile_info = Default::default();
+        m.project_add.write_enabled = None;
+        m.project_add.profile_selected = None;
         m.profile_setup.busy = true;
         m.profile_setup.error = None;
         m.rule_lint.invalidate();
@@ -227,12 +274,25 @@ pub(crate) fn enable_writes(model: Signal<Model>, then: impl FnOnce(Signal<Model
         model.update(|m| m.profile_setup.error = Some("Unavailable".into()));
         return;
     };
+    let connection_epoch = model.get_untracked().connection_epoch;
+    let profile_epoch = model.get_untracked().profile_epoch;
     model.update(|m| m.profile_setup.busy = true);
     call(
         model,
         "profile.write.enable",
         serde_json::json!({"profile_id":b.profile_id,"generation":b.generation,"confirm":true}),
         move |model, m, r| {
+            let current = m
+                .profile_info
+                .as_ref()
+                .and_then(|i| i.binding.as_ref())
+                .map(|binding| (&binding.profile_id, &binding.generation));
+            if m.connection_epoch != connection_epoch
+                || m.profile_epoch != profile_epoch
+                || current != Some((&b.profile_id, &b.generation))
+            {
+                return;
+            }
             m.profile_setup.busy = false;
             let ok = r.is_ok();
             if let Err(code) = r {

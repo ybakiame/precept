@@ -1,5 +1,5 @@
 use crate::*;
-use features::{connection, review};
+use features::{connection, profile, review};
 use precept_ui_core::{Section, SetupTab, i18n::Msg, operator::ReviewMode};
 
 /// Every top-level sidebar destination: flat, unambiguous, mutually exclusive.
@@ -18,6 +18,7 @@ pub(crate) enum Destination {
     ReviewedRules,
     RuntimeChecks,
     Workspaces,
+    PersonalSync,
     Diagnostics,
     Settings,
 }
@@ -35,6 +36,8 @@ pub(crate) fn current(m: &Model) -> Destination {
         } else {
             Destination::RuntimeChecks
         }
+    } else if m.sync_open {
+        Destination::PersonalSync
     } else if m.agents_page {
         Destination::Agents
     } else if m.sessions_page {
@@ -59,6 +62,7 @@ fn leave_workspaces(m: &mut Model) {
     m.operator.review = None;
     m.settings = false;
     m.setup_open = false;
+    m.sync_open = false;
     m.agents_page = false;
     m.sessions_page = false;
     m.memory_page = false;
@@ -98,6 +102,13 @@ pub(crate) fn go(model: Signal<Model>, destination: Destination) {
             );
         }
         Destination::Workspaces => go_setup(model, SetupTab::Workspaces),
+        Destination::PersonalSync => {
+            model.update(|m| {
+                leave_workspaces(m);
+                m.sync_open = true;
+            });
+            profile::read(model);
+        }
         Destination::Settings => model.update(|m| {
             leave_workspaces(m);
             m.settings = true;
@@ -145,6 +156,7 @@ pub(super) fn title_key(destination: Destination) -> Msg {
         Destination::ReviewedRules => Msg::RulesDestination,
         Destination::RuntimeChecks => Msg::RuntimeChecks,
         Destination::Workspaces => Msg::Projects,
+        Destination::PersonalSync => Msg::SyncDestination,
         Destination::Diagnostics => Msg::Diagnostics,
         Destination::Settings => Msg::Settings,
     }

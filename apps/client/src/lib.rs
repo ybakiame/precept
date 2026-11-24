@@ -7,3 +7,4 @@ pub mod native;
 pub mod operator;
 mod paths;
 pub mod settings;
+pub mod sync_files;

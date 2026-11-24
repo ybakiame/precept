@@ -97,3 +97,5 @@ pub(crate) const KEYBOARD: &str =
 pub(crate) const MEMORY: &str = "M6 3H18V21L12 16.5L6 21Z";
 pub(crate) const FILE: &str = "M6 3H14L19 8V21H6ZM14 3V8H19";
 pub(crate) const RESET: &str = "M4 12A8 8 0 1 0 6.3 6.3M4 4V8H8";
+/// Personal sync: two devices exchanging a sealed record.
+pub(crate) const SYNC: &str = "M4 8H17M14 5L17 8L14 11M20 16H7M10 13L7 16L10 19M17 4V20H4";
