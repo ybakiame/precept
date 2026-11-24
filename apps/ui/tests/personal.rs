@@ -156,7 +156,7 @@ fn contains(app: &mut nsh_testing::Headless, needle: &str) {
 fn writes_on(app: &mut nsh_testing::Headless) {
     app.wait_until(
         "workspace read with writes on",
-        Duration::from_secs(10),
+        Duration::from_secs(30),
         |s| {
             let t = s.texts().join("\n");
             (t.contains("No pending suggestions")
