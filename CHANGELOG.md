@@ -6,6 +6,11 @@ data between schemas with the versioned Profile export and import.
 
 ## Unreleased
 
+- **Index-first briefings:** session-start briefings now list every applicable
+  repository rule with its key, title, enforcement, check state and an explicit
+  full-text pointer instead of spending the 12 KiB budget on rule bodies. Full
+  text remains available on demand through `get_effective_context`, and shortened
+  index metadata is marked explicitly.
 - **Rule authoring diagnostics:** Operator-only `precept lint-rules PROJECT` and
   the Desktop Rules page report bounded, redacted syntax and semantic diagnostics
   with stable codes and line/column positions. Duplicate keys, identical canonical

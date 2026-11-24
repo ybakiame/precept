@@ -153,6 +153,15 @@ fn many_rules_checks_repeated_files_and_large_files_report_stage_costs() {
         let briefing = render("benchmark", &context, Moment::Start);
         let hook_ms = context_ms + started.elapsed();
         assert!(briefing.len() <= 15 * 1024);
+        assert_eq!(
+            briefing
+                .lines()
+                .filter(|line| line.starts_with("- `") && line.contains("text:MCP"))
+                .count(),
+            RULES
+        );
+        assert!((0..RULES).all(|index| briefing.contains(&format!("benchmark-{index}"))));
+        assert!(!briefing.contains("Follow the reviewed benchmark contract."));
         if sample >= 2 {
             context_samples.push(context_ms);
             hook_samples.push(hook_ms);

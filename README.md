@@ -26,8 +26,10 @@ an MCP server, harness hooks and an NSH desktop operator app.
   for your review), work-session tools and project memory (`remember`, `recall`,
   `reaffirm`, `forget`). Work sessions use one goal plus structured milestone/task
   items, single-item CAS updates and full-state reads for parallel agents.
-- Session-start briefings, an opt-in pre-tool gate and a stale-document warning
-  through harness hooks, and repository rules (`.precept/rules/`) with checks.
+- Session-start briefings with a bounded index entry for every applicable
+  repository rule and full rule text on demand through MCP, an opt-in pre-tool
+  gate and a stale-document warning through harness hooks, and repository rules
+  (`.precept/rules/`) with checks.
   Precept sets up Claude Code and Codex; other agents connect themselves with
   the [`precept-connect` skill](skills/precept-connect/SKILL.md) (`precept skill`
   fills in this machine's values).

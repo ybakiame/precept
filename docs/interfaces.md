@@ -134,8 +134,12 @@ import never confirms, enables or creates a repository contract.
 Effective context keeps a confirmed, enabled rule unless the request's selector
 definitely mismatches its `applies_to` (a dimension the request does not name
 keeps it); each projected preference carries `applies_to`, `priority` and
-`enforcement` when they are not the defaults. The session-start briefing says where
-a rule applies.
+`enforcement` when they are not the defaults. The session-start briefing is
+index-first for repository rules: within its 12 KiB budget it lists every
+applicable rule with its key, title, enforcement, check state and an explicit
+full-text pointer. Rule bodies are omitted from the briefing and remain available
+on demand in `get_effective_context` under `repository_rules[].text`; shortened
+index metadata is marked `index cut`.
 
 ### AGENTS.md pointer
 

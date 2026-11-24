@@ -12,6 +12,8 @@ pub const MAX_BYTES: usize = 12 * 1024;
 pub const MEMORY_BYTES: usize = 3 * 1024;
 /// The longest preference value shown before it is cut.
 const MAX_VALUE: usize = 1200;
+/// The longest rule title shown in an index entry before it is marked cut.
+const MAX_RULE_TITLE: usize = 48;
 
 fn cut(s: &str, max: usize) -> (&str, bool) {
     if s.len() <= max {
@@ -27,6 +29,23 @@ fn cut(s: &str, max: usize) -> (&str, bool) {
 fn one_line(s: &str, max: usize) -> String {
     let flat = s.split_whitespace().collect::<Vec<_>>().join(" ");
     cut(&flat, max).0.to_owned()
+}
+
+fn cut_label(s: &str, max: usize) -> (String, bool) {
+    let flat = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flat.len() <= max {
+        return (flat, false);
+    }
+    if max <= 3 {
+        return (cut(&flat, max).0.to_owned(), true);
+    }
+    let mut end = max - 3;
+    while !flat.is_char_boundary(end) {
+        end -= 1;
+    }
+    let mut out = flat[..end].to_owned();
+    out.push('…');
+    (out, true)
 }
 
 /// Why the briefing is shown: a new session, or a session that resumed after
@@ -291,29 +310,19 @@ fn demote(text: &str) -> String {
         .join("\n")
 }
 
-/// A repository rule: its key, file, tags, declared enforcement and what its
-/// checks found now, then its text.
-fn rule_entry(r: &Value) -> String {
-    let key = r.get("key").and_then(Value::as_str).unwrap_or("?");
-    let file = r.get("file").and_then(Value::as_str).unwrap_or("?");
-    let mut meta = vec![format!("repository · `{file}`")];
-    let tags: Vec<String> = r
-        .get("tags")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .map(|t| format!("#{t}"))
-        .collect();
-    if !tags.is_empty() {
-        meta.push(tags.join(" "));
-    }
-    if let Some(e) = r.get("enforcement").and_then(Value::as_str)
-        && e != "advisory"
-    {
-        meta.push(e.to_owned());
-    }
-    let checks = r.get("checks");
+/// One bounded index row. Full rule bodies stay in the MCP projection so every
+/// applicable rule remains discoverable without displacing the rest of the briefing.
+fn rule_index_entry(rule: &Value, max_bytes: usize) -> String {
+    let key = one_line(rule.get("key").and_then(Value::as_str).unwrap_or("?"), 120);
+    let title_text = rule
+        .get("title")
+        .and_then(Value::as_str)
+        .unwrap_or("untitled");
+    let enforcement = rule
+        .get("enforcement")
+        .and_then(Value::as_str)
+        .unwrap_or("advisory");
+    let checks = rule.get("checks");
     let total = checks
         .and_then(|c| c.get("total"))
         .and_then(Value::as_u64)
@@ -322,49 +331,36 @@ fn rule_entry(r: &Value) -> String {
         .and_then(|c| c.get("passed"))
         .and_then(Value::as_u64)
         .unwrap_or(0);
-    match checks.and_then(|c| c.get("status")).and_then(Value::as_str) {
-        Some("verified") => meta.push(format!("checks pass ({passed}/{total})")),
-        Some("failing") => {
-            let f = checks.and_then(|c| c.get("failure"));
-            let file = f
-                .and_then(|f| f.get("file"))
-                .and_then(Value::as_str)
-                .unwrap_or("?");
-            let what = match f.and_then(|f| f.get("kind")).and_then(Value::as_str) {
-                Some("exists") => "is missing".to_owned(),
-                Some("contains") => "lacks the expected text".to_owned(),
-                Some("absent") => "has text the rule excludes".to_owned(),
-                _ => format!(
-                    "`{}` differs",
-                    f.and_then(|f| f.get("path"))
-                        .and_then(Value::as_str)
-                        .unwrap_or("?")
-                ),
-            };
-            meta.push(format!(
-                "check failing: `{file}` {what} ({passed}/{total} pass)"
-            ));
-        }
-        Some("unavailable") => meta.push("checks could not run".into()),
-        _ => {}
+    let state = match checks.and_then(|c| c.get("status")).and_then(Value::as_str) {
+        Some("verified") => format!("ok {passed}/{total}"),
+        Some("failing") => format!("fail {passed}/{total}"),
+        Some("unavailable") => "unavailable".to_owned(),
+        Some("unchecked") => "unchecked".to_owned(),
+        _ => "unknown".to_owned(),
+    };
+    let prefix = format!("- `{key}` — ");
+    let suffix = format!(" · {enforcement} · {state} · text:MCP\n");
+    let room = max_bytes.saturating_sub(prefix.len() + suffix.len());
+    let (mut title, mut cut_title) = cut_label(title_text, room.min(MAX_RULE_TITLE));
+    let mut marker = "";
+    if cut_title {
+        marker = " · index cut";
+        let room = max_bytes.saturating_sub(prefix.len() + suffix.len() + marker.len());
+        let (shorter, still_cut) = cut_label(title_text, room.min(MAX_RULE_TITLE));
+        title = shorter;
+        cut_title = still_cut;
     }
-    let mut entry = format!("\n### {key}\n\n_{}_\n\n", meta.join(" · "));
-    if let Some(where_) = applies(r) {
-        entry.push_str(&format!("Applies to {where_} only.\n\n"));
+    if title.is_empty() {
+        title.push('?');
+        cut_title = true;
     }
-    if let Some(allowed) = r.get("allowed_values").and_then(Value::as_array) {
-        let v: Vec<&str> = allowed.iter().filter_map(Value::as_str).collect();
-        entry.push_str(&format!("Allowed values: {}\n\n", v.join(" | ")));
+    if !cut_title {
+        marker = "";
     }
-    let (text, cut_text) = cut(
-        r.get("text").and_then(Value::as_str).unwrap_or("").trim(),
-        MAX_VALUE,
-    );
-    entry.push_str(&demote(text));
-    if cut_text {
-        entry.push_str(" …");
+    let mut entry = format!("{prefix}{title}{marker}{suffix}");
+    if entry.len() > max_bytes {
+        entry = format!("{prefix}{title}{suffix}");
     }
-    entry.push('\n');
     entry
 }
 
@@ -374,7 +370,8 @@ pub fn render(project: &str, context: &Value, moment: Moment) -> String {
     out.push_str(&format!("# Precept: context for {project}\n\n"));
     if moment == Moment::Compact {
         out.push_str(
-            "Your conversation was compacted. These rules still apply; re-read them before continuing.\n\n",
+            "Your conversation was compacted. These rules still apply; call \
+             `get_effective_context` to re-read their full text before continuing.\n\n",
         );
     }
     out.push_str(
@@ -390,14 +387,16 @@ pub fn render(project: &str, context: &Value, moment: Moment) -> String {
         .cloned()
         .unwrap_or_default();
     if !rules.is_empty() {
-        out.push_str("\n## Repository rules\n");
-        for r in &rules {
-            let entry = rule_entry(r);
-            if out.len() + entry.len() > MAX_BYTES - 200 {
-                truncated = true;
-                break;
-            }
-            out.push_str(&entry);
+        out.push_str(
+            "\n## Repository rules\n\nIndex only: every applicable rule is listed. \
+             `text:MCP` means its body is omitted here; call \
+             `get_effective_context` and read that rule's `text`. `index cut` marks \
+             shortened index metadata.\n",
+        );
+        let available = MAX_BYTES.saturating_sub(384).saturating_sub(out.len());
+        let entry_bytes = available / rules.len();
+        for rule in &rules {
+            out.push_str(&rule_index_entry(rule, entry_bytes));
         }
     }
     let pending = context
@@ -497,9 +496,14 @@ pub fn render(project: &str, context: &Value, moment: Moment) -> String {
         ));
     }
     if truncated {
-        out.push_str(
-            "\n_Briefing cut to stay short: call `get_effective_context` for every rule._\n",
-        );
+        let scope = if rules.is_empty() {
+            "Briefing cut to stay short"
+        } else {
+            "Briefing cut after the complete rule index"
+        };
+        out.push_str(&format!(
+            "\n_{scope}: call `get_effective_context` for every rule and preference._\n"
+        ));
     }
     out
 }
@@ -565,7 +569,7 @@ mod tests {
     #[test]
     fn renders_contracts_preferences_and_compaction_within_bounds() {
         let context = json!({
-            "repository_rules":[{"key":"formatter","file":".precept/rules/formatter.md","text":"Use rustfmt.",
+            "repository_rules":[{"key":"formatter","title":"Rust formatting","file":".precept/rules/formatter.md","text":"Use rustfmt.",
                 "tags":["rust"],"enforcement":"hard","allowed_values":["rustfmt"],
                 "checks":{"status":"failing","passed":1,"total":2,"failure":{"file":"rustfmt.toml","kind":"exists"}}}],
             "pending_rules":[{"id":"x","key":"x"}],
@@ -578,8 +582,8 @@ mod tests {
         let b = render("alpha", &context, Moment::Compact);
         assert!(b.starts_with("# Precept: context for alpha"));
         assert!(b.contains("was compacted"));
-        assert!(b.contains("### formatter\n\n_repository · `.precept/rules/formatter.md` · #rust · hard · check failing: `rustfmt.toml` is missing (1/2 pass)_"));
-        assert!(b.contains("Allowed values: rustfmt\n\nUse rustfmt."));
+        assert!(b.contains("- `formatter` — Rust formatting · hard · fail 1/2 · text:MCP"));
+        assert!(!b.contains("Use rustfmt."));
         assert_eq!(
             demote("# A\n```\n# not\n```\n### B"),
             "#### A\n```\n# not\n```\n###### B"
@@ -589,6 +593,30 @@ mod tests {
         assert!(b.contains("_this project_"));
         assert!(b.contains("`partial`"));
         assert!(!render("alpha", &context, Moment::Start).contains("compacted"));
+
+        let keys: Vec<String> = (0..64)
+            .map(|index| format!("k{index:03}{}", "x".repeat(116)))
+            .collect();
+        let rules: Vec<Value> = keys
+            .iter()
+            .map(|key| {
+                json!({"key":key,"title":"t".repeat(200),"text":"PRIVATE-RULE-BODY",
+                    "enforcement":"hard","checks":{"status":"unchecked","passed":0,"total":0}})
+            })
+            .collect();
+        let indexed = render("alpha", &json!({"repository_rules":rules}), Moment::Start);
+        assert!(indexed.len() <= MAX_BYTES, "{} bytes", indexed.len());
+        assert_eq!(
+            indexed
+                .lines()
+                .filter(|line| line.starts_with("- `") && line.contains("text:MCP"))
+                .count(),
+            64
+        );
+        assert!(keys.iter().all(|key| indexed.contains(key)));
+        assert!(indexed.contains("index cut"));
+        assert!(!indexed.contains("PRIVATE-RULE-BODY"));
+        assert!(!indexed.contains("Briefing cut"));
 
         let many: Vec<Value> = (0..200)
             .map(|i| json!({"key":format!("k{i}"),"scope":"global","tags":[],"value":"合".repeat(800)}))
