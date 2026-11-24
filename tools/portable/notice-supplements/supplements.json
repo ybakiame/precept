@@ -186,6 +186,23 @@
       "reason": "Declared MIT OR Apache-2.0; the published crate ships no license files. Both verbatim texts come from the Cargo VCS pin for age 0.11.5"
     },
     {
+      "package": "age-core",
+      "version": "0.11.0",
+      "texts": [
+        {
+          "file": "fe56c030c2d8c3404a37fe711cebb27ebea13d0aacf7e3524db4198335ad8cd1.txt",
+          "sha256": "fe56c030c2d8c3404a37fe711cebb27ebea13d0aacf7e3524db4198335ad8cd1",
+          "source": "https://github.com/str4d/rage/blob/17446612f865c705e44fe392d9d41dd102fed137/LICENSE-MIT"
+        },
+        {
+          "file": "3708458dee7f359ac6c9c5558023ed481be87e5372c43ebd7f2ca7ad23c12026.txt",
+          "sha256": "3708458dee7f359ac6c9c5558023ed481be87e5372c43ebd7f2ca7ad23c12026",
+          "source": "https://github.com/str4d/rage/blob/17446612f865c705e44fe392d9d41dd102fed137/LICENSE-APACHE"
+        }
+      ],
+      "reason": "Declared MIT OR Apache-2.0; the published crate ships no license files. Both verbatim texts come from the Cargo VCS pin for age-core 0.11.0"
+    },
+    {
       "package": "hexf-parse",
       "version": "0.2.1",
       "no_text_required": "CC0-1.0",
