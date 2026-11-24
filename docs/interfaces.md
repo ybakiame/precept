@@ -400,6 +400,13 @@ sha256, tags, enforcement, optional title, allowed values, priority, applies_to,
 guard count, and `checks`); `pending_rules` lists uncommitted files by id and key.
 `contract_resolution.status` distinguishes `ready`, `partial`, `not_configured`,
 `invalid_source` (with `invalid_files`), `source_unavailable`, `source_changed`.
+For a parsed rule source, `contract_resolution.check_io` reports `reads`, `bytes`,
+`cached_files`, `max_reads` (64), `max_bytes` (1 MiB) and `exhausted`. Checks share
+one per-resolution cache of validated paths, file content and parsed TOML/JSON;
+each checked file is at most 256 KiB. A check that cannot read a file, including
+because the aggregate budget is exhausted, is `unavailable`; budget exhaustion
+also sets `budget_exhausted` and an `unavailable` count on that rule's checks and
+is never reported as `verified`.
 Whole-source refusal returns empty `preferences` and `repository_rules`; partial
 resolution suppresses affected unresolved keys only. Absence does not mean ordinary
 AGENTS/ADRs have no authority. Each projected preference carries its `tags`, so an

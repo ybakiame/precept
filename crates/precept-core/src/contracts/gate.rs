@@ -95,12 +95,13 @@ pub fn stale(snapshot: &Snapshot, paths: &[String]) -> Vec<serde_json::Value> {
         return vec![];
     };
     let mut out = vec![];
+    let mut cache = super::checks::CheckCache::new(root);
     for (rule, _) in snapshot.rules().unwrap_or_default() {
         if !snapshot.reviewed(&rule.id) {
             continue;
         }
         for check in rule.checks.iter().filter(|c| paths.contains(&c.file)) {
-            if let Some(failure) = super::checks::failure(root, check) {
+            if let Some(failure) = super::checks::failure_cached(check, &mut cache) {
                 out.push(serde_json::json!({
                     "rule": rule.id, "key": rule.key,
                     "file": super::file_of(&rule.id), "failure": failure,

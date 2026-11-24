@@ -4,6 +4,7 @@
 use super::parser::{DIR, MAX_BYTES, MAX_FILES, RuleFile, parse};
 use sha2::{Digest, Sha256};
 use std::{
+    cell::OnceCell,
     collections::BTreeSet,
     fs,
     io::Read as _,
@@ -24,6 +25,7 @@ pub struct Snapshot {
     /// Ids whose file Git tracks with no uncommitted change; `None` when Git
     /// could not tell (every rule is then unreviewed).
     reviewed: Option<BTreeSet<String>>,
+    parsed: OnceCell<Vec<Option<(RuleFile, String)>>>,
 }
 impl Snapshot {
     pub fn read(root: &Path) -> Self {
@@ -36,6 +38,7 @@ impl Snapshot {
             root: canonical,
             read,
             reviewed: None,
+            parsed: OnceCell::new(),
         }
     }
     /// Record which rule ids Git reports as committed and unchanged.
@@ -56,15 +59,15 @@ impl Snapshot {
         match &self.read {
             Read::Files(files) => files
                 .iter()
-                .filter(|(id, raw)| parse(id, raw).is_err())
-                .map(|(id, _)| id.clone())
+                .zip(self.parsed())
+                .filter(|(_, parsed)| parsed.is_none())
+                .map(|(id, _)| id.0.clone())
                 .collect(),
             _ => vec![],
         }
     }
-    /// Every rule with its file digest, only when all files parse.
-    pub(super) fn rules(&self) -> Option<Vec<(RuleFile, String)>> {
-        match &self.read {
+    fn parsed(&self) -> &[Option<(RuleFile, String)>] {
+        self.parsed.get_or_init(|| match &self.read {
             Read::Files(files) => files
                 .iter()
                 .map(|(id, raw)| {
@@ -73,6 +76,13 @@ impl Snapshot {
                         .map(|r| (r, format!("{:x}", Sha256::digest(raw))))
                 })
                 .collect(),
+            _ => vec![],
+        })
+    }
+    /// Every rule with its file digest, only when all files parse.
+    pub(super) fn rules(&self) -> Option<Vec<(RuleFile, String)>> {
+        match &self.read {
+            Read::Files(_) => self.parsed().iter().cloned().collect::<Option<Vec<_>>>(),
             _ => None,
         }
     }
@@ -155,25 +165,50 @@ fn read_file(path: &Path, max: usize) -> Result<Option<Vec<u8>>, ()> {
     Ok((raw.len() <= max).then_some(raw))
 }
 
-/// Read `relative` (a checked repository-relative path) under `root` without
-/// following a link at any level. `Ok(None)`: absent or not a regular file
-/// within bounds.
-pub(crate) fn read_inside(root: &Path, relative: &str, max: usize) -> Result<Option<Vec<u8>>, ()> {
+pub(crate) enum InsideRead {
+    Bytes(Vec<u8>),
+    Absent,
+    BudgetExceeded,
+}
+
+/// A checked read that cannot consume more than the remaining aggregate byte
+/// budget. Metadata races may read one byte beyond it to detect growth.
+pub(crate) fn read_inside_budget(
+    root: &Path,
+    relative: &str,
+    max: usize,
+    remaining: usize,
+) -> Result<InsideRead, ()> {
     let mut path = root.to_path_buf();
     let parts: Vec<&str> = relative.split('/').collect();
     for (i, part) in parts.iter().enumerate() {
         path.push(part);
         let meta = match fs::symlink_metadata(&path) {
             Ok(m) => m,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(InsideRead::Absent),
             Err(_) => return Err(()),
         };
         if link(&meta) {
-            return Ok(None);
+            return Ok(InsideRead::Absent);
         }
         if i + 1 < parts.len() && !meta.is_dir() {
-            return Ok(None);
+            return Ok(InsideRead::Absent);
         }
     }
-    read_file(&path, max)
+    let meta = fs::symlink_metadata(&path).map_err(|_| ())?;
+    if !meta.is_file() || link(&meta) || meta.len() > max as u64 {
+        return Ok(InsideRead::Absent);
+    }
+    if meta.len() > remaining as u64 {
+        return Ok(InsideRead::BudgetExceeded);
+    }
+    let file = fs::File::open(path).map_err(|_| ())?;
+    let mut raw = vec![];
+    file.take(remaining as u64 + 1)
+        .read_to_end(&mut raw)
+        .map_err(|_| ())?;
+    if raw.len() > remaining || raw.len() > max {
+        return Ok(InsideRead::BudgetExceeded);
+    }
+    Ok(InsideRead::Bytes(raw))
 }

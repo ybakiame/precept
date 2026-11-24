@@ -130,8 +130,13 @@ and masks nothing. Any invalid file refuses the whole source, naming the file.
 A served rule replaces Profile preferences of its key where it applies; one with
 `allowed` values keeps preferences whose value it allows and reports unresolved
 conflicts. Checks (a file exists, contains or lacks a substring, or a TOML/JSON
-value equals an expected one) run read-only against the repository on every read;
-each served rule carries `verified`, `failing` (with the first failure),
+value equals an expected one) run read-only against the repository on every read.
+One resolution shares a path-validated checked-file cache, including parsed
+TOML/JSON, across all applicable rules. Each file is at most 256 KiB; a resolution
+reads at most 64 distinct files and 1 MiB of checked-file content in aggregate.
+Exhaustion marks the affected checks `unavailable` with `budget_exhausted`, never
+`verified`, and `contract_resolution.check_io` reports reads, bytes, cache size
+and exhaustion. Each served rule carries `verified`, `failing` (with the first failure),
 `unchecked` or `unavailable`. Existing allowlisted documents remain valid document
 sources. Ordinary repository prose is not parsed into rules, and onboarding never
 scaffolds or rewrites `AGENTS.md` or rule files.

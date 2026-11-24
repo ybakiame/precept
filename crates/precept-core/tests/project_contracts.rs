@@ -216,6 +216,64 @@ fn checks_run_against_the_repository() {
 }
 
 #[test]
+fn one_check_cache_is_shared_by_all_applying_rules() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    fs::write(root.join("README.md"), "Run cargo fmt.").unwrap();
+    let extra = "[[check]]\nfile = \"README.md\"\ncontains = \"cargo fmt\"\n";
+    write(root, "a", &file("a", &[], extra));
+    write(root, "b", &file("b", &[], extra));
+    let snapshot = Snapshot::read(root).with_reviewed(all(&["a", "b"]));
+    let p = project("alpha", vec![], &snapshot, &SelectorQuery::default()).unwrap();
+    assert_eq!(p.repository_rules.len(), 2);
+    for rule in &p.repository_rules {
+        assert_eq!(rule["checks"]["status"], "verified");
+    }
+    assert_eq!(p.contract_resolution["check_io"]["reads"], 1);
+    assert_eq!(p.contract_resolution["check_io"]["cached_files"], 1);
+    assert_eq!(p.contract_resolution["check_io"]["exhausted"], false);
+}
+
+#[test]
+fn aggregate_check_budget_is_reported_across_rules() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    let mut ids = Vec::new();
+    for rule_index in 0..5 {
+        let id = format!("budget-{rule_index}");
+        let mut extra = String::new();
+        for check_index in 0..16 {
+            let file = format!("data-{rule_index}-{check_index}.txt");
+            fs::write(root.join(&file), "x").unwrap();
+            extra.push_str(&format!("[[check]]\nfile = \"{file}\"\n"));
+        }
+        write(root, &id, &file(&id, &[], &extra));
+        ids.push(id);
+    }
+    let refs: Vec<_> = ids.iter().map(String::as_str).collect();
+    let snapshot = Snapshot::read(root).with_reviewed(all(&refs));
+    let p = project("alpha", vec![], &snapshot, &SelectorQuery::default()).unwrap();
+    assert_eq!(p.contract_resolution["check_io"]["reads"], MAX_CHECK_READS);
+    assert_eq!(p.contract_resolution["check_io"]["exhausted"], true);
+    assert_eq!(
+        p.repository_rules
+            .iter()
+            .filter(|rule| rule["checks"]["status"] == "verified")
+            .count(),
+        4
+    );
+    let unavailable: Vec<_> = p
+        .repository_rules
+        .iter()
+        .filter(|rule| rule["checks"]["status"] == "unavailable")
+        .collect();
+    assert_eq!(unavailable.len(), 1);
+    assert_eq!(unavailable[0]["checks"]["passed"], 0);
+    assert_eq!(unavailable[0]["checks"]["unavailable"], 16);
+    assert_eq!(unavailable[0]["checks"]["budget_exhausted"], true);
+}
+
+#[test]
 fn missing_invalid_and_changed_sources_are_distinct() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();

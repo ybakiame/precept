@@ -70,13 +70,13 @@ impl Projection {
 }
 
 /// One served rule: what agents read, never private Profile provenance.
-fn served(r: &RuleFile, digest: &str, root: Option<&std::path::Path>) -> Value {
+fn served(r: &RuleFile, digest: &str, cache: Option<&mut checks::CheckCache>) -> Value {
     let mut v = json!({
         "id": r.id, "key": r.key, "text": r.body, "tags": r.tags,
         "file": file_of(&r.id), "sha256": digest, "review": "accepted",
         "enforcement": r.enforcement,
-        "checks": match root {
-            Some(root) => checks::evaluate(root, &r.checks),
+        "checks": match cache {
+            Some(cache) => checks::evaluate_cached(&r.checks, cache),
             None => json!({"status":"unavailable","passed":0,"total":r.checks.len()}),
         },
     });
@@ -200,13 +200,18 @@ pub fn project(
             .map(|c| c.key.clone())
             .collect();
     }
+    let mut cache = snapshot.root().map(checks::CheckCache::new);
     let repository_rules = applying
         .iter()
-        .map(|(r, digest)| served(r, digest, snapshot.root()))
+        .map(|(r, digest)| served(r, digest, cache.as_mut()))
         .collect();
+    let mut resolution = json!({"status":if unresolved.is_empty() { "ready" } else { "partial" }, "unresolved_keys":unresolved});
+    if let Some(cache) = &cache {
+        resolution["check_io"] = cache.stats();
+    }
     Ok(Projection {
         preferences: legacy,
-        contract_resolution: json!({"status":if unresolved.is_empty() { "ready" } else { "partial" }, "unresolved_keys":unresolved}),
+        contract_resolution: resolution,
         repository_rules,
         pending_rules,
     })
