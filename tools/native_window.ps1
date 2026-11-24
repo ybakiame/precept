@@ -68,6 +68,11 @@ function Owned-Window {
         [void][PreceptWindow]::GetWindowText($h,$text,512)
         $title = $text.ToString()
         $owned = $title.StartsWith('Precept ', [StringComparison]::Ordinal) -and $(if ($remote) { $title.Contains(" [$nonce]") } else { $title.EndsWith(" [$nonce]", [StringComparison]::Ordinal) })
+        if (-not $remote -and -not $owned) {
+            [uint32]$candidateOwner = 0
+            [void][PreceptWindow]::GetWindowThreadProcessId($h,[ref]$candidateOwner)
+            $owned = $candidateOwner -eq $expected -and $title -eq 'Precept'
+        }
         if ([PreceptWindow]::IsWindowVisible($h) -and $owned) { $script:ownedHandles.Add($h) }
         return $true
     },[IntPtr]::Zero) | Out-Null

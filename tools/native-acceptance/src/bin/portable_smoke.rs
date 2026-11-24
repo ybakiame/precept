@@ -203,17 +203,14 @@ struct Mcp {
 }
 impl Mcp {
     fn start(f: &Fixture) -> Self {
+        Self::start_in(f, &f.root.join("synthetic"))
+    }
+    fn start_in(f: &Fixture, dir: &Path) -> Self {
         let mut cmd = command(&f.bins.join("precept-mcp.exe"));
         cmd.arg("--runtime-dir")
             .arg(&f.location.runtime_dir)
-            .args([
-                "--endpoint",
-                &f.location.endpoint,
-                "--project",
-                "synthetic",
-                "--capability-file",
-            ])
-            .arg(f.location.runtime_dir.join("agent-synthetic.cap"));
+            .args(["--endpoint", &f.location.endpoint])
+            .current_dir(dir);
         let mut child = Owned(
             cmd.stdin(Stdio::piped())
                 .stdout(Stdio::piped())
@@ -237,10 +234,29 @@ impl Mcp {
                 }
             }
         });
-        Self { child, replies }
+        let mut mcp = Self { child, replies };
+        let initialized = mcp.request(
+            "initialize",
+            json!({
+                "protocolVersion":"2025-11-25",
+                "capabilities":{},
+                "clientInfo":{"name":"precept-portable-smoke","version":"1"}
+            }),
+        );
+        assert_eq!(initialized["result"]["serverInfo"]["name"], "precept");
+        writeln!(
+            mcp.child.0.stdin.as_mut().unwrap(),
+            "{}",
+            json!({"jsonrpc":"2.0","method":"notifications/initialized"})
+        )
+        .unwrap();
+        mcp.child.0.stdin.as_mut().unwrap().flush().unwrap();
+        mcp
     }
     fn request(&mut self, method: &str, mut params: Value) -> Value {
-        params["_meta"] = json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28"});
+        if method != "initialize" {
+            params["_meta"] = json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28"});
+        }
         writeln!(
             self.child.0.stdin.as_mut().unwrap(),
             "{}",
@@ -248,9 +264,15 @@ impl Mcp {
         )
         .unwrap();
         self.child.0.stdin.as_mut().unwrap().flush().unwrap();
-        self.replies
-            .recv_timeout(Duration::from_secs(10))
-            .expect("packaged MCP deadline")
+        loop {
+            let reply = self
+                .replies
+                .recv_timeout(Duration::from_secs(10))
+                .expect("packaged MCP deadline");
+            if reply.get("id") == Some(&json!(1)) {
+                return reply;
+            }
+        }
     }
 }
 struct Package {
@@ -506,26 +528,23 @@ async fn main() {
         Error::Unauthorized
     );
     record("project-credential-cannot-write");
-    let mut wrong = command(&bins.join("precept-mcp.exe"));
-    wrong
-        .arg("--runtime-dir")
-        .arg(&f.location.runtime_dir)
-        .args([
-            "--endpoint",
-            &f.location.endpoint,
-            "--project",
-            "synthetic",
-            "--capability-file",
-        ])
-        .arg(f.location.runtime_dir.join("operator.cap"));
-    assert!(!bounded(wrong).0);
-    record("mcp-refuses-operator-credential");
+    let mut outside = Mcp::start_in(&f, &f.root);
+    let outside_context = outside.request(
+        "tools/call",
+        json!({"name":"get_effective_context","arguments":{}}),
+    );
+    assert_eq!(outside_context["result"]["isError"], true);
+    record("mcp-refuses-context-outside-registered-project");
     let mut mcp = Mcp::start(&f);
     let list = mcp.request("tools/list", json!({}));
     let tools = list["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 2);
-    assert_eq!(tools[0]["name"], "get_effective_context");
-    assert_eq!(tools[1]["name"], "get_handoff");
+    assert_eq!(tools.len(), 11);
+    let names: Vec<&str> = tools
+        .iter()
+        .filter_map(|tool| tool["name"].as_str())
+        .collect();
+    assert!(names.contains(&"get_effective_context"));
+    assert!(names.contains(&"get_handoff"));
     let context = mcp.request(
         "tools/call",
         json!({"name":"get_effective_context","arguments":{}}),
@@ -541,7 +560,7 @@ async fn main() {
         json!({"name":"confirm_preference","arguments":{}}),
     );
     assert!(denied["error"].is_object());
-    record("packaged-mcp-exact-two-read-tools-context-missing-handoff-write-refusal");
+    record("packaged-mcp-current-tools-context-missing-handoff-write-refusal");
     drop(mcp);
     drop(client);
     f.ok(&["profile", "write", "disable"]);
@@ -555,6 +574,8 @@ async fn main() {
         "--endpoint".into(),
         f.location.endpoint.clone(),
         "--operator".into(),
+        "--appearance".into(),
+        "dark".into(),
     ];
     {
         let nonce = &precept_ipc::operator::operation_id().unwrap()[..16];
