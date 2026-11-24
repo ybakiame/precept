@@ -1055,6 +1055,7 @@ version = "0.4.3"
 dependencies = [
  "clap",
  "precept-ipc",
+ "precept-sync",
  "serde",
  "serde_json",
  "tempfile",

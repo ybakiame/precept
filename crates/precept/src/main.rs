@@ -2,6 +2,7 @@ mod doctor;
 mod operator;
 mod setup;
 mod skill;
+mod sync;
 mod transfer;
 use clap::{Parser, Subcommand};
 use precept_ipc::{Access, Client, Error, Location, load_credential};
@@ -18,6 +19,11 @@ enum Query {
     Profile {
         #[command(subcommand)]
         command: operator::Profile,
+    },
+    /// Manual encrypted personal preference synchronization.
+    Sync {
+        #[command(subcommand)]
+        command: sync::Command,
     },
     Preferences {
         #[command(subcommand)]
@@ -113,6 +119,7 @@ async fn run(args: Args) -> precept_ipc::Result<serde_json::Value> {
     match args.command {
         Query::Setup(options) => return setup::run(&args.location, &options).await,
         Query::Profile { command } => return operator::profile(&args.location, command).await,
+        Query::Sync { command } => return sync::run(&args.location, command).await,
         Query::Project { command } => return operator::project(&args.location, command).await,
         Query::Preferences { command } => {
             return operator::preferences(&args.location, command).await;
@@ -242,6 +249,7 @@ async fn main() {
         | Query::PreferenceDelete(p) => Some(&p.authority.operation_id),
         Query::PreferenceEnable(p) | Query::PreferenceDisable(p) => Some(&p.authority.operation_id),
         Query::HandoffPut(p) => Some(&p.authority.operation_id),
+        Query::Sync { command } => command.operation_id(),
         _ => None,
     }
     .filter(|id| {

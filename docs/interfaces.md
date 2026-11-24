@@ -332,6 +332,30 @@ The Windows→WSL bridge carries these typed Control/ProjectWrite operations wit
 a 1 MiB client→helper frame limit, matching native IPC. Tokens never cross the
 bridge, and the helper does not decrypt files or approve mutations.
 
+The `precept sync` CLI exposes `status`, `init`, `invitation`, `pair`, `trust`,
+`revoke`, `rotate`, `reset`, `export`, `preview`, `apply` and `abort`. Invitation
+files use `precept-personal-sync-invitation` v1 and contain only public identity
+material plus the complete-invitation fingerprint. Pair/trust refuse a file whose
+embedded fingerprint, supplied fingerprint or owner fingerprint does not match.
+The CLI requires an enabled OperatorWrite grant for every sync mutation.
+
+Export accepts exactly one of `--recipient DEVICE_ID` or
+`--passphrase-file FILE`; preview/apply read passphrases only from private files,
+strip one trailing line ending and preserve other whitespace. Output files are
+new private files and existing paths are refused before a mutating export/init.
+Preview selects non-conflicting entries by default. Repeatable `--key` narrows
+that set; conflicts require `--accept-conflicts` or a versioned per-key resolution
+file (`accept`, `keep_local`, or `manual` with complete content). Unknown and
+duplicate keys are refused.
+
+`precept sync preview ENVELOPE --out PREPARED.json` writes the client-side
+`precept-personal-sync-prepared` v1 template. It preserves the original signed
+envelope, compact local versions, sender/device ids, destination commit and exact
+selections; it never stores a passphrase. `precept sync apply PREPARED.json
+--operation-id ID [--passphrase-file FILE]` submits those immutable inputs. An
+uncertain result is retried with the identical template, operation id and
+passphrase. The CLI includes the operation id in mutation error output.
+
 ## MCP stdio
 
 The Rust `precept-mcp` binary uses newline-delimited UTF-8 JSON-RPC; stdout contains only
