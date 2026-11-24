@@ -49,6 +49,34 @@ for (const file of files) {
     }
   }
 }
+// Pull requests must run the same non-publishing gates as a release.
+const prWorkflow = '.github/workflows/pr.yml';
+if (existsSync(prWorkflow)) {
+  const parsed = parseDocument(readFileSync(prWorkflow, 'utf8'), { uniqueKeys: true });
+  requireCheck(parsed.errors.length === 0, `Invalid workflow YAML: ${prWorkflow}`);
+  const workflow = parsed.toJS();
+  requireCheck(!!workflow?.on && Object.hasOwn(workflow.on, 'pull_request'), 'PR workflow must run on pull_request');
+  requireCheck(workflow?.permissions?.contents === 'read', 'PR workflow must use read-only contents permission');
+  requireCheck(readFileSync(prWorkflow, 'utf8').includes('windows-latest'), 'PR workflow must include Windows gates');
+  const commands = Object.values(workflow?.jobs || {}).flatMap(job => (job.steps || []).map(step => step.run || '')).join('\n');
+  for (const command of [
+    'npm ci --prefix tools',
+    'node tools/check_source.mjs',
+    'cargo fmt --all -- --check',
+    'cargo clippy --workspace --all-targets --locked -- -D warnings',
+    'cargo test --workspace --all-targets --locked',
+    'cargo fmt --manifest-path apps/Cargo.toml --all -- --check',
+    'cargo clippy --manifest-path apps/Cargo.toml --workspace --all-targets --features precept-ui/native --locked -- -D warnings',
+    'cargo test --manifest-path apps/Cargo.toml --workspace --all-targets --features precept-ui/native --locked'
+  ]) {
+    requireCheck(commands.includes(command), `PR workflow is missing required gate: ${command}`);
+  }
+} else {
+  requireCheck(false, 'Missing PR quality-gate workflow');
+}
+const releaseWorkflow = parseDocument(readFileSync('.github/workflows/release.yml', 'utf8'), { uniqueKeys: true }).toJS();
+requireCheck(Object.keys(releaseWorkflow?.on || {}).length === 1 && Object.hasOwn(releaseWorkflow.on, 'workflow_dispatch'), 'Release publication must remain manual');
+
 // Cargo's core dependency is the authority; compare every active consumer.
 // This validates pins, never resolves them.
 // One product version: both Cargo workspaces, every crate and the app manifest.
