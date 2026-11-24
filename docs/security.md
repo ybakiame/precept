@@ -38,10 +38,15 @@ separate design with its own threat model.
   remembers write access.
 - The daemon's project set and startup choice live in its private `--state-dir`
   (0700/0600, strict JSON, bounded to 256 projects, written atomically); a damaged
-  file refuses start and is never repaired. Adding a project is an operator-write
-  action on one chosen path, checked daemon-side (Git root inside the daemon user's
-  home; system, other-filesystem, foreign-owned and control paths refused). GUIs and
-  the Windows bridge never list or scan directories; agents cannot check or add.
+  file refuses start and is never repaired. Each project stores a persistent root
+  identity (Unix device/inode or Windows volume/file index). Adding a project is an
+  operator-write action on one chosen path, checked daemon-side (Git root inside the
+  daemon user's home; system and control paths refused). Unix also requires the
+  home's filesystem and the daemon uid; Windows does not claim token-owner or
+  cross-volume enforcement. Startup, Profile selection, reads and write admission verify that identity;
+  missing or changed identity makes the entry unavailable without automatic adoption
+  or repair. GUIs and the Windows bridge never list or scan directories; agents cannot
+  check or add.
 - Windows Desktop configuration uses `%LOCALAPPDATA%/precept/config`, daemon
   state uses `%LOCALAPPDATA%/precept/state`, and runtime coordinates and
   credentials use `state/runtime`. Unix configuration/state follow XDG
@@ -94,7 +99,11 @@ separate design with its own threat model.
   uses only the capability of the registered project that holds the session's
   folder, so a session never sees another project's tools or context. The AGENTS.md pointer is written by the daemon only on an Operator
   request carrying the previewed file digest, only between Precept's markers, in a
-  served project's root, never through links; Precept never commits.
+  served project's root, never through links; Precept never commits. Repository
+  writes use private temporary files (0600 on Unix and an owner-only protected DACL
+  on Windows), recheck expected bytes before replacement, and never replace a
+  concurrent arrival when preview expected absence. This is not a content-CAS lock
+  against unrelated concurrent editors.
 - The pre-tool gate is off until the Operator turns it on per project
   (`project.gate`). It judges only committed hard rules' guards, answers through
   the project's agent capability, fails open (an unreachable daemon, a timeout or
@@ -133,15 +142,16 @@ separate design with its own threat model.
   Git commands are shell-free and bounded; configured external filters/submodules
   are refused before status/fingerprint. No repository rewriting or credential scraping.
 - Operator rule import reads only the fixed project-relative inventory in
-  [interfaces](interfaces.md). The daemon checks each component, refuses links and
+  [interfaces](interfaces.md). The daemon opens the expected root identity, traverses
+  each component descriptor-relative with no-follow semantics, refuses links and
   Windows reparse points, never recurses, bounds entries/files/bytes/output, and
   reports only closed skip reasons without OS errors, absolute paths or link
   targets. Agents and OperatorWrite peers cannot scan. Imported text is untrusted:
   front matter is strictly bounded, unsupported activation/applicability is
   disclosed rather than guessed, and selected items can become only suggestions.
 - Operator rule lint uses the same project-bound, bounded no-follow rule inventory.
-  It accepts no caller root, path or source text, needs no write grant, rechecks the
-  pinned canonical project root, and is unavailable to agents/MCP. Diagnostics carry
+  It accepts no caller root, path or source text, needs no write grant, opens only the
+  persisted expected root identity, and is unavailable to agents/MCP. Diagnostics carry
   only repository-relative filenames, stable codes, fixed messages and positions;
   source lines, values, rule keys, absolute roots, commands, link targets and raw
   parser errors never leave the daemon. Duplicate/scope and missing-path findings
@@ -162,13 +172,13 @@ separate design with its own threat model.
   and explicitly selected repositories; historical Handoff does not authorize actions.
 - Fingerprints are bounded, can race concurrent edits and do not attest ignored
   files, submodule internals, builds, devices or complete repository state.
-- Rule inventory and selector probes refuse observed symlinks and Windows
-  reparse points by path, but traversal is not handle-relative and is not an OS
-  sandbox. A same-user process that can rename directories or perform a
-  junction/symlink swap-and-restore during a read can race those checks. Root
-  identity rechecks detect ordinary replacement, not every swap/restore race;
-  persistent registration identity and handle-relative no-follow traversal remain
-  necessary before claiming race-safe repository isolation.
+- Rule inventory, selector probes, checked files and fixed import sources use a
+  pinned root handle with descriptor-relative no-follow traversal. Persistent root
+  identity detects ordinary path replacement while the original root is absent.
+  It cannot detect a swap-and-restore completed between requests. This is not an
+  OS sandbox: identity is not cryptographic and can be reused after deletion,
+  same-user processes can still race Git subprocesses and non-repository files,
+  and a process with daemon-state access can rewrite identity.
 - No production activation, in-place migration/repair, automatic Profile-at-rest
   encryption, full review/provenance, retention/recovery or release guarantee follows from this validation stage.
 

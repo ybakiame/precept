@@ -13,11 +13,11 @@ pub use report::{Diagnostic, LintFile, LintReport, LintStatus, LintSummary, Seve
 
 use super::file_of;
 use super::parser::{DIR, valid_id};
-use super::snapshot::selector_path_missing;
+use crate::repo_fs::Repository;
 use parse::Linted;
 use position::{Position, diagnostic};
 use report::{LintFile as ReportFile, PreviousRule, Severity as ReportSeverity, sort_and_bound};
-use std::{collections::BTreeSet, path::Path};
+use std::collections::BTreeSet;
 
 /// Lint one in-memory rule file. This function is pure and filesystem-free.
 pub fn lint(id: &str, raw: &[u8]) -> Vec<Diagnostic> {
@@ -30,7 +30,7 @@ pub(super) fn report(status: LintStatus, files: Vec<LintFile>) -> LintReport {
 
 pub(super) fn lint_files<'a>(
     sources: impl Iterator<Item = (&'a str, &'a [u8], Option<&'static str>)>,
-    root: Option<&Path>,
+    root: Option<&Repository>,
 ) -> LintReport {
     let mut files: Vec<Linted> = sources
         .map(|(id, raw, failure)| match failure {
@@ -78,7 +78,7 @@ pub(super) fn lint_files<'a>(
             (root, file.paths_position, file.rule.clone())
         {
             for path in &rule.applies_to.paths {
-                if selector_path_missing(root, path) == Some(true) {
+                if root.selector_missing(path) == Some(true) {
                     file.push_at(
                         "selector.path_not_present",
                         Severity::Warning,

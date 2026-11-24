@@ -736,11 +736,22 @@ pub(crate) fn test_state(
     profile: Option<&std::path::Path>,
 ) -> PathBuf {
     let state = state::StateDir::open(dir).unwrap();
-    let set = projects
+    let set: std::collections::BTreeMap<String, std::path::PathBuf> = projects
         .iter()
         .map(|(n, r)| ((*n).to_owned(), r.canonicalize().unwrap()))
         .collect();
-    state.save_projects(&set, &Default::default()).unwrap();
+    let identities = set
+        .iter()
+        .map(|(name, root)| {
+            (
+                name.clone(),
+                precept_core::repo_fs::Repository::identity(root).unwrap(),
+            )
+        })
+        .collect();
+    state
+        .save_projects(&set, &identities, &Default::default())
+        .unwrap();
     if let Some(profile) = profile {
         state.save_startup(profile).unwrap();
     }

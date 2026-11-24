@@ -19,7 +19,11 @@ fn daemon_state(
     precept_ipc::transport::private_dir(dir, true).unwrap();
     let list: Vec<serde_json::Value> = projects
         .iter()
-        .map(|(n, r)| serde_json::json!({"name":n,"root":r.canonicalize().unwrap()}))
+        .map(|(n, r)| {
+            let root = r.canonicalize().unwrap();
+            let identity = precept_core::repo_fs::Repository::identity(&root).unwrap();
+            serde_json::json!({"name":n,"root":root,"identity":identity})
+        })
         .collect();
     let path = dir.join("projects.json");
     let _ = std::fs::remove_file(&path);

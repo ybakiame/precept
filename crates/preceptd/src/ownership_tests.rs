@@ -296,3 +296,108 @@ async fn s3_root_drift_between_initial_check_and_final_admission_refuses_review(
         );
     }
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn project_add_reopens_the_expected_root_after_the_state_lock_wait() {
+    let temp = tempfile::tempdir().unwrap();
+    let state = temp.path().join("state");
+    precept_ipc::transport::private_dir(&state, true).unwrap();
+    let db = state.join("profile.sqlite3");
+    precept_write::Profile::create(&db).unwrap();
+    let root = temp.path().join("alpha");
+    std::fs::create_dir_all(root.join(".git")).unwrap();
+    let root = root.canonicalize().unwrap();
+    let displaced = temp.path().join("alpha-displaced");
+    let owner = precept_write::owner::Selected::select(&db)
+        .unwrap()
+        .acquire()
+        .unwrap();
+    let request = precept_write::Request::from_json(
+        &serde_json::to_vec(&json!({
+            "version":2,
+            "binding":owner.binding(),
+            "operation_id":"register",
+            "command":{"command":"register_project","name":"alpha","root":root,
+                "expected":{"kind":"absent"}}
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    owner.execute(&request, &|| Ok(())).unwrap();
+    drop(owner);
+    let location = Location {
+        runtime_dir: temp.path().join("run"),
+        endpoint: "unused".into(),
+    };
+    let mut runtime = RuntimeLease::acquire(&location).unwrap();
+    let credentials = Arc::new(runtime.credentials(&[]).unwrap());
+    let grants = precept_ipc::peer::Peers::default();
+    let state = test_state(&temp.path().join("daemon-state"), &[], Some(&db));
+    let state_dir = state::StateDir::open(&state).unwrap();
+    let profiles = Arc::new(
+        profiles::Profiles::new(location.clone(), state_dir, grants.writes.clone()).unwrap(),
+    );
+    let service = Service {
+        profiles: profiles.clone(),
+        lease: Arc::new(Mutex::new(runtime)),
+        credentials: Arc::new(RwLock::new(credentials.to_vec())),
+        mcp_executable: None,
+        grants,
+        activity: crate::activity::Activity::default(),
+        sessions: Arc::new(crate::sessions::Sessions::new()),
+        memory: Arc::new(crate::memory::Memory::new()),
+        evidence: Arc::new(crate::evidence::Evidence::new()),
+    };
+    profiles.select_remembered();
+    let operator = credentials
+        .iter()
+        .find(|credential| credential.access == Access::Operator)
+        .unwrap();
+    let (mut operator, ack) = open(&service, operator).await;
+    assert_eq!(ack["ready"], true);
+    send(&mut operator, "info", "profile.info", json!({})).await;
+    let info = read_frame(&mut operator).await.unwrap()["result"].clone();
+    send(
+        &mut operator,
+        "enable",
+        "profile.write.enable",
+        json!({"profile_id":info["binding"]["profile_id"],"generation":info["binding"]["generation"],"confirm":true}),
+    )
+    .await;
+    let enabled = read_frame(&mut operator).await.unwrap()["result"].clone();
+    assert_eq!(enabled["write_enabled"], true);
+    let credential =
+        precept_ipc::load_credential(&location, &location.runtime_dir.join("operator-write.cap"))
+            .unwrap();
+    let (mut writer, ack) = open(&service, &credential).await;
+    assert_eq!(ack["ready"], true);
+    let projects_path = state.join(state::PROJECTS);
+    let before = std::fs::read(&projects_path).ok();
+    let moved_root = root.clone();
+    let replacement = root.clone();
+    let moved_destination = displaced.clone();
+    *profiles.before_add_admission.lock().unwrap() = Some(Arc::new(move || {
+        std::fs::rename(&moved_root, &moved_destination).unwrap();
+        std::fs::create_dir_all(replacement.join(".git")).unwrap();
+    }));
+    send(
+        &mut writer,
+        "add",
+        "project.add",
+        json!({"name":"alpha","root":root}),
+    )
+    .await;
+    assert_eq!(
+        read_frame(&mut writer).await.unwrap()["error"],
+        "UnsafeRuntime"
+    );
+    assert!(displaced.is_dir());
+    assert!(root.join(".git").is_dir());
+    assert_eq!(std::fs::read(&projects_path).ok(), before);
+    *profiles.before_add_admission.lock().unwrap() = None;
+    send(&mut operator, "disable", "profile.write.disable", json!({})).await;
+    assert_eq!(
+        read_frame(&mut operator).await.unwrap()["error"],
+        Value::Null
+    );
+}

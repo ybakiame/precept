@@ -164,69 +164,11 @@ fn fingerprint_mode(path: &Path, metadata: &std::fs::Metadata) -> u32 {
     }
 }
 
-#[cfg(unix)]
 pub(crate) fn confined_file(root: &Path, relative: &Path) -> Option<std::fs::File> {
-    use std::{
-        ffi::CString,
-        os::{
-            fd::{AsRawFd, FromRawFd},
-            unix::ffi::OsStrExt,
-        },
-    };
-    let mut directory = std::fs::File::open(root).ok()?;
-    let components: Vec<_> = relative.components().collect();
-    for (index, component) in components.iter().enumerate() {
-        let std::path::Component::Normal(name) = component else {
-            return None;
-        };
-        let name = CString::new(name.as_bytes()).ok()?;
-        let last = index + 1 == components.len();
-        // Descriptor-relative, no-follow parent traversal prevents a concurrent
-        // directory swap from redirecting a content read outside the root.
-        let flags = libc::O_RDONLY
-            | libc::O_CLOEXEC
-            | libc::O_NOFOLLOW
-            | if last {
-                libc::O_NONBLOCK
-            } else {
-                libc::O_DIRECTORY
-            };
-        let fd = unsafe { libc::openat(directory.as_raw_fd(), name.as_ptr(), flags) };
-        if fd < 0 {
-            return None;
-        }
-        directory = unsafe { std::fs::File::from_raw_fd(fd) };
-    }
-    Some(directory)
-}
-#[cfg(windows)]
-pub(crate) fn confined_file(root: &Path, relative: &Path) -> Option<std::fs::File> {
-    use std::os::windows::{ffi::OsStringExt, fs::OpenOptionsExt, io::AsRawHandle};
-    use windows_sys::Win32::Storage::FileSystem::{
-        FILE_FLAG_OPEN_REPARSE_POINT, FILE_NAME_NORMALIZED, GetFinalPathNameByHandleW,
-    };
-    let file = std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
-        .open(root.join(relative))
-        .ok()?;
-    let mut name = vec![0u16; 32768];
-    let len = unsafe {
-        GetFinalPathNameByHandleW(
-            file.as_raw_handle(),
-            name.as_mut_ptr(),
-            name.len() as u32,
-            FILE_NAME_NORMALIZED,
-        )
-    } as usize;
-    if len == 0 || len >= name.len() {
-        return None;
-    }
-    let final_path = PathBuf::from(std::ffi::OsString::from_wide(&name[..len]));
-    if !final_path.starts_with(root.canonicalize().ok()?) {
-        return None;
-    }
-    Some(file)
+    precept_core::repo_fs::Repository::open(root)
+        .ok()?
+        .open_file(relative)
+        .ok()
 }
 
 fn fingerprint(root: &Path) -> Option<String> {

@@ -6,6 +6,7 @@
 //! repository root, and neither containing nor inside the runtime, the state
 //! directory, the selected Profile's directory or another project's root. It
 //! reads the path and its ancestors' metadata only; it never lists a directory.
+use precept_core::repo_fs::Repository;
 use std::path::{Path, PathBuf};
 
 /// A fixed refusal; the code crosses IPC and the bridge verbatim.
@@ -130,6 +131,38 @@ pub fn check(path: &Path, cx: &Context) -> Result<PathBuf, Refusal> {
         return Err(Refusal::OverlapsProject);
     }
     Ok(root)
+}
+
+/// Validate and pin the same directory for `project.add`.
+pub fn check_open(path: &Path, cx: &Context) -> Result<(PathBuf, Repository), Refusal> {
+    let root = check(path, cx)?;
+    let repository = Repository::open(&root).map_err(|_| Refusal::NotFound)?;
+    if repository.path() != root {
+        return Err(Refusal::NotFound);
+    }
+    let metadata = repository.metadata().map_err(|_| Refusal::NotFound)?;
+    if !metadata.is_dir() {
+        return Err(Refusal::NotDirectory);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let home_meta = std::fs::metadata(cx.home.as_ref().ok_or(Refusal::NoHome)?)
+            .map_err(|_| Refusal::NoHome)?;
+        let me = std::fs::metadata("/proc/self")
+            .map(|m| m.uid())
+            .unwrap_or(u32::MAX);
+        if metadata.dev() != home_meta.dev() {
+            return Err(Refusal::OtherFilesystem);
+        }
+        if metadata.uid() != me {
+            return Err(Refusal::NotOwner);
+        }
+    }
+    if repository.open_dir(Path::new(".git")).is_err() {
+        return Err(Refusal::NotGitRoot);
+    }
+    Ok((root, repository))
 }
 
 /// The folder name as a project name, if it is a valid one.

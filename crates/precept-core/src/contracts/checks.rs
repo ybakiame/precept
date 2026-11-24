@@ -1,14 +1,10 @@
 //! One evaluator for a rule's checks against the repository: configuration
 //! values and claims in documents alike. Read-only, bounded, inside the root.
 use super::parser::{Check, relative_path};
-use super::snapshot::{InsideRead, read_inside_budget};
+use crate::repo_fs::{FileRead, Repository};
 use serde::Serialize;
 use serde_json::{Value, json};
-use std::{
-    cell::OnceCell,
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+use std::{cell::OnceCell, collections::HashMap, path::Path, sync::Arc};
 
 /// The largest file a check reads.
 pub const MAX_CHECKED_BYTES: usize = 262_144;
@@ -44,14 +40,17 @@ enum ReadError {
 /// One resolution's checked-file cache. Paths are parser-validated and every
 /// file is read once; parsed TOML/JSON is reused by all checks of that file.
 pub struct CheckCache {
-    root: PathBuf,
+    repository: Option<Arc<Repository>>,
     entries: HashMap<String, Entry>,
     io: CheckIo,
 }
 impl CheckCache {
     pub fn new(root: &Path) -> Self {
+        Self::with_repository(Repository::open(root).ok().map(Arc::new))
+    }
+    pub(super) fn with_repository(repository: Option<Arc<Repository>>) -> Self {
         Self {
-            root: root.to_path_buf(),
+            repository,
             entries: HashMap::new(),
             io: CheckIo::default(),
         }
@@ -77,9 +76,13 @@ impl CheckCache {
             return Err(ReadError::Budget);
         }
         let remaining = MAX_CHECK_BYTES - self.io.bytes;
-        let entry = match read_inside_budget(&self.root, relative, MAX_CHECKED_BYTES, remaining) {
-            Ok(InsideRead::Absent) => Entry::Absent,
-            Ok(InsideRead::Bytes(raw)) => {
+        let Some(repository) = &self.repository else {
+            let entry = Entry::Unavailable;
+            self.entries.insert(relative.to_owned(), entry);
+            return self.entries.get(relative).ok_or(ReadError::Unavailable);
+        };
+        let entry = match repository.read_file(Path::new(relative), MAX_CHECKED_BYTES, remaining) {
+            Ok(raw) => {
                 self.io.reads += 1;
                 self.io.bytes += raw.len();
                 Entry::File(CheckedFile {
@@ -88,11 +91,12 @@ impl CheckCache {
                     json: OnceCell::new(),
                 })
             }
-            Ok(InsideRead::BudgetExceeded) => {
+            Err(FileRead::Missing | FileRead::Unsafe | FileRead::TooLarge) => Entry::Absent,
+            Err(FileRead::BudgetExceeded) => {
                 self.io.exhausted = true;
                 return Err(ReadError::Budget);
             }
-            Err(()) => Entry::Unavailable,
+            Err(FileRead::Unavailable) => Entry::Unavailable,
         };
         self.entries.insert(relative.to_owned(), entry);
         self.entries.get(relative).ok_or(ReadError::Unavailable)

@@ -133,11 +133,10 @@ impl Service {
             if !self.profiles.allowed(&p.project) {
                 return Err(Error::NotFound);
             }
-            let (_, roots) = self.profiles.read()?;
-            let root = roots.get(&p.project).ok_or(Error::NotFound)?;
+            let repository = self.profiles.repository(&p.project)?;
             return match (request.method.as_str(), p.enabled) {
                 ("integration.pointer", None) if p.expected_sha256.is_none() => {
-                    integration::status(root)
+                    integration::status(&repository)
                 }
                 ("integration.pointer.apply", Some(enabled)) => {
                     if p.expected_sha256
@@ -146,7 +145,7 @@ impl Service {
                     {
                         return Err(Error::InvalidRequest);
                     }
-                    integration::apply(root, enabled, p.expected_sha256.as_deref())
+                    integration::apply(&repository, enabled, p.expected_sha256.as_deref())
                 }
                 _ => Err(Error::InvalidRequest),
             };
@@ -178,7 +177,12 @@ impl Service {
                 return Err(Error::NotFound);
             }
             let (store, roots) = self.profiles.read()?;
-            let root = roots.get(&p.project).ok_or(Error::NotFound)?;
+            let repository = self.profiles.repository(&p.project)?;
+            if roots.get(&p.project).map(|root| root.as_os_str())
+                != Some(repository.path().as_os_str())
+            {
+                return Err(Error::UnsafeRuntime);
+            }
             let prefs = precept_core::PreferenceRepository::preferences(&store, &p.project)
                 .map_err(|_| Error::Unavailable)?;
             let convention = rule_export::convention(prefs, &p.project, p.id)?;
@@ -190,11 +194,14 @@ impl Service {
             }
             return match (request.method.as_str(), p.enabled) {
                 ("rules.export", None) if p.expected_sha256.is_none() => {
-                    rule_export::preview(root, &convention)
+                    rule_export::preview(&repository, &convention)
                 }
-                ("rules.export.apply", Some(enabled)) => {
-                    rule_export::apply(root, &convention, enabled, p.expected_sha256.as_deref())
-                }
+                ("rules.export.apply", Some(enabled)) => rule_export::apply(
+                    &repository,
+                    &convention,
+                    enabled,
+                    p.expected_sha256.as_deref(),
+                ),
                 _ => Err(Error::InvalidRequest),
             };
         }
@@ -224,7 +231,9 @@ impl Service {
             }
             let (store, roots) = self.profiles.read()?;
             let root = roots.get(&p.project).ok_or(Error::NotFound)?;
-            let (candidates, skipped) = importer::scan(root);
+            let identity = self.profiles.root_identity(&p.project)?;
+            let (candidates, skipped) =
+                importer::scan_expected(root, &identity).ok_or(Error::UnsafeRuntime)?;
             let candidates: Vec<Value> = candidates
                 .into_iter()
                 .map(|c| {
@@ -485,12 +494,8 @@ impl Service {
                 return Err(Error::Unauthorized);
             };
             let _: Empty = decode(params)?;
-            if !self.profiles.allowed(&project) {
-                return Err(Error::NotFound);
-            }
-            let (_, roots) = self.profiles.read()?;
-            let root = roots.get(&project).ok_or(Error::NotFound)?;
-            return Ok(json!({"project": project, "root": root}));
+            let repository = self.profiles.repository(&project)?;
+            return Ok(json!({"project": project, "root": repository.path()}));
         }
         // The pre-tool gate: a harness hook asks whether a tool call breaks a
         // committed hard rule's guard. Off unless the operator turned it on.
@@ -529,7 +534,7 @@ impl Service {
                 name: project.clone(),
                 root: root.clone(),
             };
-            let snapshot = precept_core::contracts::Snapshot::read(&root).with_reviewed(
+            let snapshot = self.profiles.snapshot(&project)?.with_reviewed(
                 precept_core::WorktreeInspector::reviewed(
                     &worktree::GitInspector,
                     &bound,
@@ -597,7 +602,7 @@ impl Service {
                 name: project.clone(),
                 root: root.clone(),
             };
-            let snapshot = precept_core::contracts::Snapshot::read(&root).with_reviewed(
+            let snapshot = self.profiles.snapshot(&project)?.with_reviewed(
                 precept_core::WorktreeInspector::reviewed(
                     &worktree::GitInspector,
                     &bound,
@@ -705,7 +710,8 @@ impl Service {
             &worktree::GitInspector,
             &FileDocuments,
         )
-        .map_err(|_| Error::NotFound)?;
+        .map_err(|_| Error::NotFound)?
+        .with_root_identity(self.profiles.root_identity(&project)?);
         let result = if let Some(task) = task {
             resolver.handoff(&task)
         } else if let Some(key) = key {

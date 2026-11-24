@@ -114,8 +114,11 @@ impl Profiles {
                             .get(name)
                             .or_else(|| s.projects.get(name))
                             .ok_or_else(unsafe_root)?;
-                        let current = pinned.canonicalize().map_err(|_| unsafe_root())?;
-                        if current != *pinned || !current.is_dir() {
+                        let identity = s.identities.get(name).ok_or_else(unsafe_root)?;
+                        let current =
+                            precept_core::repo_fs::Repository::open_expected(pinned, identity)
+                                .map_err(|_| unsafe_root())?;
+                        if current.path() != *pinned {
                             return Err(unsafe_root());
                         }
                         let reader = s
@@ -174,10 +177,14 @@ impl Profiles {
             }
             let mut file = next.clone();
             file.extend(gone.clone());
+            let mut identities = s.identities.clone();
+            identities.remove(&p.name);
             let mut switches = s.switches.clone();
             switches.reset(&p.name);
-            self.state_dir.save_projects(&file, &switches)?;
+            self.state_dir
+                .save_projects(&file, &identities, &switches)?;
             s.projects = next;
+            s.identities = identities;
             s.unavailable = gone;
             s.switches = switches;
             s.roots.remove(&p.name);
@@ -222,6 +229,7 @@ impl Profiles {
                     if roots.get(name) != Some(&root) {
                         return Err(Error::UnsafeRuntime);
                     }
+                    self.verify_root(name)?;
                 }
                 Ok(())
             };
@@ -368,13 +376,16 @@ impl Profiles {
             }
             "project.check" => {
                 let p: RootParams = crate::decode(params)?;
-                let s = self.state.lock().unwrap();
-                Ok(match self.scope_check_reason(&s, &p.root) {
+                let scope = {
+                    let s = self.state.lock().unwrap();
+                    self.scope_snapshot(&s)
+                };
+                let selected = self.state.lock().unwrap().selected.clone();
+                Ok(match scope.check_reason(&p.root) {
                     Ok(root) => {
                         // A Profile record at this root (a project removed
                         // earlier) keeps its name: adding it rejoins the set.
-                        let known = s
-                            .selected
+                        let known = selected
                             .as_ref()
                             .and_then(|x| x.reader().ok())
                             .and_then(|r| r.project_at_root(&root).ok().flatten());

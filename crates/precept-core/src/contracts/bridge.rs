@@ -200,7 +200,7 @@ pub fn project(
             .map(|c| c.key.clone())
             .collect();
     }
-    let mut cache = snapshot.root().map(checks::CheckCache::new);
+    let mut cache = snapshot.repository().map(|_| snapshot.check_cache());
     let repository_rules = applying
         .iter()
         .map(|(r, digest)| served(r, digest, cache.as_mut()))

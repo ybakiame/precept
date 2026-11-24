@@ -7,6 +7,7 @@ mod selection;
 mod sync;
 
 use crate::state::StateDir;
+use precept_core::repo_fs::{Repository, RootIdentity};
 use precept_ipc::{
     Error, Location, Result,
     write_grant::{Grant, Registry},
@@ -24,6 +25,7 @@ use std::{
 };
 
 type Roots = BTreeMap<String, PathBuf>;
+type Identities = BTreeMap<String, RootIdentity>;
 struct State {
     selected: Option<Arc<Selected>>,
     /// Roots registered in the selected Profile, for projects in the set.
@@ -32,6 +34,8 @@ struct State {
     grant: Option<Arc<Grant>>,
     /// The daemon-owned project set (`projects.json`): name → canonical root.
     projects: Roots,
+    /// Persistent identity for every listed entry, including unavailable ones.
+    identities: Identities,
     /// Entries of the file whose root no longer resolves to the same directory:
     /// kept (and removable), never served.
     unavailable: Roots,
@@ -58,9 +62,12 @@ pub trait Hooks {
 pub struct Profiles {
     #[cfg(test)]
     pub(crate) before_begin: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+    #[cfg(test)]
+    pub(crate) before_add_admission: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
     state: Mutex<State>,
     pub location: Location,
     runtime: PathBuf,
+    home: Option<PathBuf>,
     state_dir: StateDir,
     sync_lock: Mutex<()>,
     pub grants: Registry,
@@ -174,15 +181,21 @@ impl Profiles {
                 .map(|p| p.join(location.runtime_dir.file_name().unwrap_or_default()))
         }
         .map_err(|_| Error::UnsafeRuntime)?;
+        let home = crate::scope::home();
         let mut projects = Roots::new();
         let mut unavailable = Roots::new();
-        let (listed, switches) = state_dir.load_projects()?;
+        let (listed, identities, switches) = state_dir.load_projects()?;
         for (name, root) in listed {
-            match root.canonicalize() {
-                Ok(c) if c == root && c.is_dir() => {
-                    projects.insert(name, c);
-                }
-                _ => {
+            match identities.get(&name) {
+                Some(identity) => match Repository::open_expected(&root, identity) {
+                    Ok(repository) if repository.path() == root => {
+                        projects.insert(name, root);
+                    }
+                    _ => {
+                        unavailable.insert(name, root);
+                    }
+                },
+                None => {
                     unavailable.insert(name, root);
                 }
             }
@@ -199,18 +212,22 @@ impl Profiles {
         let this = Self {
             #[cfg(test)]
             before_begin: Mutex::new(None),
+            #[cfg(test)]
+            before_add_admission: Mutex::new(None),
             state: Mutex::new(State {
                 selected: None,
                 roots: Roots::new(),
                 owner: None,
                 grant: None,
                 projects,
+                identities,
                 unavailable,
                 startup_failure: None,
                 switches,
             }),
             location,
             runtime,
+            home,
             state_dir,
             sync_lock: Mutex::new(()),
             grants,
@@ -248,6 +265,49 @@ impl Profiles {
     pub fn allowed(&self, name: &str) -> bool {
         self.state.lock().unwrap().projects.contains_key(name)
     }
+    pub fn root_identity(&self, name: &str) -> Result<RootIdentity> {
+        let s = self.state.lock().unwrap();
+        if !s.projects.contains_key(name) {
+            return Err(Error::NotFound);
+        }
+        s.identities.get(name).cloned().ok_or(Error::UnsafeRuntime)
+    }
+    pub fn verify_root(&self, name: &str) -> Result<()> {
+        let (root, identity) = {
+            let s = self.state.lock().unwrap();
+            if !s.projects.contains_key(name) {
+                return Err(Error::NotFound);
+            }
+            (
+                s.projects.get(name).ok_or(Error::NotFound)?.clone(),
+                s.identities.get(name).ok_or(Error::UnsafeRuntime)?.clone(),
+            )
+        };
+        let repository =
+            Repository::open_expected(&root, &identity).map_err(|_| Error::UnsafeRuntime)?;
+        if repository.path() != root {
+            return Err(Error::UnsafeRuntime);
+        }
+        Ok(())
+    }
+    pub fn repository(&self, name: &str) -> Result<Repository> {
+        let (root, identity) = {
+            let s = self.state.lock().unwrap();
+            if !s.projects.contains_key(name) {
+                return Err(Error::NotFound);
+            }
+            (
+                s.roots.get(name).ok_or(Error::NotFound)?.clone(),
+                s.identities.get(name).ok_or(Error::UnsafeRuntime)?.clone(),
+            )
+        };
+        Repository::open_expected(&root, &identity).map_err(|_| Error::UnsafeRuntime)
+    }
+    pub fn snapshot(&self, name: &str) -> Result<precept_core::contracts::Snapshot> {
+        Ok(precept_core::contracts::Snapshot::from_repository(
+            self.repository(name)?,
+        ))
+    }
     /// Projects whose agent credential is published (shared with agents).
     pub fn shared_names(&self) -> Vec<String> {
         let s = self.state.lock().unwrap();
@@ -277,33 +337,41 @@ impl Profiles {
     }
     /// The project set for `project.list`: name, root and state.
     pub fn list(&self) -> Value {
-        let s = self.state.lock().unwrap();
-        let mut out: Vec<Value> = s
-            .projects
+        let (projects, unavailable, roots, identities, switches) = {
+            let s = self.state.lock().unwrap();
+            (
+                s.projects.clone(),
+                s.unavailable.clone(),
+                s.roots.clone(),
+                s.identities.clone(),
+                s.switches.clone(),
+            )
+        };
+        let current = |name: &str, root: &PathBuf| {
+            identities
+                .get(name)
+                .and_then(|identity| Repository::open_expected(root, identity).ok())
+                .is_some_and(|repository| repository.path() == root)
+        };
+        let mut out: Vec<Value> = projects
             .iter()
             .map(|(name, root)| {
-                // Without a selected Profile nothing is registered; a missing
-                // root still reads as unavailable.
-                let agents = !s.switches.withheld.contains(name);
-                let propose = s.switches.proposers.contains(name);
-                let gate = s.switches.gated.contains(name);
-                let state = if s.roots.contains_key(name) {
-                    "ready"
-                } else if root.is_dir() {
-                    "unregistered"
-                } else {
+                let agents = !switches.withheld.contains(name);
+                let propose = switches.proposers.contains(name);
+                let gate = switches.gated.contains(name);
+                let state = if !current(name, root) {
                     "unavailable"
+                } else if roots.contains_key(name) {
+                    "ready"
+                } else {
+                    "unregistered"
                 };
                 json!({"name":name,"root":root,"state":state,"agents":agents,"propose":propose,"gate":gate})
             })
             .collect();
-        out.extend(
-            s.unavailable
-                .iter()
-                .map(|(name, root)| {
-                    json!({"name":name,"root":root,"state":"unavailable","agents":!s.switches.withheld.contains(name),"propose":s.switches.proposers.contains(name),"gate":s.switches.gated.contains(name)})
-                }),
-        );
+        out.extend(unavailable.iter().map(|(name, root)| {
+            json!({"name":name,"root":root,"state":"unavailable","agents":!switches.withheld.contains(name),"propose":switches.proposers.contains(name),"gate":switches.gated.contains(name)})
+        }));
         Value::Array(out)
     }
 }

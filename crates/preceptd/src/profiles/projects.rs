@@ -12,6 +12,7 @@ impl Profiles {
         access: &Access,
         name: &str,
         root: &Path,
+        identity: &RootIdentity,
     ) -> Result<Value> {
         let Access::OperatorWrite {
             profile_id,
@@ -38,8 +39,8 @@ impl Profiles {
                     .check()
                     .map_err(|_| precept_write::Error::Unauthorized)?;
                 // The root must still be the same directory at admission.
-                match root.canonicalize() {
-                    Ok(current) if current == root && current.is_dir() => Ok(()),
+                match Repository::open_expected(root, identity) {
+                    Ok(repository) if repository.path() == root => Ok(()),
                     _ => Err(precept_write::Error::UnsafeWorkspace),
                 }
             })
@@ -66,8 +67,9 @@ impl Profiles {
         if s.roots.contains_key(&p.name) {
             return Err(Error::Conflict);
         }
-        match root.canonicalize() {
-            Ok(current) if current == root && current.is_dir() => {}
+        let identity = s.identities.get(&p.name).ok_or(Error::UnsafeRuntime)?;
+        match Repository::open_expected(&root, identity) {
+            Ok(repository) if repository.path() == root => {}
             _ => return Err(Error::UnsafeRuntime),
         }
         let reader = s
@@ -82,7 +84,7 @@ impl Profiles {
             Err(precept_store::Error::UnknownProject) => {}
             Err(_) => return Err(Error::Unavailable),
         }
-        let receipt = Self::register_root(&s, &grant, &access, &p.name, &root)?;
+        let receipt = Self::register_root(&s, &grant, &access, &p.name, &root, identity)?;
         s.roots.insert(p.name.clone(), root.clone());
         Ok(json!({"registered":p.name,"root":root,"receipt":receipt}))
     }
@@ -96,6 +98,36 @@ impl Profiles {
             return Err(Error::Unauthorized);
         }
         let p: AddParams = crate::decode(params)?;
+        let s = self.state.lock().unwrap();
+        authority.check()?;
+        let grant = s.grant.as_ref().ok_or(Error::Unauthorized)?.clone();
+        if grant.access() != access || grant.check().is_err() {
+            return Err(Error::Unauthorized);
+        }
+        if !precept_ipc::valid_project(&p.name)
+            || s.projects
+                .keys()
+                .chain(s.unavailable.keys())
+                .any(|n| n.eq_ignore_ascii_case(&p.name))
+        {
+            return Err(Error::Conflict);
+        }
+        if s.projects.len() + s.unavailable.len() >= MAX_PROJECTS {
+            return Err(Error::Capacity);
+        }
+        let scope = self.scope_snapshot(&s);
+        drop(s);
+        let repository = scope.open(&p.root)?;
+        let root = repository.path().to_path_buf();
+        if root != p.root {
+            // Only the canonical root `project.check` returned.
+            return Err(Error::InvalidRequest);
+        }
+        let identity = repository.root_identity().clone();
+        #[cfg(test)]
+        if let Some(hook) = self.before_add_admission.lock().unwrap().clone() {
+            hook();
+        }
         let mut s = self.state.lock().unwrap();
         authority.check()?;
         let grant = s.grant.as_ref().ok_or(Error::Unauthorized)?.clone();
@@ -113,14 +145,15 @@ impl Profiles {
         if s.projects.len() + s.unavailable.len() >= MAX_PROJECTS {
             return Err(Error::Capacity);
         }
-        let root = self.scope_check(&s, &p.root)?;
-        if root != p.root {
-            // Only the canonical root `project.check` returned.
-            return Err(Error::InvalidRequest);
-        }
         let mut all: Vec<PathBuf> = s.projects.values().cloned().collect();
         all.extend(s.roots.values().cloned());
-        all.push(root.clone());
+        all.extend(s.unavailable.values().cloned());
+        if all
+            .iter()
+            .any(|other| other.starts_with(&root) || root.starts_with(other))
+        {
+            return Err(Error::UnsafeRuntime);
+        }
         let reader = s
             .selected
             .as_ref()
@@ -140,13 +173,21 @@ impl Profiles {
         let receipt = if registered {
             Value::Null
         } else {
-            Self::register_root(&s, &grant, &access, &p.name, &root)?
+            Self::register_root(&s, &grant, &access, &p.name, &root, &identity)?
         };
+        let repository =
+            Repository::open_expected(&root, &identity).map_err(|_| Error::UnsafeRuntime)?;
+        if repository.path() != root {
+            return Err(Error::UnsafeRuntime);
+        }
         // Persist, then apply, then publish the credential. A failure here
         // leaves at most a registered but unlisted project: inert, and adding
         // it again only rejoins the set.
+        let previous_identities = s.identities.clone();
         let mut next = s.projects.clone();
         next.insert(p.name.clone(), root.clone());
+        let mut next_identities = s.identities.clone();
+        next_identities.insert(p.name.clone(), identity);
         let mut file = next.clone();
         file.extend(s.unavailable.clone());
         // A project (re)joins shared with agents, without agent suggestions
@@ -154,17 +195,21 @@ impl Profiles {
         let mut switches = s.switches.clone();
         switches.reset(&p.name);
         self.state_dir
-            .save_projects(&file, &switches)
+            .save_projects(&file, &next_identities, &switches)
             .map_err(|_| Error::OutcomeUnknown)?;
         s.projects = next;
+        s.identities = next_identities;
         s.switches = switches;
         s.roots.insert(p.name.clone(), root.clone());
         if hooks.added(&p.name).is_err() {
             s.projects.remove(&p.name);
             s.roots.remove(&p.name);
+            s.identities = previous_identities;
             let mut file = s.projects.clone();
             file.extend(s.unavailable.clone());
-            let _ = self.state_dir.save_projects(&file, &s.switches);
+            let _ = self
+                .state_dir
+                .save_projects(&file, &s.identities, &s.switches);
             return Err(Error::OutcomeUnknown);
         }
         Ok(json!({"added":p.name,"root":root,"registered":!registered,"receipt":receipt}))
@@ -188,7 +233,8 @@ impl Profiles {
         if changed {
             let mut file = s.projects.clone();
             file.extend(s.unavailable.clone());
-            self.state_dir.save_projects(&file, &switches)?;
+            self.state_dir
+                .save_projects(&file, &s.identities, &switches)?;
             s.switches = switches;
             let served = s.projects.contains_key(&p.name);
             drop(s);
@@ -233,7 +279,8 @@ impl Profiles {
         if changed {
             let mut file = s.projects.clone();
             file.extend(s.unavailable.clone());
-            self.state_dir.save_projects(&file, &switches)?;
+            self.state_dir
+                .save_projects(&file, &s.identities, &switches)?;
             s.switches = switches;
         }
         Ok(())

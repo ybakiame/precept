@@ -2,7 +2,45 @@ use super::*;
 use crate::scope;
 use precept_ipc::Access;
 use precept_store::SqliteStore;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+pub(super) struct ScopeSnapshot {
+    home: Option<PathBuf>,
+    daemon: Vec<PathBuf>,
+    profile: Option<PathBuf>,
+    projects: Vec<PathBuf>,
+}
+
+impl ScopeSnapshot {
+    pub(super) fn check_reason(&self, path: &Path) -> std::result::Result<PathBuf, &'static str> {
+        let daemon: Vec<&Path> = self.daemon.iter().map(PathBuf::as_path).collect();
+        scope::check_open(
+            path,
+            &scope::Context {
+                home: self.home.clone(),
+                daemon: &daemon,
+                profile: self.profile.as_deref(),
+                projects: &self.projects,
+            },
+        )
+        .map(|(root, _)| root)
+        .map_err(scope::Refusal::code)
+    }
+    pub(super) fn open(&self, path: &Path) -> Result<precept_core::repo_fs::Repository> {
+        let daemon: Vec<&Path> = self.daemon.iter().map(PathBuf::as_path).collect();
+        scope::check_open(
+            path,
+            &scope::Context {
+                home: self.home.clone(),
+                daemon: &daemon,
+                profile: self.profile.as_deref(),
+                projects: &self.projects,
+            },
+        )
+        .map(|(_, repository)| repository)
+        .map_err(|_| Error::UnsafeRuntime)
+    }
+}
 
 impl Profiles {
     pub(super) fn validate_paths(&self, profile: Option<&Path>, roots: &Roots) -> Result<()> {
@@ -22,14 +60,23 @@ impl Profiles {
         }
         Ok(())
     }
-    pub(super) fn selected_roots(&self, selected: &Selected, projects: &Roots) -> Result<Roots> {
+    pub(super) fn selected_roots(
+        &self,
+        selected: &Selected,
+        projects: &Roots,
+        identities: &Identities,
+    ) -> Result<Roots> {
         let store = selected.reader().map_err(storage_error)?;
         let mut roots = Roots::new();
         for (name, expected) in projects {
             match store.read_project(name) {
                 Ok(p) => {
                     let root = p.root.canonicalize().map_err(|_| Error::UnsafeRuntime)?;
-                    if !root.is_dir() || &root != expected {
+                    let identity = identities.get(name).ok_or(Error::UnsafeRuntime)?;
+                    let repository =
+                        precept_core::repo_fs::Repository::open_expected(&root, identity)
+                            .map_err(|_| Error::UnsafeRuntime)?;
+                    if repository.path() != expected || repository.path() != root {
                         return Err(Error::UnsafeRuntime);
                     }
                     roots.insert(name.clone(), root);
@@ -94,33 +141,19 @@ impl Profiles {
     }
     /// The scope context for a candidate root: home, the daemon's directories,
     /// the selected Profile's directory and every other project root.
-    pub(super) fn scope_check_reason(
-        &self,
-        s: &State,
-        path: &Path,
-    ) -> std::result::Result<PathBuf, &'static str> {
-        let daemon = [self.runtime.as_path(), self.state_dir.path()];
-        let profile = s
-            .selected
-            .as_ref()
-            .and_then(|x| x.path().parent().map(Path::to_path_buf));
+    pub(super) fn scope_snapshot(&self, s: &State) -> ScopeSnapshot {
         let mut projects: Vec<PathBuf> = s.projects.values().cloned().collect();
         projects.extend(s.roots.values().cloned());
         projects.extend(s.unavailable.values().cloned());
-        scope::check(
-            path,
-            &scope::Context {
-                home: scope::home(),
-                daemon: &daemon,
-                profile: profile.as_deref(),
-                projects: &projects,
-            },
-        )
-        .map_err(scope::Refusal::code)
-    }
-    pub(super) fn scope_check(&self, s: &State, path: &Path) -> Result<PathBuf> {
-        self.scope_check_reason(s, path)
-            .map_err(|_| Error::UnsafeRuntime)
+        ScopeSnapshot {
+            home: self.home.clone(),
+            daemon: vec![self.runtime.clone(), self.state_dir.path().to_path_buf()],
+            profile: s
+                .selected
+                .as_ref()
+                .and_then(|selected| selected.path().parent().map(Path::to_path_buf)),
+            projects,
+        }
     }
     /// Creates (optionally) and selects `path` with every check of an explicit
     /// selection. Used by `profile.create` / `profile.select` and at start.
@@ -149,7 +182,7 @@ impl Profiles {
         let projects = s.projects.clone();
         let publish_selection = (|| {
             let selected = Arc::new(Selected::select(path).map_err(storage_error)?);
-            let roots = self.selected_roots(&selected, &projects)?;
+            let roots = self.selected_roots(&selected, &projects, &s.identities)?;
             let mut all = projects.clone();
             all.extend(roots.clone());
             selected.reader().map_err(storage_error)?;

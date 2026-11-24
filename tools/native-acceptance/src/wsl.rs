@@ -181,9 +181,16 @@ impl Remote {
         self.wsl.ok("/usr/bin/rm", &["-f", &projects]);
         self.wsl
             .ok("/usr/bin/install", &["-m", "0600", "/dev/null", &projects]);
+        let identity = self.wsl.ok("/usr/bin/stat", &["-c", "%d:%i", &self.alpha]);
+        let (device, inode) = identity.trim().split_once(':').unwrap();
+        let identity = json!({
+            "kind":"unix",
+            "device":device.parse::<u64>().unwrap(),
+            "inode":inode.parse::<u64>().unwrap(),
+        });
         self.wsl.write(
             &projects,
-            json!({"format":1,"projects":[{"name":"alpha","root":self.alpha}]})
+            json!({"format":1,"projects":[{"name":"alpha","root":self.alpha,"identity":identity}]})
                 .to_string()
                 .as_bytes(),
         );

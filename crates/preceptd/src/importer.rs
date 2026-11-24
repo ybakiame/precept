@@ -1,27 +1,16 @@
 //! Reads only the fixed agent-rule paths of one already registered project.
 //! Every file is bounded and opened through the same no-follow adapter as
 //! worktree fingerprints. Nothing here writes or follows repository links.
-use crate::worktree::confined_file;
-use precept_core::import::{
-    self, Candidate, DIRECTORIES, DirectorySpec, FILES, Scan, Skipped, SourceSpec,
+use precept_core::{
+    import::{self, Candidate, DIRECTORIES, DirectorySpec, FILES, Scan, Skipped, SourceSpec},
+    repo_fs::{FileRead, OpenError, Repository, RootIdentity},
 };
-use std::{
-    fs,
-    io::Read,
-    path::{Component, Path, PathBuf},
-};
+use std::path::Path;
 
 const MAX_FILE: u64 = 256 * 1024;
 const MAX_TOTAL_BYTES: u64 = 1024 * 1024;
 const MAX_DIR_ENTRIES: usize = 64;
 const MAX_DIR_FILES: usize = 16;
-
-#[derive(Debug, PartialEq, Eq)]
-enum DirectoryState {
-    Ready(PathBuf),
-    Missing,
-    Unsafe,
-}
 
 #[derive(Debug, PartialEq, Eq)]
 enum FileState {
@@ -31,102 +20,19 @@ enum FileState {
     Budget,
 }
 
-#[cfg(windows)]
-fn reparse(metadata: &fs::Metadata) -> bool {
-    use std::os::windows::fs::MetadataExt;
-    metadata.file_attributes() & 0x400 != 0
-}
-
-#[cfg(not(windows))]
-fn reparse(_metadata: &fs::Metadata) -> bool {
-    false
-}
-
-fn safe_relative(relative: &Path) -> bool {
-    !relative.as_os_str().is_empty()
-        && relative
-            .components()
-            .all(|c| matches!(c, Component::Normal(_)))
-}
-
-fn directory(root: &Path, relative: &Path) -> DirectoryState {
-    if relative.as_os_str().is_empty() {
-        let Ok(metadata) = fs::symlink_metadata(root) else {
-            return DirectoryState::Missing;
-        };
-        return if metadata.is_dir() && !metadata.file_type().is_symlink() && !reparse(&metadata) {
-            DirectoryState::Ready(root.to_path_buf())
-        } else {
-            DirectoryState::Unsafe
-        };
-    }
-    if !safe_relative(relative) {
-        return DirectoryState::Unsafe;
-    }
-    let mut path = root.to_path_buf();
-    for component in relative.components() {
-        let Component::Normal(name) = component else {
-            return DirectoryState::Unsafe;
-        };
-        path.push(name);
-        let Ok(metadata) = fs::symlink_metadata(&path) else {
-            return DirectoryState::Missing;
-        };
-        if !metadata.is_dir() || metadata.file_type().is_symlink() || reparse(&metadata) {
-            return DirectoryState::Unsafe;
+fn read_file(repository: &Repository, source: &str, remaining: &mut u64) -> FileState {
+    let limit = (*remaining).min(MAX_FILE) as usize;
+    match repository.read_file(Path::new(source), MAX_FILE as usize, limit) {
+        Ok(bytes) => {
+            *remaining -= bytes.len() as u64;
+            match String::from_utf8(bytes) {
+                Ok(text) => FileState::Text(text),
+                Err(_) => FileState::Unsafe,
+            }
         }
-    }
-    DirectoryState::Ready(path)
-}
-
-fn read_file(root: &Path, source: &str, remaining: &mut u64) -> FileState {
-    let relative = Path::new(source);
-    if !safe_relative(relative) {
-        return FileState::Unsafe;
-    }
-    let parent = relative.parent().unwrap_or_else(|| Path::new(""));
-    match directory(root, parent) {
-        DirectoryState::Ready(_) => {}
-        DirectoryState::Missing => return FileState::Missing,
-        DirectoryState::Unsafe => return FileState::Unsafe,
-    }
-    let path = root.join(relative);
-    let Ok(metadata) = fs::symlink_metadata(&path) else {
-        return FileState::Missing;
-    };
-    if !metadata.is_file() || metadata.file_type().is_symlink() || reparse(&metadata) {
-        return FileState::Unsafe;
-    }
-    if metadata.len() > MAX_FILE {
-        return FileState::Unsafe;
-    }
-    if metadata.len() > *remaining {
-        return FileState::Budget;
-    }
-    let Some(opened) = confined_file(root, relative) else {
-        return FileState::Unsafe;
-    };
-    let Ok(opened_metadata) = opened.metadata() else {
-        return FileState::Unsafe;
-    };
-    if !opened_metadata.is_file()
-        || opened_metadata.file_type().is_symlink()
-        || reparse(&opened_metadata)
-    {
-        return FileState::Unsafe;
-    }
-    let limit = (*remaining).min(MAX_FILE);
-    let mut bytes = Vec::new();
-    if opened.take(limit + 1).read_to_end(&mut bytes).is_err() {
-        return FileState::Unsafe;
-    }
-    if bytes.len() as u64 > limit {
-        return FileState::Budget;
-    }
-    *remaining -= bytes.len() as u64;
-    match String::from_utf8(bytes) {
-        Ok(text) => FileState::Text(text),
-        Err(_) => FileState::Unsafe,
+        Err(FileRead::Missing) => FileState::Missing,
+        Err(FileRead::BudgetExceeded) => FileState::Budget,
+        Err(FileRead::Unsafe | FileRead::TooLarge | FileRead::Unavailable) => FileState::Unsafe,
     }
 }
 
@@ -140,7 +46,7 @@ fn skip(scan: &mut Scan, source: &str, title: &str, reason: &'static str) {
 }
 
 fn read_source(
-    root: &Path,
+    root: &Repository,
     source: &str,
     spec: SourceSpec,
     scan: &mut Scan,
@@ -164,35 +70,27 @@ fn read_source(
     !scan.exhausted()
 }
 
-fn matching_files(
-    root: &Path,
-    spec: DirectorySpec,
-    scan: &mut Scan,
-) -> Option<Vec<(String, PathBuf)>> {
-    let path = match directory(root, Path::new(spec.directory)) {
-        DirectoryState::Ready(path) => path,
-        DirectoryState::Missing => return None,
-        DirectoryState::Unsafe => {
-            skip(scan, spec.directory, "", "unreadable");
-            return None;
-        }
-    };
-    let Ok(entries) = fs::read_dir(path) else {
-        skip(scan, spec.directory, "", "unreadable");
-        return None;
-    };
-    let mut names = Vec::new();
-    for (index, entry) in entries.enumerate() {
-        if index >= MAX_DIR_ENTRIES {
+fn matching_files(root: &Repository, spec: DirectorySpec, scan: &mut Scan) -> Option<Vec<String>> {
+    let entries = match root.entries(
+        Path::new(spec.directory),
+        MAX_DIR_ENTRIES,
+        MAX_DIR_ENTRIES,
+        |_| true,
+    ) {
+        Ok(entries) => entries,
+        Err(OpenError::Missing) => return None,
+        Err(OpenError::TooMany) => {
             skip(scan, spec.directory, "", "budget_exhausted");
             return None;
         }
-        let Ok(entry) = entry else {
+        Err(_) => {
             skip(scan, spec.directory, "", "unreadable");
             return None;
-        };
-        let name = entry.file_name();
-        let Some(name) = name.to_str() else {
+        }
+    };
+    let mut names = Vec::new();
+    for entry in entries {
+        let Some(name) = entry.name.to_str() else {
             skip(scan, spec.directory, "", "unreadable");
             return None;
         };
@@ -212,23 +110,43 @@ fn matching_files(
     Some(
         names
             .into_iter()
-            .map(|name| {
-                let source = format!("{}/{}", spec.directory, name);
-                (source.clone(), root.join(source))
-            })
+            .map(|name| format!("{}/{}", spec.directory, name))
             .collect(),
     )
 }
 
 /// Every candidate and skipped source in the registered project's fixed inventory.
+#[cfg(test)]
 pub fn scan(root: &Path) -> (Vec<Candidate>, Vec<Skipped>) {
+    let Ok(repository) = Repository::open(root) else {
+        return Scan::default().into_parts();
+    };
+    scan_repository(&repository)
+}
+
+pub fn scan_expected(
+    root: &Path,
+    identity: &RootIdentity,
+) -> Option<(Vec<Candidate>, Vec<Skipped>)> {
+    let repository = Repository::open_expected(root, identity).ok()?;
+    Some(scan_repository(&repository))
+}
+
+fn scan_repository(repository: &Repository) -> (Vec<Candidate>, Vec<Skipped>) {
     let mut scan = Scan::default();
     let mut remaining = MAX_TOTAL_BYTES;
     for spec in FILES {
         if scan.exhausted() || remaining == 0 {
             break;
         }
-        if !read_source(root, spec.source, spec, &mut scan, &mut remaining, false) {
+        if !read_source(
+            repository,
+            spec.source,
+            spec,
+            &mut scan,
+            &mut remaining,
+            false,
+        ) {
             break;
         }
     }
@@ -236,10 +154,10 @@ pub fn scan(root: &Path) -> (Vec<Candidate>, Vec<Skipped>) {
         if scan.exhausted() || remaining == 0 {
             break;
         }
-        let Some(files) = matching_files(root, directory_spec, &mut scan) else {
+        let Some(files) = matching_files(repository, directory_spec, &mut scan) else {
             continue;
         };
-        for (source, _) in files {
+        for source in files {
             if scan.exhausted() || remaining == 0 {
                 break;
             }
@@ -249,7 +167,7 @@ pub fn scan(root: &Path) -> (Vec<Candidate>, Vec<Skipped>) {
                 sections: false,
                 frontmatter: Some(directory_spec.frontmatter),
             };
-            if !read_source(root, &source, spec, &mut scan, &mut remaining, true) {
+            if !read_source(repository, &source, spec, &mut scan, &mut remaining, true) {
                 break;
             }
         }
@@ -261,6 +179,7 @@ pub fn scan(root: &Path) -> (Vec<Candidate>, Vec<Skipped>) {
 mod tests {
     use super::*;
     use precept_core::import::SourceKind;
+    use std::fs;
 
     fn write(root: &Path, source: &str, text: &str) {
         let path = root.join(source);

@@ -100,10 +100,15 @@ or move existing data automatically.
 | Provenance/evidence | Minimal local records with reporter/observer/verifier attribution | No raw transcript or credential store; export requires explicit selection |
 
 The daemon's private state contains the registered project set and optional startup
-Profile choice. Registration is not permission to discover or share every project.
-The daemon checks only the path chosen by the operator and refuses system, control,
-foreign-owned or otherwise ineligible roots. GUI, bridge and agent clients never
-scan directories.
+Profile choice. Each project entry stores its canonical root and persistent filesystem
+identity (Unix device/inode or Windows volume/file index). Registration is not
+permission to discover or share every project. The daemon checks only the path chosen
+by the operator and refuses system, control and otherwise ineligible roots; Unix
+also enforces the daemon uid and home filesystem. Entries without identity, or whose
+current root does not match the stored
+identity, stay listed but unavailable; the daemon never adopts or repairs them
+automatically. The operator can explicitly remove and re-add such a project. GUI,
+bridge and agent clients never scan directories.
 
 ## Profile and write ownership
 
@@ -134,8 +139,9 @@ Repository rules are current project sources, not personal Profile values. They
 live in `.precept/rules/<id>.md`: one rule per file, TOML front matter between `+++`
 lines (`key`, optional `title`, `allowed`, `tags`, `priority`, `enforcement`,
 `[applies_to]`, `[[check]]`, `[[guard]]`; unknown fields refuse the file) and the
-rule's Markdown text below. At most 64 files of 16 KiB each are read; links are
-never followed. A file Git tracks with no uncommitted change is reviewed through
+rule's Markdown text below. At most 64 files of 16 KiB each are read through a pinned
+root handle and descriptor-relative no-follow traversal; links and Windows reparse
+points are never followed. A file Git tracks with no uncommitted change is reviewed through
 the repository and served; any other file is listed as pending (id and key only)
 and masks nothing. Any invalid file refuses the whole source, naming the file.
 
@@ -143,8 +149,8 @@ A served rule replaces Profile preferences of its key where it applies; one with
 `allowed` values keeps preferences whose value it allows and reports unresolved
 conflicts. Checks (a file exists, contains or lacks a substring, or a TOML/JSON
 value equals an expected one) run read-only against the repository on every read.
-One resolution shares a path-validated checked-file cache, including parsed
-TOML/JSON, across all applicable rules. Each file is at most 256 KiB; a resolution
+One resolution shares a pinned-root checked-file cache, including parsed TOML/JSON,
+across all applicable rules. Each file is at most 256 KiB; a resolution
 reads at most 64 distinct files and 1 MiB of checked-file content in aggregate.
 Exhaustion marks the affected checks `unavailable` with `budget_exhausted`, never
 `verified`, and `contract_resolution.check_io` reports reads, bytes, cache size

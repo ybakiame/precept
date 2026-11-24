@@ -3,6 +3,7 @@
 //! checks), strict JSON with unknown fields refused, bounded, written
 //! atomically. A file that is malformed, shared or oversized refuses the
 //! start; the daemon never repairs or rewrites state to make itself start.
+use precept_core::repo_fs::RootIdentity;
 use precept_ipc::{
     Error, Result,
     transport::{new_private, open_private, private_dir},
@@ -27,6 +28,8 @@ pub const STARTUP: &str = "startup.json";
 struct ProjectEntry {
     name: String,
     root: PathBuf,
+    /// Persistent filesystem identity. Legacy entries without one stay unavailable.
+    identity: Option<RootIdentity>,
     /// External agents may connect (its agent credential is published).
     /// Written explicitly; absent reads as shared.
     #[serde(default = "shared")]
@@ -148,7 +151,13 @@ impl StateDir {
     /// The project set, the projects withheld from agents, and those whose
     /// agents may suggest rules.
     #[allow(clippy::type_complexity)]
-    pub fn load_projects(&self) -> Result<(BTreeMap<String, PathBuf>, Switches)> {
+    pub fn load_projects(
+        &self,
+    ) -> Result<(
+        BTreeMap<String, PathBuf>,
+        BTreeMap<String, RootIdentity>,
+        Switches,
+    )> {
         let Some(text) = self.read(PROJECTS)? else {
             return Ok(Default::default());
         };
@@ -158,6 +167,7 @@ impl StateDir {
         }
         let mut seen = HashSet::new();
         let mut projects = BTreeMap::new();
+        let mut identities = BTreeMap::new();
         let mut switches = Switches::default();
         for entry in file.projects {
             // Names collide case-insensitively, like their credential files.
@@ -177,16 +187,20 @@ impl StateDir {
             if entry.gate {
                 switches.gated.insert(entry.name.clone());
             }
+            if let Some(identity) = entry.identity {
+                identities.insert(entry.name.clone(), identity);
+            }
             projects.insert(entry.name, entry.root);
         }
-        Ok((projects, switches))
+        Ok((projects, identities, switches))
     }
     pub fn save_projects(
         &self,
         projects: &BTreeMap<String, PathBuf>,
+        identities: &BTreeMap<String, RootIdentity>,
         switches: &Switches,
     ) -> Result<()> {
-        if projects.len() > MAX_PROJECTS {
+        if projects.len() > MAX_PROJECTS || identities.len() > projects.len() {
             return Err(Error::Capacity);
         }
         let file = ProjectsFile {
@@ -196,6 +210,7 @@ impl StateDir {
                 .map(|(name, root)| ProjectEntry {
                     name: name.clone(),
                     root: root.clone(),
+                    identity: identities.get(name).cloned(),
                     agents: !switches.withheld.contains(name),
                     propose: switches.proposers.contains(name),
                     gate: switches.gated.contains(name),
@@ -249,6 +264,28 @@ mod tests {
         let state = StateDir::open(&temp.path().join("state")).unwrap();
         (temp, state)
     }
+    fn identity() -> RootIdentity {
+        #[cfg(unix)]
+        {
+            RootIdentity::Unix {
+                device: 1,
+                inode: 2,
+            }
+        }
+        #[cfg(windows)]
+        {
+            RootIdentity::Windows {
+                volume: 1,
+                index: 2,
+            }
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            RootIdentity::Path {
+                path: PathBuf::from("/synthetic"),
+            }
+        }
+    }
     #[test]
     fn projects_round_trip_privately_and_absent_means_none() {
         let (_t, s) = scratch("precept-state-rt-");
@@ -261,10 +298,15 @@ mod tests {
             proposers: all.clone(),
             gated: all,
         };
-        s.save_projects(&p, &switches).unwrap();
-        assert_eq!(s.load_projects().unwrap(), (p.clone(), switches));
-        s.save_projects(&p, &Switches::default()).unwrap();
-        assert_eq!(s.load_projects().unwrap().1, Switches::default());
+        let identities = BTreeMap::from([("alpha".to_string(), identity())]);
+        s.save_projects(&p, &identities, &switches).unwrap();
+        assert_eq!(
+            s.load_projects().unwrap(),
+            (p.clone(), identities.clone(), switches)
+        );
+        s.save_projects(&p, &identities, &Switches::default())
+            .unwrap();
+        assert_eq!(s.load_projects().unwrap().2, Switches::default());
         let mode = std::fs::metadata(s.path().join(PROJECTS))
             .unwrap()
             .permissions()
@@ -324,7 +366,8 @@ mod tests {
             big.insert(format!("p{i}"), PathBuf::from(format!("/p{i}")));
         }
         assert_eq!(
-            s.save_projects(&big, &Switches::default()).err(),
+            s.save_projects(&big, &BTreeMap::new(), &Switches::default())
+                .err(),
             Some(Error::Capacity)
         );
     }

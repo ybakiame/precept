@@ -105,6 +105,100 @@ fn check_reads_one_path_and_answers_a_fixed_reason() {
     );
 }
 
+fn listed_states(daemon: &Daemon) -> Vec<(String, String)> {
+    daemon
+        .control("project.list", json!({}))
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|project| {
+            (
+                project["name"].as_str().unwrap().to_owned(),
+                project["state"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn legacy_entries_without_root_identity_are_unavailable_without_repair() {
+    let temp = tempfile::Builder::new()
+        .prefix("precept-identity-")
+        .tempdir()
+        .unwrap();
+    fs::create_dir(temp.path().join("alpha")).unwrap();
+    fs::create_dir(temp.path().join("beta")).unwrap();
+    let mut daemon = Daemon::launch(temp.path(), "legacy-a", None);
+    daemon.ready();
+    daemon.kill();
+    let path = temp.path().join("daemon-state/projects.json");
+    let mut state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    for project in state["projects"].as_array_mut().unwrap() {
+        project.as_object_mut().unwrap().remove("identity");
+    }
+    fs::remove_file(&path).unwrap();
+    private_bytes(&path, state.to_string().as_bytes());
+    let before = fs::read(&path).unwrap();
+    let mut daemon = Daemon::relaunch(temp.path(), "legacy-b");
+    daemon.ready();
+    assert_eq!(
+        listed_states(&daemon),
+        vec![
+            ("alpha".into(), "unavailable".into()),
+            ("beta".into(), "unavailable".into())
+        ]
+    );
+    assert_eq!(fs::read(&path).unwrap(), before);
+}
+
+#[test]
+fn a_replaced_root_is_unavailable_to_metadata_and_agent_reads_without_restart() {
+    let f = Fixture::created();
+    let binding = f.daemon.enable();
+    f.register(&binding, "alpha");
+    let root = f.temp.path().join("alpha");
+    let moved = f.temp.path().join("alpha-old");
+    fs::rename(&root, &moved).unwrap();
+    fs::create_dir(&root).unwrap();
+    assert!(listed_states(&f.daemon).contains(&("alpha".into(), "unavailable".into())));
+    let agent = f.daemon.credential("agent-alpha.cap");
+    assert_eq!(
+        f.daemon.call(&agent, "project.root", json!({})),
+        Err(Error::UnsafeRuntime)
+    );
+    let context = f.daemon.call(&agent, "context.get", json!({})).unwrap();
+    assert_eq!(context["contract_resolution"]["status"], "source_changed");
+    assert_eq!(context["repository_rules"], json!([]));
+    fs::remove_dir(&root).unwrap();
+    fs::rename(&moved, &root).unwrap();
+    assert!(listed_states(&f.daemon).contains(&("alpha".into(), "ready".into())));
+}
+
+#[test]
+fn a_replaced_root_is_unavailable_after_restart_even_at_the_same_path() {
+    let temp = tempfile::Builder::new()
+        .prefix("precept-identity-")
+        .tempdir()
+        .unwrap();
+    fs::create_dir(temp.path().join("alpha")).unwrap();
+    fs::create_dir(temp.path().join("beta")).unwrap();
+    let mut daemon = Daemon::launch(temp.path(), "swap-a", None);
+    daemon.ready();
+    daemon.kill();
+    fs::rename(temp.path().join("alpha"), temp.path().join("alpha-old")).unwrap();
+    fs::create_dir(temp.path().join("alpha")).unwrap();
+    let mut daemon = Daemon::relaunch(temp.path(), "swap-a");
+    daemon.ready();
+    assert_eq!(
+        listed_states(&daemon),
+        vec![
+            ("beta".into(), "unregistered".into()),
+            ("alpha".into(), "unavailable".into())
+        ]
+    );
+}
+
 fn add(f: &Fixture, name: &str, root: &str) -> precept_ipc::Result<Value> {
     f.daemon.call(
         &f.daemon.credential("operator-write.cap"),
@@ -160,12 +254,15 @@ fn add_applies_at_once_persists_and_remove_revokes_without_touching_the_profile(
     let saved: Value =
         serde_json::from_str(&fs::read_to_string(base.join("daemon-state/projects.json")).unwrap())
             .unwrap();
-    assert!(
-        saved["projects"]
-            .as_array()
-            .unwrap()
-            .contains(&json!({"name":"gamma","root":gamma,"agents":true}))
-    );
+    let saved_gamma = saved["projects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|project| project["name"] == "gamma")
+        .unwrap();
+    assert_eq!(saved_gamma["root"], json!(gamma));
+    assert_eq!(saved_gamma["agents"], true);
+    assert!(saved_gamma["identity"].is_object());
     assert_eq!(
         add(&f, "gamma", &gamma),
         Err(Error::Conflict),

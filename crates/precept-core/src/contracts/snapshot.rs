@@ -2,14 +2,9 @@
 //! that rule checks share. Observed links are refused; path checks are not a
 //! same-user rename/reparse-point race sandbox.
 use super::parser::{DIR, MAX_BYTES, MAX_FILES, RuleFile, parse};
+use crate::repo_fs::{FileRead, OpenError, Repository, RootIdentity};
 use sha2::{Digest, Sha256};
-use std::{
-    cell::OnceCell,
-    collections::BTreeSet,
-    fs,
-    io::Read as _,
-    path::{Path, PathBuf},
-};
+use std::{cell::OnceCell, collections::BTreeSet, path::Path, sync::Arc};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FileIssue {
@@ -60,7 +55,7 @@ enum Read {
     Unavailable,
 }
 pub struct Snapshot {
-    root: Option<PathBuf>,
+    repository: Option<Arc<Repository>>,
     read: Read,
     /// Ids whose file Git tracks with no uncommitted change; `None` when Git
     /// could not tell (every rule is then unreviewed).
@@ -69,13 +64,27 @@ pub struct Snapshot {
 }
 impl Snapshot {
     pub fn read(root: &Path) -> Self {
-        let canonical = root.canonicalize().ok();
-        let read = match &canonical {
-            None => Read::Unavailable,
-            Some(c) => read(c),
+        Self::open(Repository::open(root))
+    }
+
+    pub fn read_expected(root: &Path, identity: &RootIdentity) -> Self {
+        Self::open(Repository::open_expected(root, identity))
+    }
+
+    pub fn from_repository(repository: Repository) -> Self {
+        Self::open(Ok(repository))
+    }
+
+    fn open(repository: Result<Repository, OpenError>) -> Self {
+        let (repository, read) = match repository {
+            Ok(repository) => {
+                let read = read(&repository);
+                (Some(Arc::new(repository)), read)
+            }
+            Err(_) => (None, Read::Unavailable),
         };
         Self {
-            root: canonical,
+            repository,
             read,
             reviewed: None,
             parsed: OnceCell::new(),
@@ -102,7 +111,7 @@ impl Snapshot {
                         file.issue.map(FileIssue::code),
                     )
                 }),
-                self.root.as_deref(),
+                self.repository.as_deref(),
             ),
         }
     }
@@ -149,12 +158,21 @@ impl Snapshot {
     pub(super) fn reviewed(&self, id: &str) -> bool {
         self.reviewed.as_ref().is_some_and(|s| s.contains(id))
     }
-    pub(super) fn root(&self) -> Option<&Path> {
-        self.root.as_deref()
+    pub(super) fn repository(&self) -> Option<&Arc<Repository>> {
+        self.repository.as_ref()
+    }
+    pub(super) fn check_cache(&self) -> super::checks::CheckCache {
+        super::checks::CheckCache::with_repository(self.repository.clone())
     }
     pub fn unchanged(&self, root: &Path) -> bool {
-        let current = Self::read(root);
-        self.root.is_some() && self.root == current.root && self.read == current.read
+        let Some(repository) = &self.repository else {
+            return false;
+        };
+        if !repository.is_current() {
+            return false;
+        }
+        let current = Self::open(Repository::open_expected(root, repository.root_identity()));
+        current.repository.is_some() && self.read == current.read
     }
 }
 
@@ -170,43 +188,38 @@ fn source_id(name: &std::ffi::OsStr) -> Option<(String, Option<FileIssue>)> {
 }
 
 /// The file names under [`DIR`] that are rule files (`<id>.md`).
-fn read(root: &Path) -> Read {
-    let mut dir = root.to_path_buf();
-    for part in DIR.split('/') {
-        dir.push(part);
-        match fs::symlink_metadata(&dir) {
-            Ok(m) if m.is_dir() && !link(&m) => {}
-            Ok(_) => return Read::Invalid(SourceIssue::UnsafePath),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Read::Absent,
-            Err(_) => return Read::Unavailable,
-        }
-    }
-    let Ok(entries) = fs::read_dir(&dir) else {
-        return Read::Unavailable;
+fn read(repository: &Repository) -> Read {
+    let directory = match repository.open_dir(Path::new(DIR)) {
+        Ok(directory) => directory,
+        Err(OpenError::Missing) => return Read::Absent,
+        Err(OpenError::Unsafe) => return Read::Invalid(SourceIssue::UnsafePath),
+        Err(_) => return Read::Unavailable,
+    };
+    let entries = match directory.entries(MAX_FILES * 16, MAX_FILES, |name| {
+        name.as_encoded_bytes().ends_with(b".md")
+    }) {
+        Ok(entries) => entries,
+        Err(OpenError::TooMany) => return Read::Invalid(SourceIssue::TooManyFiles),
+        Err(OpenError::Unsafe) => return Read::Invalid(SourceIssue::UnsafePath),
+        Err(_) => return Read::Unavailable,
     };
     let mut files = vec![];
     for entry in entries {
-        let Ok(entry) = entry else {
-            return Read::Unavailable;
-        };
-        let name = entry.file_name();
+        let name = entry.name;
         let Some((id, name_issue)) = source_id(&name) else {
             continue;
         };
-        if files.len() >= MAX_FILES {
-            return Read::Invalid(SourceIssue::TooManyFiles);
-        }
         let (raw, issue) = if let Some(issue) = name_issue {
             (vec![], Some(issue))
         } else {
-            match read_file(&dir.join(&name), MAX_BYTES) {
-                FileRead::Bytes(raw) => (raw, None),
-                FileRead::Unavailable => return Read::Unavailable,
-                FileRead::UnsafePath => (vec![], Some(FileIssue::UnsafePath)),
-                FileRead::TooLarge => (vec![], Some(FileIssue::TooLarge)),
+            let relative = Path::new(DIR).join(&name);
+            match repository.read_file(&relative, MAX_BYTES, MAX_BYTES) {
+                Ok(raw) => (raw, None),
+                Err(FileRead::Missing | FileRead::Unsafe) => (vec![], Some(FileIssue::UnsafePath)),
+                Err(FileRead::TooLarge) => (vec![], Some(FileIssue::TooLarge)),
+                Err(FileRead::BudgetExceeded | FileRead::Unavailable) => return Read::Unavailable,
             }
         };
-        // Invalid entries stay empty so parsing and projection still refuse them.
         files.push(SourceFile {
             id: id.to_owned(),
             raw,
@@ -217,137 +230,11 @@ fn read(root: &Path) -> Read {
     Read::Files(files)
 }
 
-fn link(m: &fs::Metadata) -> bool {
-    if m.file_type().is_symlink() {
-        return true;
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        if m.file_attributes() & 0x400 != 0 {
-            return true;
-        }
-    }
-    false
-}
-
-enum FileRead {
-    Bytes(Vec<u8>),
-    UnsafePath,
-    TooLarge,
-    Unavailable,
-}
-
-/// A regular, unlinked file of at most `max` bytes. Read failures remain
-/// indistinguishable from other unavailable source failures.
-fn read_file(path: &Path, max: usize) -> FileRead {
-    let Ok(meta) = fs::symlink_metadata(path) else {
-        return FileRead::Unavailable;
-    };
-    if !meta.is_file() || link(&meta) {
-        return FileRead::UnsafePath;
-    }
-    if meta.len() > max as u64 {
-        return FileRead::TooLarge;
-    }
-    let Ok(file) = fs::File::open(path) else {
-        return FileRead::Unavailable;
-    };
-    let mut raw = vec![];
-    if file.take(max as u64 + 1).read_to_end(&mut raw).is_err() {
-        return FileRead::Unavailable;
-    }
-    if raw.len() > max {
-        FileRead::TooLarge
-    } else {
-        FileRead::Bytes(raw)
-    }
-}
-
-/// `Some(true)` only when no current no-follow entry can satisfy the selector.
-/// Links, unreadable metadata and an ambiguous root produce `None`.
-pub(super) fn selector_path_missing(root: &Path, relative: &str) -> Option<bool> {
-    match fs::symlink_metadata(root) {
-        Ok(meta) if meta.is_dir() && !link(&meta) => {}
-        _ => return None,
-    }
-    let directory = relative.ends_with('/');
-    let body = relative.strip_suffix('/').unwrap_or(relative);
-    let parts: Vec<&str> = body.split('/').collect();
-    let mut path = root.to_path_buf();
-    for (index, part) in parts.iter().enumerate() {
-        path.push(part);
-        let meta = match fs::symlink_metadata(&path) {
-            Ok(meta) => meta,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Some(true),
-            Err(_) => return None,
-        };
-        if link(&meta) {
-            return None;
-        }
-        if index + 1 < parts.len() {
-            if !meta.is_dir() {
-                return Some(true);
-            }
-        } else {
-            return Some(directory && !meta.is_dir());
-        }
-    }
-    Some(false)
-}
-
-pub(crate) enum InsideRead {
-    Bytes(Vec<u8>),
-    Absent,
-    BudgetExceeded,
-}
-
-/// A checked read that cannot consume more than the remaining aggregate byte
-/// budget. Metadata races may read one byte beyond it to detect growth.
-pub(crate) fn read_inside_budget(
-    root: &Path,
-    relative: &str,
-    max: usize,
-    remaining: usize,
-) -> Result<InsideRead, ()> {
-    let mut path = root.to_path_buf();
-    let parts: Vec<&str> = relative.split('/').collect();
-    for (i, part) in parts.iter().enumerate() {
-        path.push(part);
-        let meta = match fs::symlink_metadata(&path) {
-            Ok(m) => m,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(InsideRead::Absent),
-            Err(_) => return Err(()),
-        };
-        if link(&meta) {
-            return Ok(InsideRead::Absent);
-        }
-        if i + 1 < parts.len() && !meta.is_dir() {
-            return Ok(InsideRead::Absent);
-        }
-    }
-    let meta = fs::symlink_metadata(&path).map_err(|_| ())?;
-    if !meta.is_file() || link(&meta) || meta.len() > max as u64 {
-        return Ok(InsideRead::Absent);
-    }
-    if meta.len() > remaining as u64 {
-        return Ok(InsideRead::BudgetExceeded);
-    }
-    let file = fs::File::open(path).map_err(|_| ())?;
-    let mut raw = vec![];
-    file.take(remaining as u64 + 1)
-        .read_to_end(&mut raw)
-        .map_err(|_| ())?;
-    if raw.len() > remaining || raw.len() > max {
-        return Ok(InsideRead::BudgetExceeded);
-    }
-    Ok(InsideRead::Bytes(raw))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::contracts::{LintStatus, Severity};
+    use std::{fs, path::PathBuf};
 
     const RULE: &str = "+++\nkey = \"x\"\n+++\nbody\n";
 
@@ -549,13 +436,16 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         fs::create_dir(temp.path().join("dir")).unwrap();
         fs::write(temp.path().join("file"), "x").unwrap();
-        assert_eq!(selector_path_missing(temp.path(), "missing"), Some(true));
-        assert_eq!(selector_path_missing(temp.path(), "dir/"), Some(false));
-        assert_eq!(selector_path_missing(temp.path(), "file"), Some(false));
-        assert_eq!(selector_path_missing(temp.path(), "file/"), Some(true));
-        assert_eq!(selector_path_missing(temp.path(), "file/child"), Some(true));
+        let repository = Repository::open(temp.path()).unwrap();
+        assert_eq!(repository.selector_missing("missing"), Some(true));
+        assert_eq!(repository.selector_missing("dir/"), Some(false));
+        assert_eq!(repository.selector_missing("file"), Some(false));
+        assert_eq!(repository.selector_missing("file/"), Some(true));
+        assert_eq!(repository.selector_missing("file/child"), Some(true));
         assert_eq!(
-            selector_path_missing(&temp.path().join("absent-root"), "missing"),
+            Repository::open(&temp.path().join("absent-root"))
+                .ok()
+                .and_then(|repository| repository.selector_missing("missing")),
             None
         );
     }

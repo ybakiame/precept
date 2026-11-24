@@ -33,6 +33,7 @@ nsh-platform-windows = { git = "https://github.com/longbridge/nsh", rev = "55416
 [dev-dependencies]
 tokio = { version = "1", features = ["rt","net","time"] }
 precept-ipc = { path = "../../crates/precept-ipc" }
+precept-core = { path = "../../crates/precept-core" }
 tempfile = "3"
 nsh-testing = { git = "https://github.com/longbridge/nsh", rev = "554163758e30d2f62f814096a6327937dcb4fe49", default-features = false }
 nsh-engine = { git = "https://github.com/longbridge/nsh", rev = "554163758e30d2f62f814096a6327937dcb4fe49", default-features = false }

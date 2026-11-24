@@ -282,10 +282,12 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 name = "precept-core"
 version = "0.4.3"
 dependencies = [
+ "libc",
  "serde",
  "serde_json",
  "sha2",
  "toml",
+ "windows-sys",
 ]
 
 [[package]]
@@ -309,6 +311,7 @@ name = "precept-native-acceptance"
 version = "0.0.0"
 dependencies = [
  "libc",
+ "precept-core",
  "precept-ipc",
  "serde_json",
  "sha2",

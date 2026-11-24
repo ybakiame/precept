@@ -9,7 +9,11 @@ pub fn write(dir: &Path, projects: &[(&str, &Path)], startup: Option<&Path>) {
     precept_ipc::transport::private_dir(dir, true).unwrap();
     let list: Vec<serde_json::Value> = projects
         .iter()
-        .map(|(name, root)| serde_json::json!({"name":name,"root":root.canonicalize().unwrap()}))
+        .map(|(name, root)| {
+            let root = root.canonicalize().unwrap();
+            let identity = precept_core::repo_fs::Repository::identity(&root).unwrap();
+            serde_json::json!({"name":name,"root":root,"identity":identity})
+        })
         .collect();
     put(
         dir,

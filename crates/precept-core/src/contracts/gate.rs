@@ -91,11 +91,11 @@ pub fn check(snapshot: &Snapshot, call: &ToolCall) -> Option<Denial> {
 /// not hold now: one entry per failing check, `{rule, key, file, failure}`.
 /// A document whose claims fail may be stale; the agent reading it is told so.
 pub fn stale(snapshot: &Snapshot, paths: &[String]) -> Vec<serde_json::Value> {
-    let Some(root) = snapshot.root() else {
+    if snapshot.repository().is_none() {
         return vec![];
-    };
+    }
     let mut out = vec![];
-    let mut cache = super::checks::CheckCache::new(root);
+    let mut cache = snapshot.check_cache();
     for (rule, _) in snapshot.rules().unwrap_or_default() {
         if !snapshot.reviewed(&rule.id) {
             continue;

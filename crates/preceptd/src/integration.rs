@@ -1,9 +1,13 @@
 //! Integrations Precept writes into a registered repository, only on an
 //! explicit Operator action: the AGENTS.md pointer block. A request names the
 //! digest of the file the operator previewed (or none for an absent file); a
-//! file that changed since is refused, never overwritten. Writes are atomic
-//! (temporary file + rename in the same directory) and keep the file's mode.
-use precept_core::pointer::{self, Malformed};
+//! file that changed since is refused. Writes use a private temporary file and
+//! atomic same-directory publication, recheck expected bytes before replacement,
+//! and keep the file's mode without serializing unrelated concurrent editors.
+use precept_core::{
+    pointer::{self, Malformed},
+    repo_fs::{FileRead, Repository},
+};
 use precept_ipc::Error;
 use serde_json::{Value, json};
 use std::{
@@ -12,28 +16,42 @@ use std::{
     path::{Path, PathBuf},
 };
 
-fn path(root: &Path) -> PathBuf {
-    root.join(pointer::FILE)
-}
-
 /// The current file: absent, or its UTF-8 text. Links, directories, special
 /// files and oversized files are refused.
-fn read(path: &Path) -> Result<Option<String>, Error> {
-    let meta = match fs::symlink_metadata(path) {
-        Ok(m) => m,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(_) => return Err(Error::Unavailable),
+fn read(root: &Repository, relative: &str) -> Result<Option<String>, Error> {
+    let raw = match root.read_file(Path::new(relative), pointer::MAX_BYTES, pointer::MAX_BYTES) {
+        Ok(raw) => raw,
+        Err(FileRead::Missing) => return Ok(None),
+        Err(FileRead::TooLarge) => return Err(Error::TooLarge),
+        Err(_) => return Err(Error::UnsafeRuntime),
     };
-    if !meta.file_type().is_file() {
-        return Err(Error::UnsafeRuntime);
-    }
-    if meta.len() > pointer::MAX_BYTES as u64 {
-        return Err(Error::TooLarge);
-    }
-    let raw = fs::read(path).map_err(|_| Error::Unavailable)?;
     String::from_utf8(raw)
         .map(Some)
         .map_err(|_| Error::InvalidRequest)
+}
+
+fn write(
+    root: &Repository,
+    relative: &str,
+    text: &str,
+    current: Option<&str>,
+) -> Result<(), Error> {
+    let mode = root
+        .open_file(Path::new(relative))
+        .ok()
+        .and_then(|file| file.metadata().ok())
+        .map(|metadata| metadata.permissions());
+    root.write_atomic(
+        Path::new(relative),
+        text.as_bytes(),
+        mode,
+        current.map(str::as_bytes),
+    )
+    .map_err(|error| match error {
+        precept_core::repo_fs::OpenError::Conflict => Error::Conflict,
+        precept_core::repo_fs::OpenError::Unsafe => Error::UnsafeRuntime,
+        _ => Error::Unavailable,
+    })
 }
 
 fn digest(current: &Option<String>) -> Value {
@@ -43,8 +61,8 @@ fn digest(current: &Option<String>) -> Value {
 }
 
 /// What the pointer looks like now and what applying would do.
-pub fn status(root: &Path) -> Result<Value, Error> {
-    let current = read(&path(root))?;
+pub fn status(root: &Repository) -> Result<Value, Error> {
+    let current = read(root, pointer::FILE)?;
     let state = pointer::state(current.as_deref());
     Ok(json!({
         "path": pointer::FILE,
@@ -92,9 +110,8 @@ pub(crate) fn write_atomic(path: &Path, text: &str) -> Result<(), Error> {
 
 /// Adds (`enabled`) or removes the block, if the file is still the one the
 /// operator previewed (`expected` digest, `None` for absent).
-pub fn apply(root: &Path, enabled: bool, expected: Option<&str>) -> Result<Value, Error> {
-    let path = path(root);
-    let current = read(&path)?;
+pub fn apply(root: &Repository, enabled: bool, expected: Option<&str>) -> Result<Value, Error> {
+    let current = read(root, pointer::FILE)?;
     let actual = current.as_ref().map(|t| pointer::digest(t.as_bytes()));
     if actual.as_deref() != expected {
         return Err(Error::Conflict);
@@ -105,7 +122,7 @@ pub fn apply(root: &Path, enabled: bool, expected: Option<&str>) -> Result<Value
         if current.as_deref() == Some(next.as_str()) {
             "unchanged"
         } else {
-            write_atomic(&path, &next)?;
+            write(root, pointer::FILE, &next, current.as_deref())?;
             if current.is_some() {
                 "updated"
             } else {
@@ -117,12 +134,13 @@ pub fn apply(root: &Path, enabled: bool, expected: Option<&str>) -> Result<Value
             None => "unchanged",
             Some(text) => match pointer::remove(text).map_err(malformed)? {
                 None => {
-                    fs::remove_file(&path).map_err(|_| Error::Unavailable)?;
+                    root.remove_file(Path::new(pointer::FILE))
+                        .map_err(|_| Error::Unavailable)?;
                     "deleted"
                 }
                 Some(next) if next == text => "unchanged",
                 Some(next) => {
-                    write_atomic(&path, &next)?;
+                    write(root, pointer::FILE, &next, current.as_deref())?;
                     "removed"
                 }
             },
@@ -497,30 +515,34 @@ mod tests {
     fn previewed_digest_guards_every_write_and_links_are_refused() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let s = status(root).unwrap();
+        let repository = Repository::open(root).unwrap();
+        let s = status(&repository).unwrap();
         assert_eq!(s["state"], "absent");
         assert_eq!(s["sha256"], Value::Null);
-        let created = apply(root, true, None).unwrap();
+        let created = apply(&repository, true, None).unwrap();
         assert_eq!(created["action"], "created");
         assert_eq!(created["state"], "current");
         let digest = created["sha256"].as_str().unwrap().to_owned();
-        assert_eq!(apply(root, true, None), Err(Error::Conflict));
+        assert_eq!(apply(&repository, true, None), Err(Error::Conflict));
         assert_eq!(
-            apply(root, true, Some(&digest)).unwrap()["action"],
+            apply(&repository, true, Some(&digest)).unwrap()["action"],
             "unchanged"
         );
-        let removed = apply(root, false, Some(&digest)).unwrap();
+        let removed = apply(&repository, false, Some(&digest)).unwrap();
         assert_eq!(removed["action"], "deleted");
         assert!(!root.join("AGENTS.md").exists());
 
         fs::write(root.join("AGENTS.md"), "# Rules\n").unwrap();
         let d = pointer::digest(b"# Rules\n");
-        let added = apply(root, true, Some(&d)).unwrap();
+        let added = apply(&repository, true, Some(&d)).unwrap();
         assert_eq!(added["action"], "updated");
         let text = fs::read_to_string(root.join("AGENTS.md")).unwrap();
         assert!(text.starts_with("# Rules\n\n<!-- precept:begin v1 -->"));
         let d = added["sha256"].as_str().unwrap().to_owned();
-        assert_eq!(apply(root, false, Some(&d)).unwrap()["action"], "removed");
+        assert_eq!(
+            apply(&repository, false, Some(&d)).unwrap()["action"],
+            "removed"
+        );
         assert_eq!(
             fs::read_to_string(root.join("AGENTS.md")).unwrap(),
             "# Rules\n"
@@ -534,8 +556,8 @@ mod tests {
         {
             fs::remove_file(root.join("AGENTS.md")).unwrap();
             std::os::unix::fs::symlink("/etc/hostname", root.join("AGENTS.md")).unwrap();
-            assert_eq!(status(root), Err(Error::UnsafeRuntime));
-            assert_eq!(apply(root, true, None), Err(Error::UnsafeRuntime));
+            assert_eq!(status(&repository), Err(Error::UnsafeRuntime));
+            assert_eq!(apply(&repository, true, None), Err(Error::UnsafeRuntime));
         }
     }
 

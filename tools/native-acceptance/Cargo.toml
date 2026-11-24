@@ -16,6 +16,7 @@ path = "src/bin/fake_desktop_worker.rs"
 [dependencies]
 toml = "1.2"
 precept-ipc = { path = "../../crates/precept-ipc" }
+precept-core = { path = "../../crates/precept-core" }
 serde_json = "1"
 sha2 = "0.10"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

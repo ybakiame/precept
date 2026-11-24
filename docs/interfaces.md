@@ -109,7 +109,8 @@ Precept's pointer block and fenced headings are handled as for AGENTS.md.
 `.precept/rules`, nested instruction files, unknown extensions and recursive
 directory walks are never import sources.
 
-The daemon checks every path component, refuses links and Windows reparse
+The daemon opens the persisted expected root identity, checks every path component
+with descriptor-relative no-follow traversal, refuses links and Windows reparse
 points, reads regular files only and never accepts a caller-supplied root or
 source. One file is at most 256 KiB; a scan reads at most 1 MiB, checks at most
 64 direct entries per rule directory, takes at most 16 matching files per
@@ -161,7 +162,9 @@ Operator-only `integration.pointer {project}` reports the served project's
 `malformed` (unbalanced markers), and the exact `block`. `integration.pointer.apply
 {project, enabled, expected_sha256}` adds or updates (`enabled: true`) or removes
 the block only if the file still has the previewed digest (`null` for absent),
-otherwise `Conflict`. The block is fixed text between `<!-- precept:begin v1 -->`
+otherwise `Conflict`. The daemon rechecks the expected bytes immediately before
+replacement and creates absent files without replacing a concurrent arrival; it
+does not serialize unrelated concurrent editors. The block is fixed text between `<!-- precept:begin v1 -->`
 and `<!-- precept:end -->`; everything outside the markers is kept byte for byte,
 a block-only file is deleted on removal, and writes are atomic and keep the file
 mode. Links, non-regular and oversized (> 1 MiB) files are refused. The daemon never
@@ -601,8 +604,9 @@ created or modified by this read path.
 Operator-only `rules.lint {project}` (CLI `precept lint-rules PROJECT`) reads the
 registered project's `.precept/rules` without a write grant and returns the
 versioned `precept-rules-lint` report. It accepts no caller-supplied root, path,
-source text or selector. The daemon rechecks the pinned canonical project root,
-uses the same bounded no-follow inventory as context resolution, and never starts
+source text or selector. The daemon opens only the persisted expected project-root
+identity, uses the same bounded descriptor-relative no-follow inventory as context
+resolution, and never starts
 a daemon, changes a file or exposes the method to agents/MCP.
 
 The report contains `status` (`ok`, `issues`, `not_configured` or `unavailable`),
@@ -621,11 +625,11 @@ keys and identical canonical applicability plus priority are warnings, not claim
 of semantic contradiction or partial-scope overlap. A path selector with no current
 repository entry is a warning that explicitly allows future matches, never proof
 that the rule can never match. Lint does not change strict parsing, rule review,
-delivery or enforcement. The daemon rechecks project-root identity after the
-bounded read and refuses a changed root; the serialized report is capped at 768
-KiB, with a larger report returned as `TooLarge` rather than an oversized or
-partial IPC frame. These path checks are not a same-user filesystem race sandbox;
-see the security limitations for swap/restore races.
+delivery or enforcement. The bounded read stays on the expected pinned root handle;
+the serialized report is capped at 768 KiB, with a larger report returned as
+`TooLarge` rather than an oversized or partial IPC frame. Root identity is not a
+same-user filesystem sandbox; see the security limitations for identity reuse and
+Git subprocess races.
 
 Operator `rules.export` previews writing one confirmed convention of a served
 project as `.precept/rules/<id>.md`: path, exact text (key, `title` from the text's
@@ -633,8 +637,10 @@ first heading, tags, options, the text), the current text, its digest, and
 `absent`, `same`, `different` (an update) or `invalid` (a file that does not parse).
 `rules.export.apply` with `enabled` writes it, guarded by the previewed digest: a
 new file, or an update of a file that parses, keeping the allowed values, checks
-and guards only the file declares; an invalid file is never touched. Disabled, it
-takes back a file still exactly as Precept would write it. Nothing is committed; agents cannot call either.
+and guards only the file declares; an invalid file is never touched. Expected bytes
+are rechecked immediately before replacement and absent-file creation is no-replace;
+unrelated concurrent editors are not serialized. Disabled, it takes back a file
+still exactly as Precept would write it. Nothing is committed; agents cannot call either.
 
 ### Agent activity
 

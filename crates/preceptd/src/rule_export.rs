@@ -5,18 +5,17 @@
 //! checks, guards); a file that does not parse is never touched. Removal
 //! takes back only a file still exactly as Precept would write it. Nothing
 //! is committed: the operator reviews and commits the file.
-use crate::integration::write_atomic;
 use precept_core::{
     Preference, Scope, Status,
-    contracts::{self, DIR, MAX_BYTES},
+    contracts::{self, MAX_BYTES},
     pointer::digest,
+    repo_fs::{FileRead, Repository},
 };
 use precept_ipc::Error;
 use serde_json::{Value, json};
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+#[cfg(test)]
+use std::fs;
+use std::path::Path;
 
 /// The confirmed project convention `id` of `project`, or `NotFound`.
 pub fn convention(prefs: Vec<Preference>, project: &str, id: u64) -> Result<Preference, Error> {
@@ -62,51 +61,46 @@ fn file(p: &Preference) -> String {
 
 /// The rule file's current text: absent, or UTF-8 text. A link, a directory
 /// anywhere on the path or an oversized file is refused.
-fn read(root: &Path, relative: &str) -> Result<Option<String>, Error> {
-    let mut path = root.to_path_buf();
-    let parts: Vec<&str> = relative.split('/').collect();
-    for (i, part) in parts.iter().enumerate() {
-        path.push(part);
-        let meta = match fs::symlink_metadata(&path) {
-            Ok(m) => m,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(_) => return Err(Error::Unavailable),
-        };
-        let last = i + 1 == parts.len();
-        if meta.file_type().is_symlink() || (!last && !meta.is_dir()) || (last && !meta.is_file()) {
-            return Err(Error::UnsafeRuntime);
-        }
-        if last && meta.len() > MAX_BYTES as u64 {
-            return Err(Error::TooLarge);
-        }
-    }
-    let raw = fs::read(&path).map_err(|_| Error::Unavailable)?;
+fn read(root: &Repository, relative: &str) -> Result<Option<String>, Error> {
+    let raw = match root.read_file(Path::new(relative), MAX_BYTES, MAX_BYTES) {
+        Ok(raw) => raw,
+        Err(FileRead::Missing) => return Ok(None),
+        Err(FileRead::TooLarge) => return Err(Error::TooLarge),
+        Err(_) => return Err(Error::UnsafeRuntime),
+    };
     String::from_utf8(raw)
         .map(Some)
         .map_err(|_| Error::InvalidRequest)
 }
 
-/// `.precept/rules` under `root`, created when absent, never through a link.
-fn directory(root: &Path) -> Result<PathBuf, Error> {
-    let mut dir = root.to_path_buf();
-    for part in DIR.split('/') {
-        dir.push(part);
-        match fs::symlink_metadata(&dir) {
-            Ok(m) if m.is_dir() && !m.file_type().is_symlink() => {}
-            Ok(_) => return Err(Error::UnsafeRuntime),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                fs::create_dir(&dir).map_err(|_| Error::Unavailable)?;
-            }
-            Err(_) => return Err(Error::Unavailable),
-        }
-    }
-    Ok(dir)
+fn write(
+    root: &Repository,
+    relative: &str,
+    text: &str,
+    current: Option<&str>,
+) -> Result<(), Error> {
+    let mode = root
+        .open_file(Path::new(relative))
+        .ok()
+        .and_then(|file| file.metadata().ok())
+        .map(|metadata| metadata.permissions());
+    root.write_atomic(
+        Path::new(relative),
+        text.as_bytes(),
+        mode,
+        current.map(str::as_bytes),
+    )
+    .map_err(|error| match error {
+        precept_core::repo_fs::OpenError::Conflict => Error::Conflict,
+        precept_core::repo_fs::OpenError::Unsafe => Error::UnsafeRuntime,
+        _ => Error::Unavailable,
+    })
 }
 
 /// What writing `p` would do: the path, the text, the current text, and
 /// whether the file is absent, already the same, different (an update) or
 /// invalid (not a rule file Precept can update).
-pub fn preview(root: &Path, p: &Preference) -> Result<Value, Error> {
+pub fn preview(root: &Repository, p: &Preference) -> Result<Value, Error> {
     let path = file(p);
     let current = read(root, &path)?;
     let existing = current.as_deref().and_then(|c| parsed(p, c));
@@ -132,7 +126,7 @@ pub fn preview(root: &Path, p: &Preference) -> Result<Value, Error> {
 /// Write (`enabled`) or take back the rule file of `p`, if the file is still
 /// the one the operator previewed (`expected` digest, `None` for absent).
 pub fn apply(
-    root: &Path,
+    root: &Repository,
     p: &Preference,
     enabled: bool,
     expected: Option<&str>,
@@ -152,18 +146,17 @@ pub fn apply(
         // Not a rule file Precept can merge into: left to the operator.
         (true, Some(_)) if existing.is_none() => return Err(Error::Conflict),
         (true, Some(_)) => {
-            let dir = directory(root)?;
-            write_atomic(&dir.join(format!("{}.md", rule_id(p))), &text)?;
+            write(root, &path, &text, current.as_deref())?;
             "updated"
         }
         (true, None) => {
-            let dir = directory(root)?;
-            write_atomic(&dir.join(format!("{}.md", rule_id(p))), &text)?;
+            write(root, &path, &text, current.as_deref())?;
             "created"
         }
         (false, None) => "unchanged",
         (false, Some(c)) if c == text => {
-            fs::remove_file(root.join(&path)).map_err(|_| Error::Unavailable)?;
+            root.remove_file(Path::new(&path))
+                .map_err(|_| Error::Unavailable)?;
             "deleted"
         }
         // Edited since Precept wrote it: the operator's file now.
@@ -197,8 +190,9 @@ mod tests {
     fn writes_once_previewed_updates_keeping_hand_written_parts_and_takes_back_its_own() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
+        let repository = Repository::open(root).unwrap();
         let mut p = convention();
-        let v = preview(root, &p).unwrap();
+        let v = preview(&repository, &p).unwrap();
         assert_eq!(v["state"], "absent");
         assert_eq!(v["path"], ".precept/rules/commit-style.md");
         assert_eq!(v["valid"], true);
@@ -210,20 +204,23 @@ mod tests {
         );
         // A stale preview (the file appeared since) is refused.
         assert_eq!(
-            apply(root, &p, true, Some(&"0".repeat(64))),
+            apply(&repository, &p, true, Some(&"0".repeat(64))),
             Err(Error::Conflict)
         );
-        assert_eq!(apply(root, &p, true, None).unwrap()["action"], "created");
+        assert_eq!(
+            apply(&repository, &p, true, None).unwrap()["action"],
+            "created"
+        );
         let path = root.join(".precept/rules/commit-style.md");
         let written = fs::read_to_string(&path).unwrap();
         let parsed = contracts::parse("commit-style", written.as_bytes()).unwrap();
         assert_eq!(parsed.key, "Commit style");
         assert_eq!(parsed.enforcement, Enforcement::Verify);
-        let same = preview(root, &p).unwrap();
+        let same = preview(&repository, &p).unwrap();
         assert_eq!(same["state"], "same");
         let d = same["sha256"].as_str().unwrap().to_owned();
         assert_eq!(
-            apply(root, &p, true, Some(&d)).unwrap()["action"],
+            apply(&repository, &p, true, Some(&d)).unwrap()["action"],
             "unchanged"
         );
         // The operator adds a check by hand; the record's text changes.
@@ -231,12 +228,12 @@ mod tests {
             written.replacen("+++\n\n", "\n[[check]]\nfile = \"README.md\"\n+++\n\n", 1);
         fs::write(&path, &with_check).unwrap();
         p.value = "# Small commits\n\nOne change each, with tests.".into();
-        let update = preview(root, &p).unwrap();
+        let update = preview(&repository, &p).unwrap();
         assert_eq!(update["state"], "different");
         assert_eq!(update["current"], with_check);
         let d = update["sha256"].as_str().unwrap().to_owned();
         assert_eq!(
-            apply(root, &p, true, Some(&d)).unwrap()["action"],
+            apply(&repository, &p, true, Some(&d)).unwrap()["action"],
             "updated"
         );
         let updated = contracts::parse(
@@ -251,17 +248,20 @@ mod tests {
         assert_eq!(updated.checks.len(), 1, "the hand-written check stays");
         // A file that does not parse is neither updated nor removed.
         fs::write(&path, "not a rule").unwrap();
-        let broken = preview(root, &p).unwrap();
+        let broken = preview(&repository, &p).unwrap();
         assert_eq!(broken["state"], "invalid");
         let d = broken["sha256"].as_str().unwrap().to_owned();
-        assert_eq!(apply(root, &p, true, Some(&d)), Err(Error::Conflict));
-        assert_eq!(apply(root, &p, false, Some(&d)), Err(Error::Conflict));
+        assert_eq!(apply(&repository, &p, true, Some(&d)), Err(Error::Conflict));
+        assert_eq!(
+            apply(&repository, &p, false, Some(&d)),
+            Err(Error::Conflict)
+        );
         // Its own file, exactly as it would write it, is taken back.
         let own = render(&p, None);
         fs::write(&path, &own).unwrap();
         let d = digest(own.as_bytes());
         assert_eq!(
-            apply(root, &p, false, Some(&d)).unwrap()["action"],
+            apply(&repository, &p, false, Some(&d)).unwrap()["action"],
             "deleted"
         );
         assert!(!path.exists());
@@ -274,9 +274,10 @@ mod tests {
         let elsewhere = tempfile::tempdir().unwrap();
         std::os::unix::fs::symlink(elsewhere.path(), temp.path().join(".precept")).unwrap();
         let p = convention();
-        assert_eq!(preview(temp.path(), &p), Err(Error::UnsafeRuntime));
+        let repository = Repository::open(temp.path()).unwrap();
+        assert_eq!(preview(&repository, &p), Err(Error::UnsafeRuntime));
         assert_eq!(
-            apply(temp.path(), &p, true, None),
+            apply(&repository, &p, true, None),
             Err(Error::UnsafeRuntime)
         );
         assert!(fs::read_dir(elsewhere.path()).unwrap().next().is_none());

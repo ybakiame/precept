@@ -10,6 +10,7 @@ pub mod documents;
 pub mod fingerprint;
 pub mod import;
 pub mod pointer;
+pub mod repo_fs;
 pub mod typed_context;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -219,6 +220,7 @@ pub struct ContextResolver<'a> {
     handoffs: &'a dyn HandoffRepository,
     worktree: &'a dyn WorktreeInspector,
     documents: &'a dyn DocumentRepository,
+    root_identity: Option<repo_fs::RootIdentity>,
 }
 impl<'a> ContextResolver<'a> {
     pub fn new(
@@ -236,9 +238,21 @@ impl<'a> ContextResolver<'a> {
             handoffs,
             worktree,
             documents,
+            root_identity: None,
         };
         resolver.bound_project()?;
         Ok(resolver)
+    }
+    pub fn with_root_identity(mut self, identity: repo_fs::RootIdentity) -> Self {
+        self.root_identity = Some(identity);
+        self
+    }
+    fn snapshot(&self, project: &Project) -> contracts::Snapshot {
+        let snapshot = match &self.root_identity {
+            Some(identity) => contracts::Snapshot::read_expected(&project.root, identity),
+            None => contracts::Snapshot::read(&project.root),
+        };
+        snapshot.with_reviewed(self.worktree.reviewed(project, contracts::DIR))
     }
     fn bound_project(&self) -> Result<Project> {
         let p = self.registry.project(&self.project)?;
@@ -267,8 +281,7 @@ impl<'a> ContextResolver<'a> {
     ) -> Result<PreparedContext> {
         selector.validate()?;
         let project = self.bound_project()?;
-        let snapshot = contracts::Snapshot::read(&project.root)
-            .with_reviewed(self.worktree.reviewed(&project, contracts::DIR));
+        let snapshot = self.snapshot(&project);
         let projection = contracts::project(
             &self.project,
             self.preferences.preferences(&self.project)?,
@@ -316,8 +329,7 @@ impl<'a> ContextResolver<'a> {
             return Err(Error::InvalidArguments);
         }
         let project = self.bound_project()?;
-        let snapshot = contracts::Snapshot::read(&project.root)
-            .with_reviewed(self.worktree.reviewed(&project, contracts::DIR));
+        let snapshot = self.snapshot(&project);
         contracts::explain(
             &self.project,
             self.preferences.preferences(&self.project)?,

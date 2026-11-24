@@ -70,7 +70,11 @@ pub fn daemon_state(base: &Path, names: &[&str], profile: Option<&Path>) -> std:
     precept_ipc::transport::private_dir(&dir, true).unwrap();
     let projects: Vec<Value> = names
         .iter()
-        .map(|name| json!({"name":name,"root":base.join(name).canonicalize().unwrap()}))
+        .map(|name| {
+            let root = base.join(name).canonicalize().unwrap();
+            let identity = precept_core::repo_fs::Repository::identity(&root).unwrap();
+            json!({"name":name,"root":root,"identity":identity})
+        })
         .collect();
     replace_private(
         &dir.join("projects.json"),
@@ -262,24 +266,12 @@ impl Fixture {
             .unwrap();
         f
     }
-    pub fn register(&self, b: &Binding, name: &str) -> Value {
+    pub fn register(&self, _binding: &Binding, name: &str) -> Value {
         self.daemon
-            .mutate(
-                b,
-                &format!("register-{name}"),
-                Command::RegisterProject {
-                    name: name.into(),
-                    root: self
-                        .temp
-                        .path()
-                        .join(name)
-                        .canonicalize()
-                        .unwrap()
-                        .to_str()
-                        .unwrap()
-                        .into(),
-                    expected: Expected::Absent,
-                },
+            .call(
+                &self.daemon.credential("operator-write.cap"),
+                "project.register",
+                json!({"name":name}),
             )
             .unwrap()
     }
