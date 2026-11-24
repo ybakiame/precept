@@ -26,10 +26,11 @@ pub use rule::{
 };
 pub use sync::{
     MAX_SYNC_CLOCK_DEVICES, MAX_SYNC_COUNTER, MAX_SYNC_ENVELOPE_BYTES, MAX_SYNC_ITEMS,
-    MAX_SYNC_PAYLOAD_BYTES, PERSONAL_SYNC_FORMAT, PERSONAL_SYNC_VERSION, PersonalSyncBundle,
-    PersonalSyncChange, PersonalSyncContent, PersonalSyncEntry, PersonalSyncEnvelope,
-    PersonalSyncHeader, PersonalSyncInvitation, PersonalSyncMerge, PersonalSyncResolution,
-    PersonalSyncSelection, PersonalSyncTombstone, PersonalSyncVersion, VectorClock, classify_merge,
-    clock_cmp, clock_join, clock_tick, tombstone_digest, valid_clock, valid_identity,
+    MAX_SYNC_PAYLOAD_BYTES, PERSONAL_SYNC_FORMAT, PERSONAL_SYNC_VERSION, PersonalSyncAppliedEntry,
+    PersonalSyncApplyPlan, PersonalSyncApplyRequest, PersonalSyncBundle, PersonalSyncChange,
+    PersonalSyncContent, PersonalSyncEntry, PersonalSyncEnvelope, PersonalSyncHeader,
+    PersonalSyncInvitation, PersonalSyncMerge, PersonalSyncResolution, PersonalSyncSelection,
+    PersonalSyncTombstone, PersonalSyncVersion, VectorClock, classify_merge, clock_cmp, clock_join,
+    clock_tick, plan_personal_sync_apply, tombstone_digest, valid_clock, valid_identity,
     valid_sync_digest,
 };

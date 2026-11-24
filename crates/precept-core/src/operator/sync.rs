@@ -362,7 +362,195 @@ impl PersonalSyncSelection {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PersonalSyncApplyRequest {
+    pub bundle: PersonalSyncBundle,
+    pub local_versions: Vec<PersonalSyncVersion>,
+    pub device_id: String,
+    pub selections: Vec<PersonalSyncSelection>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PersonalSyncAppliedEntry {
+    pub bundle_id: String,
+    pub key: String,
+    pub digest: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PersonalSyncApplyPlan {
+    pub bundle_id: String,
+    pub bundle_digest: String,
+    pub changes: Vec<PersonalSyncChange>,
+    pub versions: Vec<PersonalSyncVersion>,
+    pub applied: Vec<PersonalSyncAppliedEntry>,
+}
+
+fn incoming_version(bundle: &PersonalSyncBundle, key: &str) -> Option<PersonalSyncVersion> {
+    if let Some(entry) = bundle.entries.iter().find(|entry| entry.content.key == key) {
+        Some(PersonalSyncVersion {
+            key: key.to_owned(),
+            clock: entry.clock.clone(),
+            digest: entry.digest.clone(),
+            content: Some(entry.content.clone()),
+        })
+    } else {
+        bundle
+            .tombstones
+            .iter()
+            .find(|tombstone| tombstone.key == key)
+            .map(|tombstone| PersonalSyncVersion {
+                key: key.to_owned(),
+                clock: tombstone.clock.clone(),
+                digest: tombstone.digest.clone(),
+                content: None,
+            })
+    }
+}
+
+fn resolution_version(
+    key: &str,
+    incoming: &PersonalSyncVersion,
+    local: &PersonalSyncVersion,
+    device_id: &str,
+    resolution: &PersonalSyncResolution,
+) -> Option<PersonalSyncVersion> {
+    let clock = clock_tick(&clock_join(&incoming.clock, &local.clock)?, device_id)?;
+    let content = match resolution {
+        PersonalSyncResolution::Accept => incoming.content.clone(),
+        PersonalSyncResolution::KeepLocal => local.content.clone(),
+        PersonalSyncResolution::Manual(content) => Some(content.clone()),
+    };
+    Some(match content {
+        Some(content) => PersonalSyncVersion {
+            key: key.to_owned(),
+            digest: content.digest(),
+            clock,
+            content: Some(content),
+        },
+        None => PersonalSyncVersion {
+            key: key.to_owned(),
+            digest: tombstone_digest(key),
+            clock,
+            content: None,
+        },
+    })
+}
+
+pub fn plan_personal_sync_apply(
+    request: &PersonalSyncApplyRequest,
+) -> Option<PersonalSyncApplyPlan> {
+    if !request.bundle.valid()
+        || !super::valid_identity(&request.device_id)
+        || request.selections.is_empty()
+        || request.selections.len() > MAX_SYNC_ITEMS
+        || request.local_versions.len() > MAX_SYNC_ITEMS
+        || !request.selections.iter().all(PersonalSyncSelection::valid)
+        || !request
+            .local_versions
+            .iter()
+            .all(PersonalSyncVersion::valid)
+    {
+        return None;
+    }
+    let mut local_keys = std::collections::BTreeSet::new();
+    if !request
+        .local_versions
+        .iter()
+        .all(|version| local_keys.insert(version.key.as_str()))
+    {
+        return None;
+    }
+    let mut selected_keys = std::collections::BTreeSet::new();
+    if !request
+        .selections
+        .iter()
+        .all(|selection| selected_keys.insert(selection.key.as_str()))
+    {
+        return None;
+    }
+    let mut changes = Vec::new();
+    let mut versions = Vec::new();
+    let mut applied = Vec::new();
+    for selection in &request.selections {
+        let incoming = incoming_version(&request.bundle, &selection.key)?;
+        let local = request
+            .local_versions
+            .iter()
+            .find(|version| version.key == selection.key)?;
+        if selection.incoming_digest != incoming.digest
+            || selection.expected_local_digest != local.digest
+        {
+            return None;
+        }
+        let incoming_digest = incoming.digest.clone();
+        let resulting = match classify_merge(&incoming, local) {
+            PersonalSyncMerge::Accept => incoming,
+            PersonalSyncMerge::Stale => local.clone(),
+            PersonalSyncMerge::Noop if clock_cmp(&incoming.clock, &local.clock).is_none() => {
+                resolution_version(
+                    &selection.key,
+                    &incoming,
+                    local,
+                    &request.device_id,
+                    &PersonalSyncResolution::KeepLocal,
+                )?
+            }
+            PersonalSyncMerge::Noop => local.clone(),
+            PersonalSyncMerge::Conflict => resolution_version(
+                &selection.key,
+                &incoming,
+                local,
+                &request.device_id,
+                &selection.resolution,
+            )?,
+        };
+        if resulting.digest != local.digest {
+            let change = match &resulting.content {
+                Some(content) => PersonalSyncChange {
+                    key: selection.key.clone(),
+                    expected_digest: local.digest.clone(),
+                    entry: Some(PersonalSyncEntry {
+                        content: content.clone(),
+                        clock: resulting.clock.clone(),
+                        digest: resulting.digest.clone(),
+                    }),
+                    tombstone: None,
+                },
+                None => PersonalSyncChange {
+                    key: selection.key.clone(),
+                    expected_digest: local.digest.clone(),
+                    entry: None,
+                    tombstone: Some(PersonalSyncTombstone {
+                        key: selection.key.clone(),
+                        clock: resulting.clock.clone(),
+                        digest: resulting.digest.clone(),
+                    }),
+                },
+            };
+            changes.push(change);
+        }
+        versions.push(resulting);
+        applied.push(PersonalSyncAppliedEntry {
+            bundle_id: request.bundle.bundle_id.clone(),
+            key: selection.key.clone(),
+            digest: incoming_digest,
+        });
+    }
+    Some(PersonalSyncApplyPlan {
+        bundle_id: request.bundle.bundle_id.clone(),
+        bundle_digest: request.bundle.digest(),
+        changes,
+        versions,
+        applied,
+    })
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PersonalSyncVersion {
     pub key: String,
     pub clock: VectorClock,
@@ -494,6 +682,141 @@ mod tests {
             classify_merge(&deletion, &deletion),
             PersonalSyncMerge::Noop
         );
+    }
+
+    fn sync_bundle(versions: &[PersonalSyncVersion]) -> PersonalSyncBundle {
+        let mut entries = Vec::new();
+        let mut tombstones = Vec::new();
+        for version in versions {
+            match &version.content {
+                Some(content) => entries.push(PersonalSyncEntry {
+                    content: content.clone(),
+                    clock: version.clock.clone(),
+                    digest: version.digest.clone(),
+                }),
+                None => tombstones.push(PersonalSyncTombstone {
+                    key: version.key.clone(),
+                    clock: version.clock.clone(),
+                    digest: version.digest.clone(),
+                }),
+            }
+        }
+        PersonalSyncBundle {
+            format: PERSONAL_SYNC_FORMAT.into(),
+            version: PERSONAL_SYNC_VERSION,
+            bundle_id: "b".repeat(32),
+            owner_id: "c".repeat(32),
+            created_at_ms: 1,
+            entries,
+            tombstones,
+        }
+    }
+
+    fn sync_selection(
+        incoming: &PersonalSyncVersion,
+        local: &PersonalSyncVersion,
+        resolution: PersonalSyncResolution,
+    ) -> PersonalSyncSelection {
+        PersonalSyncSelection {
+            key: incoming.key.clone(),
+            incoming_digest: incoming.digest.clone(),
+            expected_local_digest: local.digest.clone(),
+            resolution,
+        }
+    }
+
+    #[test]
+    fn apply_planning_accepts_newer_versions_and_records_each_selection() {
+        let local = version(&"a".repeat(32), 1, "local");
+        let incoming = version(&"a".repeat(32), 2, "remote");
+        let request = PersonalSyncApplyRequest {
+            bundle: sync_bundle(std::slice::from_ref(&incoming)),
+            local_versions: vec![local.clone()],
+            device_id: "d".repeat(32),
+            selections: vec![sync_selection(
+                &incoming,
+                &local,
+                PersonalSyncResolution::Accept,
+            )],
+        };
+        let plan = plan_personal_sync_apply(&request).unwrap();
+        assert_eq!(plan.changes.len(), 1);
+        assert_eq!(plan.versions[0].clock, incoming.clock);
+        assert_eq!(plan.applied[0].digest, incoming.digest);
+        assert_eq!(plan.bundle_digest, request.bundle.digest());
+    }
+
+    #[test]
+    fn conflict_resolutions_dominate_both_clocks_and_keep_local_requires_no_rewrite() {
+        let local = version(&"a".repeat(32), 1, "local");
+        let incoming = version(&"b".repeat(32), 1, "remote");
+        let mut request = PersonalSyncApplyRequest {
+            bundle: sync_bundle(std::slice::from_ref(&incoming)),
+            local_versions: vec![local.clone()],
+            device_id: "d".repeat(32),
+            selections: vec![sync_selection(
+                &incoming,
+                &local,
+                PersonalSyncResolution::KeepLocal,
+            )],
+        };
+        let kept = plan_personal_sync_apply(&request).unwrap();
+        assert_eq!(kept.versions[0].digest, local.digest);
+        assert_eq!(kept.versions[0].clock[&"d".repeat(32)], 1);
+        assert!(kept.changes.is_empty());
+        request.selections[0].resolution = PersonalSyncResolution::Manual(PersonalSyncContent {
+            key: "tone".into(),
+            value: "merged".into(),
+            tags: vec!["style".into()],
+            rule: RuleOptions::default(),
+            enabled: true,
+        });
+        let merged = plan_personal_sync_apply(&request).unwrap();
+        assert_eq!(merged.versions[0].content.as_ref().unwrap().value, "merged");
+        assert_eq!(merged.versions[0].clock.len(), 3);
+    }
+
+    #[test]
+    fn concurrent_identical_content_joins_clocks_without_rewriting_the_profile() {
+        let local = version(&"a".repeat(32), 1, "same");
+        let incoming = version(&"b".repeat(32), 1, "same");
+        let request = PersonalSyncApplyRequest {
+            bundle: sync_bundle(std::slice::from_ref(&incoming)),
+            local_versions: vec![local],
+            device_id: "d".repeat(32),
+            selections: vec![sync_selection(
+                &incoming,
+                &version(&"a".repeat(32), 1, "same"),
+                PersonalSyncResolution::KeepLocal,
+            )],
+        };
+        let plan = plan_personal_sync_apply(&request).unwrap();
+        assert!(plan.changes.is_empty());
+        assert_eq!(plan.versions[0].clock.len(), 3);
+    }
+
+    #[test]
+    fn apply_planning_refuses_stale_digests_duplicate_keys_and_unknown_items() {
+        let local = version(&"a".repeat(32), 1, "local");
+        let incoming = version(&"a".repeat(32), 2, "remote");
+        let mut request = PersonalSyncApplyRequest {
+            bundle: sync_bundle(std::slice::from_ref(&incoming)),
+            local_versions: vec![local.clone()],
+            device_id: "d".repeat(32),
+            selections: vec![sync_selection(
+                &incoming,
+                &local,
+                PersonalSyncResolution::Accept,
+            )],
+        };
+        request.selections[0].expected_local_digest = "0".repeat(64);
+        assert!(plan_personal_sync_apply(&request).is_none());
+        request.selections[0].expected_local_digest = local.digest;
+        request.selections.push(request.selections[0].clone());
+        assert!(plan_personal_sync_apply(&request).is_none());
+        request.selections.pop();
+        request.selections[0].key = "unknown".into();
+        assert!(plan_personal_sync_apply(&request).is_none());
     }
 
     #[test]
