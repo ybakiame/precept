@@ -538,7 +538,7 @@ async fn main() {
     let mut mcp = Mcp::start(&f);
     let list = mcp.request("tools/list", json!({}));
     let tools = list["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 11);
+    assert_eq!(tools.len(), 12);
     let names: Vec<&str> = tools
         .iter()
         .filter_map(|tool| tool["name"].as_str())
