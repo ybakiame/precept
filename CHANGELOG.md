@@ -27,6 +27,9 @@ data between schemas with the versioned Profile export and import.
   loading when a workspace snapshot completes during the first Profile read;
   MCP metadata matches the package version; pull requests run both workspace
   quality gates on Windows and Linux.
+- Doctor distinguishes credentials that a stopped daemon has not issued from
+  unsafe existing credentials, so a cleanly stopped runtime reports incomplete
+  rather than a credential problem.
 
 ## 0.4.1
 

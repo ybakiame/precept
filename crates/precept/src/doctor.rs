@@ -734,17 +734,17 @@ fn operator_credential_outcome(
             Reason::CredentialWrongRole,
             Remediation::RestartDaemonExplicitly,
         ),
-        (None, Some(Error::UnsafeRuntime)) => Check::new(
-            "credential.operator",
-            Status::Problem,
-            Reason::CredentialUnsafe,
-            Remediation::RestartDaemonExplicitly,
-        ),
         (None, Some(_)) if !exists => Check::new(
             "credential.operator",
             Status::Unknown,
             Reason::CredentialNotIssued,
             Remediation::StartDaemonExplicitly,
+        ),
+        (None, Some(Error::UnsafeRuntime)) => Check::new(
+            "credential.operator",
+            Status::Problem,
+            Reason::CredentialUnsafe,
+            Remediation::RestartDaemonExplicitly,
         ),
         (None, Some(_)) => Check::new(
             "credential.operator",
@@ -1589,16 +1589,16 @@ fn agent_credential_check(
                 Remediation::RestartDaemonExplicitly,
             ),
         },
-        Err(Error::UnsafeRuntime) => Check::new(
-            "project.credential",
-            Status::Problem,
-            Reason::AgentCredentialUnsafe,
-            Remediation::RestartDaemonExplicitly,
-        ),
         Err(_) if !exists => Check::new(
             "project.credential",
             Status::Unknown,
             Reason::AgentCredentialNotIssued,
+            Remediation::RestartDaemonExplicitly,
+        ),
+        Err(Error::UnsafeRuntime) => Check::new(
+            "project.credential",
+            Status::Problem,
+            Reason::AgentCredentialUnsafe,
             Remediation::RestartDaemonExplicitly,
         ),
         Err(_) => Check::new(
@@ -2467,6 +2467,10 @@ mod tests {
             operator_credential_outcome(None, Some(Error::Unauthorized), false).status,
             Status::Unknown
         );
+        let missing = operator_credential_outcome(None, Some(Error::UnsafeRuntime), false);
+        assert_eq!(missing.status, Status::Unknown);
+        assert_eq!(missing.reason, Reason::CredentialNotIssued);
+        assert_eq!(missing.remediation, Remediation::StartDaemonExplicitly);
     }
 
     #[test]
