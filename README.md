@@ -57,6 +57,12 @@ cargo build --manifest-path apps/Cargo.toml --workspace \
 
 ## Operator CLI
 
+With an explicitly started daemon and its `--runtime-dir` / `--endpoint` arguments,
+`precept setup --plan` previews first activation without changing anything, and
+`precept setup` asks before each Profile, project, access or integration change.
+It disables any write grant it enabled by default. Use `precept setup --help` for
+the available choices.
+
 With the daemon already addressed by `--runtime-dir` and `--endpoint`,
 `precept doctor --json` reports redacted, read-only installation diagnostics. Add
 `--project NAME` to check a bound project. Exit codes are 0 (ok), 1 (attention), 2

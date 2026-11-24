@@ -10,6 +10,18 @@ profile/generation/epoch-bound write credential. Only the daemon invokes the
 private writer. No SQL/JSON patch, default Profile, automatic grant/startup,
 generic bridge forwarding or direct database fallback.
 
+`precept setup` is a guided first-activation flow over those same methods. It
+checks one explicitly chosen checkout, then previews Profile creation/selection,
+project add/register, per-run write enablement, agent read/propose choices and
+optional MCP/hook/gate changes before each confirmed action. `--plan` performs
+only reads and prints the plan. Missing interactive choices are never assumed:
+writes, project registration and configuration changes default to refusal, and
+a write grant enabled by setup is disabled again by default at the end. Setup
+never remembers write access, starts a daemon, scans for projects or claims that
+a cooperative gate achieved enforcement. Its final `context.get` is the first
+useful-context check; the result distinguishes configured gate state from any
+enforcement claim.
+
 `precept --runtime-dir R --endpoint E doctor [--project NAME] [--json]` checks an
 explicit installation without changing it. It never starts the daemon, creates or
 selects a Profile, enables writes, registers a project, repairs an integration or

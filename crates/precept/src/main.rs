@@ -1,5 +1,6 @@
 mod doctor;
 mod operator;
+mod setup;
 mod skill;
 mod transfer;
 use clap::{Parser, Subcommand};
@@ -65,6 +66,8 @@ enum Query {
         #[arg(long)]
         project: Option<String>,
     },
+    /// Previewed first activation: Profile, project, agent access and hooks.
+    Setup(setup::Options),
     Health,
     Projects,
     /// Recent agent activity (in memory since the daemon started; newest
@@ -103,6 +106,7 @@ enum Query {
 }
 async fn run(args: Args) -> precept_ipc::Result<serde_json::Value> {
     match args.command {
+        Query::Setup(options) => return setup::run(&args.location, &options).await,
         Query::Profile { command } => return operator::profile(&args.location, command).await,
         Query::Project { command } => return operator::project(&args.location, command).await,
         Query::Preferences { command } => {
