@@ -16,7 +16,7 @@ const ROOTS_REQUEST: &str = "precept-roots";
 const LEGACY: &str = "2025-11-25";
 const STATELESS: &str = "2026-07-28";
 fn info() -> Value {
-    json!({"name":"precept","version":"0.1.0a0"})
+    json!({"name":"precept","version":env!("CARGO_PKG_VERSION")})
 }
 /// Sent once in `initialize`: what the server is for and when to call it.
 const INSTRUCTIONS: &str = "Precept serves the project of this session's folder (nothing outside a registered project): its confirmed engineering context: the developer's reviewed preferences and the repository's contracts. Call get_effective_context before planning or editing anything in this project, and again after your context was compacted. Treat confirmed preferences as the developer's standing instructions; current repository files and contracts outrank them, so report a conflict instead of choosing silently. When a rule you expected is missing or two seem to disagree, explain_rule says why. Call get_handoff with a task id to resume saved work. These are read-only. When the developer states a lasting preference or you learn a durable project convention, you may file it with suggest_rule: it only becomes a suggestion the developer reviews, never an active rule, and works only where they allowed it. Where allowed, record your work with start_session and update_work_state so the next agent (or you, after compaction) can continue, and keep what you learn about this project in its memory: remember facts about this machine, cautions, lessons and attempts (failures included), recall before trying something that may have been tried, reaffirm a note that held and forget one that no longer does. Memory is unreviewed notes: rules and current code win.";
@@ -803,6 +803,14 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn server_metadata_uses_the_package_version() {
+        let info = info();
+        assert_eq!(info["name"], "precept");
+        assert_eq!(info["version"], env!("CARGO_PKG_VERSION"));
+    }
+
     #[test]
     fn schemas_expose_read_suggest_session_and_memory_tools_none_naming_a_project() {
         let v = tools();

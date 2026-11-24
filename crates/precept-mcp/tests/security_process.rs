@@ -443,13 +443,27 @@ fn real_stdio_two_schema_versions_and_notifications_remain_compatible() {
         let mut bridge = Bridge::new(&f, "alpha");
         let initialized=bridge.request(json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":version}})).unwrap();
         assert_eq!(initialized["result"]["protocolVersion"], "2025-11-25");
+        assert_eq!(initialized["result"]["serverInfo"]["name"], "precept");
+        assert_eq!(
+            initialized["result"]["serverInfo"]["version"],
+            env!("CARGO_PKG_VERSION")
+        );
         assert!(
             bridge
                 .request(json!({"jsonrpc":"2.0","method":"notifications/initialized"}))
                 .is_none()
         );
+        let stateless = bridge
+            .request(json!({"jsonrpc":"2.0","id":2,"method":"ping","params":{
+                "_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}
+            }}))
+            .unwrap();
+        assert_eq!(
+            stateless["result"]["_meta"]["io.modelcontextprotocol/serverInfo"],
+            json!({"name":"precept","version":env!("CARGO_PKG_VERSION")})
+        );
         let listing = bridge
-            .request(json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}))
+            .request(json!({"jsonrpc":"2.0","id":3,"method":"tools/list"}))
             .unwrap();
         let tools = listing["result"]["tools"].as_array().unwrap();
         assert_eq!(tools.len(), 11);
