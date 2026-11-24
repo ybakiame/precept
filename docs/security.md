@@ -42,6 +42,12 @@ separate design with its own threat model.
   action on one chosen path, checked daemon-side (Git root inside the daemon user's
   home; system, other-filesystem, foreign-owned and control paths refused). GUIs and
   the Windows bridge never list or scan directories; agents cannot check or add.
+- Windows Desktop configuration uses `%LOCALAPPDATA%/precept/config`, daemon
+  state uses `%LOCALAPPDATA%/precept/state`, and runtime coordinates and
+  credentials use `state/runtime`. Unix configuration/state follow XDG
+  config/state with `~/.config/precept` and `~/.local/state/precept` defaults,
+  and runtime uses `state/runtime`. Roots must be absolute, durable state never
+  uses a cache directory, and no old-name fallback or automatic data move is allowed.
 - External agent access is switched per project by the operator
   (`project.agents`): an unshared project has no agent credential, and a held
   token is refused. `precept-mcp` is stdio-only (no port); the GUI shows client

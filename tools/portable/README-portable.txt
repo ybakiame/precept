@@ -43,7 +43,7 @@ State lives OUTSIDE this directory, in a PRIVATE directory
 The Profile's directory must be owned by you with exactly one access rule (yours).
 Folders made by Explorer or plain New-Item inherit SYSTEM/Administrators access and are
 refused (UnsafeRuntime). Create one private state directory once, in PowerShell:
-  $d = New-Item -ItemType Directory -Path "$env:LOCALAPPDATA\Precept-state"
+  $d = New-Item -ItemType Directory -Path "$env:LOCALAPPDATA\precept\state"
   $me = [Security.Principal.WindowsIdentity]::GetCurrent().User
   $acl = New-Object Security.AccessControl.DirectorySecurity
   $acl.SetOwner($me); $acl.SetAccessRuleProtection($true, $false)

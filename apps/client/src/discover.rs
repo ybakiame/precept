@@ -5,7 +5,7 @@
 //! Linux GUI in-process) it reads the conventional paths of the packaged unit
 //! (`$XDG_STATE_HOME/precept/runtime`, default `~/.local/state`), whether systemd and
 //! the unit exist and whether the daemon answers a health read. A Windows GUI checks
-//! `%LOCALAPPDATA%\Precept-state\runtime` and can start the `preceptd.exe` beside itself
+//! `%LOCALAPPDATA%/precept/state/runtime` and can start the `preceptd.exe` beside itself
 //! with fixed arguments. WSL runs through `wsl.exe --exec`: no shell, TCP or credential
 //! in argv, environment or output.
 use precept_ui_core::connection::Discovery;
@@ -27,30 +27,13 @@ mod host {
     use precept_ui_core::connection::{DISCOVERY_VERSION, DaemonStatus};
     use std::path::{Path, PathBuf};
 
-    fn state_dir() -> Option<PathBuf> {
-        let absolute = |v: std::ffi::OsString| Some(PathBuf::from(v)).filter(|p| p.is_absolute());
-        std::env::var_os("XDG_STATE_HOME")
-            .and_then(absolute)
-            .or_else(|| {
-                std::env::var_os("HOME")
-                    .and_then(absolute)
-                    .map(|h| h.join(".local/state"))
-            })
-            .map(|s| s.join("precept"))
-    }
-    fn config_dir() -> Option<PathBuf> {
-        std::env::var_os("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
-            .filter(|p| p.is_absolute())
-            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
-    }
     fn unit_installed() -> bool {
         let mut candidates = vec![
             PathBuf::from("/etc/systemd/user").join(UNIT),
             PathBuf::from("/usr/lib/systemd/user").join(UNIT),
             PathBuf::from("/lib/systemd/user").join(UNIT),
         ];
-        if let Some(c) = config_dir() {
+        if let Some(c) = crate::paths::config_dir() {
             candidates.insert(0, c.join("systemd/user").join(UNIT));
         }
         candidates.iter().any(|p| p.is_file())
@@ -65,7 +48,7 @@ mod host {
         let user = std::env::var("USER")
             .or_else(|_| std::env::var("LOGNAME"))
             .unwrap_or_default();
-        let state = state_dir().unwrap_or_default();
+        let state = crate::paths::state_dir().unwrap_or_default();
         let runtime = state.join("runtime");
         let endpoint = runtime.join("control.sock");
         let location = precept_ipc::Location {
@@ -148,20 +131,13 @@ mod windows_host {
 
     const ENDPOINT: &str = "precept";
 
-    fn state_dir() -> Option<PathBuf> {
-        std::env::var_os("LOCALAPPDATA")
-            .map(PathBuf::from)
-            .filter(|p| p.is_absolute())
-            .map(|p| p.join("Precept-state"))
-    }
-
     fn executable() -> Option<PathBuf> {
         let path = std::env::current_exe().ok()?.parent()?.join("preceptd.exe");
         path.is_file().then_some(path)
     }
 
     pub fn report() -> Discovery {
-        let state = state_dir().unwrap_or_default();
+        let state = crate::paths::state_dir().unwrap_or_default();
         let runtime = state.join("runtime");
         let location = precept_ipc::Location {
             runtime_dir: runtime.clone(),
@@ -198,7 +174,12 @@ mod windows_host {
             return Ok(before);
         }
         let executable = executable().ok_or(NO_EXECUTABLE)?;
-        let state = state_dir().ok_or(LOCAL_START_FAILED)?;
+        let state = crate::paths::state_dir().ok_or(LOCAL_START_FAILED)?;
+        if let Some(parent) = state.parent()
+            && !parent.is_dir()
+        {
+            precept_ipc::transport::private_dir(parent, true).map_err(|_| LOCAL_START_FAILED)?;
+        }
         precept_ipc::transport::private_dir(&state, true).map_err(|_| LOCAL_START_FAILED)?;
         let runtime = state.join("runtime");
         let mut child = Command::new(executable)

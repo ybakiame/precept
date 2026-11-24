@@ -67,11 +67,22 @@ Unix IPC and does not use the bridge. WSLg evidence is not standalone Linux supp
 evidence.
 
 A Windows Desktop may instead connect to a Windows daemon over its current-user
-named pipe. Its conventional local check uses `%LOCALAPPDATA%\Precept-state\runtime`
-and endpoint `precept`; an explicit Start action launches the `preceptd.exe` beside
-the Desktop with the matching private daemon state directory. This never selects a
-Profile or enables writes. Linux local discovery and explicit start continue to use
-the packaged systemd user unit.
+named pipe. Its conventional local check uses
+`%LOCALAPPDATA%/precept/state/runtime` and endpoint `precept`; an explicit Start
+action launches the `preceptd.exe` beside the Desktop with the matching private
+daemon state directory. This never selects a Profile or enables writes. Linux
+local discovery and explicit start continue to use the packaged systemd user
+unit.
+
+On Windows, Desktop configuration (`connection.json`, `settings.toml`) lives in
+`%LOCALAPPDATA%/precept/config` and daemon state (project/startup records and the
+suggested Profile) in `%LOCALAPPDATA%/precept/state`; runtime coordinates and
+credentials live in `state/runtime`. On Unix, configuration uses
+`$XDG_CONFIG_HOME/precept` (default `~/.config/precept`) and state uses
+`$XDG_STATE_HOME/precept` (default `~/.local/state/precept`), with runtime in
+`state/runtime`. Environment roots must be absolute; durable state never uses a
+cache directory. The app does not fall back to the retired `Precept-state` name
+or move existing data automatically.
 
 ## Data ownership
 

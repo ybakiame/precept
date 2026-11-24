@@ -1,6 +1,6 @@
 //! The connection kept between launches, in a private per-user directory:
-//! `%LOCALAPPDATA%\Precept-state\connection.json` on Windows (outside the portable
-//! product directory), `$XDG_CONFIG_HOME/precept/connection.json` elsewhere.
+//! `%LOCALAPPDATA%/precept/config/connection.json` on Windows (outside the
+//! portable product directory), `$XDG_CONFIG_HOME/precept/connection.json` elsewhere.
 //!
 //! Only the target and its non-secret coordinates are stored (`Saved`); never a
 //! credential, Profile path or preference value. `settings.toml` beside it
@@ -20,26 +20,7 @@ pub const UNAVAILABLE: &str = "Settings directory unavailable";
 
 /// The private directory holding the saved connection.
 pub fn directory() -> Option<PathBuf> {
-    #[cfg(target_os = "windows")]
-    {
-        std::env::var_os("LOCALAPPDATA")
-            .map(PathBuf::from)
-            .filter(|p| p.is_absolute())
-            .map(|p| p.join("Precept-state"))
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        std::env::var_os("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
-            .filter(|p| p.is_absolute())
-            .or_else(|| {
-                std::env::var_os("HOME")
-                    .map(PathBuf::from)
-                    .filter(|p| p.is_absolute())
-                    .map(|h| h.join(".config"))
-            })
-            .map(|p| p.join("precept"))
-    }
+    crate::paths::config_dir()
 }
 
 /// The saved connection, if one exists, is private, parses and is still valid.
@@ -90,11 +71,6 @@ pub fn save_to(dir: &std::path::Path, connection: &Connection) -> Result<(), &'s
     if !connection.validate() {
         return Err("Invalid connection inputs");
     }
-    if let Some(parent) = dir.parent()
-        && !parent.is_dir()
-    {
-        return Err(UNAVAILABLE);
-    }
     let body = serde_json::to_vec_pretty(&Saved::new(connection)).map_err(|_| UNAVAILABLE)?;
     write(dir, FILE, &body)
 }
@@ -103,7 +79,7 @@ fn write(dir: &std::path::Path, name: &str, body: &[u8]) -> Result<(), &'static 
     if let Some(parent) = dir.parent()
         && !parent.is_dir()
     {
-        return Err(UNAVAILABLE);
+        private_dir(parent, true).map_err(|_| UNAVAILABLE)?;
     }
     private_dir(dir, true).map_err(|_| NOT_PRIVATE)?;
     let temporary = dir.join(format!(".{name}.{}.tmp", std::process::id()));
@@ -122,6 +98,24 @@ fn write(dir: &std::path::Path, name: &str, body: &[u8]) -> Result<(), &'static 
         return Err(e);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod directory_tests {
+    use super::*;
+
+    #[test]
+    fn saving_creates_a_missing_private_parent() {
+        let root =
+            std::env::temp_dir().join(format!("precept-settings-parent-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir(&root).unwrap();
+        let dir = root.join("precept/config");
+        let connection = Connection::default();
+        save_to(&dir, &connection).unwrap();
+        assert_eq!(load_from(&dir), Some(connection));
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
 
 #[cfg(all(test, unix))]

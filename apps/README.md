@@ -40,7 +40,7 @@ origin claims are not authentication or independent verification.
 
 The Windows Desktop can operate a Windows daemon over a current-user named pipe,
 or a daemon inside an explicitly selected WSL2 distribution through `precept-bridge`.
-The local Connection check recognizes `%LOCALAPPDATA%\Precept-state\runtime` and can
+The local Connection check recognizes `%LOCALAPPDATA%/precept/state/runtime` and can
 start the `preceptd.exe` beside the Desktop only after an explicit Start action. The
 bridge carries typed requests only; it does not open SQLite, expose a network listener
 or grant authority. Closing the UI or leaving the WSL target closes the helper without

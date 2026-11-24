@@ -5,4 +5,5 @@ pub mod bridge;
 pub mod discover;
 pub mod native;
 pub mod operator;
+mod paths;
 pub mod settings;
