@@ -176,9 +176,14 @@ mod tests {
             "project_args":["--project","alpha","--capability-file","/run/p/agent-alpha.cap"]});
         let text = installation(&mcp, &[("alpha".into(), "/w/my repo".into(), mcp.clone())]);
         assert!(text.contains("\"command\": \"/usr/bin/precept-mcp\""));
-        assert!(text.contains(
-            "`SessionStart`: `/usr/bin/precept-hook --vendor claude --client <harness> --project alpha --capability-file /run/p/agent-alpha.cap --root '/w/my repo' --runtime-dir /run/p --endpoint /run/p/c.sock`"
-        ), "{text}");
+        let root = if cfg!(windows) {
+            "\"/w/my repo\""
+        } else {
+            "'/w/my repo'"
+        };
+        assert!(text.contains(&format!(
+            "`SessionStart`: `/usr/bin/precept-hook --vendor claude --client <harness> --project alpha --capability-file /run/p/agent-alpha.cap --root {root} --runtime-dir /run/p --endpoint /run/p/c.sock`"
+        )), "{text}");
         assert!(text.contains("--event pre-tool`"));
         assert!(text.contains("--event post-read`"));
         assert!(installation(&mcp, &[]).contains("No project is registered"));
