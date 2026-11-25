@@ -89,7 +89,7 @@ pub(super) fn configure(model: Signal<Model>) -> impl IntoElement {
                                 let Some(text) = current_snippet(&model.get()) else {
                                     return false;
                                 };
-                                set_clipboard(text);
+                                drop(set_clipboard(text));
                                 model.update(|m| m.agents.copied = true);
                                 true
                             },

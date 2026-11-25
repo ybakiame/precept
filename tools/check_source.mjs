@@ -96,8 +96,8 @@ requireCheck(!!nshPin, 'Missing immutable NSH Cargo core pin');
 for (const dependency of nshDependencies) {
   requireCheck(!!nshPin && dependency.revision === nshPin, `NSH Cargo dependency pin mismatch: ${dependency.name}`);
 }
-// NSH 0.6.0 gates SVG rendering behind the native platform crates' `svg`
-// feature; without it every icon silently draws nothing (test builds hide this:
+// NSH gates SVG rendering behind the native platform crates' `svg` feature;
+// without it every icon silently draws nothing (test builds hide this:
 // dev-dependencies unify the feature in).
 for (const platform of ['nsh-platform-linux', 'nsh-platform-macos', 'nsh-platform-windows']) {
   const dependency = nshDependencies.find(d => d.name === platform);

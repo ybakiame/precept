@@ -16,6 +16,10 @@ data between schemas with the versioned Profile export and import.
   Set up, matching the launch-guide order. Review rows and empty states remain
   stable during reads and paging, while the sidebar indicator ignores stale layout
   measurements and does not replay motion for an unchanged selection.
+- **Desktop automation identity:** the Desktop now builds on pinned NSH 0.7.0.
+  Navigation, setup steps and primary controls expose stable English automation
+  identifiers that Windows UI Automation reports as `AutomationId`, independent of
+  localized labels and runtime data; accessible names remain localized.
 - **Pinned repository isolation:** registered projects retain their root identity
   across restarts. Inventory, selector probes, checked files and fixed import
   sources traverse pinned directory handles with no-follow semantics on Unix and

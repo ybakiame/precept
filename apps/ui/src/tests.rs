@@ -1,4 +1,5 @@
 use super::*;
+use crate::ui::gallery::Gallery;
 use nsh_engine::{EngineConfig, Root};
 #[test]
 fn the_top_bar_shows_the_version_and_hides_the_sidebar() {
@@ -272,6 +273,35 @@ fn ten_thousand_rows_stay_virtual_while_scrolled_filtered_and_tagged() {
 }
 
 #[test]
+fn shared_controls_expose_stable_ids_to_headless_interaction() {
+    let mut app = nsh_testing::Headless::start(EngineConfig::new(Root::of::<Gallery>())).unwrap();
+    app.wait_for("UI Gallery").unwrap();
+    assert_eq!(app.screen().count("id:gallery.nav.overview").unwrap(), 1);
+    app.press("id:gallery.nav.preferences").unwrap();
+    app.wait_until(
+        "gallery selection",
+        std::time::Duration::from_secs(5),
+        |s| {
+            s.accessibility_state("id:gallery.nav.preferences")
+                .unwrap()
+                .selected
+        },
+    )
+    .unwrap();
+    app.press("id:gallery.nav.settings").unwrap();
+    app.wait_until(
+        "gallery selection changed",
+        std::time::Duration::from_secs(5),
+        |s| {
+            s.accessibility_state("id:gallery.nav.settings")
+                .unwrap()
+                .selected
+        },
+    )
+    .unwrap();
+}
+
+#[test]
 fn navigation_separates_workspaces_review_rules_and_diagnostics() {
     let mut config = EngineConfig::new(Root::of::<App>());
     config.viewport = Size::new(px(1180.0), px(780.0));
@@ -283,17 +313,18 @@ fn navigation_separates_workspaces_review_rules_and_diagnostics() {
     assert!(position("Set up") < position("Workspaces"));
     assert!(position("Workspaces") < position("Agents"));
     assert!(position("Agents") < position("Personal sync"));
-    // Runtime checks holds only Connection and Profile; Workspaces is independent.
-    app.press("Runtime checks").unwrap();
+    assert_eq!(app.screen().count("id:nav.runtime-checks").unwrap(), 1);
+    assert_eq!(app.screen().count("id:nav.personal-sync").unwrap(), 1);
+    app.press("id:nav.runtime-checks").unwrap();
     app.wait_for("Connection").unwrap();
-    app.wait_for("Profile").unwrap();
+    assert_eq!(app.screen().count("id:setup.profile").unwrap(), 1);
     app.wait_for("1/2").unwrap();
     assert!(!app.screen().shows("Checks only read status."));
-    app.press("Profile").unwrap();
+    app.press("id:setup.profile").unwrap();
     app.wait_for("Connect to a daemon first").unwrap();
     app.press("Go to Connection").unwrap();
     app.wait_for("Use demo data").unwrap();
-    app.press("Workspaces").unwrap();
+    app.press("id:nav.workspaces").unwrap();
     app.wait_for("Registered workspaces").unwrap();
     assert!(
         !app.screen()
@@ -301,28 +332,41 @@ fn navigation_separates_workspaces_review_rules_and_diagnostics() {
     );
     assert_eq!(app.screen().count("role:button[beta]").unwrap(), 0);
     // Pending review and reviewed records are separate Context destinations.
-    app.press("Rules").unwrap();
-    app.wait_for("Live daemon required").unwrap();
-    app.press("Review").unwrap();
+    app.press("id:nav.preferences").unwrap();
+    app.wait_for("Confirmed preferences and conventions")
+        .unwrap();
+    app.press("id:nav.review").unwrap();
     app.wait_for("Live daemon required").unwrap();
     assert!(!app.screen().shows("Review & rules"));
     // The two diagnostic cards precede Doctor.
-    app.press("Diagnostics").unwrap();
+    app.press("id:nav.diagnostics").unwrap();
     let texts = app.screen().texts();
     let daemon = texts.iter().position(|t| *t == "Daemon status").unwrap();
     let doctor = texts.iter().position(|t| *t == "Doctor").unwrap();
     assert!(daemon < doctor);
     // Agent access is a Set up destination and shows offline guidance on Demo data.
-    app.press("Agents").unwrap();
+    app.press("id:nav.agents").unwrap();
     app.wait_for("Connect to a daemon first").unwrap();
+    // The same automation id drives navigation after the visible language changes.
+    app.press_key("mod+l").unwrap();
+    app.wait_until(
+        "localized dashboard navigation id",
+        std::time::Duration::from_secs(5),
+        |s| s.count("id:nav.dashboard").unwrap_or(0) == 1,
+    )
+    .unwrap();
+    app.press("id:nav.dashboard").unwrap();
+    app.wait_for("概览").unwrap();
+    assert_eq!(app.screen().count("id:nav.dashboard").unwrap(), 1);
 }
 
 #[test]
 fn personal_sync_is_a_separate_setup_destination_with_honest_offline_state() {
     let mut config = EngineConfig::new(Root::of::<App>());
-    config.viewport = Size::new(px(760.0), px(640.0));
+    config.viewport = Size::new(px(1180.0), px(780.0));
     let mut app = nsh_testing::Headless::start(config).unwrap();
     app.wait_for("Project: alpha").unwrap();
+    assert_eq!(app.screen().count("id:nav.personal-sync").unwrap(), 1);
     app.press("Personal sync").unwrap();
     app.wait_for("Move confirmed global preferences between paired devices through manual encrypted files. Nothing syncs automatically.")
         .unwrap();

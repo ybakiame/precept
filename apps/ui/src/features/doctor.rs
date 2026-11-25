@@ -133,7 +133,7 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
                         .size(ButtonSize::Small)
                         .on_press(move || {
                             let m = model.get();
-                            set_clipboard(doctor::report(&m, &checks.get().0));
+                            drop(set_clipboard(doctor::report(&m, &checks.get().0)));
                             ui::notify(ui::Tone::Success, m.word(Msg::DoctorCopied));
                         }),
                 ),

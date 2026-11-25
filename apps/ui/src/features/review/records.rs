@@ -129,6 +129,7 @@ pub(super) fn page_toolbar(model: Signal<Model>) -> impl IntoElement {
                 )
                 .child(
                     ui::button(model, "")
+                        .test_id("review.add")
                         .label_fn(move || {
                             let m = model.get();
                             m.word(match m.operator.mode {
@@ -156,6 +157,7 @@ pub(super) fn page_toolbar(model: Signal<Model>) -> impl IntoElement {
         )
         .child(
             ui::button(model, "")
+                .test_id("review.import")
                 .label_fn(move || model.get().word(Msg::ImportOpen).into())
                 .disabled(move || {
                     !available(model)
@@ -196,6 +198,7 @@ pub(super) fn page_toolbar(model: Signal<Model>) -> impl IntoElement {
         .child(view().flex_1())
         .child(
             ui::button(model, "")
+                .test_id("review.refresh")
                 .label_fn(move || model.get().word(Msg::RefreshList).into())
                 .size(ui::ButtonSize::Small)
                 .variant(ui::ButtonVariant::Ghost)

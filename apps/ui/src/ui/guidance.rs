@@ -62,6 +62,7 @@ impl IntoElement for NextAction {
         let reveal = motion::reveal();
         let mut actions = view().flex_row().flex_wrap().items_center().gap_2().child(
             button(model, "")
+                .test_id("next-step.primary")
                 .label_fn(move || action_label.clone())
                 .variant(ButtonVariant::Primary)
                 .on_press(move || on_action()),
@@ -69,6 +70,7 @@ impl IntoElement for NextAction {
         if let Some((label, on_press)) = secondary {
             actions = actions.child(
                 button(model, "")
+                    .test_id("next-step.secondary")
                     .label_fn(move || label.clone())
                     .variant(ButtonVariant::Ghost)
                     .on_press(move || on_press()),

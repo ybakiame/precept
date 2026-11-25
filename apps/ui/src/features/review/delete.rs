@@ -62,7 +62,7 @@ pub(super) fn delete_dialog(
                                     if id <= 0 {
                                         return false;
                                     }
-                                    set_clipboard(id.to_string());
+                                    drop(set_clipboard(id.to_string()));
                                     true
                                 },
                             )

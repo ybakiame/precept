@@ -54,37 +54,58 @@ fn model(report: Option<LintReport>, live: bool) -> Model {
     model
 }
 
+fn windowed(content: impl Fn() -> AnyElement + 'static) -> impl IntoElement {
+    nsh_core::element::desktop::window()
+        .id("main")
+        .content(content)
+        .into_element()
+}
+
 #[component]
 fn DiagnosticsRules() -> impl IntoElement {
     let model = signal(model(Some(issue_report(3)), true));
-    view()
-        .flex_1()
-        .child(features::preferences::preferences(model))
-        .child(templates_dialog(model))
+    windowed(move || {
+        view()
+            .flex_1()
+            .child(features::preferences::preferences(model))
+            .child(templates_dialog(model))
+            .into_element()
+    })
 }
 
 #[component]
 fn OfflineRules() -> impl IntoElement {
     let model = signal(model(None, false));
-    view()
-        .flex_1()
-        .child(features::preferences::preferences(model))
-        .child(templates_dialog(model))
+    windowed(move || {
+        view()
+            .flex_1()
+            .child(features::preferences::preferences(model))
+            .child(templates_dialog(model))
+            .into_element()
+    })
 }
 
 #[component]
 fn TemplateRules() -> impl IntoElement {
     let model = signal(model(None, false));
-    view()
-        .flex_1()
-        .child(panel(model))
-        .child(templates_dialog(model))
+    windowed(move || {
+        view()
+            .flex_1()
+            .child(panel(model))
+            .child(templates_dialog(model))
+            .into_element()
+    })
 }
 
 #[component]
 fn CappedRules() -> impl IntoElement {
     let model = signal(model(Some(issue_report(45)), true));
-    view().flex_1().child(scroll().flex_1().child(panel(model)))
+    windowed(move || {
+        view()
+            .flex_1()
+            .child(scroll().flex_1().child(panel(model)))
+            .into_element()
+    })
 }
 
 fn simple_report(status: &str) -> LintReport {
@@ -114,7 +135,7 @@ fn simple_report(status: &str) -> LintReport {
 #[component]
 fn StateRules() -> impl IntoElement {
     let model = signal(model(Some(simple_report("ok")), true));
-    let action = |label: &'static str, status: &'static str, error: bool| {
+    let action = move |label: &'static str, status: &'static str, error: bool| {
         ui::button(model, label)
             .size(ui::ButtonSize::Small)
             .on_press(move || {
@@ -133,19 +154,25 @@ fn StateRules() -> impl IntoElement {
                 })
             })
     };
-    view().flex_1().child(panel(model)).child(
+    windowed(move || {
         view()
-            .flex_row()
-            .flex_wrap()
-            .gap_2()
-            .child(action("Show loading", "busy", false))
-            .child(action("Show waiting", "waiting", false))
-            .child(action("Show connection error", "connection", false))
-            .child(action("Show clean", "ok", false))
-            .child(action("Show not configured", "not_configured", false))
-            .child(action("Show unavailable", "unavailable", false))
-            .child(action("Show error", "error", true)),
-    )
+            .flex_1()
+            .child(panel(model))
+            .child(
+                view()
+                    .flex_row()
+                    .flex_wrap()
+                    .gap_2()
+                    .child(action("Show loading", "busy", false))
+                    .child(action("Show waiting", "waiting", false))
+                    .child(action("Show connection error", "connection", false))
+                    .child(action("Show clean", "ok", false))
+                    .child(action("Show not configured", "not_configured", false))
+                    .child(action("Show unavailable", "unavailable", false))
+                    .child(action("Show error", "error", true)),
+            )
+            .into_element()
+    })
 }
 
 fn start(root: Root) -> nsh_testing::Headless {

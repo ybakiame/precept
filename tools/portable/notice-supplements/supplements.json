@@ -99,15 +99,15 @@
     },
     {
       "package": "taffy",
-      "version": "0.15.1",
+      "version": "0.16.0",
       "texts": [
         {
           "file": "f97daf1a0124413dccf399a4e6626b4b74acd05282f80b6d64ac82225650b77a.txt",
           "sha256": "f97daf1a0124413dccf399a4e6626b4b74acd05282f80b6d64ac82225650b77a",
-          "source": "https://github.com/DioxusLabs/taffy/blob/0064bd54cbe38bf1d8bcd6ec6ab0704d45fb048a/LICENSE"
+          "source": "https://github.com/DioxusLabs/taffy/blob/497de49c200daee81a18ce627bec98d5340ae57a/LICENSE"
         }
       ],
-      "reason": "Upstream LICENSE at tag v0.15.1; the published crate ships no license file"
+      "reason": "Upstream LICENSE at tag v0.16.0; the published crate ships no license file"
     },
     {
       "package": "wuff",

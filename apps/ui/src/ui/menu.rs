@@ -23,6 +23,7 @@ struct Item {
 pub struct Menu {
     model: Signal<Model>,
     label: LabelFn,
+    test_id: Option<&'static str>,
     items: Vec<Item>,
 }
 
@@ -31,11 +32,17 @@ pub fn menu(model: Signal<Model>, label: impl Fn() -> SharedString + 'static) ->
     Menu {
         model,
         label: Rc::new(label),
+        test_id: None,
         items: Vec::new(),
     }
 }
 
 impl Menu {
+    /// A stable automation identifier for the trigger, independent of its label.
+    pub fn test_id(mut self, id: &'static str) -> Self {
+        self.test_id = Some(id);
+        self
+    }
     /// A choice: its label, whether it is the current one, and what choosing
     /// it does.
     pub fn item(
@@ -77,6 +84,7 @@ impl IntoElement for Menu {
     fn into_element(self) -> AnyElement {
         let model = self.model;
         let label = self.label.clone();
+        let test_id = self.test_id;
         // The trigger's visible text names it; the base menu gives it the
         // menu-button role and expanded state.
         let trigger = view()
@@ -103,6 +111,11 @@ impl IntoElement for Menu {
             })
             .child(text(move || label()).flex_1())
             .child(icon::glyph(CHEVRON, scale::icon::SM));
+        let trigger = if let Some(id) = test_id {
+            trigger.test_id(id)
+        } else {
+            trigger
+        };
         let items: Vec<AnyElement> = self
             .items
             .into_iter()

@@ -51,6 +51,7 @@ pub struct Button {
     trailing: Option<AnyElement>,
     spoken: Option<LabelFn>,
     tooltip: Option<nsh_base::TooltipElement>,
+    test_id: Option<&'static str>,
     // Explicit native-acceptance observer only; never a control or authority.
     probe: Option<(std::path::PathBuf, String)>,
 }
@@ -75,6 +76,7 @@ pub fn button(model: Signal<Model>, label: impl Into<SharedString>) -> Button {
         trailing: None,
         spoken: None,
         tooltip: None,
+        test_id: None,
         probe: None,
     }
 }
@@ -150,6 +152,11 @@ impl Button {
     /// A hint attached to this button's own hover and keyboard focus.
     pub fn tooltip(mut self, tooltip: nsh_base::TooltipElement) -> Self {
         self.tooltip = Some(tooltip);
+        self
+    }
+    /// A stable automation identifier, independent of the localized label.
+    pub fn test_id(mut self, id: &'static str) -> Self {
+        self.test_id = Some(id);
         self
     }
     /// What activation does.
@@ -348,7 +355,11 @@ impl IntoElement for Button {
             reference.on_focus_in(move || emit_focus_probe(&probe));
             reference
         });
-        let b = base_button()
+        let mut b = base_button();
+        if let Some(id) = self.test_id {
+            b = b.test_id(id);
+        }
+        let b = b
             .accessibility_label(move || Some(label()))
             .disabled(move || disabled() || loading_disabled())
             .disabled_style(|s| s.opacity(0.45))

@@ -24,6 +24,27 @@ pub(crate) enum Destination {
     Settings,
 }
 
+impl Destination {
+    pub(crate) fn test_id(self) -> &'static str {
+        match self {
+            Self::Onboarding => "nav.onboarding",
+            Self::Dashboard => "nav.dashboard",
+            Self::Rules => "nav.preferences",
+            Self::Agents => "nav.agents",
+            Self::Sessions => "nav.sessions",
+            Self::Memory => "nav.memory",
+            Self::Handoff => "nav.handoff",
+            Self::Review => "nav.review",
+            Self::ReviewedRules => "nav.reviewed-rules",
+            Self::RuntimeChecks => "nav.runtime-checks",
+            Self::Workspaces => "nav.workspaces",
+            Self::PersonalSync => "nav.personal-sync",
+            Self::Diagnostics => "nav.diagnostics",
+            Self::Settings => "nav.settings",
+        }
+    }
+}
+
 pub(crate) fn current(m: &Model) -> Destination {
     if m.onboarding_open {
         Destination::Onboarding
@@ -268,4 +289,52 @@ pub(super) fn copyable_destination(d: Destination) -> bool {
             | Destination::Handoff
             | Destination::Diagnostics
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn destination_automation_ids_are_stable_and_unique() {
+        let destinations = [
+            Destination::Onboarding,
+            Destination::Dashboard,
+            Destination::Rules,
+            Destination::Agents,
+            Destination::Sessions,
+            Destination::Memory,
+            Destination::Handoff,
+            Destination::Review,
+            Destination::ReviewedRules,
+            Destination::RuntimeChecks,
+            Destination::Workspaces,
+            Destination::PersonalSync,
+            Destination::Diagnostics,
+            Destination::Settings,
+        ];
+        let ids = destinations.map(Destination::test_id);
+        assert_eq!(
+            ids,
+            [
+                "nav.onboarding",
+                "nav.dashboard",
+                "nav.preferences",
+                "nav.agents",
+                "nav.sessions",
+                "nav.memory",
+                "nav.handoff",
+                "nav.review",
+                "nav.reviewed-rules",
+                "nav.runtime-checks",
+                "nav.workspaces",
+                "nav.personal-sync",
+                "nav.diagnostics",
+                "nav.settings",
+            ]
+        );
+        for (index, id) in ids.iter().enumerate() {
+            assert!(!ids[..index].contains(id), "duplicate automation id {id}");
+        }
+    }
 }

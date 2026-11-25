@@ -25,6 +25,7 @@ fn status_of(m: &Model) -> (ui::Status, Msg) {
 fn status_row(model: Signal<Model>) -> impl IntoElement {
     let state = computed(move || status_of(&model.get()).0);
     ui::button(model, "")
+        .test_id("daemon.status")
         .label_fn(move || {
             let m = model.get();
             format!("{} · {}", m.word(status_of(&m).1), target_words(&m)).into()
@@ -86,7 +87,7 @@ fn destination(model: Signal<Model>, item: Destination, path: &'static str) -> A
         let count = computed(move || model.get().review_count.filter(|n| *n > 0));
         return ui::nav_item_counted(
             model,
-            path,
+            ui::NavIdentity::new(item.test_id(), path),
             move || model.get().word(title_key(item)).into(),
             move || count.get(),
             move || {
@@ -125,6 +126,7 @@ fn destination(model: Signal<Model>, item: Destination, path: &'static str) -> A
                 .into_element()
         });
         return ui::button(model, "")
+            .test_id(item.test_id())
             .label_fn(move || model.get().word(title_key(item)).into())
             .variant(ui::ButtonVariant::Ghost)
             .icon(path)
@@ -137,7 +139,7 @@ fn destination(model: Signal<Model>, item: Destination, path: &'static str) -> A
     }
     ui::nav_item(
         model,
-        path,
+        ui::NavIdentity::new(item.test_id(), path),
         move || model.get().word(title_key(item)).into(),
         move || current(&model.get()) == item,
         move || go(model, item),
@@ -154,6 +156,7 @@ fn workspace_switcher(model: Signal<Model>) -> impl IntoElement {
         let names = names.get();
         if names.is_empty() {
             return ui::button(model, "")
+                .test_id("workspace.add")
                 .label_fn(move || model.get().word(Msg::AddWorkspaceCta).into())
                 .icon(icons::PLUS)
                 .variant(ui::ButtonVariant::Default)
@@ -166,7 +169,8 @@ fn workspace_switcher(model: Signal<Model>) -> impl IntoElement {
             .into_iter()
             .enumerate()
             .fold(
-                ui::menu(model, move || current_project(model).into()),
+                ui::menu(model, move || current_project(model).into())
+                    .test_id("workspace.switcher"),
                 |menu, (index, name)| {
                     menu.item(
                         name,
@@ -311,6 +315,7 @@ pub(super) fn sidebar(model: Signal<Model>) -> impl IntoElement {
                     ui::icon_button(model, icons::KEYBOARD, move || {
                         model.get().word(Msg::KeysTitle).into()
                     })
+                    .test_id("shortcuts.open")
                     .variant(ui::ButtonVariant::Ghost)
                     .size(ui::ButtonSize::Small)
                     .selected(move || model.get().shortcuts_open)

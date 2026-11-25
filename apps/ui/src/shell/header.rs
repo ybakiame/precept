@@ -120,6 +120,7 @@ pub(super) fn top_bar(model: Signal<Model>) -> impl IntoElement {
                 })
                 .into()
             })
+            .test_id("sidebar.toggle")
             .variant(ui::ButtonVariant::Ghost)
             .size(ui::ButtonSize::Small)
             .on_press(move || model.update(|m| m.sidebar_collapsed = !m.sidebar_collapsed)),
@@ -170,6 +171,7 @@ pub(super) fn header(model: Signal<Model>) -> impl IntoElement {
             .gap_2()
             .child(
                 ui::button(model, "")
+                    .test_id("page.reconnect")
                     .label_fn(move || model.get().word(Msg::Reconnect).into())
                     .icon(icons::REFRESH)
                     .variant(ui::ButtonVariant::Ghost)
@@ -189,6 +191,7 @@ pub(super) fn header(model: Signal<Model>) -> impl IntoElement {
                             move || model.get().word(Msg::CopiedShort).into(),
                             move || copy_page(model),
                         )
+                        .test_id("page.copy")
                         .variant(ui::ButtonVariant::Ghost)
                         .size(ui::ButtonSize::Small)
                         .disabled(move || {

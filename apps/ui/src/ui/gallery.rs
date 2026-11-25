@@ -5,8 +5,8 @@
 //! render and the destructive dialog opens and dismisses.
 use super::prelude::*;
 use super::{
-    BadgeVariant, ButtonSize, ButtonVariant, alert_dialog, badge, button, empty, field, guide_step,
-    input, menu, nav_item, next_action, properties, radio_group, surface, tabs,
+    BadgeVariant, ButtonSize, ButtonVariant, NavIdentity, alert_dialog, badge, button, empty,
+    field, guide_step, input, menu, nav_item, next_action, properties, radio_group, surface, tabs,
 };
 use precept_ui_core::appearance::{ColorMode, ThemeId};
 
@@ -192,22 +192,26 @@ pub fn Gallery() -> impl IntoElement {
     .into_element();
 
     let place = signal(0usize);
-    let navigation = ["Overview", "Preferences", "Settings"]
-        .into_iter()
-        .enumerate()
-        .fold(
-            view().w(px(scale::layout::SIDEBAR)).gap_0p5(),
-            |list, (i, name)| {
-                list.child(nav_item(
-                    model,
-                    INBOX,
-                    move || name.into(),
-                    move || place.get() == i,
-                    move || place.set(i),
-                ))
-            },
-        )
-        .into_element();
+    let navigation = [
+        ("Overview", "gallery.nav.overview"),
+        ("Preferences", "gallery.nav.preferences"),
+        ("Settings", "gallery.nav.settings"),
+    ]
+    .into_iter()
+    .enumerate()
+    .fold(
+        view().w(px(scale::layout::SIDEBAR)).gap_0p5(),
+        |list, (i, (name, id))| {
+            list.child(nav_item(
+                model,
+                NavIdentity::new(id, INBOX),
+                move || name.into(),
+                move || place.get() == i,
+                move || place.set(i),
+            ))
+        },
+    )
+    .into_element();
     let project = signal(0usize);
     let picker = view()
         .w(px(scale::layout::SIDEBAR))

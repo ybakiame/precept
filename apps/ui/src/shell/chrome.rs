@@ -9,6 +9,7 @@ use tokens::palette;
 // Paths are centered in a 24×24 viewBox. No font glyph metrics or baseline offset.
 fn caption(
     model: Signal<Model>,
+    id: &'static str,
     key: Msg,
     path: &'static str,
     destructive: bool,
@@ -18,6 +19,7 @@ fn caption(
         "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='{path}' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>"
     );
     button()
+        .test_id(id)
         .accessibility_label(move || Some(model.get().word(key).into()))
         .w(px(46.0))
         .h(px(ui::scale::layout::TITLE_BAR))
@@ -58,6 +60,7 @@ pub(crate) fn window_buttons(model: Signal<Model>) -> impl IntoElement {
         .flex_shrink_0()
         .child(caption(
             model,
+            "window.minimize",
             Msg::Minimize,
             "M5 12H19",
             false,
@@ -70,6 +73,7 @@ pub(crate) fn window_buttons(model: Signal<Model>) -> impl IntoElement {
                 .is_some_and(|s| s.mode == WindowMode::Maximized);
             caption(
                 model,
+                "window.maximize",
                 if maximized {
                     Msg::Restore
                 } else {
@@ -97,6 +101,7 @@ pub(crate) fn window_buttons(model: Signal<Model>) -> impl IntoElement {
         }))
         .child(caption(
             model,
+            "window.close",
             Msg::Close,
             "M6 6L18 18M18 6L6 18",
             true,
@@ -109,6 +114,7 @@ pub(crate) fn grip(model: Signal<Model>) -> impl IntoElement {
             .w(px(18.0))
             .h(px(14.0))
             .window_resize(ResizeEdge::BottomRight)
+            .test_id("window.resize")
             .accessible(true)
             .label(move || model.get().word(Msg::Resize))
             .child(

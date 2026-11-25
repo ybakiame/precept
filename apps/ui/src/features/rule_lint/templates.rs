@@ -78,7 +78,7 @@ fn preview(model: Signal<Model>) -> impl IntoElement {
                         .icon(ui::icons::COPY)
                         .size(ButtonSize::Small)
                         .on_press(move || {
-                            set_clipboard(template.text());
+                            drop(set_clipboard(template.text()));
                             ui::notify(ui::Tone::Success, model.get().word(Msg::TemplateCopied));
                         }),
                 ),

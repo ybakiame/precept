@@ -519,6 +519,7 @@ mod tests {
             alt,
             shift,
             cmd,
+            alt_graph: false,
         }
     }
 
@@ -594,15 +595,21 @@ mod tests {
     fn ShortcutsPanel() -> impl IntoElement {
         let model = signal(Model::loading());
         model.update(|m| m.shortcuts_open = true);
-        view()
-            .flex_1()
-            .child(text(move || {
-                format!(
-                    "Reconnect is {}",
-                    model.get().keymap.primary("reconnect").unwrap_or_default()
-                )
-            }))
-            .child(panel(model))
+        nsh_core::element::desktop::window()
+            .id("main")
+            .content(move || {
+                view()
+                    .flex_1()
+                    .child(text(move || {
+                        format!(
+                            "Reconnect is {}",
+                            model.get().keymap.primary("reconnect").unwrap_or_default()
+                        )
+                    }))
+                    .child(panel(model))
+                    .into_element()
+            })
+            .into_element()
     }
 
     #[test]

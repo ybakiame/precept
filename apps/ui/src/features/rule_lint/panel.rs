@@ -235,7 +235,7 @@ fn report_view(model: Signal<Model>, report: &LintReport) -> AnyElement {
                 .on_press({
                     let report = report.clone();
                     move || {
-                        set_clipboard(report.plain_text());
+                        drop(set_clipboard(report.plain_text()));
                         ui::notify(ui::Tone::Success, model.get().word(Msg::RuleLintCopied));
                     }
                 }),

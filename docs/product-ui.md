@@ -50,6 +50,12 @@ the danger treatment and deliberate confirmation.
 Icons are original outline vectors on a 24×24 grid using `currentColor`; they
 supplement labels. Icon-only controls require accessible names.
 
+Navigation and primary actions carry static automation identifiers independent of
+localized labels. Windows UI Automation exposes them as `AutomationId`; automated
+lookup combines that id with the control type and treats accessible names as
+localized text, not stable keys. Identifiers never contain project data, preference
+values or other private runtime content.
+
 Keyboard shortcuts come from one catalog and are shown and changed in the
 Shortcuts panel (`Ctrl+/`, `F1`, the sidebar's keyboard button), never printed on
 pages. Overrides are presentation settings saved in the private `settings.toml`;

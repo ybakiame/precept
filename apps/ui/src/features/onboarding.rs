@@ -225,6 +225,7 @@ fn top_bar(model: Signal<Model>) -> impl IntoElement {
                 )
                 .child(
                     ui::button(model, "")
+                        .test_id("guide.skip")
                         .label_fn(move || model.get().word(Msg::LaunchGuideSkip).into())
                         .variant(ButtonVariant::Ghost)
                         .size(ButtonSize::Small)
@@ -365,6 +366,7 @@ fn footer(model: Signal<Model>) -> impl IntoElement {
                 .style_when(move || back.get().is_none(), |s| s.hidden())
                 .child(
                     ui::button(model, "")
+                        .test_id("guide.back")
                         .label_fn(move || model.get().word(Msg::LaunchGuideBack).into())
                         .variant(ButtonVariant::Ghost)
                         .on_press(move || {
@@ -377,6 +379,7 @@ fn footer(model: Signal<Model>) -> impl IntoElement {
         .child(view().flex_1())
         .child(
             ui::button(model, "")
+                .test_id("guide.primary")
                 .label_fn(move || {
                     let m = model.get();
                     let key = match m.onboarding_step {

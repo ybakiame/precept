@@ -45,7 +45,14 @@ fn tab_icon(tab: SetupTab) -> &'static str {
 fn step_tab(model: Signal<Model>, tab: SetupTab) -> impl IntoElement {
     ui::step_item(
         model,
-        tab_icon(tab),
+        ui::NavIdentity::new(
+            match tab {
+                SetupTab::Connection => "setup.connection",
+                SetupTab::Profile => "setup.profile",
+                SetupTab::Workspaces => "setup.workspaces",
+            },
+            tab_icon(tab),
+        ),
         move || model.get().word(tab_label(tab)).into(),
         move || model.get().word(tab_label(tab)).into(),
         move || model.get().setup_tab == tab,

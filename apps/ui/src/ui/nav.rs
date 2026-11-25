@@ -5,19 +5,31 @@
 use super::prelude::*;
 use super::{ButtonVariant, button};
 
+pub struct NavIdentity {
+    id: &'static str,
+    icon_path: &'static str,
+}
+
+impl NavIdentity {
+    pub const fn new(id: &'static str, icon_path: &'static str) -> Self {
+        Self { id, icon_path }
+    }
+}
+
 /// A destination: its icon path, a label that stays current, whether it is the
 /// current one and what choosing it does.
 pub fn nav_item(
     model: Signal<Model>,
-    icon_path: &'static str,
+    identity: NavIdentity,
     label: impl Fn() -> SharedString + 'static,
     selected: impl Fn() -> bool + 'static,
     on_press: impl Fn() + 'static,
 ) -> impl IntoElement {
     button(model, "")
+        .test_id(identity.id)
         .label_fn(label)
         .variant(ButtonVariant::Ghost)
-        .icon(icon_path)
+        .icon(identity.icon_path)
         .full_width()
         .selected(selected)
         .quiet_selection(move || !compact())
@@ -29,7 +41,7 @@ pub fn nav_item(
 /// `spoken` naming the count for screen readers ("To review, 3 waiting").
 pub fn nav_item_counted(
     model: Signal<Model>,
-    icon_path: &'static str,
+    identity: NavIdentity,
     label: impl Fn() -> SharedString + 'static,
     count: impl Fn() -> Option<i64> + 'static,
     spoken: impl Fn() -> SharedString + 'static,
@@ -64,10 +76,11 @@ pub fn nav_item_counted(
             .into_element()
     });
     button(model, "")
+        .test_id(identity.id)
         .label_fn(label)
         .spoken(spoken)
         .variant(ButtonVariant::Ghost)
-        .icon(icon_path)
+        .icon(identity.icon_path)
         .full_width()
         .selected(selected)
         .quiet_selection(move || !compact())
@@ -80,7 +93,7 @@ pub fn nav_item_counted(
 /// The check grows in when the step completes.
 pub fn step_item(
     model: Signal<Model>,
-    icon_path: &'static str,
+    identity: NavIdentity,
     label: impl Fn() -> SharedString + 'static,
     spoken: impl Fn() -> SharedString + 'static,
     selected: impl Fn() -> bool + 'static,
@@ -100,10 +113,11 @@ pub fn step_item(
             .into_element()
     });
     button(model, "")
+        .test_id(identity.id)
         .label_fn(label)
         .spoken(spoken)
         .variant(ButtonVariant::Ghost)
-        .icon(icon_path)
+        .icon(identity.icon_path)
         .full_width()
         .selected(selected)
         .trailing(check)
@@ -139,7 +153,11 @@ impl<K: Copy + PartialEq + 'static> Slide<K> {
         let moved = self.moved;
         view()
             .element_ref(&reference)
-            .on_layout(move |_: &Bounds<Points>| moved.update(|m| *m = m.wrapping_add(1)))
+            .on_layout(move |_: &Bounds<Points>| {
+                if !compact() {
+                    moved.update(|m| *m = m.wrapping_add(1));
+                }
+            })
             .child(child)
             .into_element()
     }
@@ -149,7 +167,11 @@ impl<K: Copy + PartialEq + 'static> Slide<K> {
     pub fn group(&self, child: impl IntoElement) -> AnyElement {
         let moved = self.moved;
         view()
-            .on_layout(move |_: &Bounds<Points>| moved.update(|m| *m = m.wrapping_add(1)))
+            .on_layout(move |_: &Bounds<Points>| {
+                if !compact() {
+                    moved.update(|m| *m = m.wrapping_add(1));
+                }
+            })
             .child(child)
             .into_element()
     }
@@ -178,12 +200,12 @@ impl<K: Copy + PartialEq + 'static> Slide<K> {
             let attempt = retry.get();
             let _ = moved.get();
             let _ = window();
-            let run = generation.get_untracked().wrapping_add(1);
-            generation.set(run);
             if compact() {
                 shown.set(false);
                 return;
             }
+            let run = generation.get_untracked().wrapping_add(1);
+            generation.set(run);
             let Some(row) = rows
                 .borrow()
                 .iter()

@@ -9,7 +9,7 @@ mod shell;
 mod shortcuts;
 mod ui;
 
-pub use app::App;
+pub use app::{App, app};
 use data::next_project;
 pub(crate) use data::{reconnect, switch_project};
 pub use features::brand_preview;
@@ -56,7 +56,9 @@ pub fn ephemeral_storage() -> std::sync::Arc<dyn nsh_core::storage::StorageBacke
         fn load(&self) -> Result<std::collections::BTreeMap<String, String>, String> {
             Ok(Default::default())
         }
-        fn write(&self, _: nsh_core::storage::StorageChange) {}
+        fn write(&self, _: nsh_core::storage::StorageChange) -> Result<(), String> {
+            Ok(())
+        }
     }
     std::sync::Arc::new(Empty)
 }
@@ -170,7 +172,7 @@ fn copy_page(model: Signal<Model>) -> bool {
         && !model.get().agents_page
         && !model.get().operator.open
     {
-        set_clipboard(model.get().visible_lines().join("\n"));
+        drop(set_clipboard(model.get().visible_lines().join("\n")));
         model.update(|m| m.copied = true);
         return true;
     }

@@ -8,6 +8,24 @@ use nsh_platform_macos as platform;
 use nsh_platform_windows as platform;
 #[cfg(target_os = "linux")]
 mod linux_probe;
+use nsh_core::prelude::*;
+
+#[component]
+fn DesktopApp() -> impl IntoElement {
+    nsh_core::element::desktop::window()
+        .id("main")
+        .content(precept_ui::app)
+        .into_element()
+}
+
+#[component]
+fn DesktopPreview() -> impl IntoElement {
+    nsh_core::element::desktop::window()
+        .id("main")
+        .content(precept_ui::brand_preview::brand_preview)
+        .into_element()
+}
+
 fn main() -> impl std::process::Termination {
     precept_ui::PROBE_STARTED
         .set(std::time::Instant::now())
@@ -37,10 +55,10 @@ fn main() -> impl std::process::Termination {
     }
     platform::run_app(
         platform::AppSource::Rust(if preview {
-            platform::Root::of::<precept_ui::brand_preview::BrandPreview>()
+            platform::Root::of::<DesktopPreview>()
                 .main_window(precept_ui::brand_preview::window_options())
         } else {
-            platform::Root::of::<precept_ui::App>()
+            platform::Root::of::<DesktopApp>()
                 .main_window(precept_ui::brand_preview::window_options())
         }),
         platform::AppOptions {

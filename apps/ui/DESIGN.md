@@ -525,6 +525,13 @@ always visible (the `primary` ring) and returns to the trigger after an overlay.
 Every icon-only control has a name; states (selected, disabled, busy, expanded) are
 exposed, not only drawn.
 
+**Automation identity is separate from language.** Shared controls carry static,
+English `test_id` values for durable navigation and primary actions. On Windows NSH
+exposes these as UI Automation `AutomationId`; tests use `id:<test-id>` and native
+UIA scripts locate by `AutomationId` plus `ControlType`, never by a localized visible
+name. Accessible names still localize for screen readers. Never derive an automation
+id from project, preference or other runtime data.
+
 **Shortcuts live in one panel, not on pages.** The catalog is
 `apps/core/src/keys.rs`: every action has a stable id, a group (General, Navigation,
 Review workspace), a label and its default keystrokes. Every binding goes

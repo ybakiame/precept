@@ -139,9 +139,9 @@ fn invitation(model: Signal<Model>) -> impl IntoElement {
                                     .icon(icons::COPY)
                                     .on_press(move || {
                                         if let Ok(value) = file.value() {
-                                            set_clipboard(
+                                            drop(set_clipboard(
                                                 serde_json::to_string(&value).unwrap_or_default(),
-                                            );
+                                            ));
                                             ui::notify(
                                                 ui::Tone::Success,
                                                 model.get().word(Msg::SyncCopy),

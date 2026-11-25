@@ -135,7 +135,7 @@ pub(crate) fn detail_dialog(model: Signal<Model>) -> impl IntoElement {
         })
         .on_confirm(move || {
             if let Some(d) = selected() {
-                set_clipboard(d.2);
+                drop(set_clipboard(d.2));
                 ui::notify(ui::Tone::Success, model.get().word(Msg::CopiedShort));
             }
         })

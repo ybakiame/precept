@@ -76,7 +76,7 @@ test('ledger resolves crate-local, checkout-root, supplement, election and no-te
     { workspace: 'w', linkage: 'linked', pkg: pkg('nsh-core', '0.5.0', 'Apache-2.0',
       f.crate('git/checkouts/nsh-1/abc/crates/nsh-core', { NOTICE: 'NOTICE alone does not resolve' }),
       `git+https://github.com/longbridge/nsh?rev=abc#${'b'.repeat(40)}`) },
-    { workspace: 'w', linkage: 'linked', pkg: pkg('taffy', '0.15.1', 'MIT', f.crate('reg/taffy')) },
+    { workspace: 'w', linkage: 'linked', pkg: pkg('taffy', '0.16.0', 'MIT', f.crate('reg/taffy')) },
     { workspace: 'w', linkage: 'linked', pkg: pkg('mac', '0.1.1', 'MIT/Apache-2.0', f.crate('reg/mac')) },
     { workspace: 'w', linkage: 'linked', pkg: pkg('hexf-parse', '0.2.1', 'CC0-1.0', f.crate('reg/hexf')) },
     { workspace: 'w', linkage: 'linked', pkg: pkg('ratex-font', '0.1.15', 'MIT', f.crate('reg/ratex-font')) },
@@ -96,8 +96,8 @@ test('ledger resolves crate-local, checkout-root, supplement, election and no-te
     'crate-local and intermediate NOTICE files ship with the inherited checkout-root license');
   assert.equal(by.taffy.notice_source, 'reviewed upstream text pinned to commit');
   assert.deepEqual(by.taffy.texts[0].upstream, {
-    url: 'https://github.com/DioxusLabs/taffy/blob/0064bd54cbe38bf1d8bcd6ec6ab0704d45fb048a/LICENSE',
-    repository: 'https://github.com/DioxusLabs/taffy', commit: '0064bd54cbe38bf1d8bcd6ec6ab0704d45fb048a', path: 'LICENSE' });
+    url: 'https://github.com/DioxusLabs/taffy/blob/497de49c200daee81a18ce627bec98d5340ae57a/LICENSE',
+    repository: 'https://github.com/DioxusLabs/taffy', commit: '497de49c200daee81a18ce627bec98d5340ae57a', path: 'LICENSE' });
   assert.equal(by.mac.notice_source, 'elected Apache-2.0; verbatim license text');
   assert.equal(by.mac.texts[0].sha256, sha(fs.readFileSync(path.join(repo, 'LICENSE'))));
   assert.equal(by['hexf-parse'].notice_source, 'no-notice-required (CC0-1.0)');
