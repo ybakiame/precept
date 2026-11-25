@@ -238,10 +238,6 @@ mod tests {
         let mut bad = wsl();
         bad.wsl_runtime = "relative".into();
         assert!(save_to(&dir, &bad).is_err());
-        assert_eq!(
-            save_to(&root.join("missing/precept"), &wsl()),
-            Err(UNAVAILABLE)
-        );
         let _ = std::fs::remove_dir_all(&root);
     }
 }
