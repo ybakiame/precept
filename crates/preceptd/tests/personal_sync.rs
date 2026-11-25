@@ -627,6 +627,114 @@ fn passphrase_bundles_use_the_same_sender_trust_and_apply_path() {
 }
 
 #[test]
+fn independent_devices_merge_password_files_in_both_directions_without_changing_identity() {
+    let home = support::Fixture::created();
+    let work = support::Fixture::created();
+    let home_binding = home.daemon.enable();
+    let work_binding = work.daemon.enable();
+    confirm_global(&home, &home_binding, "home-only", "Home.", true);
+    confirm_global(&home, &home_binding, "shared", "Home version.", true);
+    confirm_global(&work, &work_binding, "work-only", "Work.", true);
+    confirm_global(&work, &work_binding, "shared", "Work version.", true);
+    write_call(&home, "profile.sync.init", json!({}));
+    write_call(&work, "profile.sync.init", json!({}));
+    let home_before = home
+        .daemon
+        .control("profile.sync.status", json!({}))
+        .unwrap();
+    let work_before = work
+        .daemon
+        .control("profile.sync.status", json!({}))
+        .unwrap();
+    assert_ne!(
+        home_before["owner_fingerprint"],
+        work_before["owner_fingerprint"]
+    );
+    let password = "synthetic-exchange-password";
+    let home_file = write_call(
+        &home,
+        "profile.sync.export",
+        json!({
+            "recipient":null,"passphrase":password,"keys":null
+        }),
+    );
+    assert_eq!(
+        preview_call(
+            &work,
+            json!({"envelope":home_file,"passphrase":"wrong-password"})
+        ),
+        Err(Error::InvalidRequest)
+    );
+    let incoming: PersonalSyncPreview = serde_json::from_value(
+        preview_call(&work, json!({"envelope":home_file,"passphrase":password})).unwrap(),
+    )
+    .unwrap();
+    assert!(incoming.items.iter().any(|item| item.key == "shared"
+        && item.merge == precept_core::operator::PersonalSyncMerge::Conflict
+        && !item.selected));
+    assert!(
+        confirmed(&work, "home-only").is_none(),
+        "preview never writes preferences"
+    );
+    let request = submission(
+        &incoming,
+        &home_file,
+        Some(password),
+        operation("independent-work"),
+    );
+    let first = apply(&work, request.clone());
+    assert_eq!(apply(&work, request), first);
+    assert_eq!(
+        confirmed(&work, "shared").unwrap()["value"],
+        "Work version."
+    );
+    assert_eq!(confirmed(&work, "home-only").unwrap()["value"], "Home.");
+    assert_eq!(confirmed(&work, "work-only").unwrap()["value"], "Work.");
+
+    let work_file = write_call(
+        &work,
+        "profile.sync.export",
+        json!({
+            "recipient":null,"passphrase":password,"keys":null
+        }),
+    );
+    let merged: PersonalSyncPreview = serde_json::from_value(
+        preview_call(&home, json!({"envelope":work_file,"passphrase":password})).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        merged
+            .items
+            .iter()
+            .all(|item| item.merge != precept_core::operator::PersonalSyncMerge::Conflict)
+    );
+    apply(
+        &home,
+        submission(
+            &merged,
+            &work_file,
+            Some(password),
+            operation("independent-home"),
+        ),
+    );
+    assert_eq!(
+        confirmed(&home, "shared").unwrap()["value"],
+        "Work version."
+    );
+    assert_eq!(confirmed(&home, "home-only").unwrap()["value"], "Home.");
+    assert_eq!(confirmed(&home, "work-only").unwrap()["value"], "Work.");
+    for (device, before) in [(&home, home_before), (&work, work_before)] {
+        let after = device
+            .daemon
+            .control("profile.sync.status", json!({}))
+            .unwrap();
+        assert_eq!(after["device_id"], before["device_id"]);
+        assert_eq!(after["owner_fingerprint"], before["owner_fingerprint"]);
+        assert_eq!(after["trusted_devices"], json!([]));
+    }
+}
+
+#[test]
 fn direct_writer_sync_commands_cannot_bypass_sidecar_recovery() {
     let (a, _, _, _) = pair();
     let binding = a.daemon.enable();

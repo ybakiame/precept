@@ -1,4 +1,5 @@
 pub(crate) mod dialogs;
+mod forms;
 pub(crate) mod view;
 pub(crate) mod workflow;
 

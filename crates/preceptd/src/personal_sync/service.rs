@@ -13,7 +13,7 @@ use precept_core::operator::{
 };
 use precept_ipc::{Error, Result};
 use precept_store::{SqliteStore, profile::Receipt};
-use precept_sync::{TrustedSender, invitation, open_bundle, seal_bundle};
+use precept_sync::{OpenedBundle, invitation, open_signed_bundle, seal_bundle};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -218,6 +218,7 @@ pub(crate) fn export(
     if request.recipient.is_some() == request.passphrase.is_some() {
         return Err(Error::InvalidRequest);
     }
+    init(state_dir, profile_id, current)?;
     let mut state = state::load(state_dir, profile_id)?.ok_or(Error::NotFound)?;
     state.require_idle()?;
     state.reconcile(current)?;
@@ -272,7 +273,8 @@ pub(crate) fn preview(
 ) -> Result<PersonalSyncPreview> {
     let mut state = state::load(state_dir, profile_id)?.ok_or(Error::NotFound)?;
     state.require_idle()?;
-    let bundle = open_envelope(&state, &request, false)?;
+    let opened = open_envelope(&state, &request, false)?;
+    let bundle = opened.bundle;
     state.reconcile(current)?;
     let mut keys: Vec<String> = bundle
         .entries
@@ -304,7 +306,7 @@ pub(crate) fn preview(
             PersonalSyncMerge::Conflict => PersonalSyncResolution::KeepLocal,
             _ => PersonalSyncResolution::Accept,
         };
-        let selected = !applied && merge != PersonalSyncMerge::Conflict;
+        let selected = !applied && merge == PersonalSyncMerge::Accept;
         selections.push(PersonalSyncSelection {
             key: key.clone(),
             incoming_digest: incoming.digest,
@@ -320,9 +322,13 @@ pub(crate) fn preview(
         local_versions.push(local.reference());
     }
     Ok(PersonalSyncPreview {
+        local_contents: local_versions
+            .iter()
+            .filter_map(|local| current.get(&local.key).cloned())
+            .collect(),
         bundle,
         local_versions,
-        sender_device_id: request.envelope.header.sender_device_id,
+        sender_device_id: opened.header.sender_device_id,
         device_id: state.identity.device_id,
         expected_commit: current_commit,
         selections,
@@ -374,6 +380,7 @@ where
         &authenticated,
         &submission.sender_device_id,
         &submission.device_id,
+        submission.passphrase.is_some(),
     )?;
     if !recovering {
         if submission.expected_commit != current_commit {
@@ -530,30 +537,34 @@ fn open_envelope(
     state: &SyncState,
     request: &PersonalSyncOpenRequest,
     allow_revoked: bool,
-) -> Result<PersonalSyncBundle> {
-    let sender_id = &request.envelope.header.sender_device_id;
-    let sender = if allow_revoked {
-        state.known_sender(sender_id)
-    } else {
-        state.trusted_sender(sender_id)
-    }
-    .ok_or(Error::Unauthorized)?;
-    let trusted = TrustedSender {
-        owner_id: state.identity.owner_id.clone(),
-        device_id: sender.invitation.device_id.clone(),
-        signing_public: sender.invitation.signing_public.clone(),
-    };
+) -> Result<OpenedBundle> {
     let identity_secret = request
         .passphrase
         .is_none()
-        .then(|| state.identity.age_identity.clone());
-    open_bundle(
+        .then_some(state.identity.age_identity.as_str());
+    let opened = open_signed_bundle(
         &request.envelope,
-        identity_secret.as_deref(),
+        identity_secret,
         request.passphrase.as_deref(),
-        &trusted,
     )
-    .map_err(|_| Error::InvalidRequest)
+    .map_err(|_| Error::InvalidRequest)?;
+    let sender_id = &opened.header.sender_device_id;
+    let known = state.known_sender(sender_id);
+    if known.is_some() && !allow_revoked && state.trusted_sender(sender_id).is_none() {
+        return Err(Error::Unauthorized);
+    }
+    if let Some(sender) = known
+        && sender.invitation.signing_public != opened.header.signing_public
+    {
+        return Err(Error::Unauthorized);
+    }
+    if request.passphrase.is_none()
+        && (known.is_none() || opened.bundle.owner_id != state.identity.owner_id)
+    {
+        return Err(Error::Unauthorized);
+    }
+    // Password imports authorize only the exact previewed contents. They never add trust.
+    Ok(opened)
 }
 
 fn open_submission(
@@ -561,17 +572,18 @@ fn open_submission(
     submission: &PersonalSyncApplySubmission,
     allow_revoked: bool,
 ) -> Result<PersonalSyncBundle> {
-    if submission.sender_device_id != submission.envelope.header.sender_device_id {
-        return Err(Error::Unauthorized);
-    }
-    open_envelope(
+    let opened = open_envelope(
         state,
         &PersonalSyncOpenRequest {
             envelope: submission.envelope.clone(),
             passphrase: submission.passphrase.clone(),
         },
         allow_revoked,
-    )
+    )?;
+    if submission.sender_device_id != opened.header.sender_device_id {
+        return Err(Error::Unauthorized);
+    }
+    Ok(opened.bundle)
 }
 
 fn validate_bundle(
@@ -579,10 +591,11 @@ fn validate_bundle(
     bundle: &PersonalSyncBundle,
     sender_device_id: &str,
     device_id: &str,
+    password_import: bool,
 ) -> Result<()> {
-    if bundle.owner_id != state.identity.owner_id
+    if (!password_import && bundle.owner_id != state.identity.owner_id)
         || device_id != state.identity.device_id
-        || state.known_sender(sender_device_id).is_none()
+        || (!password_import && state.known_sender(sender_device_id).is_none())
         || bundle
             .entries
             .iter()
@@ -611,6 +624,7 @@ fn prepare_pending(
         &bundle,
         &submission.sender_device_id,
         &submission.device_id,
+        submission.passphrase.is_some(),
     )?;
     if !submission
         .local_versions

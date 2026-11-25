@@ -241,23 +241,27 @@ impl PersonalSyncHeader {
 pub struct PersonalSyncEnvelope {
     pub format: String,
     pub version: u32,
-    pub header: PersonalSyncHeader,
     pub ciphertext: String,
-    pub signature: String,
 }
 
 impl PersonalSyncEnvelope {
     pub fn valid(&self) -> bool {
         self.format == PERSONAL_SYNC_FORMAT
             && self.version == PERSONAL_SYNC_VERSION
-            && self.header.valid()
             && !self.ciphertext.is_empty()
             && self.ciphertext.len() <= MAX_SYNC_ENVELOPE_BYTES
-            && self.signature.len() == 128
-            && self
-                .signature
-                .bytes()
-                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            && (self
+                .ciphertext
+                .starts_with("-----BEGIN AGE ENCRYPTED FILE-----\n")
+                || self
+                    .ciphertext
+                    .starts_with("-----BEGIN AGE ENCRYPTED FILE-----\r\n"))
+            && (self
+                .ciphertext
+                .ends_with("-----END AGE ENCRYPTED FILE-----\n")
+                || self
+                    .ciphertext
+                    .ends_with("-----END AGE ENCRYPTED FILE-----\r\n"))
     }
 }
 
@@ -687,6 +691,7 @@ pub struct PersonalSyncPreviewItem {
 #[serde(deny_unknown_fields)]
 pub struct PersonalSyncPreview {
     pub bundle: PersonalSyncBundle,
+    pub local_contents: Vec<PersonalSyncContent>,
     pub local_versions: Vec<PersonalSyncLocalVersion>,
     pub sender_device_id: String,
     pub device_id: String,

@@ -486,13 +486,12 @@ work is called done. "RM" is what reduced motion does.
 
 | Change | Motion | RM |
 | --- | --- | --- |
-| Status or trusted-device list arrives | The result fades in rising 4, `BASE`, once per new result; rows do not replay an entrance on refresh | Appears |
-| Create identity, export, preview, apply, revoke, rotate or reset running | The invoking button dims, holds its width and shows a turning spinner; its label stays | Spinner rests |
-| Invitation, pair, export or import dialog opens / closes | The existing dialog scrim fades in `FAST`; the panel grows from 0.97 and rises 8, `SLOW` | Appears |
-| Import mode or conflict choice changes | The shared segmented selection fill slides natively, `BASE`; the preview updates without a page entrance | Instant selection |
+| Export and import forms | Two persistent surfaces share their leading edge and keep their fields mounted; no decorative entrance | — |
+| Export, decrypt, preview or apply running | The invoking button dims, holds its width and shows a turning spinner; its label stays | Spinner rests |
+| Apply dialog opens / closes | The existing dialog scrim fades in `FAST`; the panel grows from 0.97 and rises 8, `SLOW` | Appears |
+| Conflict choice changes | The shared segmented selection fill slides natively, `BASE`; the preview updates without a page entrance | Instant selection |
 | Preview replaces an earlier preview | The comparison region cross-fades in rising 4, `BASE`; the file and passphrase fields keep their contents | Appears |
 | Apply succeeds or is refused | The inline outcome fades in rising 4, `BASE`; an uncertain outcome keeps its exact retry action visible | Appears |
-| Revoke, rotate or reset confirmation | The shared alert dialog presents the exact device or identity consequence; no custom motion | Appears |
 | Empty, unavailable or writes-off state arrives | The state appears in place without an entrance | — |
 
 Sound: none. Precept is a quiet developer tool.

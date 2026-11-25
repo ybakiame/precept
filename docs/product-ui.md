@@ -93,8 +93,7 @@ Organize navigation around three clear operational paths plus utilities:
   removal; clicking a workspace row never switches the active project.
   **Agents** follows Workspaces and keeps the launch-guide order: its first section
   shares the workspace selected above, followed by MCP and hook integrations.
-  **Personal sync** manages this Profile's encrypted device pairing and manual
-  file exchange.
+  **Personal sync** manages this Profile's manual encrypted file exchange.
 - **Foot:** **Diagnostics**, **Settings**, the persistent daemon status button
   (opens Runtime checks → Connection) and the keyboard shortcuts button.
 
@@ -195,40 +194,50 @@ made in that session. Refresh is explicit.
 
 ### Personal sync
 
-**Personal sync** is explicitly Profile-scoped, never project-scoped. It shows
-whether sync identity exists, this device's public identifiers, tracked-key and
-trusted-device counts, and every trusted device with its revocation state. Status
-absence, unavailability and writes-off are distinct textual states; an unread or
-refused count is never shown as zero.
+**Personal sync** is Profile-scoped. Its default page has two persistent forms:
+**Export encrypted preferences** and **Import and merge preferences**, followed by
+the import comparison and the latest operation outcome. Devices may initialize
+independently; the default password-file workflow never requires an invitation,
+matching owner identity, key rotation or identity reset. Advanced recipient-key
+pairing and recovery remain available through the native CLI.
 
-Creating identity prints a new public invitation and complete-invitation
-fingerprint. Pairing and re-trusting require an invitation file plus separately
-entered owner and complete-invitation fingerprints; the UI shows the exact public
-invitation before the operator copies or saves it. Private identity material is
-never displayed. Revocation, key rotation and identity reset name the exact device
-or identity they affect and require deliberate confirmation. Rotation explains
-that peers must revoke and re-trust; reset explains that preferences remain while
-sync identity, trust, clocks and tombstones are replaced.
+Export takes a masked password (12 characters minimum), a password generator,
+an explicit show/hide action and a new `.age` output path. The user saves the
+password separately. Import takes an operator-selected `.age` file and a masked
+password entered directly in the app, then **Decrypt and preview**. The app reads
+only bounded ciphertext; the daemon decrypts it. Ordinary Downloads permissions
+are accepted for ciphertext, while private state and CLI password files retain
+their owner-only checks. File selection is bound to the originating Profile,
+connection, page and picker generation. No existing output is overwritten.
 
-Export is a manual encrypted file for one paired recipient or a passphrase file.
-The operator chooses a new output path; Precept never overwrites it. Import reads
-an encrypted envelope and optional private passphrase file, then shows the bounded
-per-key comparison before any write. Already-applied entries stay excluded.
-Non-conflicting entries start selected; every conflict requires an explicit
-Accept remote, Keep local or Manual merge choice, and manual content is inspected
-before Apply. Partial selection is named by key and count. Absence is never shown
-as deletion; only an explicit tombstone is described as a delete.
+The first explicit export or import may initialize a device's daemon-owned sync
+identity through OperatorWrite. It never creates or changes the selected Profile.
+An existing identity, its trust list and local preferences are preserved. Password
+imports may cross independent owners, but successful decryption and an enclosed
+signature are not claims of sender identity. The preview explains that the
+operator is authorizing this file's exact contents, without granting persistent
+trust to its source. Known revoked senders and changed keys remain refused.
 
-Apply shows the destination Profile, sender, selected keys, conflict choices and
-exact operation id before one OperatorWrite request. Passphrases remain transient
-and are never persisted in settings, templates, logs or clipboard. An uncertain
-apply keeps the exact envelope, local versions, selections, commit, operation id
-and passphrase source available for identical retry; it never silently changes
-inputs or starts a new operation. Changed inputs require a fresh preview. Abort is
-available for the exact pending operation and reports whether a receipt settled or
-a proven-uncommitted operation was discarded. Every sync mutation requires writes
-on for the run; the UI may offer the existing explicit enable action but never
-remembers the grant.
+The bounded comparison shows incoming contents, unchanged and older entries,
+explicit deletions and conflicts. Already-applied entries stay excluded.
+Non-conflicting updates start selected; every conflict requires an explicit
+Accept remote, Keep local or Manual merge choice. Manual content is inspected
+before Apply. Partial selection is named by key and count. Absence is never
+shown as deletion; only an explicit tombstone is described as a delete. Version
+clocks survive a round trip so independent edits can merge in both directions.
+
+Apply names the selected keys and their conflict choices before one Profile-
+scoped OperatorWrite request. Exact operation ids and destination versions remain
+in the guarded request and CLI templates rather than the ordinary form. Passwords remain transient,
+are masked in native accessibility, and are never persisted in settings, templates,
+logs or the app's clipboard. Form passwords are cleared on success, page exit or
+Profile/connection change. Preview/retry secrets live only for that guarded
+operation and are cleared on its terminal outcome. An uncertain apply retains
+its exact encrypted file, local versions, selections, commit, operation id and
+password for deliberate identical retry. New file imports are disabled until it
+settles or is explicitly aborted. Changed inputs require a fresh preview. Abort
+reports whether a receipt settled or a proven-uncommitted operation was discarded.
+Writes remain per daemon run and are never remembered.
 
 ### Preferences and review
 

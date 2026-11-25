@@ -191,24 +191,6 @@ pub fn project_write(fixture: &Fixture, method: &str, params: Value) -> Value {
     tokio_runtime(|| operator::project_write(&fixture.location, method, params)).unwrap()
 }
 
-pub fn trust(fixture: &Fixture, peer: &Fixture, method: &str) {
-    let invitation: operator::PersonalSyncInvitation =
-        serde_json::from_value(peer.call("profile.sync.invitation", json!({})).unwrap()).unwrap();
-    let expected_owner_fingerprint = invitation.owner_fingerprint.clone();
-    let expected_invitation_fingerprint =
-        precept_ui_client::sync_files::invitation_fingerprint(&invitation).unwrap();
-    project_write(
-        fixture,
-        method,
-        serde_json::to_value(operator::PersonalSyncTrustRequest {
-            invitation,
-            expected_owner_fingerprint,
-            expected_invitation_fingerprint,
-        })
-        .unwrap(),
-    );
-}
-
 pub fn start_app(fixture: &Fixture) -> nsh_testing::Headless {
     precept_ui::INPUTS
         .set(precept_ui_client::native::Inputs {

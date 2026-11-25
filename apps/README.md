@@ -12,6 +12,20 @@ and Settings at the navigation foot. See the [UI standards](../docs/product-ui.m
 for interaction, scope and presentation contracts, and the
 [design system](ui/DESIGN.md) for the visual language, components and motion.
 
+## Personal sync
+
+Open **Personal sync**, enter an encryption password and choose a new `.age` file
+under **Export encrypted preferences**. On the other device choose that file,
+enter its password and select **Decrypt and preview**. Inspect the contents,
+resolve any conflicts and apply the selected changes. Exporting back preserves
+both devices' version history. Each device keeps its own identity and local-only
+preferences; pairing and identity reset are not prerequisites.
+
+Passwords stay in memory, are masked until explicitly revealed, and must be saved
+separately by the operator. Ciphertext can be selected directly from Downloads.
+Only confirmed global preferences are exchanged; projects, memory, work sessions,
+credentials and app settings are not included.
+
 ## Review keyboard flow
 
 These are the default keys; every shortcut can be changed in the Shortcuts panel

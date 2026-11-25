@@ -61,10 +61,19 @@ separate design with its own threat model.
   invitation fingerprints; the latter binds the device id and both public keys,
   so a self-signed substitution cannot inherit the owner fingerprint.
   Export supports per-device age encryption or a user passphrase, and every
-  envelope carries an Ed25519 sender signature even in passphrase mode. Preview
-  and new applies accept only a currently trusted, non-revoked sender for the
-  same owner; apply reopens the signed envelope instead of trusting submitted
-  plaintext. Identity, trust, rotation, reset and export require OperatorWrite.
+  file contains its versioned bundle and Ed25519 signature entirely inside age
+  encryption. Recipient-key imports require a trusted, non-revoked sender for the
+  same owner. Passphrase imports permit independent owners and require the
+  operator to review and explicitly apply the exact decrypted contents; they
+  never establish persistent trust or claim authenticated sender identity.
+  Known revoked senders and changed signing keys remain refused. Apply reopens
+  the signed encrypted payload instead of trusting submitted plaintext.
+  External ciphertext accepts ordinary file permissions through bounded regular-
+  file reads that refuse links and reparse points. Private state and CLI password
+  files retain strict owner checks. Identity, trust, rotation, reset and export
+  require OperatorWrite. Missing device identity is initialized only as part of
+  an explicit export or import action through that grant; Profile creation and
+  selection remain separate explicit operator actions.
   Apply requires the same current grant, persists pending state before the
   daemon-owned Profile write, and uses exact writer-request receipt lookup plus
   identical retry for crash recovery. A committed receipt can settle after

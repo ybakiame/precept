@@ -49,57 +49,42 @@ impl std::fmt::Debug for Guard {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct InvitationView {
-    pub invitation: PersonalSyncInvitation,
-    pub fingerprint: String,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct PairDraft {
-    pub path: String,
-    pub owner_fingerprint: String,
-    pub invitation_fingerprint: String,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum ExportMode {
-    #[default]
-    Recipient,
-    Passphrase,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct ExportDraft {
-    pub mode: ExportMode,
-    pub recipient: String,
-    pub passphrase_path: String,
+    pub passphrase: Zeroizing<String>,
     pub output_path: String,
+    pub show_password: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct ImportDraft {
     pub envelope_path: String,
-    pub passphrase_path: String,
+    pub passphrase: Zeroizing<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Confirm {
-    Revoke(String),
-    Rotate,
-    Reset,
+impl std::fmt::Debug for ExportDraft {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ExportDraft(redacted)")
+    }
+}
+
+impl std::fmt::Debug for ImportDraft {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ImportDraft(redacted)")
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum Dialog {
     #[default]
     None,
-    Invitation,
-    Pair(PairDraft),
-    Export(ExportDraft),
-    Import(ImportDraft),
     Apply,
-    Confirm(Confirm),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FormAction {
+    Export,
+    Preview,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -152,7 +137,10 @@ impl PreviewState {
             .filter(|item| {
                 !item.applied
                     && !matches!(item.merge, PersonalSyncMerge::Conflict)
-                    && !matches!(item.merge, PersonalSyncMerge::Stale)
+                    && !matches!(
+                        item.merge,
+                        PersonalSyncMerge::Stale | PersonalSyncMerge::Noop
+                    )
             })
             .map(|item| item.key.clone())
             .collect();
@@ -313,6 +301,9 @@ impl PreviewState {
         for entry in &mut self.preview.bundle.entries {
             clear_content(&mut entry.content);
         }
+        for content in &mut self.preview.local_contents {
+            clear_content(content);
+        }
         for draft in self.manual.values_mut() {
             draft.value.zeroize();
             draft.tags.zeroize();
@@ -397,10 +388,12 @@ pub struct State {
     pub status: Option<PersonalSyncStatus>,
     pub status_read: bool,
     pub busy: bool,
+    pub form_action: Option<FormAction>,
     pub error: Option<String>,
     pub serial: u64,
     pub guard: Option<Guard>,
-    pub invitation: Option<InvitationView>,
+    pub export: ExportDraft,
+    pub import: ImportDraft,
     pub dialog: Dialog,
     pub dialog_generation: u64,
     pub preview: Option<PreviewState>,
@@ -468,20 +461,6 @@ impl State {
         };
         self.status = Some(status);
         self.status_read = true;
-        true
-    }
-
-    pub fn accept_invitation(&mut self, value: Value, fingerprint: String) -> bool {
-        let Ok(invitation) = serde_json::from_value::<PersonalSyncInvitation>(value) else {
-            return false;
-        };
-        if !invitation.valid() {
-            return false;
-        }
-        self.invitation = Some(InvitationView {
-            invitation,
-            fingerprint,
-        });
         true
     }
 

@@ -315,12 +315,12 @@ async fn export(location: &Location, args: ExportArgs) -> Result<Value> {
         .await?,
     )
     .map_err(|_| Error::InvalidRequest)?;
-    let value = serde_json::to_value(&envelope).map_err(|_| Error::InvalidRequest)?;
-    write_new(&args.out, &value)?;
+    let mut file = precept_ipc::transport::new_private(&args.out)?;
+    file.write_all(envelope.ciphertext.as_bytes())
+        .map_err(|_| Error::Unavailable)?;
+    file.sync_all().map_err(|_| Error::Unavailable)?;
     Ok(json!({
         "written":args.out,
-        "bundle_id":envelope.header.bundle_id,
-        "sender_device_id":envelope.header.sender_device_id,
     }))
 }
 
@@ -328,12 +328,22 @@ async fn preview(location: &Location, args: PreviewArgs) -> Result<Value> {
     if let Some(path) = &args.out {
         ensure_absent(path)?;
     }
-    let envelope: PersonalSyncEnvelope = read(&args.file)?;
+    let mut file = precept_ipc::transport::open_ciphertext(&args.file)?;
+    let mut bytes = Vec::new();
+    (&mut file)
+        .take(MAX_FILE + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| Error::Unavailable)?;
+    let envelope = precept_sync::envelope_from_age(&bytes).map_err(|_| Error::InvalidRequest)?;
     let passphrase = match &args.passphrase_file {
         Some(path) => Some(read_passphrase(path)?),
         None => None,
     };
     let scope = current_scope(location).await?;
+    let status = control(location, "profile.sync.status", json!({})).await?;
+    if status["initialized"] == false {
+        write_scoped(location, "profile.sync.init", json!({}), scope.clone()).await?;
+    }
     let mut preview: PersonalSyncPreview = serde_json::from_value(
         control(
             location,
@@ -465,6 +475,11 @@ fn select(
             resolutions.is_some_and(|map| map.contains_key(&item.key)) || accept_conflicts;
         item.selected = included
             && !item.applied
+            && !matches!(
+                item.merge,
+                precept_ipc::operator::PersonalSyncMerge::Noop
+                    | precept_ipc::operator::PersonalSyncMerge::Stale
+            )
             && (item.merge != precept_ipc::operator::PersonalSyncMerge::Conflict || resolved);
         if !item.selected {
             continue;

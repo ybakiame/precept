@@ -1,62 +1,70 @@
 use super::*;
+use precept_core::operator::*;
 use serde_json::json;
 
-fn invitation() -> PersonalSyncInvitation {
-    PersonalSyncInvitation {
-        format: precept_core::operator::PERSONAL_SYNC_FORMAT.into(),
-        version: precept_core::operator::PERSONAL_SYNC_VERSION,
-        owner_id: "a".repeat(32),
-        device_id: "b".repeat(32),
-        age_recipient: "age1synthetic".into(),
-        signing_public: "c".repeat(64),
-        owner_fingerprint: "d".repeat(32),
-        signature: "0".repeat(128),
-    }
+fn envelope() -> PersonalSyncEnvelope {
+    let identity = precept_sync::generate_identity().unwrap();
+    let bundle = PersonalSyncBundle {
+        format: PERSONAL_SYNC_FORMAT.into(),
+        version: PERSONAL_SYNC_VERSION,
+        bundle_id: "b".repeat(32),
+        owner_id: identity.owner_id,
+        created_at_ms: 1,
+        entries: Vec::new(),
+        tombstones: Vec::new(),
+    };
+    precept_sync::seal_bundle(
+        &bundle,
+        &identity.device_id,
+        &identity.signing_secret,
+        None,
+        Some("synthetic-file-password"),
+    )
+    .unwrap()
 }
 
 #[test]
-fn invitation_files_bind_the_complete_public_invitation() {
+fn age_files_round_trip_without_overwriting_or_exposing_metadata() {
     let temp = tempfile::tempdir().unwrap();
-    let path = temp.path().join("invitation.json");
-    let file = InvitationFile::new(invitation()).unwrap();
-    write_new(&path, &file.value().unwrap()).unwrap();
-    assert_eq!(read_invitation(&path).unwrap(), file);
-    assert_eq!(write_new(&path, &file.value().unwrap()), Err("Conflict"));
-
-    let changed = temp.path().join("changed.json");
-    let mut value = file.value().unwrap();
-    value["invitation"]["device_id"] = json!("e".repeat(32));
-    write_new(&changed, &value).unwrap();
-    assert_eq!(read_invitation(&changed), Err("InvalidRequest"));
+    let path = temp.path().join("preferences.age");
+    let envelope = envelope();
+    let value = serde_json::to_value(&envelope).unwrap();
+    write_envelope(&path, &value).unwrap();
+    assert_eq!(read_envelope(&path).unwrap(), envelope);
+    assert_eq!(write_envelope(&path, &value), Err("Conflict"));
+    let file = std::fs::read_to_string(&path).unwrap();
+    assert!(file.starts_with("-----BEGIN AGE ENCRYPTED FILE-----"));
+    assert!(!file.contains("bundle_id"));
+    assert!(!file.contains("synthetic-file-password"));
 }
 
 #[test]
-fn json_reads_are_bounded_strict_and_private() {
+fn ciphertext_accepts_download_permissions_and_refuses_json_special_files_and_oversize() {
     let temp = tempfile::tempdir().unwrap();
-    let path = temp.path().join("strict.json");
-    write_new(&path, &json!({"known":true,"unknown":1})).unwrap();
-    #[derive(Debug, Deserialize, PartialEq)]
-    #[serde(deny_unknown_fields)]
-    struct Known {
-        known: bool,
+    let path = temp.path().join("download.age");
+    let envelope = envelope();
+    std::fs::write(&path, &envelope.ciphertext).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
     }
-    assert_eq!(read_json::<Known>(&path), Err("InvalidRequest"));
+    assert_eq!(read_envelope(&path).unwrap(), envelope);
+    let json_path = temp.path().join("file.json");
+    std::fs::write(&json_path, json!({"ciphertext":"invalid"}).to_string()).unwrap();
+    assert_eq!(read_envelope(&json_path), Err("InvalidRequest"));
+    assert_eq!(read_envelope(temp.path()), Err("InvalidRequest"));
     assert_eq!(
-        read_json::<Known>(&temp.path().join("missing.json")),
+        read_envelope(&temp.path().join("missing.age")),
         Err("NotFound")
     );
-}
-
-#[test]
-fn passphrase_files_preserve_whitespace_except_one_line_ending() {
-    let temp = tempfile::tempdir().unwrap();
-    let path = temp.path().join("passphrase.txt");
-    let mut file = new_private(&path).unwrap();
-    file.write_all(b"  correct horse battery staple  \r\n")
-        .unwrap();
-    drop(file);
-    assert_eq!(
-        read_passphrase(&path).unwrap(),
-        "  correct horse battery staple  "
-    );
+    let oversized = temp.path().join("oversized.age");
+    std::fs::write(&oversized, vec![b'x'; MAX_JSON as usize + 1]).unwrap();
+    assert_eq!(read_envelope(&oversized), Err("TooLarge"));
+    #[cfg(unix)]
+    {
+        let link = temp.path().join("link.age");
+        std::os::unix::fs::symlink(&path, &link).unwrap();
+        assert_eq!(read_envelope(&link), Err("InvalidRequest"));
+    }
 }

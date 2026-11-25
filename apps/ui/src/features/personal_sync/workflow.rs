@@ -3,8 +3,7 @@ use precept_ui_core::{
     i18n::Msg,
     operator::{
         PersonalSyncAbortResult, PersonalSyncApplyResult, PersonalSyncExportRequest,
-        PersonalSyncInvitation, PersonalSyncOpenRequest, PersonalSyncPreview,
-        PersonalSyncRevokeRequest, PersonalSyncTrustRequest,
+        PersonalSyncOpenRequest, PersonalSyncPreview,
     },
     personal_sync::*,
 };
@@ -145,108 +144,22 @@ fn write_now(
     });
 }
 
-pub(super) fn initialize(model: Signal<Model>) {
-    let guard = Guard::capture(&model.get());
-    write(model, guard, "profile.sync.init", json!({}), move |m, _| {
-        m.sync.close_dialog();
-        after_change(model);
-    });
-}
-
-pub(super) fn invitation(model: Signal<Model>) {
-    if !ready(model) {
-        return;
-    }
-    let (serial, origin) = begin(model);
-    crate::features::profile::call(
-        model,
-        "profile.sync.invitation",
-        json!({}),
-        move |_, m, r| match r {
-            Err(code) => {
-                if finish(m, serial, &origin, Err(code)) {
-                    reject(m, code);
-                }
-            }
-            Ok(value) => {
-                if !finish(m, serial, &origin, Ok(value.clone())) {
-                    return;
-                }
-                let Ok(invitation) = serde_json::from_value::<PersonalSyncInvitation>(value) else {
-                    reject(m, "InvalidRequest");
-                    return;
-                };
-                let Ok(fingerprint) =
-                    precept_ui_client::sync_files::invitation_fingerprint(&invitation)
-                else {
-                    reject(m, "InvalidRequest");
-                    return;
-                };
-                m.sync.accept_invitation(json!(invitation), fingerprint);
-                m.sync.dialog = Dialog::Invitation;
-            }
-        },
-    );
-}
-
-pub(super) fn pair(model: Signal<Model>) {
-    let guard = Guard::capture(&model.get());
-    let Dialog::Pair(draft) = model.get().sync.dialog.clone() else {
-        return;
-    };
-    let Ok(file) = precept_ui_client::sync_files::read_invitation(Path::new(&draft.path)) else {
-        fail(model, "InvalidRequest");
-        return;
-    };
-    let request = PersonalSyncTrustRequest {
-        invitation: file.invitation,
-        expected_owner_fingerprint: draft.owner_fingerprint.trim().into(),
-        expected_invitation_fingerprint: draft.invitation_fingerprint.trim().into(),
-    };
-    let Ok(params) = serde_json::to_value(request) else {
-        return;
-    };
-    let method = if model
-        .get()
-        .sync
-        .status
-        .as_ref()
-        .is_some_and(|status| status.initialized)
-    {
-        "profile.sync.trust"
-    } else {
-        "profile.sync.pair"
-    };
-    write(model, guard, method, params, move |m, _| {
-        m.sync.close_dialog();
-        after_change(model);
-    });
-}
-
 pub(super) fn export(model: Signal<Model>) {
+    model.update(|m| m.sync.form_action = Some(FormAction::Export));
     let guard = Guard::capture(&model.get());
-    let Dialog::Export(draft) = model.get().sync.dialog.clone() else {
-        return;
-    };
+    let draft = model.get().sync.export.clone();
     let output = PathBuf::from(&draft.output_path);
     if precept_ui_client::sync_files::ensure_absent(&output).is_err() {
         fail(model, "Conflict");
         return;
     }
-    let passphrase = if draft.mode == ExportMode::Passphrase {
-        match precept_ui_client::sync_files::read_passphrase(Path::new(&draft.passphrase_path)) {
-            Ok(value) => Some(value),
-            Err(code) => {
-                fail(model, code);
-                return;
-            }
-        }
-    } else {
-        None
-    };
+    if draft.passphrase.chars().count() < 12 || draft.passphrase.len() > 1024 {
+        fail(model, "password");
+        return;
+    }
     let request = PersonalSyncExportRequest {
-        recipient: (draft.mode == ExportMode::Recipient).then(|| draft.recipient.trim().into()),
-        passphrase,
+        recipient: None,
+        passphrase: Some(draft.passphrase.as_str().to_owned()),
         keys: None,
     };
     let Ok(params) = serde_json::to_value(request) else {
@@ -258,10 +171,10 @@ pub(super) fn export(model: Signal<Model>) {
         "profile.sync.export",
         params,
         move |m, value| {
-            let written = precept_ui_client::sync_files::write_new(&output, &value);
+            let written = precept_ui_client::sync_files::write_envelope(&output, &value);
             match written {
                 Ok(()) => {
-                    m.sync.close_dialog();
+                    m.sync.export.passphrase = Default::default();
                     ui::notify(ui::Tone::Success, m.word(Msg::SyncSaved));
                     after_change(model);
                 }
@@ -275,9 +188,25 @@ pub(super) fn export(model: Signal<Model>) {
 }
 
 pub(super) fn preview(model: Signal<Model>) {
-    let Dialog::Import(draft) = model.get().sync.dialog.clone() else {
-        return;
-    };
+    model.update(|m| m.sync.form_action = Some(FormAction::Preview));
+    if model
+        .get()
+        .sync
+        .status
+        .as_ref()
+        .is_some_and(|status| status.initialized)
+    {
+        preview_now(model);
+    } else {
+        let guard = Guard::capture(&model.get());
+        write(model, guard, "profile.sync.init", json!({}), move |_, _| {
+            preview_now(model)
+        });
+    }
+}
+
+fn preview_now(model: Signal<Model>) {
+    let draft = model.get().sync.import.clone();
     let envelope =
         match precept_ui_client::sync_files::read_envelope(Path::new(&draft.envelope_path)) {
             Ok(value) => value,
@@ -286,17 +215,11 @@ pub(super) fn preview(model: Signal<Model>) {
                 return;
             }
         };
-    let passphrase = if draft.passphrase_path.trim().is_empty() {
-        None
-    } else {
-        match precept_ui_client::sync_files::read_passphrase(Path::new(&draft.passphrase_path)) {
-            Ok(value) => Some(value),
-            Err(code) => {
-                fail(model, code);
-                return;
-            }
-        }
-    };
+    if draft.passphrase.is_empty() {
+        fail(model, "password");
+        return;
+    }
+    let passphrase = Some(draft.passphrase.as_str().to_owned());
     let request = PersonalSyncOpenRequest {
         envelope: envelope.clone(),
         passphrase: passphrase.clone(),
@@ -318,7 +241,7 @@ pub(super) fn preview(model: Signal<Model>) {
         params,
         move |_, m, r| match r {
             Ok(value) => {
-                if finish(m, serial, &origin, Ok(json!({}))) {
+                if finish(m, serial, &origin, Ok(json!({}))) && m.sync_open {
                     match serde_json::from_value::<PersonalSyncPreview>(value) {
                         Ok(preview) => {
                             m.sync.preview = Some(PreviewState::new(
@@ -329,7 +252,7 @@ pub(super) fn preview(model: Signal<Model>) {
                                 operation_id,
                             ));
                             m.sync.apply = None;
-                            m.sync.close_dialog();
+                            m.sync.import.passphrase = Default::default();
                         }
                         Err(_) => reject(m, "InvalidRequest"),
                     }
@@ -470,31 +393,6 @@ pub(super) fn abort(model: Signal<Model>) {
     );
 }
 
-pub(super) fn confirm(model: Signal<Model>) {
-    let guard = Guard::capture(&model.get());
-    let Dialog::Confirm(confirm) = model.get().sync.dialog.clone() else {
-        return;
-    };
-    let keeps_invitation = matches!(&confirm, Confirm::Revoke(_));
-    let (method, params) = match confirm {
-        Confirm::Revoke(device_id) => (
-            "profile.sync.revoke",
-            json!(PersonalSyncRevokeRequest { device_id }),
-        ),
-        Confirm::Rotate => ("profile.sync.rotate", json!({})),
-        Confirm::Reset => ("profile.sync.reset", json!({"confirm": true})),
-    };
-    write(model, guard, method, params, move |m, _| {
-        m.sync.discard_preview();
-        m.sync.apply = None;
-        if !keeps_invitation {
-            m.sync.invitation = None;
-        }
-        m.sync.close_dialog();
-        after_change(model);
-    });
-}
-
 pub(crate) fn watch(model: Signal<Model>) {
     let key = computed(move || {
         let m = model.get();
@@ -508,6 +406,13 @@ pub(crate) fn watch(model: Signal<Model>) {
     effect(move || {
         if key.get().1 {
             untracked(|| refresh(model));
+        } else {
+            model.update(|m| {
+                m.sync.export.passphrase = Default::default();
+                m.sync.export.show_password = false;
+                m.sync.import.passphrase = Default::default();
+                m.sync.dialog_generation = m.sync.dialog_generation.wrapping_add(1);
+            });
         }
     });
 }

@@ -23,6 +23,7 @@ pub struct Input {
     invalid: StateFn,
     reference: Option<ElementRef>,
     large: bool,
+    password: StateFn,
     max_length: Option<u32>,
     lines: Option<u8>,
     test_id: Option<&'static str>,
@@ -43,6 +44,7 @@ pub fn input(model: Signal<Model>, label: impl Into<SharedString>) -> Input {
         invalid: Rc::new(|| false),
         reference: None,
         large: false,
+        password: Rc::new(|| false),
         max_length: None,
         lines: None,
         test_id: None,
@@ -111,6 +113,16 @@ impl Input {
         self.large = true;
         self
     }
+    /// A secure native input; accessibility does not expose the entered secret.
+    pub fn password(mut self) -> Self {
+        self.password = Rc::new(|| true);
+        self
+    }
+    /// Mask the value until an explicit reveal action changes this state.
+    pub fn masked(mut self, masked: impl Fn() -> bool + 'static) -> Self {
+        self.password = Rc::new(masked);
+        self
+    }
     /// The maximum number of characters accepted.
     pub fn max_length(mut self, max_length: u32) -> Self {
         self.max_length = Some(max_length);
@@ -139,6 +151,7 @@ impl IntoElement for Input {
             .label(move || label())
             .value(move || value())
             .multiline(self.lines.is_some())
+            .masked(move || (self.password)())
             .h(px(height))
             .w_full()
             .px_3()

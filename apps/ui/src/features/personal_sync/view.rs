@@ -24,249 +24,6 @@ fn notice(model: Signal<Model>, key: Msg) -> impl IntoElement {
         .child(text(move || model.get().word(key)).text_size(px(scale::text::CAPTION)))
 }
 
-fn status(model: Signal<Model>) -> impl IntoElement {
-    let initialized = move || {
-        model
-            .get()
-            .sync
-            .status
-            .as_ref()
-            .is_some_and(|s| s.initialized)
-    };
-    surface(model)
-        .title_fn(word(model, Msg::SyncStatusTitle))
-        .child(
-            view()
-                .gap_3()
-                .child(
-                    view()
-                        .flex_row()
-                        .flex_wrap()
-                        .items_center()
-                        .gap_2()
-                        .child(dynamic(move || {
-                            let m = model.get();
-                            let on = initialized();
-                            let key = if !m.sync.status_read {
-                                Msg::SyncUnread
-                            } else if on {
-                                Msg::SyncInitialized
-                            } else {
-                                Msg::SyncNotInitialized
-                            };
-                            badge(model, m.word(key)).variant(if on && m.sync.status_read {
-                                BadgeVariant::Success
-                            } else {
-                                BadgeVariant::Neutral
-                            })
-                        }))
-                        .child(
-                            button(model, "")
-                                .label_fn(word(model, Msg::SyncRefresh))
-                                .icon(icons::REFRESH)
-                                .size(ButtonSize::Small)
-                                .loading(move || model.get().sync.busy)
-                                .on_press(move || super::workflow::refresh(model)),
-                        ),
-                )
-                .child(caption(model, move || {
-                    let m = model.get();
-                    let Some(status) = &m.sync.status else {
-                        return String::new();
-                    };
-                    let mut lines = Vec::new();
-                    if let Some(id) = &status.device_id {
-                        lines.push(format!("{}: {}", m.word(Msg::SyncDeviceId), id));
-                    }
-                    if let Some(id) = &status.owner_fingerprint {
-                        lines.push(format!("{}: {}", m.word(Msg::SyncOwnerFingerprint), id));
-                    }
-                    lines.push(format!(
-                        "{}: {}",
-                        m.word(Msg::SyncTrackedKeys),
-                        status.tracked_keys
-                    ));
-                    lines.push(format!(
-                        "{}: {}",
-                        m.word(Msg::SyncTombstones),
-                        status.tombstones
-                    ));
-                    lines.push(format!(
-                        "{}: {}",
-                        m.word(Msg::SyncAppliedEntries),
-                        status.applied_entries
-                    ));
-                    if let Some(id) = &status.pending_operation {
-                        lines.push(m.word(Msg::SyncPendingOperation).replace("{id}", id));
-                    }
-                    lines.join("\n")
-                }))
-                .child(
-                    view()
-                        .flex_row()
-                        .flex_wrap()
-                        .flex_row()
-                        .flex_wrap()
-                        .gap_2()
-                        .style_when(initialized, |s| s.hidden())
-                        .child(
-                            button(model, "")
-                                .label_fn(word(model, Msg::SyncCreateIdentity))
-                                .variant(ButtonVariant::Primary)
-                                .disabled(move || !ready(model) || model.get().sync.busy)
-                                .on_press(move || super::workflow::initialize(model)),
-                        )
-                        .child(
-                            button(model, "")
-                                .label_fn(word(model, Msg::SyncPair))
-                                .disabled(move || !ready(model) || model.get().sync.busy)
-                                .on_press(move || {
-                                    model.update(|m| {
-                                        m.sync.dialog = Dialog::Pair(Default::default())
-                                    })
-                                }),
-                        ),
-                )
-                .child(
-                    view()
-                        .gap_3()
-                        .style_when(move || !initialized(), |s| s.hidden())
-                        .child(
-                            view()
-                                .flex_row()
-                                .flex_wrap()
-                                .gap_2()
-                                .child(
-                                    button(model, "")
-                                        .label_fn(word(model, Msg::SyncInvitation))
-                                        .icon(icons::FILE)
-                                        .on_press(move || super::workflow::invitation(model)),
-                                )
-                                .child(
-                                    button(model, "")
-                                        .label_fn(word(model, Msg::SyncExport))
-                                        .variant(ButtonVariant::Primary)
-                                        .disabled(move || !ready(model) || model.get().sync.busy)
-                                        .on_press(move || {
-                                            model.update(|m| {
-                                                m.sync.dialog = Dialog::Export(Default::default())
-                                            })
-                                        }),
-                                )
-                                .child(
-                                    button(model, "")
-                                        .label_fn(word(model, Msg::SyncImport))
-                                        .disabled(move || !ready(model) || model.get().sync.busy)
-                                        .on_press(move || {
-                                            model.update(|m| {
-                                                m.sync.dialog = Dialog::Import(Default::default())
-                                            })
-                                        }),
-                                ),
-                        )
-                        .child(
-                            text(move || model.get().word(Msg::SyncTrustedDevices))
-                                .font_weight(FontWeight::MEDIUM),
-                        )
-                        .child(dynamic(move || {
-                            let m = model.get();
-                            let Some(status) = m.sync.status.clone() else {
-                                return ui::empty(model, m.word(Msg::SyncNoDevices)).into_element();
-                            };
-                            if status.trusted_devices.is_empty() {
-                                return ui::empty(model, m.word(Msg::SyncNoDevices)).into_element();
-                            }
-                            view()
-                                .children(status.trusted_devices.iter().enumerate().map(
-                                    |(index, device)| {
-                                        let revoked = device.revoked;
-                                        let id = device.invitation.device_id.clone();
-                                        view()
-                                            .flex_row()
-                                            .flex_wrap()
-                                            .items_center()
-                                            .gap_2()
-                                            .py_2()
-                                            .style_when(move || index > 0, |s| s.border_t_1())
-                                            .border_color(move || palette(model).hairline)
-                                            .child(
-                                                text(id.clone())
-                                                    .font_family("monospace")
-                                                    .text_size(px(scale::text::CAPTION))
-                                                    .flex_1()
-                                                    .min_w_0(),
-                                            )
-                                            .child(
-                                                badge(
-                                                    model,
-                                                    m.word(if device.revoked {
-                                                        Msg::SyncRevoked
-                                                    } else {
-                                                        Msg::SyncTrusted
-                                                    }),
-                                                )
-                                                .variant(if device.revoked {
-                                                    BadgeVariant::Warning
-                                                } else {
-                                                    BadgeVariant::Success
-                                                }),
-                                            )
-                                            .child(
-                                                view()
-                                                    .style_when(move || revoked, |s| s.hidden())
-                                                    .child(
-                                                        button(model, "")
-                                                            .label_fn(word(model, Msg::SyncRevoke))
-                                                            .size(ButtonSize::Small)
-                                                            .on_press(move || {
-                                                                model.update(|m| {
-                                                                    m.sync.dialog = Dialog::Confirm(
-                                                                        Confirm::Revoke(id.clone()),
-                                                                    )
-                                                                })
-                                                            }),
-                                                    ),
-                                            )
-                                    },
-                                ))
-                                .into_element()
-                        })),
-                )
-                .child(
-                    view()
-                        .flex_row()
-                        .flex_wrap()
-                        .gap_2()
-                        .style_when(move || !initialized(), |s| s.hidden())
-                        .child(
-                            text(move || model.get().word(Msg::SyncAdvanced))
-                                .text_size(px(scale::text::CAPTION))
-                                .text_color(move || palette(model).muted),
-                        )
-                        .child(
-                            button(model, "")
-                                .label_fn(word(model, Msg::SyncRotate))
-                                .size(ButtonSize::Small)
-                                .on_press(move || {
-                                    model.update(|m| {
-                                        m.sync.dialog = Dialog::Confirm(Confirm::Rotate)
-                                    })
-                                }),
-                        )
-                        .child(
-                            button(model, "")
-                                .label_fn(word(model, Msg::SyncReset))
-                                .size(ButtonSize::Small)
-                                .variant(ButtonVariant::Danger)
-                                .on_press(move || {
-                                    model
-                                        .update(|m| m.sync.dialog = Dialog::Confirm(Confirm::Reset))
-                                }),
-                        ),
-                ),
-        )
-}
-
 fn merge_label(item: &precept_ui_core::operator::PersonalSyncPreviewItem) -> Msg {
     if item.applied {
         Msg::SyncAlreadyApplied
@@ -290,21 +47,25 @@ fn preview_row(
     let selected_key = key.clone();
     let applied = item.applied;
     let conflict = item.merge == PersonalSyncMerge::Conflict && !item.applied;
-    let value = model
-        .get_untracked()
-        .sync
-        .preview
-        .as_ref()
-        .and_then(|state| {
-            state
-                .preview
-                .bundle
-                .entries
-                .iter()
-                .find(|entry| entry.content.key == item.key)
-                .map(|entry| entry.content.value.clone())
-        })
-        .unwrap_or_default();
+    let snapshot = model.get_untracked();
+    let state = snapshot.sync.preview.as_ref();
+    let incoming = state.and_then(|state| {
+        state
+            .preview
+            .bundle
+            .entries
+            .iter()
+            .find(|entry| entry.content.key == item.key)
+            .map(|entry| entry.content.clone())
+    });
+    let local = state.and_then(|state| {
+        state
+            .preview
+            .local_contents
+            .iter()
+            .find(|entry| entry.key == item.key)
+            .cloned()
+    });
     let variant = if conflict {
         BadgeVariant::Warning
     } else if item.applied {
@@ -371,16 +132,67 @@ fn preview_row(
                         )
                         .child(badge(model, merge_word).variant(variant)),
                 )
-                .child(
-                    text(precept_ui_core::presentation::sanitize(&value, 400))
-                        .text_size(px(scale::text::CAPTION))
-                        .text_color(move || palette(model).muted),
-                ),
+                .child(content_view(
+                    model,
+                    Msg::SyncIncomingContent,
+                    incoming.as_ref(),
+                    Msg::SyncDeletion,
+                ))
+                .child(content_view(
+                    model,
+                    Msg::SyncLocalContent,
+                    local.as_ref(),
+                    Msg::SyncLocalAbsent,
+                )),
         );
     if conflict {
         row = row.child(conflict_choice(model, &key));
     }
     row.into_element()
+}
+
+fn content_view(
+    model: Signal<Model>,
+    label: Msg,
+    content: Option<&precept_ui_core::operator::PersonalSyncContent>,
+    absent: Msg,
+) -> AnyElement {
+    let m = model.get_untracked();
+    let mut body = view()
+        .gap_2()
+        .child(text(m.word(label)).font_weight(FontWeight::MEDIUM));
+    if let Some(content) = content {
+        let enforcement = match content.rule.enforcement {
+            precept_ui_core::operator::Enforcement::Advisory => Msg::EnforcementAdvisory,
+            precept_ui_core::operator::Enforcement::Verify => Msg::EnforcementVerify,
+            precept_ui_core::operator::Enforcement::Hard => Msg::EnforcementHard,
+        };
+        body = body
+            .child(text(precept_ui_core::presentation::sanitize(
+                &content.value,
+                4096,
+            )))
+            .child(ui::tag_list(model, &content.tags))
+            .child(text(format!(
+                "{} · {} · {}",
+                m.word(if content.enabled {
+                    Msg::SyncEnabled
+                } else {
+                    Msg::SyncDisabled
+                }),
+                m.word(enforcement),
+                m.word(Msg::PriorityShort)
+                    .replace("{n}", &content.rule.priority.to_string())
+            )));
+        if let Some(applies) =
+            precept_ui_core::presentation::applies_words(&m, &content.rule.applies_to)
+        {
+            body = body.child(text(applies));
+        }
+    } else {
+        body = body.child(text(m.word(absent)));
+    }
+    body.into_element()
 }
 
 fn conflict_choice(model: Signal<Model>, key: &str) -> AnyElement {
@@ -549,6 +361,7 @@ fn preview(model: Signal<Model>) -> impl IntoElement {
     });
     surface(model)
         .title_fn(word(model, Msg::SyncPreviewTitle))
+        .child(text(move || model.get().word(Msg::SyncUnverifiedSource)))
         .child(
             view()
                 .bind_motion(&reveal)
@@ -680,11 +493,6 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
         )
         .child(
             view()
-                .style_when(move || model.get().live, |s| s.hidden())
-                .child(notice(model, Msg::SyncNotLive)),
-        )
-        .child(
-            view()
                 .style_when(
                     move || {
                         model
@@ -718,7 +526,14 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
                     .child(
                         text(m.word(Msg::SyncError).replace(
                             "{error}",
-                            &precept_ui_core::presentation::sanitize(error, 64),
+                            match error.as_str() {
+                                "password" => m.word(Msg::SyncPasswordError),
+                                "InvalidRequest" => m.word(Msg::SyncFileError),
+                                "NotFound" => m.word(Msg::SyncFileMissing),
+                                "Unavailable" | "UnsafeRuntime" => m.word(Msg::SyncFileUnavailable),
+                                "Conflict" => m.word(Msg::SyncOutputExists),
+                                _ => m.word(Msg::OperatorFailed),
+                            },
                         ))
                         .text_color(move || palette(model).error),
                     )
@@ -726,8 +541,13 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
             }
             view().into_element()
         }))
-        .child(status(model))
-        .child(preview(model))
+        .child(super::forms::export_form(model))
+        .child(super::forms::import_form(model))
+        .child(
+            view()
+                .style_when(move || model.get().sync.preview.is_none(), |s| s.hidden())
+                .child(preview(model)),
+        )
         .child(outcome(model))
 }
 

@@ -512,9 +512,9 @@ async fn peer(mut stream: Stream, service: Service, permit: Arc<OwnedSemaphorePe
             });
             let limit = if matches!(
                 method.as_str(),
-                "profile.sync.export" | "profile.sync.preview"
+                "profile.sync.export" | "profile.sync.preview" | "profile.sync.apply"
             ) {
-                Duration::from_secs(15)
+                Duration::from_secs(25)
             } else {
                 Duration::from_secs(5)
             };

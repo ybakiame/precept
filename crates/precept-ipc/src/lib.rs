@@ -429,7 +429,15 @@ impl Client {
         .await
         .map_err(transport_error)?;
         // The server limits computation too; the response frame has its own absolute deadline.
-        let value = read_with_deadline(&mut self.stream, Duration::from_secs(7))
+        let response_deadline = if matches!(
+            method,
+            "profile.sync.export" | "profile.sync.preview" | "profile.sync.apply"
+        ) {
+            Duration::from_secs(30)
+        } else {
+            Duration::from_secs(7)
+        };
+        let value = read_with_deadline(&mut self.stream, response_deadline)
             .await
             .map_err(transport_error)?;
         let response: Response =

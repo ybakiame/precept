@@ -36,6 +36,7 @@ fn preview() -> PersonalSyncPreview {
         resolution: PersonalSyncResolution::Accept,
     };
     PersonalSyncPreview {
+        local_contents: Vec::new(),
         bundle: PersonalSyncBundle {
             format: PERSONAL_SYNC_FORMAT.into(),
             version: PERSONAL_SYNC_VERSION,
@@ -79,16 +80,7 @@ fn preview_state() -> PreviewState {
         PersonalSyncEnvelope {
             format: PERSONAL_SYNC_FORMAT.into(),
             version: PERSONAL_SYNC_VERSION,
-            header: PersonalSyncHeader {
-                format: PERSONAL_SYNC_FORMAT.into(),
-                version: PERSONAL_SYNC_VERSION,
-                bundle_id: "b".repeat(32),
-                sender_device_id: "d".repeat(32),
-                signing_public: "a".repeat(64),
-                owner_fingerprint: "f".repeat(32),
-            },
             ciphertext: "ciphertext".into(),
-            signature: "0".repeat(128),
         },
         Some("passphrase".into()),
         Guard::capture(&model()),
@@ -103,6 +95,21 @@ fn default_selection_skips_conflicts_and_already_applied_entries() {
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].key, "one");
     assert_eq!(state.choice("two"), ConflictChoice::Skip);
+}
+
+#[test]
+fn form_passwords_are_redacted_and_cleared_when_the_profile_changes() {
+    let mut value = model();
+    let mut state = State::default();
+    state.invalidate_for(&value);
+    state.export.passphrase = "synthetic-export-password".to_owned().into();
+    state.import.passphrase = "synthetic-import-password".to_owned().into();
+    assert!(!format!("{:?}", state.export).contains("synthetic-export-password"));
+    assert!(!format!("{:?}", state.import).contains("synthetic-import-password"));
+    value.profile_epoch = value.profile_epoch.wrapping_add(1);
+    state.invalidate_for(&value);
+    assert!(state.export.passphrase.is_empty());
+    assert!(state.import.passphrase.is_empty());
 }
 
 #[test]
@@ -263,13 +270,13 @@ fn file_picker_completions_require_the_originating_dialog_generation() {
     let model = model();
     let mut state = State::default();
     state.invalidate_for(&model);
-    state.dialog = Dialog::Pair(PairDraft::default());
+    state.dialog = Dialog::Apply;
     let guard = Guard::capture(&model);
     let generation = state.dialog_generation;
-    assert!(state.dialog_is_current(&guard, generation, &Dialog::Pair(PairDraft::default())));
+    assert!(state.dialog_is_current(&guard, generation, &Dialog::Apply));
     state.close_dialog();
-    state.dialog = Dialog::Pair(PairDraft::default());
-    assert!(!state.dialog_is_current(&guard, generation, &Dialog::Pair(PairDraft::default())));
+    state.dialog = Dialog::Apply;
+    assert!(!state.dialog_is_current(&guard, generation, &Dialog::Apply));
 }
 
 #[test]

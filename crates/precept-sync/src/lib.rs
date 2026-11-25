@@ -265,7 +265,22 @@ pub fn seal_bundle(
     {
         return Err(Error::InvalidRequest);
     }
-    let plaintext = serde_json::to_vec(bundle).map_err(|_| Error::InvalidRequest)?;
+    let header = PersonalSyncHeader {
+        format: PERSONAL_SYNC_FORMAT.into(),
+        version: PERSONAL_SYNC_VERSION,
+        bundle_id: bundle.bundle_id.clone(),
+        sender_device_id: sender_device_id.to_owned(),
+        signing_public: hex(signing_key(signing_secret)?.verifying_key().as_bytes()),
+        owner_fingerprint: owner_fingerprint(&bundle.owner_id)?,
+    };
+    let body = serde_json::to_string(bundle).map_err(|_| Error::InvalidRequest)?;
+    let signature = sign(signing_secret, &signature_bytes(&header, &body)?)?;
+    let plaintext = serde_json::to_vec(&SignedBundle {
+        header,
+        bundle: bundle.clone(),
+        signature,
+    })
+    .map_err(|_| Error::InvalidRequest)?;
     if plaintext.len() > MAX_SYNC_PAYLOAD_BYTES {
         return Err(Error::TooLarge);
     }
@@ -280,25 +295,55 @@ pub fn seal_bundle(
     if ciphertext.len() > MAX_SYNC_ENVELOPE_BYTES {
         return Err(Error::TooLarge);
     }
-    let header = PersonalSyncHeader {
+    Ok(PersonalSyncEnvelope {
         format: PERSONAL_SYNC_FORMAT.into(),
         version: PERSONAL_SYNC_VERSION,
-        bundle_id: bundle.bundle_id.clone(),
-        sender_device_id: sender_device_id.to_owned(),
-        signing_public: hex(signing_key(signing_secret)?.verifying_key().as_bytes()),
-        owner_fingerprint: owner_fingerprint(&bundle.owner_id)?,
+        ciphertext,
+    })
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SignedBundle {
+    header: PersonalSyncHeader,
+    bundle: PersonalSyncBundle,
+    signature: String,
+}
+
+/// A verified signature binds this data to its enclosed key, not to a trusted person.
+pub struct OpenedBundle {
+    pub header: PersonalSyncHeader,
+    pub bundle: PersonalSyncBundle,
+}
+
+/// Parse a standard binary or armored age file. Metadata stays encrypted.
+pub fn envelope_from_age(bytes: &[u8]) -> Result<PersonalSyncEnvelope, Error> {
+    if bytes.len() > MAX_SYNC_ENVELOPE_BYTES {
+        return Err(Error::TooLarge);
+    }
+    let ciphertext = if bytes.starts_with(b"-----BEGIN AGE ENCRYPTED FILE-----\n")
+        || bytes.starts_with(b"-----BEGIN AGE ENCRYPTED FILE-----\r\n")
+    {
+        std::str::from_utf8(bytes)
+            .map_err(|_| Error::InvalidRequest)?
+            .to_owned()
+    } else if bytes.starts_with(b"age-encryption.org/v1\n") {
+        let mut output = Vec::new();
+        let mut writer = ArmoredWriter::wrap_output(&mut output, Format::AsciiArmor)
+            .map_err(|_| Error::InvalidRequest)?;
+        writer.write_all(bytes).map_err(|_| Error::InvalidRequest)?;
+        writer.finish().map_err(|_| Error::InvalidRequest)?;
+        String::from_utf8(output).map_err(|_| Error::InvalidRequest)?
+    } else {
+        return Err(Error::InvalidRequest);
     };
-    let bytes = signature_bytes(&header, &ciphertext)?;
-    let signature = sign(signing_secret, &bytes)?;
     let envelope = PersonalSyncEnvelope {
         format: PERSONAL_SYNC_FORMAT.into(),
         version: PERSONAL_SYNC_VERSION,
-        header,
         ciphertext,
-        signature,
     };
     if !envelope.valid() {
-        return Err(Error::InvalidRequest);
+        return Err(Error::TooLarge);
     }
     Ok(envelope)
 }
@@ -320,25 +365,13 @@ fn decrypt_with<I: age::Identity>(identity: &I, ciphertext: &str) -> Result<Vec<
     Ok(plaintext)
 }
 
-pub fn open_bundle(
+pub fn open_signed_bundle(
     envelope: &PersonalSyncEnvelope,
     identity_secret: Option<&str>,
     passphrase: Option<&str>,
-    trusted: &TrustedSender,
-) -> Result<PersonalSyncBundle, Error> {
-    if !envelope.valid()
-        || identity_secret.is_some() == passphrase.is_some()
-        || !precept_core::operator::valid_identity(&trusted.owner_id)
-        || !precept_core::operator::valid_identity(&trusted.device_id)
-        || envelope.header.sender_device_id != trusted.device_id
-        || envelope.header.signing_public != trusted.signing_public
-        || owner_fingerprint(&trusted.owner_id)? != envelope.header.owner_fingerprint
-    {
-        return Err(Error::Authentication);
-    }
-    let signed = signature_bytes(&envelope.header, &envelope.ciphertext)?;
-    if !verify(&trusted.signing_public, &signed, &envelope.signature) {
-        return Err(Error::Authentication);
+) -> Result<OpenedBundle, Error> {
+    if !envelope.valid() || identity_secret.is_some() == passphrase.is_some() {
+        return Err(Error::InvalidRequest);
     }
     let plaintext = match (identity_secret, passphrase) {
         (Some(identity), None) => {
@@ -355,23 +388,53 @@ pub fn open_bundle(
         }
         _ => return Err(Error::InvalidRequest),
     };
-    let bundle: PersonalSyncBundle =
+    let signed: SignedBundle =
         serde_json::from_slice(&plaintext).map_err(|_| Error::InvalidRequest)?;
-    if !bundle.valid()
-        || bundle.bundle_id != envelope.header.bundle_id
-        || bundle.owner_id != trusted.owner_id
+    let SignedBundle {
+        header,
+        bundle,
+        signature,
+    } = signed;
+    if !header.valid()
+        || !bundle.valid()
+        || bundle.bundle_id != header.bundle_id
+        || owner_fingerprint(&bundle.owner_id)? != header.owner_fingerprint
         || bundle
             .entries
             .iter()
-            .any(|entry| !entry.clock.contains_key(&trusted.device_id))
+            .any(|entry| !entry.clock.contains_key(&header.sender_device_id))
         || bundle
             .tombstones
             .iter()
-            .any(|tombstone| !tombstone.clock.contains_key(&trusted.device_id))
+            .any(|entry| !entry.clock.contains_key(&header.sender_device_id))
     {
         return Err(Error::InvalidRequest);
     }
-    Ok(bundle)
+    let body = serde_json::to_string(&bundle).map_err(|_| Error::InvalidRequest)?;
+    if !verify(
+        &header.signing_public,
+        &signature_bytes(&header, &body)?,
+        &signature,
+    ) {
+        return Err(Error::Authentication);
+    }
+    Ok(OpenedBundle { header, bundle })
+}
+
+pub fn open_bundle(
+    envelope: &PersonalSyncEnvelope,
+    identity_secret: Option<&str>,
+    passphrase: Option<&str>,
+    trusted: &TrustedSender,
+) -> Result<PersonalSyncBundle, Error> {
+    let opened = open_signed_bundle(envelope, identity_secret, passphrase)?;
+    if opened.header.sender_device_id != trusted.device_id
+        || opened.header.signing_public != trusted.signing_public
+        || opened.bundle.owner_id != trusted.owner_id
+    {
+        return Err(Error::Authentication);
+    }
+    Ok(opened.bundle)
 }
 
 #[cfg(test)]
@@ -521,6 +584,66 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn standard_age_files_keep_signed_metadata_inside_encryption_and_accept_binary_input() {
+        let sender = generate_identity().unwrap();
+        let bundle = bundle(&sender.owner_id, &sender.device_id);
+        let password = "synthetic-format-password";
+        let envelope = seal_bundle(
+            &bundle,
+            &sender.device_id,
+            &sender.signing_secret,
+            None,
+            Some(password),
+        )
+        .unwrap();
+        assert!(!envelope.ciphertext.contains(&sender.device_id));
+        assert!(!envelope.ciphertext.contains(&sender.signing_public));
+        let windows_armor = envelope
+            .ciphertext
+            .replace("\r\n", "\n")
+            .replace('\n', "\r\n");
+        let windows_file = envelope_from_age(windows_armor.as_bytes()).unwrap();
+        assert_eq!(
+            open_signed_bundle(&windows_file, None, Some(password))
+                .unwrap()
+                .bundle,
+            bundle
+        );
+        let mut binary = Vec::new();
+        ArmoredReader::new(Cursor::new(envelope.ciphertext.as_bytes()))
+            .read_to_end(&mut binary)
+            .unwrap();
+        assert!(binary.starts_with(b"age-encryption.org/v1\n"));
+        let parsed = envelope_from_age(&binary).unwrap();
+        assert_eq!(
+            open_signed_bundle(&parsed, None, Some(password))
+                .unwrap()
+                .bundle,
+            bundle
+        );
+        assert_eq!(
+            envelope_from_age(br#"{"ciphertext":"not-an-age-file"}"#),
+            Err(Error::InvalidRequest)
+        );
+
+        let mut identity = age::scrypt::Identity::new(password.to_owned().into());
+        identity.set_max_work_factor(16);
+        let plaintext = decrypt_with(&identity, &envelope.ciphertext).unwrap();
+        let mut signed: SignedBundle = serde_json::from_slice(&plaintext).unwrap();
+        signed.signature = "0".repeat(128);
+        let mut invalid = envelope;
+        invalid.ciphertext = encrypt_with(
+            &passphrase_recipient(password).unwrap(),
+            &serde_json::to_vec(&signed).unwrap(),
+        )
+        .unwrap();
+        assert!(matches!(
+            open_signed_bundle(&invalid, None, Some(password)),
+            Err(Error::Authentication)
+        ));
     }
 
     #[test]

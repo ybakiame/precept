@@ -84,18 +84,25 @@ creates suggestions that require exact operator review.
 with stable codes and line/column positions. It uses the registered project root,
 requires no write grant, and is also available to the Desktop Rules page.
 
-For manual personal sync, enable writes for the operator run and use
-`precept sync init --out INVITATION.json` on the first device. Verify both printed
-fingerprints out of band, then use `precept sync pair` on the new device and
-`precept sync trust` on an already initialized peer. `precept sync export` writes a
-new age-encrypted file for a paired recipient or a passphrase file;
-`precept sync preview` compares it and can write a prepared apply template with
-`--out`. Conflicts are skipped unless explicitly accepted or resolved. Apply the
-exact template with `precept sync apply PREPARED.json --operation-id ID`; after an
-unknown outcome, retry the identical command and passphrase. `precept sync status`,
-`revoke`, `rotate`, `reset` and receipt-proven `abort` cover the remaining operator
-workflow. Files and passphrases are never overwritten or embedded in prepared
-templates.
+For manual personal sync, the Desktop exports one password-encrypted `.age` file
+and imports it by selecting the file and entering its password. Preview the exact
+changes and resolve conflicts before applying. Independently initialized devices
+can merge personal preferences without resetting identity or pairing first.
+The file preserves version relationships for changes made on either device;
+import never treats a missing entry as deletion or silently trusts the sender.
+
+For headless use, enable writes for the operator run, then use `precept sync export
+--out PREFERENCES.age --passphrase-file PASSWORD.txt` and `precept sync preview
+PREFERENCES.age --passphrase-file PASSWORD.txt --out PREPARED.json`. The password
+file must be private. Export and first import initialize missing device sync state
+through the daemon, preserving existing identity and preferences. Conflicts are
+skipped unless explicitly accepted or resolved. Apply the exact template with
+`precept sync apply PREPARED.json --operation-id ID --passphrase-file PASSWORD.txt`;
+after an unknown outcome, retry the identical command and password. Recipient-key
+exchange remains available through `init`, `invitation`, `pair`, `trust` and
+`export --recipient`. `status`, `revoke`, `rotate`, `reset` and receipt-proven
+`abort` cover advanced operation and recovery. Output files are never overwritten;
+passwords are never embedded in prepared templates.
 
 
 ## Operator model

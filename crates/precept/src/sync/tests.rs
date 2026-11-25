@@ -15,6 +15,7 @@ fn preview() -> PersonalSyncPreview {
         resolution,
     };
     PersonalSyncPreview {
+        local_contents: Vec::new(),
         bundle: precept_ipc::operator::PersonalSyncBundle {
             format: precept_ipc::operator::PERSONAL_SYNC_FORMAT.into(),
             version: precept_ipc::operator::PERSONAL_SYNC_VERSION,
@@ -171,16 +172,7 @@ fn prepared_files_round_trip_the_exact_retry_input_without_overwriting() {
         envelope: PersonalSyncEnvelope {
             format: precept_ipc::operator::PERSONAL_SYNC_FORMAT.into(),
             version: precept_ipc::operator::PERSONAL_SYNC_VERSION,
-            header: precept_ipc::operator::PersonalSyncHeader {
-                format: precept_ipc::operator::PERSONAL_SYNC_FORMAT.into(),
-                version: precept_ipc::operator::PERSONAL_SYNC_VERSION,
-                bundle_id: "b".repeat(32),
-                sender_device_id: value.sender_device_id.clone(),
-                signing_public: "a".repeat(64),
-                owner_fingerprint: "f".repeat(32),
-            },
             ciphertext: "ciphertext".into(),
-            signature: "0".repeat(128),
         },
         local_versions: value.local_versions,
         sender_device_id: value.sender_device_id,

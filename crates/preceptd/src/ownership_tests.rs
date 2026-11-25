@@ -299,7 +299,11 @@ async fn s3_root_drift_between_initial_check_and_final_admission_refuses_review(
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn project_add_reopens_the_expected_root_after_the_state_lock_wait() {
-    let temp = tempfile::tempdir().unwrap();
+    let home = crate::scope::home().expect("a canonical home for project admission");
+    let temp = tempfile::Builder::new()
+        .prefix("precept-admission-")
+        .tempdir_in(home)
+        .unwrap();
     let state = temp.path().join("state");
     precept_ipc::transport::private_dir(&state, true).unwrap();
     let db = state.join("profile.sqlite3");

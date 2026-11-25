@@ -299,16 +299,28 @@ Reset is an explicit replacement of sync identity, trust, clocks and tombstones;
 it does not change Profile preferences. Rotation keeps the device id; peers must
 explicitly revoke the old invitation before trusting its replacement keys.
 
-`profile.sync.export` returns a `precept-personal-sync` v1 age envelope. Automatic
+`profile.sync.export` returns a typed `precept-personal-sync` v1 envelope containing
+only standard armored age ciphertext. The encrypted payload contains the versioned
+bundle, sender header and its Ed25519 signature; no sender metadata or signature
+is written outside the age file. Clients save the age bytes directly as `.age`,
+without a JSON envelope or archive layer. Import accepts bounded standard binary
+or armored age files and refuses JSON files. Automatic
 mode encrypts to the chosen paired device; passphrase mode uses scrypt and still
-requires the authenticated sender signature. Files are written by the client,
+requires a valid signature under the enclosed signing key. Recipient-key imports
+additionally authenticate that key against established trust. Files are written by the client,
 never implicitly overwritten by the daemon. At most 50 keys are exported per
 bundle; larger sets require an explicit key selection. The sidecar tracks at most
 500 keys, 15 trusted devices, 5000 applied-entry records and 4096 operation
 records, and is capped at 4 MiB.
 
 `profile.sync.preview` decrypts with the local daemon-held age identity or the
-supplied passphrase, verifies owner/device/signing-key trust and returns the
+supplied passphrase and verifies the enclosed signature and bundle consistency.
+Recipient-key mode requires owner/device/signing-key trust. Password mode permits
+an independently initialized sender and owner without creating persistent trust;
+the operator must review and explicitly apply the exact decrypted contents. A
+signature under an enclosed key is integrity evidence, not authenticated sender
+identity. Known revoked devices or changed signing keys are refused in either
+mode. Preview returns the
 bounded comparison, selectable entries, conflict resolutions, exact local
 versions and destination commit. Equal-clock drift and concurrent edits are
 conflicts; absence never means deletion. Only explicit tombstones delete.
@@ -317,8 +329,9 @@ Keeping local or merging manually creates a clock that dominates both inputs.
 `profile.sync.apply` requires the current OperatorWrite capability and accepts an
 immutable operation id, the original signed envelope and optional passphrase,
 plus compact previewed local version references, selections and destination
-commit. The daemon reopens the envelope and verifies the sender signature on
-every new apply and pending retry; plaintext bundle substitution is not accepted.
+commit. The daemon reopens the age ciphertext and verifies the enclosed signature on
+every new apply and pending retry, then rechecks the applicable recipient-trust
+or explicitly reviewed password-import boundary; plaintext bundle substitution is not accepted.
 It persists a pending record before calling the writer, rechecks destination
 state, and commits compact typed `apply_personal_sync` changes only when Profile
 content changes. A writer receipt finalizes the sidecar. Recovery first looks up
@@ -343,6 +356,13 @@ files use `precept-personal-sync-invitation` v1 and contain only public identity
 material plus the complete-invitation fingerprint. Pair/trust refuse a file whose
 embedded fingerprint, supplied fingerprint or owner fingerprint does not match.
 The CLI requires an enabled OperatorWrite grant for every sync mutation.
+An explicit export initializes missing sync identity as part of that write; the
+CLI and Desktop also initialize missing identity through OperatorWrite before the
+first import preview. Existing identity and Profile preferences are preserved.
+The default Desktop workflow enters passwords directly in masked native fields;
+the headless CLI retains private `--passphrase-file` inputs. Decryption, preview
+and apply have a 25-second server computation budget and a 30-second client
+response budget, without weakening the password work factor.
 
 Export accepts exactly one of `--recipient DEVICE_ID` or
 `--passphrase-file FILE`; preview/apply read passphrases only from private files,

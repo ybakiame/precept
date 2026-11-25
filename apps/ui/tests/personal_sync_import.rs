@@ -1,11 +1,10 @@
-//! Real Desktop conflict review over two paired daemons; not native GUI evidence.
+//! Real Desktop conflict review over independent daemons; not native GUI evidence.
 #![cfg(feature = "native")]
 
 mod sync_support;
 
 use precept_ipc::operator;
 use serde_json::json;
-use std::io::Write;
 use sync_support::*;
 
 #[test]
@@ -15,14 +14,9 @@ fn desktop_requires_an_explicit_conflict_choice_and_excludes_reapplied_entries()
     let receiver = Fixture::new();
     receiver.prepare_profile("Different local preference value.");
     project_write(&sender, "profile.sync.init", json!({}));
-    trust(&receiver, &sender, "profile.sync.pair");
-    trust(&sender, &receiver, "profile.sync.trust");
+    project_write(&receiver, "profile.sync.init", json!({}));
 
-    let passphrase = receiver.root.path().join("passphrase.txt");
-    let envelope = receiver.root.path().join("sync.json");
-    let mut file = precept_ipc::transport::new_private(&passphrase).unwrap();
-    file.write_all(b"desktop-test-passphrase\n").unwrap();
-    file.sync_all().unwrap();
+    let envelope = receiver.root.path().join("preferences.age");
     let exported = project_write(
         &sender,
         "profile.sync.export",
@@ -32,17 +26,15 @@ fn desktop_requires_an_explicit_conflict_choice_and_excludes_reapplied_entries()
             keys: None,
         }),
     );
-    precept_ui_client::sync_files::write_new(&envelope, &exported).unwrap();
+    precept_ui_client::sync_files::write_envelope(&envelope, &exported).unwrap();
 
     let mut app = start_app(&receiver);
     app.press("Personal sync").unwrap();
-    contains(&mut app, "Initialized");
-    app.press("Import encrypted file…").unwrap();
     app.type_text("Encrypted file", &envelope.to_string_lossy())
         .unwrap();
-    app.type_text("Passphrase file", &passphrase.to_string_lossy())
+    app.type_text("Decryption password", "desktop-test-passphrase")
         .unwrap();
-    app.press("Preview import").unwrap();
+    app.press("Decrypt and preview").unwrap();
     contains(&mut app, "Conflict");
     contains(&mut app, "0 key(s) selected");
     app.press("Accept remote").unwrap();
@@ -51,11 +43,8 @@ fn desktop_requires_an_explicit_conflict_choice_and_excludes_reapplied_entries()
     contains(&mut app, "Apply selected preferences?");
     app.press("Apply preferences").unwrap();
     contains(&mut app, "Applied 1 key(s); changed 1.");
-    assert!(
-        app.press("Apply…")
-            .expect_err("a completed preview cannot be applied again")
-            .contains("disabled")
-    );
+    assert_eq!(app.screen().count("Apply…").unwrap(), 0);
+
     assert!(
         !app.screen()
             .texts()
@@ -64,12 +53,13 @@ fn desktop_requires_an_explicit_conflict_choice_and_excludes_reapplied_entries()
         "terminal success drops the decrypted preview"
     );
 
-    press_when_ready(&mut app, "Import encrypted file…");
-    app.type_text("Encrypted file", &envelope.to_string_lossy())
+    assert_eq!(
+        app.screen().input_text("Encrypted file").unwrap(),
+        Some(envelope.to_string_lossy().as_ref())
+    );
+    app.type_text("Decryption password", "desktop-test-passphrase")
         .unwrap();
-    app.type_text("Passphrase file", &passphrase.to_string_lossy())
-        .unwrap();
-    app.press("Preview import").unwrap();
+    app.press("Decrypt and preview").unwrap();
     contains(&mut app, "Already applied");
     contains(&mut app, "0 key(s) selected");
 }

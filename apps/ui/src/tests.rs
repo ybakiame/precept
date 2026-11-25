@@ -368,14 +368,20 @@ fn personal_sync_is_a_separate_setup_destination_with_honest_offline_state() {
     app.wait_for("Project: alpha").unwrap();
     assert_eq!(app.screen().count("id:nav.personal-sync").unwrap(), 1);
     app.press("Personal sync").unwrap();
-    app.wait_for("Move confirmed global preferences between paired devices through manual encrypted files. Nothing syncs automatically.")
+    app.wait_for("Manually exchange .age files to merge personal preferences across devices. Changes are previewed before they are applied.")
         .unwrap();
-    assert!(app.screen().shows("Status not read"));
+    assert!(app.screen().shows("Export encrypted preferences"));
+    assert!(app.screen().shows("Import and merge preferences"));
     assert!(
         app.screen()
             .shows("Connect to a live daemon before using personal sync.")
     );
-    assert!(app.screen().shows("Personal sync requires a live daemon."));
+    assert!(app.press("Export file").unwrap_err().contains("disabled"));
+    assert!(
+        app.press("Decrypt and preview")
+            .unwrap_err()
+            .contains("disabled")
+    );
     app.press("Runtime checks").unwrap();
     app.wait_for("Connection").unwrap();
 }
