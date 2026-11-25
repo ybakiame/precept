@@ -178,19 +178,17 @@ fn runtime_endpoint_and_credential_layers_are_fixed_and_actionable() {
         runtime_check(&Err(Error::UnsafeRuntime), &missing).reason,
         Reason::RuntimeNotInitialized
     );
+    let runtime = TestDir::new("endpoint");
+    let root = runtime.0.canonicalize().unwrap();
     let location = Location {
-        runtime_dir: PathBuf::from(if cfg!(windows) {
-            "C:\\private\\runtime"
-        } else {
-            "/private/runtime"
-        }),
+        runtime_dir: root.clone(),
         endpoint: if cfg!(windows) {
             "doctor".into()
         } else {
-            "/private/runtime/control.sock".into()
+            root.join("control.sock").to_str().unwrap().into()
         },
     };
-    assert!(endpoint_valid(&location, None));
+    assert!(endpoint_valid(&location, Some(&root)));
     let invalid = Location {
         endpoint: if cfg!(windows) {
             "bad endpoint".into()
@@ -199,7 +197,7 @@ fn runtime_endpoint_and_credential_layers_are_fixed_and_actionable() {
         },
         ..location.clone()
     };
-    assert!(!endpoint_valid(&invalid, None));
+    assert!(!endpoint_valid(&invalid, Some(&root)));
     assert_eq!(endpoint_check(false, true).reason, Reason::EndpointInvalid);
     assert_eq!(endpoint_check(false, false).status, Status::Unknown);
     assert_eq!(endpoint_check(false, false).reason, Reason::EndpointUnknown);

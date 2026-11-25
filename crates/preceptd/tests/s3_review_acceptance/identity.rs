@@ -3,7 +3,9 @@ use precept_ipc::Error;
 use precept_write::{Command, Expected, Scope};
 use rusqlite::Connection;
 use serde_json::json;
-use std::{fs, path::Path, process::Command as Process};
+#[cfg(windows)]
+use std::process::Command as Process;
+use std::{fs, path::Path};
 
 #[cfg(unix)]
 fn directory_link(target: &Path, link: &Path) {

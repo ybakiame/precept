@@ -2,7 +2,7 @@ use super::super::{Entry, NodeKind, OpenError, RootIdentity};
 use std::{
     ffi::{CString, OsStr, OsString},
     fs::File,
-    io::{self, Read, Write},
+    io::{Read, Write},
     os::{
         fd::{AsRawFd, FromRawFd},
         unix::ffi::{OsStrExt, OsStringExt},
@@ -51,7 +51,7 @@ pub(crate) fn create_dir(parent: &File, name: &OsStr) -> Result<File, OpenError>
     }
     open_relative(
         parent,
-        &std::ffi::OsStr::from_bytes(name.as_bytes()),
+        OsStr::from_bytes(name.as_bytes()),
         NodeKind::Directory,
     )
 }
@@ -201,10 +201,12 @@ pub(crate) fn entries(
     let mut found = Vec::new();
     let mut examined = 0;
     let result = loop {
-        unsafe { libc::errno = 0 };
+        // readdir returns null on both EOF and failure. Clear this thread's
+        // errno so that only an error from this call is reported.
+        unsafe { libc::__errno_location().write(0) };
         let entry = unsafe { libc::readdir(directory) };
         if entry.is_null() {
-            let error = unsafe { libc::errno };
+            let error = unsafe { libc::__errno_location().read() };
             break if error == 0 {
                 Ok(found)
             } else {

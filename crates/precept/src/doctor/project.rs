@@ -3,10 +3,7 @@ use super::runtime::{Blocker, not_checked};
 use super::{Check, Facts, Reason, Remediation, Status};
 use precept_ipc::{Access, Error, Location, Result, load_credential, valid_project};
 use serde_json::Value;
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{fs, path::Path};
 pub(super) fn project_refused(count: Check, binding: Check) -> Vec<Check> {
     let mut checks = vec![count, binding];
     checks.extend(unknown_project_capabilities());
@@ -282,7 +279,7 @@ pub(super) fn boolean_capability(
 }
 
 #[cfg(windows)]
-pub(super) fn normalized_windows_path(path: &Path) -> PathBuf {
+pub(super) fn normalized_windows_path(path: &Path) -> std::path::PathBuf {
     use std::os::windows::ffi::{OsStrExt, OsStringExt};
 
     // Windows accepts both separators, including in verbatim paths.
@@ -297,7 +294,7 @@ pub(super) fn normalized_windows_path(path: &Path) -> PathBuf {
             }
         })
         .collect::<Vec<_>>();
-    PathBuf::from(std::ffi::OsString::from_wide(&units))
+    std::path::PathBuf::from(std::ffi::OsString::from_wide(&units))
 }
 
 pub(super) fn same_path_argument(expected: &Path, actual: &str) -> bool {
