@@ -33,9 +33,11 @@ separate design with its own threat model.
   Operator read/control and write grants are separate; disabling drains admitted
   writes. Same-epoch receipts/CAS prevent silently changing or duplicating a request.
 - CLI/UI never receive writable SQLite or fall back to a retired runtime. Startup
-  does not automatically enable writes or adopt incompatible prototype profiles;
-  it selects a Profile only when the operator asked for that path, and never
-  remembers write access.
+  selects a Profile only when the operator asked for that path and never adopts
+  incompatible prototype profiles. Only the operator's explicit write enablement
+  for that remembered Profile is restored on later runs; a fresh epoch-bound
+  credential is issued each time, no token is persisted, and disabling writes or
+  forgetting startup clears restoration.
 - The daemon's project set and startup choice live in its private `--state-dir`
   (0700/0600, strict JSON, bounded to 256 projects, written atomically); a damaged
   file refuses start and is never repaired. Each project stores a persistent root

@@ -107,9 +107,10 @@ passwords are never embedded in prepared templates.
 
 ## Operator model
 
-Create or select a Profile explicitly. Startup selection and per-run write
-enablement are separate choices; the daemon never creates or adopts a Profile by
-itself. Each release reads exactly its own Profile schema, with no automatic
+Create or select a Profile explicitly. Startup selection and write enablement
+are separate choices; a remembered Profile restores writes only after explicit
+operator enablement, while disable/forget clears restoration. The daemon never
+creates or adopts a Profile by itself. Each release reads exactly its own Profile schema, with no automatic
 discovery, migration, repair or direct-write fallback; move data between releases
 with `precept profile export` and `precept profile import`.
 

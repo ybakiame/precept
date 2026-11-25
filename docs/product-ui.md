@@ -237,7 +237,8 @@ its exact encrypted file, local versions, selections, commit, operation id and
 password for deliberate identical retry. New file imports are disabled until it
 settles or is explicitly aborted. Changed inputs require a fresh preview. Abort
 reports whether a receipt settled or a proven-uncommitted operation was discarded.
-Writes remain per daemon run and are never remembered.
+Writes are restored only for a remembered startup Profile after explicit operator
+enablement; disabling writes or forgetting startup clears restoration.
 
 ### Preferences and review
 

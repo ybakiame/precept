@@ -68,9 +68,10 @@ installed manifest, and keeps unknown files.
    ```
    The daemon never creates or adopts a Profile by itself. **Forget** (or
    `profile forget-startup`) stops selecting it at start; the Profile stays.
-3. Writes are per daemon run and never remembered. **Enable writes and add** in
-   Workspaces turns them on with the add; Connection → Profile turns them on or
-   off directly (or `precept ... profile write enable --profile-id ...
+3. Explicitly enabled writes are restored for the remembered startup Profile on
+   later runs; disabling writes or forgetting startup clears restoration.
+   **Enable writes and add** in Workspaces turns them on with the add; Connection
+   → Profile turns them on or off directly (or `precept ... profile write enable --profile-id ...
    --generation ... --confirm`).
 4. Add projects in **Workspaces → Add project…**: choose a folder (a Git
    repository root in your Linux home; on Windows the dialog opens in

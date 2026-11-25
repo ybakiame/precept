@@ -100,7 +100,7 @@ or move existing data automatically.
 | Provenance/evidence | Minimal local records with reporter/observer/verifier attribution | No raw transcript or credential store; export requires explicit selection |
 
 The daemon's private state contains the registered project set and optional startup
-Profile choice. Each project entry stores its canonical root and persistent filesystem
+Profile choice with its explicit write-restoration choice. Each project entry stores its canonical root and persistent filesystem
 identity (Unix device/inode or Windows volume/file index). Registration is not
 permission to discover or share every project. The daemon checks only the path chosen
 by the operator and refuses system, control and otherwise ineligible roots; Unix
@@ -120,8 +120,10 @@ versioned Profile export and import; imported rules still require exact review.
 
 Profile creation is explicit and never overwrites an existing file. Startup selects
 a Profile only when the operator requested that exact path. Write enablement is
-independent, bounded to the Profile/generation/owner epoch and never remembered
-across daemon runs.
+independent and bounded to the Profile/generation/owner epoch. The startup record
+remembers only the operator's explicit choice to restore writes for that Profile;
+each run issues a fresh credential, and disabling writes or forgetting startup
+clears restoration.
 
 Only the daemon links and invokes `precept-write`. Operator read/control and write
 capabilities are separate. Transactions use exact typed commands, expected

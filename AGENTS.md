@@ -59,8 +59,10 @@ contracts. Code/contract disagreements require explicit human resolution.
   integration.
 - Profile creation and selection are explicit operator actions. Never discover,
   adopt, migrate, reset, delete or overwrite a Profile automatically. Startup
-  selection occurs only for the explicitly requested path; write access is never
-  remembered.
+  selection occurs only for the explicitly requested path. Only an operator's
+  explicit write enablement for that remembered Profile is restored on later
+  runs; disabling writes or forgetting startup clears restoration, and no write
+  token is persisted.
 - Projects live in daemon-private state and change only through operator-write
   `project.add` / `project.remove` after a daemon-side check of the chosen path.
   No GUI, bridge or agent scans directories.

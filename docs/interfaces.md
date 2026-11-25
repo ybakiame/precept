@@ -7,8 +7,12 @@ IPC v2. It supports Profile create/select/info, independent write enable/disable
 exact scoped Preference/Handoff previews and typed mutations. Use its command help
 for current syntax. Operator control/read is distinct from the
 profile/generation/epoch-bound write credential. Only the daemon invokes the
-private writer. No SQL/JSON patch, default Profile, automatic grant/startup,
-generic bridge forwarding or direct database fallback.
+private writer. No SQL/JSON patch, default Profile, implicit grant,
+generic bridge forwarding or direct database fallback. A remembered startup
+Profile restores writes only after explicit operator enablement for that Profile;
+each run issues a fresh epoch-bound credential, and disable/forget clears
+restoration. `profile.info` reports `write_restore_failure` if restoration was
+requested but could not be issued.
 
 `precept setup` is a guided first-activation flow over those same methods. It
 checks one explicitly chosen checkout, then previews Profile creation/selection,
