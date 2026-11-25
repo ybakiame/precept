@@ -1,8 +1,8 @@
 {
   "name": "Precept Operator",
   "id": "org.precept.operator",
-  "version": "0.4.4",
-  "build": 4,
+  "version": "0.4.5",
+  "build": 5,
   "rust": ".",
   "root": "App",
   "window": {

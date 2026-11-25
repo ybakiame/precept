@@ -4,6 +4,22 @@ Precept follows [semantic versioning](https://semver.org/). While the version is
 0.x, a minor release may change the Profile schema or the local interfaces; move
 data between schemas with the versioned Profile export and import.
 
+## 0.4.5
+
+- **Simpler personal sync:** Desktop exports and imports standard password-encrypted
+  age files without requiring device pairing. Independently initialized devices
+  preview exact changes and resolve conflicts before applying them; signatures and
+  sync metadata stay inside the encrypted payload, and recipient-key pairing remains
+  available through the CLI.
+- **Recovery and credential continuity:** deleting an imported preference no longer
+  makes the Profile fail startup validation. Long-lived MCP sessions reload the
+  current project credential after a daemon restart instead of requiring a new
+  agent session, without replaying requests automatically.
+- **Persistent write choice:** a remembered startup Profile restores writes after
+  explicit operator enablement, with a fresh epoch-bound credential on every run.
+  Disabling writes or forgetting startup clears restoration; no write token is
+  persisted. Desktop copy now describes this behavior.
+
 ## 0.4.4
 
 - **Guided Desktop launch:** a skippable first-launch guide walks through the
