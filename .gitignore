@@ -13,6 +13,7 @@
 
 ##
 .qoder/
+.workbuddy/
 
 # Files
 .env*
