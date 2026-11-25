@@ -1,7 +1,7 @@
 //! Exact fresh Rust-native Profile v1; verification never mutates database data.
 use crate::{Error, Result};
 use rusqlite::{Connection, types::Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 // Thread-local and test-only: no runtime metric, cache or validation bypass.
 #[cfg(test)]
@@ -607,6 +607,11 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
             history.insert(key, version);
         }
     }
+    let erased_preferences = history
+        .iter()
+        .filter(|(key, version)| key.0 == "preference" && version.deleted)
+        .map(|(key, _)| key.2.clone())
+        .collect::<BTreeSet<_>>();
     for (key, version) in history {
         if version.deleted {
             valid(!live.contains_key(&key))?;
@@ -724,6 +729,9 @@ pub fn verify(db: &Connection) -> Result<Metadata> {
             .push(action.to_owned());
     }
     for (seq, record, revision) in &skipped {
+        if erased_preferences.contains(record) {
+            continue;
+        }
         let explained = decisions.iter().any(|r| {
             positive(&r[3]).is_ok_and(|p| p.to_string() == *record)
                 && positive(&r[5]).is_ok_and(|from| from == *revision)

@@ -187,6 +187,38 @@ fn deprecate_global(fixture: &support::Fixture, binding: &Binding, key: &str) {
         .unwrap();
 }
 
+fn delete_global(fixture: &support::Fixture, binding: &Binding, key: &str) {
+    let page = fixture
+        .daemon
+        .control(
+            "profile.preferences.list",
+            json!({"scope":Scope::Global,"after_id":0}),
+        )
+        .unwrap();
+    let record = page["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|record| record["key"] == key && record["status"] == "confirmed")
+        .max_by_key(|record| record["id"].as_i64().unwrap())
+        .unwrap()
+        .clone();
+    fixture
+        .daemon
+        .mutate(
+            binding,
+            &operation("delete"),
+            Command::DeletePreference {
+                id: record["id"].as_i64().unwrap(),
+                scope: Scope::Global,
+                proposal_digest: record["proposal_digest"].as_str().unwrap().into(),
+                channel: Channel::Desktop,
+                expected: Expected::Revision(record["revision"].as_i64().unwrap()),
+            },
+        )
+        .unwrap();
+}
+
 fn revise_global(fixture: &support::Fixture, binding: &Binding, key: &str, value: &str) {
     let page = fixture
         .daemon
@@ -732,6 +764,59 @@ fn independent_devices_merge_password_files_in_both_directions_without_changing_
         assert_eq!(after["owner_fingerprint"], before["owner_fingerprint"]);
         assert_eq!(after["trusted_devices"], json!([]));
     }
+}
+
+#[test]
+fn deleting_an_imported_preference_does_not_prevent_daemon_restart() {
+    let source = support::Fixture::created();
+    let mut destination = support::Fixture::unselected();
+    destination
+        .daemon
+        .control(
+            "profile.create",
+            json!({"path":destination.db,"remember":true}),
+        )
+        .unwrap();
+    let source_binding = source.daemon.enable();
+    let destination_binding = destination.daemon.enable();
+    confirm_global(&source, &source_binding, "imported", "Imported.", true);
+    write_call(&destination, "profile.sync.init", json!({}));
+    let password = "synthetic-restart-password";
+    let envelope = write_call(
+        &source,
+        "profile.sync.export",
+        json!({"recipient":null,"passphrase":password,"keys":null}),
+    );
+    let preview: PersonalSyncPreview = serde_json::from_value(
+        preview_call(
+            &destination,
+            json!({"envelope":envelope,"passphrase":password}),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    apply(
+        &destination,
+        submission(
+            &preview,
+            &envelope,
+            Some(password),
+            operation("import-before-delete"),
+        ),
+    );
+    assert!(confirmed(&destination, "imported").is_some());
+    delete_global(&destination, &destination_binding, "imported");
+    assert!(confirmed(&destination, "imported").is_none());
+
+    let base = destination.temp.path().to_path_buf();
+    destination.daemon.kill();
+    destination.daemon = support::Daemon::relaunch(&base, "run-a");
+    destination.daemon.ready();
+    assert!(confirmed(&destination, "imported").is_none());
+    destination
+        .daemon
+        .control("profile.sync.status", json!({}))
+        .unwrap();
 }
 
 #[test]
