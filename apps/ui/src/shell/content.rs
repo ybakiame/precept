@@ -16,6 +16,25 @@ pub(crate) fn shell(
     task_ref: ElementRef,
     filter_ref: ElementRef,
 ) -> impl IntoElement {
+    view()
+        .flex_1()
+        .child(
+            view()
+                .flex_1()
+                .style_when(move || model.get().onboarding_open, |s| s.hidden())
+                .child(workspace_shell(model, task_ref, filter_ref)),
+        )
+        .child(when(
+            move || model.get().onboarding_open,
+            move || features::onboarding::page(model),
+        ))
+}
+
+fn workspace_shell(
+    model: Signal<Model>,
+    task_ref: ElementRef,
+    filter_ref: ElementRef,
+) -> impl IntoElement {
     profile::watch(model);
     profile::watch_count(model);
     agents::watch(model);

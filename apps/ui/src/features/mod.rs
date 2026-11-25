@@ -5,6 +5,7 @@ pub(crate) mod connection;
 pub(crate) mod doctor;
 pub(crate) mod handoff;
 pub(crate) mod memory;
+pub(crate) mod onboarding;
 pub(crate) mod overview;
 pub(crate) mod personal_sync;
 pub(crate) mod preferences;
@@ -19,7 +20,7 @@ pub(crate) mod tags;
 
 use crate::*;
 use handoff::handoff;
-use overview::{daemon, dashboard, onboarding};
+use overview::{daemon, dashboard, next_step};
 use precept_ui_core::Section;
 use precept_ui_core::i18n::Msg;
 use preferences::preferences;
@@ -42,7 +43,7 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
         if current.section == Section::Dashboard
             && matches!(current.phase, Phase::Empty | Phase::Unavailable)
         {
-            return body.child(onboarding(model)).child(daemon(model));
+            return body.child(next_step(model)).child(daemon(model));
         }
         return body.child(daemon(model)).child(card(
             model,

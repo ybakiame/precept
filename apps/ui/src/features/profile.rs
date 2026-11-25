@@ -183,7 +183,9 @@ pub(crate) fn watch(model: Signal<Model>) {
         let shown = m.live
             && matches!(
                 shell::current(&m),
-                shell::Destination::RuntimeChecks | shell::Destination::Dashboard
+                shell::Destination::RuntimeChecks
+                    | shell::Destination::Dashboard
+                    | shell::Destination::Onboarding
             );
         (shown, m.setup_tab, m.epoch)
     });
@@ -456,7 +458,7 @@ pub(crate) fn setup(model: Signal<Model>) -> impl IntoElement {
 
 /// The Runtime checks Profile tab: offline guidance when disconnected, setup
 /// while none is selected, otherwise the startup choice and this run's writes.
-pub(crate) fn section(model: Signal<Model>) -> impl IntoElement {
+pub(crate) fn section(model: Signal<Model>, show_next: bool) -> impl IntoElement {
     let writes_on = move || {
         model
             .get()
@@ -542,7 +544,9 @@ pub(crate) fn section(model: Signal<Model>) -> impl IntoElement {
                 .items_start()
                 .style_when(
                     move || {
-                        super::setup::step_done(&model.get(), precept_ui_core::SetupTab::Workspaces)
+                        let m = model.get();
+                        !show_next
+                            || !super::setup::step_done(&m, precept_ui_core::SetupTab::Workspaces)
                     },
                     |s| s.hidden(),
                 )

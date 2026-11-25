@@ -297,6 +297,14 @@ fn list(model: Signal<Model>) -> impl IntoElement {
             if entries.is_empty() {
                 return ui::empty(model, model.get_untracked().word(Msg::NoProjectsYet))
                     .icon(icons::section_path(precept_ui_core::Section::Projects))
+                    .description(model.get_untracked().word(Msg::NextStepSetupBody))
+                    .action(
+                        button(model, "")
+                            .label_fn(word(model, Msg::AddProject))
+                            .icon(icons::PLUS)
+                            .variant(ButtonVariant::Primary)
+                            .on_press(move || model.update(|m| m.project_add.open = true)),
+                    )
                     .into_element();
             }
             view()

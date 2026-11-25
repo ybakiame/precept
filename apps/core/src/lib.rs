@@ -239,6 +239,18 @@ pub enum SetupTab {
     Workspaces,
 }
 
+/// The independent first-launch guide. Agent access is optional; the first
+/// three steps must be observed complete before the guide can finish.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum OnboardingStep {
+    #[default]
+    Connection,
+    Profile,
+    Workspace,
+    Agents,
+    Complete,
+}
+
 /// Connection discovery on the connection page. Each check carries the epoch
 /// it was started with; a result for an older selection is dropped.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -265,6 +277,12 @@ pub struct Model {
     /// The Runtime checks page (Connection and Profile), or Workspaces.
     pub setup_open: bool,
     pub setup_tab: SetupTab,
+    /// The independent first-launch guide; presentation state only.
+    pub onboarding_open: bool,
+    pub onboarding_step: OnboardingStep,
+    /// Whether the operator completed or skipped the launch guide. Saved with
+    /// presentation settings so a skipped guide does not return next launch.
+    pub onboarding_seen: bool,
     /// Profile-scoped manual personal sync.
     pub sync_open: bool,
     pub sync: personal_sync::State,

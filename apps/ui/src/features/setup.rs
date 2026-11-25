@@ -81,6 +81,30 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
 
     view()
         .gap_6()
+        .child(
+            view()
+                .flex_row()
+                .flex_wrap()
+                .items_center()
+                .justify_between()
+                .gap_2()
+                .max_w(px(scale::layout::CONTENT))
+                .child(
+                    text(move || {
+                        let m = model.get();
+                        format!("{}/2 · {}", completed_count(&m), m.word(Msg::RuntimeChecks))
+                    })
+                    .text_size(px(scale::text::CAPTION))
+                    .text_color(move || palette(model).muted),
+                )
+                .child(
+                    ui::button(model, "")
+                        .label_fn(move || model.get().word(Msg::LaunchGuideReopen).into())
+                        .icon(icons::BRAND)
+                        .size(ui::ButtonSize::Small)
+                        .on_press(move || shell::reopen_onboarding(model)),
+                ),
+        )
         .child(bar)
         .child(
             view()
@@ -88,7 +112,7 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
                     move || model.get().setup_tab != SetupTab::Connection,
                     |s| s.hidden().invisible(),
                 )
-                .child(super::connection::connection(model)),
+                .child(super::connection::connection(model, true)),
         )
         .child(
             view()
@@ -96,6 +120,6 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
                     move || model.get().setup_tab != SetupTab::Profile,
                     |s| s.hidden().invisible(),
                 )
-                .child(super::profile::section(model)),
+                .child(super::profile::section(model, true)),
         )
 }

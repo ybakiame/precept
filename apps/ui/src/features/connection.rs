@@ -167,7 +167,7 @@ fn heading(model: Signal<Model>, key: Msg) -> impl IntoElement {
 }
 
 /// The page.
-pub(crate) fn connection(model: Signal<Model>) -> impl IntoElement {
+pub(crate) fn connection(model: Signal<Model>, show_next: bool) -> impl IntoElement {
     let mut targets = tabs(model);
     if cfg!(target_os = "windows") {
         targets = targets.add_fn(
@@ -239,8 +239,9 @@ pub(crate) fn connection(model: Signal<Model>) -> impl IntoElement {
                 .style_when(
                     move || {
                         let m = model.get();
-                        !(super::setup::step_done(&m, precept_ui_core::SetupTab::Connection)
-                            && !super::setup::step_done(&m, precept_ui_core::SetupTab::Profile))
+                        !show_next
+                            || !(super::setup::step_done(&m, precept_ui_core::SetupTab::Connection)
+                                && !super::setup::step_done(&m, precept_ui_core::SetupTab::Profile))
                     },
                     |s| s.hidden(),
                 )

@@ -50,7 +50,7 @@ pub(crate) fn bind(
     let handler = Rc::new(handler);
     let chords = computed(move || {
         let m = model.get();
-        if m.shortcut_recording.is_some() {
+        if m.shortcut_recording.is_some() || m.onboarding_open {
             Vec::new()
         } else {
             m.keymap.chords(id)

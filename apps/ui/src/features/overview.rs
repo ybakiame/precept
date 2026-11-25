@@ -3,65 +3,105 @@
 //! label / value rows (`ui::properties`), never colon-joined strings.
 use crate::*;
 use precept_ui_core::presentation::sanitize;
-use precept_ui_core::{SetupTab, i18n::Msg};
+use precept_ui_core::{OnboardingStep, SetupTab, i18n::Msg};
 use shell::target_words;
 use tokens::{compact, palette};
 use ui::{BadgeVariant, ButtonSize, ButtonVariant, badge, button, properties, scale, surface};
 
-/// Guided onboarding card shown on Dashboard when setup is not complete yet.
-pub(crate) fn onboarding(model: Signal<Model>) -> impl IntoElement {
-    let m = model.get();
-    let conn_ok = super::setup::step_done(&m, SetupTab::Connection);
-    let profile_ok = super::setup::step_done(&m, SetupTab::Profile);
-    let ws_ok = super::setup::step_done(&m, SetupTab::Workspaces);
-    let next_tab = if !conn_ok {
-        SetupTab::Connection
-    } else if !profile_ok {
-        SetupTab::Profile
-    } else {
-        SetupTab::Workspaces
-    };
-    let step_row = |label: Msg, done: bool| {
-        view()
-            .flex_row()
-            .items_center()
-            .gap_3()
-            .child(text(m.word(label)).flex_1())
-            .child(
-                badge(
-                    model,
-                    m.word(if done {
-                        Msg::SetupStepComplete
-                    } else {
-                        Msg::SetupStepPending
-                    }),
-                )
-                .variant(if done {
-                    BadgeVariant::Success
-                } else {
-                    BadgeVariant::Neutral
-                }),
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Recommendation {
+    Setup(OnboardingStep),
+    Review(i64),
+    Agents(String),
+    Preference,
+    Ready,
+}
+
+fn recommend(m: &Model) -> Recommendation {
+    if !super::setup::step_done(m, SetupTab::Connection) {
+        return Recommendation::Setup(OnboardingStep::Connection);
+    }
+    if !super::setup::step_done(m, SetupTab::Profile) {
+        return Recommendation::Setup(OnboardingStep::Profile);
+    }
+    if !super::setup::step_done(m, SetupTab::Workspaces) {
+        return Recommendation::Setup(OnboardingStep::Workspace);
+    }
+    if let Some(n) = m.review_count.filter(|n| *n > 0) {
+        return Recommendation::Review(n);
+    }
+    if let Some(entry) = super::agents::active_entry(m)
+        && !entry.agents
+    {
+        return Recommendation::Agents(entry.name);
+    }
+    if m.project()
+        .is_some_and(|project| project.context.preferences.is_empty())
+    {
+        return Recommendation::Preference;
+    }
+    Recommendation::Ready
+}
+
+/// The Dashboard's one recommended action, chosen from observed setup and work.
+/// It is guidance only: every route opens the existing workflow and its guards.
+pub(crate) fn next_step(model: Signal<Model>) -> impl IntoElement {
+    let recommendation = computed(move || recommend(&model.get()));
+    dynamic(move || {
+        let next = recommendation.get();
+        let m = model.get_untracked();
+        let card = match next {
+            Recommendation::Setup(_) => ui::next_action(
+                model,
+                icons::BRAND,
+                m.word(Msg::NextStepSetupTitle),
+                m.word(Msg::NextStepSetupBody),
+                m.word(Msg::LaunchGuideContinue),
+                move || shell::reopen_onboarding(model),
             )
-    };
-    surface(model)
-        .title(m.word(Msg::DashboardOnboardingTitle))
-        .child(note(model, m.word(Msg::WorkspaceSetupIncomplete)))
-        .child(
-            view()
-                .gap_2()
-                .child(step_row(Msg::Connection, conn_ok))
-                .child(step_row(Msg::ProfileSection, profile_ok))
-                .child(step_row(Msg::Projects, ws_ok)),
-        )
-        .child(
-            view().items_start().child(
-                button(model, "")
-                    .label_fn(move || model.get().word(Msg::GoToRuntimeChecks).into())
-                    .variant(ButtonVariant::Primary)
-                    .size(ButtonSize::Small)
-                    .on_press(move || shell::go_setup(model, next_tab)),
+            .secondary(m.word(Msg::GoToRuntimeChecks), move || {
+                shell::go_setup(model, SetupTab::Connection)
+            }),
+            Recommendation::Review(n) => ui::next_action(
+                model,
+                icons::REVIEW,
+                m.word(Msg::NextStepReviewTitle)
+                    .replace("{n}", &n.to_string()),
+                m.word(Msg::NextStepReviewBody),
+                m.word(Msg::OpenReview),
+                move || shell::go(model, shell::Destination::Review),
             ),
-        )
+            Recommendation::Agents(name) => ui::next_action(
+                model,
+                icons::AGENTS,
+                m.word(Msg::NextStepAgentsTitle)
+                    .replace("{name}", &sanitize(&name, 64)),
+                m.word(Msg::NextStepAgentsBody),
+                m.word(Msg::OpenAgentsPage),
+                move || shell::go(model, shell::Destination::Agents),
+            ),
+            Recommendation::Preference => ui::next_action(
+                model,
+                icons::section_path(precept_ui_core::Section::Rules),
+                m.word(Msg::NextStepPreferenceTitle),
+                m.word(Msg::NextStepPreferenceBody),
+                m.word(Msg::OpenPreferences),
+                move || shell::go(model, shell::Destination::Rules),
+            ),
+            Recommendation::Ready => ui::next_action(
+                model,
+                icons::CHECK,
+                m.word(Msg::NextStepReadyTitle),
+                m.word(Msg::NextStepReadyBody),
+                m.word(Msg::OpenHandoff),
+                move || shell::go(model, shell::Destination::Handoff),
+            )
+            .secondary(m.word(Msg::OpenReview), move || {
+                shell::go(model, shell::Destination::Review)
+            }),
+        };
+        card.into_element()
+    })
 }
 
 fn note(model: Signal<Model>, value: impl Into<SharedString>) -> impl IntoElement {
@@ -273,8 +313,93 @@ pub(crate) fn dashboard(model: Signal<Model>) -> impl IntoElement {
     view()
         .flex_shrink_0()
         .gap_4()
+        .child(next_step(model))
         .child(context)
         .child(top)
         .child(resume)
         .child(review)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ready() -> Model {
+        let mut model = Model::fixture();
+        model.live = true;
+        *model.profile_info = Some(precept_ui_core::operator::ProfileInfo {
+            selected: true,
+            ..Default::default()
+        });
+        std::sync::Arc::make_mut(model.data.as_mut().unwrap()).directory =
+            vec![precept_ui_core::ProjectEntry {
+                name: "alpha".into(),
+                root: String::new(),
+                state: "ready".into(),
+                agents: true,
+                propose: false,
+                gate: false,
+            }];
+        model
+    }
+
+    #[test]
+    fn recommendations_prioritize_setup_then_review_then_agent_access() {
+        let mut model = ready();
+        model.review_count = Some(3);
+        assert_eq!(recommend(&model), Recommendation::Review(3));
+
+        std::sync::Arc::make_mut(model.data.as_mut().unwrap())
+            .directory
+            .iter_mut()
+            .for_each(|entry| {
+                entry.agents = false;
+            });
+        assert!(matches!(recommend(&model), Recommendation::Review(3)));
+        model.review_count = None;
+        assert!(matches!(
+            recommend(&model),
+            Recommendation::Agents(name) if name == "alpha"
+        ));
+
+        std::sync::Arc::make_mut(model.data.as_mut().unwrap())
+            .directory
+            .iter_mut()
+            .for_each(|entry| {
+                entry.agents = true;
+            });
+        std::sync::Arc::make_mut(model.data.as_mut().unwrap()).projects[0]
+            .context
+            .preferences
+            .clear();
+        assert_eq!(recommend(&model), Recommendation::Preference);
+    }
+
+    #[test]
+    fn incomplete_setup_is_always_the_first_recommendation() {
+        let mut model = ready();
+        model.review_count = Some(9);
+        model.live = false;
+        assert_eq!(
+            recommend(&model),
+            Recommendation::Setup(OnboardingStep::Connection)
+        );
+        model.live = true;
+        model.profile_info.as_mut().unwrap().selected = false;
+        std::sync::Arc::make_mut(model.data.as_mut().unwrap())
+            .health
+            .schema = "Unselected".into();
+        assert_eq!(
+            recommend(&model),
+            Recommendation::Setup(OnboardingStep::Profile)
+        );
+        model.profile_info.as_mut().unwrap().selected = true;
+        std::sync::Arc::make_mut(model.data.as_mut().unwrap())
+            .projects
+            .clear();
+        assert_eq!(
+            recommend(&model),
+            Recommendation::Setup(OnboardingStep::Workspace)
+        );
+    }
 }

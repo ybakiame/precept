@@ -60,7 +60,37 @@ Tasks, by how often they happen:
 | 3 | Add a preference (saved as a suggestion) | Rules (`Personal` / `Project`) | Page toolbar, Preferences |
 | 4 | Resume a task through Handoff | Handoff | Sidebar, Dashboard |
 | 5 | Share a project with an agent (copy its MCP line) | Agents (under Workspace) | Sidebar, Dashboard |
-| 6 | First-time setup: connection, Profile, workspaces | Runtime checks (`Connection` / `Profile`) and the separate Workspaces page | Sidebar, Dashboard onboarding |
+| 6 | First-time setup: connection, Profile, one workspace, optional agent access | Independent launch guide; Runtime checks remains the reusable setup surface | First launch, Dashboard next-step card, Runtime checks |
+
+### First-launch guide
+
+The first launch without a saved connection opens a focused guide instead of the
+workspace shell. It has one job: get the operator to a usable project without
+making them learn the navigation first.
+
+| Step | Required | Primary result | Reused workflow |
+| --- | --- | --- | --- |
+| 1 · Connection | Yes | A live daemon answers | Connection checks, Start and Connect |
+| 2 · Profile | Yes | One private Profile is selected | Profile create/select and startup choice |
+| 3 · Workspace | Yes | One existing Git checkout is registered | Folder check, explicit write grant and Add |
+| 4 · Agent access | No | The selected workspace is shared, or the operator continues without sharing | Existing per-project agent switch |
+| Done | — | A clear completion state before Dashboard | Open Dashboard |
+
+- A 248-point rail names the four steps, their purpose and their observed state.
+  One selection fill slides to the current step; completed steps show a check.
+  A future step is disabled until the required steps before it are complete.
+- The page keeps the app's own title bar and window buttons. **Skip setup** is a
+  quiet, always-available action; it closes the guide and records only a
+  presentation preference. It never creates a Profile, grants writes or changes
+  a repository.
+- The footer keeps **Back** and one primary continuation together. Continuation
+  is disabled until the current required step is observed complete. The Agent
+  step says it is optional and may be finished without sharing.
+- **Reopen launch guide…** in Runtime checks starts at the first incomplete step.
+  The Dashboard's next-step card uses the same observed order, so skipping never
+  leaves the user without a route back.
+- Connection, Profile and workspace actions keep their existing labels, guards,
+  previews and error copy. The guide adds context, not a second write path.
 
 ## 3. The shell
 
@@ -281,6 +311,8 @@ Compact layouts tighten padding, never height.
 | `icon_button` | Ghost square of the control height; selected (a pressed toggle) | Accessible name required; press scale 0.95 |
 | `copy_button` | Any button variant | Shows its result in place: the copy glyph swaps to a check that pops in and the label to "Copied" for 1.5 s, so no notification is sent |
 | `nav_item`, `step_item`, `nav_item_counted` | Ghost full-width rows | `step_item` has the trailing done check, `nav_item_counted` the count pill |
+| `guide_step` | Current, done, disabled; shared sliding selection | One numbered launch-guide row with a short explanation; its number becomes a done check |
+| `next_action` | One primary action, one optional secondary route | The Dashboard's recommendation card; rebuilt only when the observed recommendation changes |
 | `keycaps` | — | A keystroke as caps (`Ctrl` `Shift` `L`), as NSH labels it for the platform; mono `CAPTION` on `inset` with a hairline |
 | `Slide` | — | One selection indicator for rows across groups: measures the current row (again whenever a row or group moves) and slides to it; the rows draw no fill of their own (`quiet_selection`) except in the compact wrapped layout |
 | `input` | Medium, Large, multiline; invalid, disabled | `panel` fill, `border` edge, 12 inner padding; focus: `primary` (or `danger` when invalid) edge and a soft 3 pt ring |
@@ -374,6 +406,21 @@ work is called done. "RM" is what reduced motion does.
 | Toast arrives / leaves | Rises 16 and fades in, `BASE` on `SETTLE`; leaves fading to 0.95 | Appears / disappears |
 | Toast stack expands on hover | The NSH stack's critically damped springs | Instant |
 | Window narrows past 900 | None; the layout follows the resize (the indicator hides) | — |
+
+**First-launch guide and Dashboard next step**
+
+| Change | Motion | RM |
+| --- | --- | --- |
+| Guide step changes | One rail indicator slides, `BASE`, ease-in-out; the new step title and body rise 4 and fade, `FAST` | Indicator jumps; content appears |
+| A required step completes | Its number becomes a check with `pop`, `BASE`; the footer continuation enables with a color transition, `INSTANT` | Check appears; color changes at once |
+| A future step is locked | No motion; disabled opacity and the step's text explain why | — |
+| Back / Continue / Skip / Finish | Shared button hover, press and focus feedback; no layout motion | Instant, no scale |
+| Connection check starts / settles | Existing spinner and result reveal (`BASE`); the guide does not replay the page entrance | Spinner rests; result appears |
+| Profile or workspace write runs | Existing button loading state; the step remains mounted and the input keeps its value | Spinner rests |
+| Agent sharing changes | Existing switch thumb and track transition, `FAST`; the completion copy updates in place | Instant |
+| Guide completes | The completion check pops once, `BASE`; Open Dashboard uses the shared button feedback | Check appears |
+| Dashboard next-step card changes | The card's icon and copy cross-fade with a 4-point reveal, `BASE`; no list or page movement | Appears |
+| Dashboard next-step action opens | Existing page transition (`FAST`); no card exit animation that delays navigation | Appears |
 
 **Rules, Personal preferences, Review**
 

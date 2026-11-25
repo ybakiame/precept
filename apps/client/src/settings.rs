@@ -181,6 +181,7 @@ mod tests {
                 ("测试".to_owned(), "#336699".to_owned()),
             ]
             .into(),
+            onboarding_seen: true,
         };
         save_settings_to(&dir, &settings).unwrap();
         let text = std::fs::read_to_string(dir.join(SETTINGS_FILE)).unwrap();

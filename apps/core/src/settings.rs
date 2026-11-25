@@ -25,6 +25,9 @@ pub struct Settings {
     /// Tag name → color, only for tags whose color was chosen or pinned.
     #[serde(default)]
     pub tag_colors: BTreeMap<String, String>,
+    /// The operator completed or skipped the first-launch guide.
+    #[serde(default)]
+    pub onboarding_seen: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -72,6 +75,7 @@ impl Settings {
             },
             shortcuts: m.keymap.overrides().clone(),
             tag_colors: m.tag_colors.clone(),
+            onboarding_seen: m.onboarding_seen,
         }
     }
 
@@ -105,6 +109,7 @@ impl Settings {
         }
         m.keymap = Keymap::from_overrides(self.shortcuts.clone());
         m.tag_colors = crate::tag_colors::sanitize(self.tag_colors.clone());
+        m.onboarding_seen = self.onboarding_seen;
     }
 }
 
@@ -121,6 +126,7 @@ mod tests {
         m.locale = Locale::ZhCn;
         m.keymap.set("reconnect", "mod+e");
         m.set_tag_color("git", "oklch(60% 0.2 30)");
+        m.onboarding_seen = true;
         let saved = Settings::of(&m);
 
         let mut fresh = Model::loading();
@@ -131,6 +137,7 @@ mod tests {
         assert_eq!(fresh.locale, Locale::ZhCn);
         assert_eq!(fresh.keymap.primary("reconnect").as_deref(), Some("mod+e"));
         assert_eq!(fresh.tag_color("git"), "oklch(60% 0.2 30)");
+        assert!(fresh.onboarding_seen);
 
         let mut flagged = Model::loading();
         let theme = flagged.theme;

@@ -1,10 +1,11 @@
 use crate::*;
 use features::{connection, profile, review};
-use precept_ui_core::{Section, SetupTab, i18n::Msg, operator::ReviewMode};
+use precept_ui_core::{OnboardingStep, Section, SetupTab, i18n::Msg, operator::ReviewMode};
 
 /// Every top-level sidebar destination: flat, unambiguous, mutually exclusive.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Destination {
+    Onboarding,
     Dashboard,
     /// Preferences & contracts.
     Rules,
@@ -24,7 +25,9 @@ pub(crate) enum Destination {
 }
 
 pub(crate) fn current(m: &Model) -> Destination {
-    if m.operator.open {
+    if m.onboarding_open {
+        Destination::Onboarding
+    } else if m.operator.open {
         if m.operator.mode == ReviewMode::Inbox {
             Destination::Review
         } else {
@@ -58,6 +61,7 @@ pub(crate) fn current(m: &Model) -> Destination {
 }
 
 fn leave_workspaces(m: &mut Model) {
+    m.onboarding_open = false;
     m.operator.open = false;
     m.operator.review = None;
     m.settings = false;
@@ -70,14 +74,92 @@ fn leave_workspaces(m: &mut Model) {
 
 /// Opens Runtime checks directly on `tab` (Connection, Profile, or Workspaces).
 pub(crate) fn go_setup(model: Signal<Model>, tab: SetupTab) {
-    model.update(|m| {
-        leave_workspaces(m);
-        m.setup_open = true;
-        m.setup_tab = tab;
-    });
+    if model.get_untracked().onboarding_open {
+        let step = match tab {
+            SetupTab::Connection => OnboardingStep::Connection,
+            SetupTab::Profile => OnboardingStep::Profile,
+            SetupTab::Workspaces => OnboardingStep::Workspace,
+        };
+        go_onboarding(model, step);
+    } else {
+        model.update(|m| {
+            leave_workspaces(m);
+            m.setup_open = true;
+            m.setup_tab = tab;
+        });
+    }
     if tab == SetupTab::Connection {
         connection::opened(model);
     }
+}
+
+/// Moves inside the launch guide without opening the normal workspace shell.
+/// The same observed prerequisites guard rail presses and footer continuation.
+pub(crate) fn go_onboarding(model: Signal<Model>, step: OnboardingStep) {
+    let allowed = match step {
+        OnboardingStep::Connection => true,
+        OnboardingStep::Profile => {
+            model.get_untracked().live
+                && features::setup::step_done(&model.get_untracked(), SetupTab::Connection)
+        }
+        OnboardingStep::Workspace => {
+            model.get_untracked().live
+                && features::setup::step_done(&model.get_untracked(), SetupTab::Profile)
+        }
+        OnboardingStep::Agents | OnboardingStep::Complete => {
+            model.get_untracked().live
+                && [
+                    SetupTab::Connection,
+                    SetupTab::Profile,
+                    SetupTab::Workspaces,
+                ]
+                .into_iter()
+                .all(|tab| features::setup::step_done(&model.get_untracked(), tab))
+        }
+    };
+    if !allowed {
+        return;
+    }
+    let tab = match step {
+        OnboardingStep::Connection => SetupTab::Connection,
+        OnboardingStep::Profile => SetupTab::Profile,
+        OnboardingStep::Workspace | OnboardingStep::Agents | OnboardingStep::Complete => {
+            SetupTab::Workspaces
+        }
+    };
+    model.update(|m| {
+        leave_workspaces(m);
+        m.onboarding_open = true;
+        m.onboarding_step = step;
+        m.setup_tab = tab;
+        m.section = Section::Dashboard;
+    });
+    if step == OnboardingStep::Connection {
+        connection::opened(model);
+    }
+}
+
+/// Completes or skips the guide. This records presentation state only.
+pub(crate) fn close_onboarding(model: Signal<Model>) {
+    model.update(|m| {
+        leave_workspaces(m);
+        m.onboarding_seen = true;
+        m.section = Section::Dashboard;
+    });
+}
+
+/// Reopens the guide from Runtime checks at the first incomplete required step.
+pub(crate) fn reopen_onboarding(model: Signal<Model>) {
+    let step = if !features::setup::step_done(&model.get_untracked(), SetupTab::Connection) {
+        OnboardingStep::Connection
+    } else if !features::setup::step_done(&model.get_untracked(), SetupTab::Profile) {
+        OnboardingStep::Profile
+    } else if !features::setup::step_done(&model.get_untracked(), SetupTab::Workspaces) {
+        OnboardingStep::Workspace
+    } else {
+        OnboardingStep::Agents
+    };
+    go_onboarding(model, step);
 }
 
 /// Opens Context directly on the pending queue or a reviewed record scope.
@@ -88,6 +170,7 @@ pub(crate) fn go_review(model: Signal<Model>, mode: ReviewMode) {
 /// Goes to `destination` (each opener keeps its own reads and guards).
 pub(crate) fn go(model: Signal<Model>, destination: Destination) {
     match destination {
+        Destination::Onboarding => reopen_onboarding(model),
         Destination::Review => review::open(model),
         Destination::ReviewedRules => review::open_records(model),
         Destination::RuntimeChecks => {
@@ -146,6 +229,7 @@ pub(crate) fn go(model: Signal<Model>, destination: Destination) {
 
 pub(super) fn title_key(destination: Destination) -> Msg {
     match destination {
+        Destination::Onboarding => Msg::LaunchGuide,
         Destination::Dashboard => Msg::Dashboard,
         Destination::Rules => Msg::RulesAndContracts,
         Destination::Agents => Msg::AgentsDestination,

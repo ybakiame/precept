@@ -57,6 +57,8 @@ pub mod layout {
     pub const POPUP: f32 = 192.0;
     /// The sidebar: wide enough for stable labels, subordinate to the page.
     pub const SIDEBAR: f32 = 232.0;
+    /// The first-launch guide rail: numbered steps with one-line explanations.
+    pub const GUIDE_RAIL: f32 = 248.0;
     /// Dialog widths by decision: confirm, short form, form with a rich value.
     pub const DIALOG_SM: f32 = 400.0;
     pub const DIALOG_MD: f32 = 520.0;

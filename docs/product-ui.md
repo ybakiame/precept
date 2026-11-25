@@ -60,6 +60,15 @@ and restore focus, and pointer-only approval is forbidden.
 
 ## Navigation and scope
 
+The first launch without a saved connection opens an independent **launch guide**
+instead of the workspace shell. It presents four ordered steps: Connection,
+Profile, one Workspace and optional Agent access. The first three must be observed
+complete before Finish; Agent sharing may be deferred. The guide reuses the normal
+setup actions and their explicit write grants, creates nothing on its own and may
+be skipped at any time. Completing or skipping records presentation state only.
+Runtime checks offers **Reopen launch guide…** at the first incomplete required
+step.
+
 Organize navigation around three clear operational paths plus utilities:
 
 - **Workspace:** one persistent workspace switcher at the top of the group (or an
@@ -306,7 +315,11 @@ by text as well as color, and the whole flow is keyboard operable.
 The Dashboard keeps one line per fact: the effective context (what it promises and
 does not is behind its info button, in the operator's language), the daemon's
 target, state and last read (transport, versions and timing are in Diagnostics),
-each agent's connection level, the task to resume and the suggestions waiting. The
+each agent's connection level, the task to resume and the suggestions waiting. Above
+these facts, one **Recommended next step** card chooses from observed state:
+incomplete setup, waiting suggestions, unshared agent access, an empty preference
+set, or the normal Handoff/Review route. It never infers success from unread data
+and every action opens the existing guarded workflow. The
 Handoff page shows the task (objective, next action), **Before you continue** (the
 daemon's resume warnings in the operator's language and a short worktree
 fingerprint) and **Recorded checks** (each check's result and name, never raw

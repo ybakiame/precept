@@ -22,7 +22,7 @@ pub(super) fn directory(m: &Model) -> Vec<ProjectEntry> {
         .unwrap_or_default()
 }
 
-pub(super) fn active_entry(m: &Model) -> Option<ProjectEntry> {
+pub(crate) fn active_entry(m: &Model) -> Option<ProjectEntry> {
     let entries = directory(m);
     let wanted = m
         .selected_project
@@ -446,7 +446,8 @@ pub(crate) fn watch(model: Signal<Model>) {
             shell::Destination::Agents
                 | shell::Destination::Diagnostics
                 | shell::Destination::Dashboard
-        );
+        ) || (m.onboarding_open
+            && m.onboarding_step == precept_ui_core::OnboardingStep::Agents);
         (
             shown && m.live && m.data.is_some(),
             m.epoch,

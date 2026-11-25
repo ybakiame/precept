@@ -6,6 +6,12 @@ data between schemas with the versioned Profile export and import.
 
 ## 0.4.4
 
+- **Guided Desktop launch:** a skippable first-launch guide walks through the
+  existing Connection, Profile and Workspace workflows, then offers optional
+  Agent access. Required steps stay locked until their results are observed;
+  finishing or skipping records presentation state only and never grants write
+  authority. Runtime checks can reopen the guide, and the Dashboard presents one
+  recommended next action from observed setup, review, agent and preference state.
 - **Pinned repository isolation:** registered projects retain their root identity
   across restarts. Inventory, selector probes, checked files and fixed import
   sources traverse pinned directory handles with no-follow semantics on Unix and

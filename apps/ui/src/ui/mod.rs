@@ -42,6 +42,7 @@ mod tag;
 pub mod toast;
 
 pub mod gallery;
+mod guidance;
 
 pub use alert_dialog::{DialogSize, DialogTone, alert_dialog, dialog};
 pub use badge::{BadgeVariant, badge};
@@ -53,6 +54,7 @@ pub use diff::text_diff;
 pub use disclosure::disclosure;
 pub use empty::empty;
 pub use field::field;
+pub use guidance::{guide_step, next_action};
 pub use info::{info, tooltip};
 pub use input::input;
 pub use keycap::{key_parts, keycaps};

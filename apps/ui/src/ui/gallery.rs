@@ -5,8 +5,8 @@
 //! render and the destructive dialog opens and dismisses.
 use super::prelude::*;
 use super::{
-    BadgeVariant, ButtonSize, ButtonVariant, alert_dialog, badge, button, empty, field, input,
-    menu, nav_item, properties, radio_group, surface, tabs,
+    BadgeVariant, ButtonSize, ButtonVariant, alert_dialog, badge, button, empty, field, guide_step,
+    input, menu, nav_item, next_action, properties, radio_group, surface, tabs,
 };
 use precept_ui_core::appearance::{ColorMode, ThemeId};
 
@@ -230,6 +230,54 @@ pub fn Gallery() -> impl IntoElement {
         .icon(INBOX)
         .action(button(model, "Refresh"))
         .into_element();
+
+    let guide_place = signal(0_u8);
+    let guide = view()
+        .w(px(scale::layout::GUIDE_RAIL))
+        .gap_1()
+        .child(
+            guide_step(
+                model,
+                1,
+                || "Connection".into(),
+                || "Choose where the daemon runs.".into(),
+            )
+            .selected(move || guide_place.get() == 0)
+            .done(|| true)
+            .on_press(move || guide_place.set(0)),
+        )
+        .child(
+            guide_step(
+                model,
+                2,
+                || "Profile".into(),
+                || "Select one private Profile.".into(),
+            )
+            .selected(move || guide_place.get() == 1)
+            .on_press(move || guide_place.set(1)),
+        )
+        .child(
+            guide_step(
+                model,
+                3,
+                || "Workspace".into(),
+                || "Complete Profile first.".into(),
+            )
+            .selected(move || guide_place.get() == 2)
+            .disabled(|| true)
+            .on_press(move || guide_place.set(2)),
+        )
+        .into_element();
+    let recommendation = next_action(
+        model,
+        INBOX,
+        "Review 3 waiting suggestions",
+        "Inspect each exact record before deciding.",
+        "Open Review",
+        || {},
+    )
+    .secondary("Open Dashboard", || {})
+    .into_element();
 
     let destructive = view()
         .flex_row()
@@ -463,6 +511,8 @@ pub fn Gallery() -> impl IntoElement {
                         .child(row(model, "Field", vec![labeled]))
                         .child(row(model, "Radio group", vec![radios]))
                         .child(row(model, "Navigation", vec![navigation]))
+                        .child(row(model, "Launch guide step", vec![guide]))
+                        .child(row(model, "Next action", vec![recommendation]))
                         .child(row(model, "Menu", vec![picker]))
                         .child(row(model, "Properties", vec![facts]))
                         .child(row(model, "Empty", vec![empty_state]))

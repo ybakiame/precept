@@ -295,6 +295,10 @@ fn console(model: Signal<Model>) -> impl IntoElement {
             return;
         }
         on_key_with("Escape", global, move |_| {
+            if model.get_untracked().onboarding_open {
+                shell::close_onboarding(model);
+                return;
+            }
             if model.with(|m| m.operator.open && m.operator.delete_arm.is_some()) {
                 model.update(|m| {
                     m.operator.delete_arm = None;

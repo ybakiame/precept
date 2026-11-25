@@ -14,6 +14,8 @@ pub fn App() -> impl IntoElement {
     }
     #[cfg(feature = "ipc")]
     let inputs = INPUTS.get().cloned().unwrap_or_default();
+    #[cfg(all(feature = "ipc", not(test)))]
+    let mut saved_onboarding_seen = false;
     let mut initial = Model::loading();
     initial.operator.channel = precept_ui_core::operator::Channel::Desktop;
     #[cfg(feature = "ipc")]
@@ -23,6 +25,7 @@ pub fn App() -> impl IntoElement {
         if persist_settings()
             && let Some(saved) = precept_ui_client::settings::load_settings()
         {
+            saved_onboarding_seen = saved.onboarding_seen;
             saved.apply(
                 &mut initial,
                 precept_ui_core::settings::Explicit {
@@ -85,8 +88,17 @@ pub fn App() -> impl IntoElement {
                     initial.connection_draft = saved;
                 }
                 None => {
-                    initial.setup_open = true;
-                    initial.setup_tab = precept_ui_core::SetupTab::Connection;
+                    let guided_launch = !inputs.connection_settings
+                        && !inputs.settings
+                        && !inputs.operator
+                        && inputs.section == "dashboard";
+                    if guided_launch && !saved_onboarding_seen {
+                        initial.onboarding_open = true;
+                        initial.onboarding_step = precept_ui_core::OnboardingStep::Connection;
+                    } else if !guided_launch {
+                        initial.setup_open = true;
+                        initial.setup_tab = precept_ui_core::SetupTab::Connection;
+                    }
                     // The primary workflow: a daemon inside WSL2.
                     if cfg!(target_os = "windows") {
                         initial.connection_draft.target = precept_ui_core::connection::Target::Wsl;

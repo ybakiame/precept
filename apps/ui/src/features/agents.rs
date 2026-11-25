@@ -27,8 +27,31 @@ pub(crate) use configuration::level_rows;
 pub(crate) use integrations::pointer_dialog;
 use integrations::{advanced, integrations};
 pub(crate) use recent::{activity, activity_row};
-use state::{active_entry, directory, word};
+pub(crate) use state::active_entry;
+use state::{directory, word};
 pub(crate) use state::{fetch, load_activity, watch};
+
+/// The optional agent step in the first-launch guide. It reuses the same
+/// per-project switch and daemon guards as the Agents page.
+pub(crate) fn onboarding(model: Signal<Model>) -> impl IntoElement {
+    view()
+        .gap_4()
+        .child(
+            text(move || model.get().word(Msg::LaunchGuideAgentsBody))
+                .text_size(px(scale::text::BODY))
+                .text_color(move || palette(model).muted),
+        )
+        .child(project_access(model))
+        .child(
+            view().items_start().child(
+                badge(
+                    model,
+                    model.get_untracked().word(Msg::LaunchGuideAgentsOptional),
+                )
+                .variant(BadgeVariant::Neutral),
+            ),
+        )
+}
 
 /// The Agents page (mounted by the shell outside the per-change page rebuild).
 pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
@@ -56,6 +79,7 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
                 .child(
                     ui::empty(model, m.word(Msg::AgentsNeedsProject))
                         .icon(icons::AGENTS)
+                        .description(m.word(Msg::AgentsNeedsProjectHelp))
                         .action(
                             button(model, "")
                                 .label_fn(word(model, Msg::GoToWorkspaces))

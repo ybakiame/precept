@@ -11,7 +11,10 @@ mod navigation;
 mod sidebar;
 
 pub(crate) use content::shell;
-pub(crate) use navigation::{Destination, current, go, go_review, go_setup, workspace_scoped};
+pub(crate) use navigation::{
+    Destination, close_onboarding, current, go, go_onboarding, go_review, go_setup,
+    reopen_onboarding, workspace_scoped,
+};
 pub(crate) use sidebar::target_words;
 
 pub(crate) fn word_action(
