@@ -395,7 +395,10 @@ it in; roots spanning more than one project, or none, bind nothing. To find the
 project it asks each published agent capability for its own root (agent
 `project.root`, which answers only the caller's project) and then uses only the
 matching capability. Unbound, every tool answers that the folder is not a
-registered project. Tool arguments cannot change scope.
+registered project. Tool arguments cannot change scope. Each tool call reloads
+only the bound project's currently published agent capability, so a daemon
+restart does not require a new MCP stdio session. Requests are never replayed
+automatically; a call made during the restart can fail and be retried explicitly.
 
 Tools: `get_effective_context`, `explain_rule` and `get_handoff` (read-only), and `suggest_rule
 {scope: project|personal, key, value, tags?, applies_to?, enforcement?,

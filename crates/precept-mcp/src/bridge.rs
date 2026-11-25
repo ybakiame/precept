@@ -6,7 +6,7 @@ use crate::{
     },
     work_session,
 };
-use precept_ipc::{Client, Credential, Error, Location};
+use precept_ipc::{Access, Client, Credential, Error, Location, load_credential};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
@@ -15,8 +15,8 @@ const ROOTS_REQUEST: &str = "precept-roots";
 
 pub(super) struct Bridge {
     location: Location,
-    /// The served project and its agent capability, once the session's
-    /// folder resolved to one; `None` serves nothing.
+    /// The served project and the capability that resolved it; `None` serves
+    /// nothing. Tool calls reload the project's current capability.
     bound: Option<(String, Credential)>,
     /// The client offered MCP roots in `initialize`.
     roots: bool,
@@ -197,11 +197,26 @@ impl Bridge {
         {
             params["session"] = json!(session);
         }
-        let Some((_, credential)) = &self.bound else {
+        let Some((project, _)) = &self.bound else {
             return Ok(tool_error(UNBOUND));
         };
-        let result = match Client::connect(&self.location, credential).await {
-            Ok(mut client) => client.request(method, params).await,
+        let credential = self
+            .location
+            .credential_path(Some(project))
+            .and_then(|path| load_credential(&self.location, &path));
+        let result = match credential {
+            Ok(credential)
+                if credential.access
+                    == (Access::Agent {
+                        project: project.clone(),
+                    }) =>
+            {
+                match Client::connect(&self.location, &credential).await {
+                    Ok(mut client) => client.request(method, params).await,
+                    Err(e) => Err(e),
+                }
+            }
+            Ok(_) => Err(Error::Unauthorized),
             Err(e) => Err(e),
         };
         if let Err(e) = &result {

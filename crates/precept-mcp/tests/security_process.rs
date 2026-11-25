@@ -500,6 +500,26 @@ fn real_stdio_two_schema_versions_and_notifications_remain_compatible() {
     f.unchanged();
 }
 #[test]
+fn long_lived_bridge_reads_current_agent_credential_after_daemon_restart() {
+    let mut f = Fixture::new();
+    let old = f.credential(Some("alpha"));
+    let mut bridge = Bridge::new(&f, "alpha");
+    let before = Bridge::value(&bridge.call("get_effective_context", json!({})));
+    assert_eq!(before["project"], "alpha");
+
+    f.restart();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    assert!(rt.block_on(Client::connect(&f.location, &old)).is_err());
+
+    let after = Bridge::value(&bridge.call("get_effective_context", json!({})));
+    assert_eq!(after["project"], "alpha");
+    f.unchanged();
+}
+
+#[test]
 fn bound_ipc_agents_cannot_list_or_escalate_after_restart_and_rotation() {
     let mut f = Fixture::new();
     let old = f.credential(Some("alpha"));
