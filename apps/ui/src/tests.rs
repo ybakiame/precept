@@ -273,8 +273,16 @@ fn ten_thousand_rows_stay_virtual_while_scrolled_filtered_and_tagged() {
 
 #[test]
 fn navigation_separates_workspaces_review_rules_and_diagnostics() {
-    let mut app = nsh_testing::Headless::start(EngineConfig::new(Root::of::<App>())).unwrap();
+    let mut config = EngineConfig::new(Root::of::<App>());
+    config.viewport = Size::new(px(1180.0), px(780.0));
+    let mut app = nsh_testing::Headless::start(config).unwrap();
     app.wait_for("Project: alpha").unwrap();
+    let texts = app.screen().texts();
+    let position = |name: &str| texts.iter().position(|text| *text == name).unwrap();
+    assert!(position("Workspace") < position("Set up"));
+    assert!(position("Set up") < position("Workspaces"));
+    assert!(position("Workspaces") < position("Agents"));
+    assert!(position("Agents") < position("Personal sync"));
     // Runtime checks holds only Connection and Profile; Workspaces is independent.
     app.press("Runtime checks").unwrap();
     app.wait_for("Connection").unwrap();
@@ -304,7 +312,7 @@ fn navigation_separates_workspaces_review_rules_and_diagnostics() {
     let daemon = texts.iter().position(|t| *t == "Daemon status").unwrap();
     let doctor = texts.iter().position(|t| *t == "Doctor").unwrap();
     assert!(daemon < doctor);
-    // Agents page lives under Workspace and shows offline guidance on Demo data.
+    // Agent access is a Set up destination and shows offline guidance on Demo data.
     app.press("Agents").unwrap();
     app.wait_for("Connect to a daemon first").unwrap();
 }

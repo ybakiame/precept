@@ -74,18 +74,21 @@ Organize navigation around three clear operational paths plus utilities:
 - **Workspace:** one persistent workspace switcher at the top of the group (or an
   explicit `Add workspace…` shortcut to Runtime checks when none exist), followed
   by **Dashboard**, **Preferences & contracts** (the repository's contracts and the
-  effective confirmed rows), **Agents** (MCP
-  access and recent activity) and **Handoff** for that active project. There is one workspace switcher in the app; workspace-scoped headers
+  effective confirmed rows), **Sessions**, **Memory** and **Handoff** for that active
+  project. There is one workspace switcher in the app; workspace-scoped headers
   display a calm read-only scope badge rather than a second switcher.
 - **Context:** **Review** holds only the pending queue (with personal vs
   current-project scope toggle) and carries its live count pill. **Rules** holds the
   reviewed records: **Personal** preferences (global scope) and **Project
   conventions** (active project scope), including hidden-by-default deprecated rows.
 - **Set up:** **Runtime checks** unites **Connection** and **Profile** as two step
-  tabs with live completion indicators (`✓` or `n/2`). **Personal sync** manages
-  this Profile's encrypted device pairing and manual file exchange. **Workspaces**
+  tabs with live completion indicators (`✓` or `n/2`). **Workspaces**
   is a separate management page directly below it, strictly for registration and
   removal; clicking a workspace row never switches the active project.
+  **Agents** follows Workspaces and keeps the launch-guide order: its first section
+  shares the workspace selected above, followed by MCP and hook integrations.
+  **Personal sync** manages this Profile's encrypted device pairing and manual
+  file exchange.
 - **Foot:** **Diagnostics**, **Settings**, the persistent daemon status button
   (opens Runtime checks → Connection) and the keyboard shortcuts button.
 

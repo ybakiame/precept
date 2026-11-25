@@ -51,8 +51,7 @@ impl IntoElement for Empty {
             .justify_center()
             .text_center()
             .gap_2()
-            .p_8()
-            .bind_motion(&motion::arrive(0.0));
+            .p_8();
         if let Some(path) = self.icon {
             // The icon in a tinted disc: the empty state's one focal shape.
             body = body.child(

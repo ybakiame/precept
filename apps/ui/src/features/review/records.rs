@@ -263,7 +263,7 @@ pub(super) fn records_list(model: Signal<Model>, delete_open: Signal<bool>) -> A
         records.iter().map(|r| r.id).collect(),
         {
             let records = records.clone();
-            move |index| record_row(model, delete_open, &records[index], index)
+            move |index| record_row(model, delete_open, &records[index])
         },
         page.next_after_id.is_some(),
         move || {
@@ -288,11 +288,9 @@ pub(super) fn record_row(
     model: Signal<Model>,
     delete_open: Signal<bool>,
     r: &PreferenceRecord,
-    index: usize,
 ) -> AnyElement {
     let m = model.get();
     let id = r.id;
-    let arrive = ui::motion::arrive(((index % 12) as f32) * 50.0);
     let variant = match r.status.as_str() {
         "confirmed" => ui::BadgeVariant::Success,
         "suggested" => ui::BadgeVariant::Warning,
@@ -307,7 +305,6 @@ pub(super) fn record_row(
     );
     view()
         .py_1()
-        .bind_motion(&arrive)
         .child(record_line(
             model,
             r,

@@ -5,12 +5,12 @@ the same operator authority and scoped data as the native CLI; it never opens a
 Profile directly or creates a second write owner.
 
 Navigation is grouped into **Workspace** (Dashboard, Preferences & contracts,
-Agents, Sessions, Memory and Handoff for the selected project), **Context** (Review
-for pending suggestions and Rules for reviewed records) and **Set up** (Runtime
-checks: Connection and Profile, then the separate Workspaces page), with Diagnostics
-and Settings at the navigation foot. See the [UI standards](../docs/product-ui.md) for interaction,
-scope and presentation contracts, and the [design system](ui/DESIGN.md) for the
-visual language, components and motion.
+Sessions, Memory and Handoff for the selected project), **Context** (Review for
+pending suggestions and Rules for reviewed records) and **Set up** (Runtime checks:
+Connection and Profile, then Workspaces, Agents and Personal sync), with Diagnostics
+and Settings at the navigation foot. See the [UI standards](../docs/product-ui.md)
+for interaction, scope and presentation contracts, and the
+[design system](ui/DESIGN.md) for the visual language, components and motion.
 
 ## Review keyboard flow
 

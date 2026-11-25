@@ -12,6 +12,10 @@ data between schemas with the versioned Profile export and import.
   finishing or skipping records presentation state only and never grants write
   authority. Runtime checks can reopen the guide, and the Dashboard presents one
   recommended next action from observed setup, review, agent and preference state.
+- **Desktop navigation and motion polish:** Agents now follows Workspaces under
+  Set up, matching the launch-guide order. Review rows and empty states remain
+  stable during reads and paging, while the sidebar indicator ignores stale layout
+  measurements and does not replay motion for an unchanged selection.
 - **Pinned repository isolation:** registered projects retain their root identity
   across restarts. Inventory, selector probes, checked files and fixed import
   sources traverse pinned directory handles with no-follow semantics on Unix and

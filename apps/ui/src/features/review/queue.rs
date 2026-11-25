@@ -56,14 +56,7 @@ pub(super) fn queue_tab(model: Signal<Model>, delete_open: Signal<bool>) -> AnyE
             let records = records.clone();
             move |index| {
                 let duplicates = duplicate_count(&records, &records[index]);
-                queue_row(
-                    model,
-                    delete_open,
-                    &records[index],
-                    index,
-                    duplicates,
-                    selected_id,
-                )
+                queue_row(model, delete_open, &records[index], duplicates, selected_id)
             }
         },
         more,
@@ -88,7 +81,6 @@ pub(super) fn queue_row(
     model: Signal<Model>,
     delete_open: Signal<bool>,
     r: &PreferenceRecord,
-    index: usize,
     duplicates: usize,
     selected_id: Option<i64>,
 ) -> AnyElement {
@@ -115,8 +107,6 @@ pub(super) fn queue_row(
         trailing =
             trailing.child(ui::badge(model, m.word(Msg::Selected)).variant(ui::BadgeVariant::Info));
     }
-    // A batch arrives as a wave: a capped index stagger, instant when reduced.
-    let arrive = ui::motion::arrive(((index % 12) as f32) * 50.0);
     view()
         .p_2()
         .rounded(px(ui::scale::radius::CONTROL))
@@ -150,7 +140,6 @@ pub(super) fn queue_row(
             },
             trailing.into_element(),
         ))
-        .bind_motion(&arrive)
         .into_element()
 }
 fn same_review_content(a: &PreferenceRecord, b: &PreferenceRecord) -> bool {
@@ -421,7 +410,7 @@ pub(super) fn loaded_list(
             .text_color(move || palette(model).muted)
             .into_element()
     };
-    let body = view().gap_2().flex_shrink_0();
+    let body = view().w_full().gap_2().flex_shrink_0();
     let row = std::rc::Rc::new(row);
     let mut list = virtual_list(count, move |at: Position| {
         let row = row.clone();
@@ -442,6 +431,6 @@ pub(super) fn loaded_list(
         list = list.on_load_more(move || load());
     }
     body.child(list)
-        .child(view().items_start().child(footer))
+        .child(view().w_full().items_start().child(footer))
         .into_element()
 }

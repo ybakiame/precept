@@ -203,7 +203,6 @@ pub(super) fn sidebar(model: Signal<Model>) -> impl IntoElement {
     let work = [
         (Dashboard, icons::section_path(Section::Dashboard)),
         (Rules, icons::section_path(Section::Rules)),
-        (Agents, icons::AGENTS),
         (Sessions, icons::LIST),
         (Memory, icons::MEMORY),
         (Handoff, icons::section_path(Section::Handoff)),
@@ -213,10 +212,12 @@ pub(super) fn sidebar(model: Signal<Model>) -> impl IntoElement {
         (Review, icons::REVIEW),
         (ReviewedRules, icons::section_path(Section::Rules)),
     ];
-    // Set up: runtime checks, independent workspace management and device sync.
+    // Set up follows the launch guide: connection and Profile, workspace
+    // registration, then access for the workspace selected above.
     let setup_items = [
         (RuntimeChecks, icons::CONNECTION),
         (Workspaces, icons::section_path(Section::Projects)),
+        (Agents, icons::AGENTS),
         (PersonalSync, icons::SYNC),
     ];
     let foot = [

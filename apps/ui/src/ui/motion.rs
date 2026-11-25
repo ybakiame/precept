@@ -16,7 +16,7 @@ pub const FAST: f32 = 180.0;
 pub const BASE: f32 = 240.0;
 /// Reveals: a dialog or popup opening.
 pub const SLOW: f32 = 360.0;
-/// Unhurried entrances: a list's wave. The queue's rows arrive on it.
+/// Unhurried optional entrances, such as an added tag chip.
 pub const SLOWER: f32 = 500.0;
 
 /// The soft settle curve for presses (`cubic-bezier(0.22, 1, 0.36, 1)`), an
@@ -77,11 +77,10 @@ pub fn scrim() -> Motion {
     )
 }
 
-/// A queue row arriving: rise [`RISE`] points on `slower` ease-out, delayed by
-/// a capped index stagger so the page enters as a wave. Movement only: a row
-/// rebuilt while an opacity entrance runs (a tab switch, a refresh) was left
-/// drawn dimmed on Windows. The engine lands it at rest under reduced motion.
-/// Create it once per row in the rendering body and bind it with `bind_motion`.
+/// An optional element arriving: rise [`RISE`] points on `slower` ease-out,
+/// delayed by a capped stagger. Movement only: a rebuilt element never keeps an
+/// opacity entrance running. The engine lands it at rest under reduced motion.
+/// Create it once per element in the rendering body and bind it with `bind_motion`.
 pub fn arrive(delay_ms: f32) -> Motion {
     motion().entering(
         MotionSpec::new(

@@ -167,6 +167,8 @@ impl<K: Copy + PartialEq + 'static> Slide<K> {
         let (x, w, h) = (signal(0.0_f32), signal(0.0_f32), signal(0.0_f32));
         let shown = signal(false);
         let placed = stored(std::cell::Cell::new(false));
+        let last_target = stored(std::cell::Cell::new(None::<(K, f32)>));
+        let generation = signal(0_u64);
         // Bumped to measure again once layout has happened.
         let retry = signal(0_u8);
         let moved = self.moved;
@@ -176,6 +178,8 @@ impl<K: Copy + PartialEq + 'static> Slide<K> {
             let attempt = retry.get();
             let _ = moved.get();
             let _ = window();
+            let run = generation.get_untracked().wrapping_add(1);
+            generation.set(run);
             if compact() {
                 shown.set(false);
                 return;
@@ -197,16 +201,24 @@ impl<K: Copy + PartialEq + 'static> Slide<K> {
                     }
                     return;
                 };
+                if generation.get_untracked() != run {
+                    return;
+                }
+                // Only the newest layout measurement may move or restart the slide.
                 let top = at.page.y.0 - frame.page.y.0;
                 x.set(at.page.x.0 - frame.page.x.0);
                 w.set(at.frame.size.width.0);
                 h.set(at.frame.size.height.0);
+                let same_target = last_target.with(|last| last.get() == Some((key, top)));
                 if !placed.with(|p| p.get()) || reduce_motion() {
                     y.set(top);
                     placed.with(|p| p.set(true));
+                } else if same_target {
+                    y.set(top);
                 } else {
                     y.timing(top, motion::BASE, Easing::EaseInOut);
                 }
+                last_target.with(|last| last.set(Some((key, top))));
                 shown.set(true);
             });
         });

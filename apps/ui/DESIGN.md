@@ -59,7 +59,7 @@ Tasks, by how often they happen:
 | 2 | Review a suggestion and confirm or reject the exact record | Review | The sidebar, Dashboard, toast |
 | 3 | Add a preference (saved as a suggestion) | Rules (`Personal` / `Project`) | Page toolbar, Preferences |
 | 4 | Resume a task through Handoff | Handoff | Sidebar, Dashboard |
-| 5 | Share a project with an agent (copy its MCP line) | Agents (under Workspace) | Sidebar, Dashboard |
+| 5 | Share a project with an agent (copy its MCP line) | Agents (under Set up, after Workspaces) | Sidebar, Dashboard |
 | 6 | First-time setup: connection, Profile, one workspace, optional agent access | Independent launch guide; Runtime checks remains the reusable setup surface | First launch, Dashboard next-step card, Runtime checks |
 
 ### First-launch guide
@@ -99,7 +99,7 @@ making them learn the navigation first.
 | Region | Size | Surface | Contents |
 | --- | --- | --- | --- |
 | Title bar | 36 high | `sidebar` above the sidebar, `background` above the page | Drag region, window caption buttons; the close button washes `danger` on hover |
-| Sidebar | 232 wide, the window's full height (a wrapped row below 900) | `sidebar`, trailing hairline | Brand mark and name; **Workspace** (with the app's single workspace switcher above Dashboard, Preferences, Agents, Handoff), **Context** (`Review` with waiting count pill and `Rules` for reviewed records), **Set up** (`Runtime checks` with `✓` or `n/2` progress, then `Workspaces`); foot destinations; the status row and the keyboard button |
+| Sidebar | 232 wide, the window's full height (a wrapped row below 900) | `sidebar`, trailing hairline | Brand mark and name; **Workspace** (with the app's single workspace switcher above Dashboard, Preferences, Sessions, Memory, Handoff), **Context** (`Review` with waiting count pill and `Rules` for reviewed records), **Set up** (`Runtime checks` with `✓` or `n/2` progress, then `Workspaces`, `Agents`, `Personal sync`); foot destinations; the status row and the keyboard button |
 | Page | the rest, inset 24 (8 when compact); utility/review content at most 800 | `background` | Header, page toolbar, one scroll region |
 | Overlay layer | the window | — | Toasts (bottom-right, 16 from the edges), menus, popovers, dialogs, sheets |
 
@@ -378,7 +378,7 @@ Compact layouts tighten padding, never height.
 | `FAST` | 180 ms | Press, a control's state, scrim in |
 | `BASE` | 240 ms | Selection sliding, glyph swap, popups and toasts leaving |
 | `SLOW` | 360 ms | Dialogs and popups opening |
-| `SLOWER` | 500 ms | A list's wave on page entry |
+| `SLOWER` | 500 ms | An optional added element, such as a tag chip |
 | `SETTLE` | cubic-bezier(0.22, 1, 0.36, 1) | Presses and entrances |
 | Distances | 4 / 8 / 16 | Label rise / popup rise / toast slide |
 | Scales | press 0.97, icon press 0.95, enter 0.97 | |
@@ -396,8 +396,8 @@ work is called done. "RM" is what reduced motion does.
 | Change | Motion | RM |
 | --- | --- | --- |
 | Hover and press on a button or row | Wash and press share the control's transition: `FAST` on `SETTLE`; press scales to 0.97 (icon buttons 0.95) | Instant, no scale |
-| Current destination changes | One indicator slides to the new row, `BASE`, ease-in-out (it jumps on its first placement) | Jumps |
-| Page changes | The page's content fades in, `FAST`; the title arrives, fading and rising 4 | Appears |
+| Current destination changes | One indicator slides to the new row, `BASE`, ease-in-out (it jumps on its first placement). Only the latest layout measurement applies; an unchanged target never restarts the slide | Jumps |
+| Page changes | The page content rises 8 without fading, `FAST`; the title rises 4, `FAST`. Neither waits for a read | Appears |
 | Set-up step completes | Its trailing check pops in (scale 0.25 → 1, fade), `BASE` | Appears |
 | Suggestions waiting change | The count pill pops in with the new number, `BASE` | Appears |
 | Daemon answering | The status dot's ring pings out | Still dot |
@@ -426,7 +426,7 @@ work is called done. "RM" is what reduced motion does.
 
 | Change | Motion | RM |
 | --- | --- | --- |
-| Records list built | Rows arrive as a wave: rise 8 and fade, `SLOWER`, 50 ms apart; each loaded batch of 12 waves on its own | Appear |
+| Records list built or refreshed | Rows appear in place without an entrance; paging and profile/list updates never replay motion | — |
 | List nears its end | The next batch is read and appended (no pages); the footer reads Load more, then "Everything is loaded" | — |
 | Tag filter toggled | The list narrows at once; the toggle's dot turns into a check that pops in, `BASE` | Check appears |
 | Tag added or removed in the editor | A new chip pops in, `BASE`; a removed one leaves at once | Appears |
@@ -436,7 +436,7 @@ work is called done. "RM" is what reduced motion does.
 | Edit ↔ Markdown | One selection fill slides in the switch; the document and the source swap | Instant |
 | Record sheet opens / closes | The NSH sheet's own presentation from the trailing edge, over a fading scrim | Appears |
 | Decision prepared | The Apply dialog, as Add preference | Appears |
-| Empty or loading list | The empty state arrives: rise 8 and fade, `SLOWER` | Appears |
+| Empty or loading list | The state appears in place; profile and list reads do not replay an entrance | — |
 | Check rules starts | The button keeps its label; a separate loading row fades in rising 4, `BASE` | Appears |
 | Rule state arrives | The result, waiting, connection or error region fades in rising 4, `BASE`, once per state change | Appears |
 | Templates… opens / closes | The existing dialog scrim fades in `FAST`; the panel grows from 0.97 and rises 8, `SLOW` | Appears |
@@ -478,7 +478,7 @@ work is called done. "RM" is what reduced motion does.
 | Deprecated-record filter changes | The existing switch thumb and track transition, `FAST`; the list updates without an entrance replay | Instant |
 | Configuration copied | As every copy button: glyph swap and "Copied" in place, no toast | Swap without scale |
 | Agent activity refreshing | The Refresh button shows its turning spinner; rows stay until the reply replaces them | Spinner rests |
-| Agent activity empty | The empty state arrives (fade, rising 4, `BASE`) | Appears |
+| Agent activity empty | The empty state appears in place without an entrance | — |
 | A switch or quick tile turns on or off | The thumb slides and the track, icon well and edge cross-fade to `primary` (`FAST`); disabled while the daemon writes | Instant |
 | AGENTS.md tile switched on | The confirmation dialog opens as every dialog (scale and fade from 0.96, `BASE`), previewing the exact block; switching off removes at once | Appears |
 
@@ -493,7 +493,7 @@ work is called done. "RM" is what reduced motion does.
 | Preview replaces an earlier preview | The comparison region cross-fades in rising 4, `BASE`; the file and passphrase fields keep their contents | Appears |
 | Apply succeeds or is refused | The inline outcome fades in rising 4, `BASE`; an uncertain outcome keeps its exact retry action visible | Appears |
 | Revoke, rotate or reset confirmation | The shared alert dialog presents the exact device or identity consequence; no custom motion | Appears |
-| Empty, unavailable or writes-off state arrives | The existing empty/status region fades in rising 4, `BASE` | Appears |
+| Empty, unavailable or writes-off state arrives | The state appears in place without an entrance | — |
 
 Sound: none. Precept is a quiet developer tool.
 
