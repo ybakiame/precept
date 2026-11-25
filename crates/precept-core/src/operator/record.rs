@@ -91,6 +91,9 @@ pub struct ProfileInfo {
     /// Why the remembered Profile was not selected at start, as a fixed code.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub startup_failure: Option<String>,
+    /// Why an explicitly remembered write grant could not be restored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub write_restore_failure: Option<String>,
     /// While none is selected: where the daemon suggests a first Profile (its
     /// private state directory) and whether a file is already there.
     #[serde(default, skip_serializing_if = "Option::is_none")]

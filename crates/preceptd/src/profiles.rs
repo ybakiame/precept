@@ -41,6 +41,8 @@ struct State {
     unavailable: Roots,
     /// Why the remembered startup Profile was not selected, if it was not.
     startup_failure: Option<&'static str>,
+    /// Why an explicitly remembered write grant could not be restored.
+    write_restore_failure: Option<&'static str>,
     /// The operator's per-project switches (agents, suggestions, gate).
     switches: crate::state::Switches,
 }
@@ -223,6 +225,7 @@ impl Profiles {
                 identities,
                 unavailable,
                 startup_failure: None,
+                write_restore_failure: None,
                 switches,
             }),
             location,
@@ -242,8 +245,8 @@ impl Profiles {
     /// same checks as `profile.select`. A failure starts unselected and is
     /// reported by `profile.info`; nothing is created, scanned or replaced.
     pub fn select_remembered(&self) {
-        let path = match self.state_dir.load_startup() {
-            Ok(Some(path)) => path,
+        let startup = match self.state_dir.load_startup() {
+            Ok(Some(startup)) => startup,
             Ok(None) => return,
             Err(_) => {
                 self.state.lock().unwrap().startup_failure = Some("startup_unreadable");
@@ -251,16 +254,19 @@ impl Profiles {
             }
         };
         let mut s = self.state.lock().unwrap();
-        if std::fs::symlink_metadata(&path).is_err() {
+        if std::fs::symlink_metadata(&startup.profile).is_err() {
             s.startup_failure = Some("startup_missing");
             return;
         }
-        let failure = match self.select_into(&mut s, &path, false) {
+        let failure = match self.select_into(&mut s, &startup.profile, false) {
             Ok(()) => None,
             Err(Error::UnsafeRuntime) => Some("startup_unsafe"),
             Err(_) => Some("startup_refused"),
         };
         s.startup_failure = failure;
+        if failure.is_none() && startup.write_enabled && self.enable_selected(&mut s).is_err() {
+            s.write_restore_failure = Some("write_restore_failed");
+        }
     }
     pub fn allowed(&self, name: &str) -> bool {
         self.state.lock().unwrap().projects.contains_key(name)

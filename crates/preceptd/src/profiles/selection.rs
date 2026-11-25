@@ -108,11 +108,14 @@ impl Profiles {
                 "write_enabled":false,
                 "startup_profile":startup.is_some(),
                 "startup_failure":s.startup_failure,
+                "write_restore_failure":s.write_restore_failure,
                 "suggested_path":suggested,
                 "suggested_exists":suggested.exists(),
             }));
         };
-        let remembered = startup.as_deref() == Some(selected.path());
+        let remembered = startup
+            .as_ref()
+            .is_some_and(|startup| startup.profile == selected.path());
         let binding = selected
             .reader()
             .map_err(storage_error)?
@@ -125,18 +128,51 @@ impl Profiles {
             owner_epoch: binding.owner_epoch,
         };
         Ok(
-            json!({"selected":true,"binding":binding,"write_enabled":s.grant.as_ref().is_some_and(|g|g.check().is_ok() && g.access()==access),"remembered":remembered,"startup_profile":startup.is_some(),"startup_failure":s.startup_failure}),
+            json!({"selected":true,"binding":binding,"write_enabled":s.grant.as_ref().is_some_and(|g|g.check().is_ok() && g.access()==access),"remembered":remembered,"startup_profile":startup.is_some(),"startup_failure":s.startup_failure,"write_restore_failure":s.write_restore_failure}),
         )
+    }
+    pub(super) fn enable_selected(&self, s: &mut State) -> Result<()> {
+        if s.owner.is_some() {
+            return Err(Error::Busy);
+        }
+        let selected = s.selected.as_ref().ok_or(Error::Unavailable)?;
+        let owner = selected.acquire().map_err(storage_error)?;
+        let binding = owner.binding();
+        let grant = self.grants.issue(
+            &self.location,
+            Access::OperatorWrite {
+                profile_id: binding.profile_id,
+                generation: binding.generation,
+                owner_epoch: binding.owner_epoch,
+            },
+        )?;
+        s.owner = Some(owner);
+        s.grant = Some(grant);
+        Ok(())
+    }
+    pub(super) fn persist_write(&self, s: &State, enabled: bool) -> Result<()> {
+        let Some(selected) = &s.selected else {
+            return Ok(());
+        };
+        let Some(startup) = self.state_dir.load_startup()? else {
+            return Ok(());
+        };
+        if startup.profile == selected.path() {
+            self.state_dir.save_startup(selected.path(), enabled)?;
+        }
+        Ok(())
     }
     pub fn disable(&self) -> Result<Value> {
         let _sync = self.sync_lock.lock().unwrap();
         self.grants.close(); // Close before waiting for already-admitted work.
         let mut s = self.state.lock().unwrap();
+        self.persist_write(&s, false)?;
         self.grants.close();
         let cleanup = self.grants.finish_revoke(&self.location);
         s.grant = None;
         s.owner = None; // Only after credential cleanup; no lock-file unlink.
         cleanup?;
+        s.write_restore_failure = None;
         Ok(json!({"write_enabled":false}))
     }
     /// The scope context for a candidate root: home, the daemon's directories,

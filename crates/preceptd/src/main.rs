@@ -753,7 +753,7 @@ pub(crate) fn test_state(
         .save_projects(&set, &identities, &Default::default())
         .unwrap();
     if let Some(profile) = profile {
-        state.save_startup(profile).unwrap();
+        state.save_startup(profile, false).unwrap();
     }
     dir.to_path_buf()
 }

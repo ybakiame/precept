@@ -75,6 +75,14 @@ struct ProjectsFile {
 struct StartupFile {
     format: u32,
     profile: PathBuf,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    write_enabled: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StartupSelection {
+    pub profile: PathBuf,
+    pub write_enabled: bool,
 }
 
 pub struct StateDir {
@@ -223,8 +231,8 @@ impl StateDir {
         )
     }
 
-    /// The Profile the operator explicitly asked to select at start.
-    pub fn load_startup(&self) -> Result<Option<PathBuf>> {
+    /// The Profile and write restoration the operator explicitly chose at start.
+    pub fn load_startup(&self) -> Result<Option<StartupSelection>> {
         let Some(text) = self.read(STARTUP)? else {
             return Ok(None);
         };
@@ -232,15 +240,19 @@ impl StateDir {
         if file.format != 1 || !file.profile.is_absolute() {
             return Err(Error::InvalidRequest);
         }
-        Ok(Some(file.profile))
+        Ok(Some(StartupSelection {
+            profile: file.profile,
+            write_enabled: file.write_enabled,
+        }))
     }
-    pub fn save_startup(&self, profile: &Path) -> Result<()> {
+    pub fn save_startup(&self, profile: &Path, write_enabled: bool) -> Result<()> {
         if !profile.is_absolute() {
             return Err(Error::InvalidRequest);
         }
         let file = StartupFile {
             format: 1,
             profile: profile.to_path_buf(),
+            write_enabled,
         };
         self.write(
             STARTUP,
@@ -317,11 +329,14 @@ mod tests {
             1,
             "no temporary left"
         );
-        s.save_startup(Path::new("/home/u/profile.sqlite3"))
+        s.save_startup(Path::new("/home/u/profile.sqlite3"), true)
             .unwrap();
         assert_eq!(
             s.load_startup().unwrap().unwrap(),
-            Path::new("/home/u/profile.sqlite3")
+            StartupSelection {
+                profile: PathBuf::from("/home/u/profile.sqlite3"),
+                write_enabled: true,
+            }
         );
         s.forget_startup().unwrap();
         s.forget_startup().unwrap();

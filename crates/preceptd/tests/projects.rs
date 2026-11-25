@@ -337,7 +337,7 @@ fn add_applies_at_once_persists_and_remove_revokes_without_touching_the_profile(
 }
 
 #[test]
-fn a_remembered_profile_is_selected_at_start_until_forgotten_and_never_write_enabled() {
+fn a_remembered_profile_restores_only_explicitly_enabled_writes_until_disabled_or_forgotten() {
     let mut f = Fixture::unselected();
     let base = f.temp.path().to_path_buf();
     let info = f
@@ -352,10 +352,20 @@ fn a_remembered_profile_is_selected_at_start_until_forgotten_and_never_write_ena
     let info = f.daemon.control("profile.info", json!({})).unwrap();
     assert_eq!(info["selected"], true);
     assert_eq!(info["remembered"], true);
-    assert_eq!(
-        info["write_enabled"], false,
-        "write access is never remembered"
-    );
+    assert_eq!(info["write_enabled"], true);
+    assert!(info["write_restore_failure"].is_null());
+
+    f.daemon
+        .control("profile.write.disable", json!({}))
+        .unwrap();
+    f.daemon.kill();
+    f.daemon = Daemon::relaunch(&base, "run-c");
+    f.daemon.ready();
+    let info = f.daemon.control("profile.info", json!({})).unwrap();
+    assert_eq!(info["selected"], true);
+    assert_eq!(info["write_enabled"], false);
+
+    f.daemon.enable();
     let info = f
         .daemon
         .control("profile.startup.forget", json!({}))
@@ -363,10 +373,11 @@ fn a_remembered_profile_is_selected_at_start_until_forgotten_and_never_write_ena
     assert_eq!(info["remembered"], false);
     assert_eq!(info["startup_profile"], false);
     f.daemon.kill();
-    f.daemon = Daemon::relaunch(&base, "run-c");
+    f.daemon = Daemon::relaunch(&base, "run-d");
     f.daemon.ready();
     let info = f.daemon.control("profile.info", json!({})).unwrap();
     assert_eq!(info["selected"], false);
+    assert_eq!(info["write_enabled"], false);
     assert!(info["startup_failure"].is_null());
     // A remembered Profile that moved starts unselected and says why.
     f.daemon
@@ -374,7 +385,7 @@ fn a_remembered_profile_is_selected_at_start_until_forgotten_and_never_write_ena
         .unwrap();
     f.daemon.kill();
     fs::rename(&f.db, base.join("state/moved.sqlite3")).unwrap();
-    f.daemon = Daemon::relaunch(&base, "run-d");
+    f.daemon = Daemon::relaunch(&base, "run-e");
     f.daemon.ready();
     let info = f.daemon.control("profile.info", json!({})).unwrap();
     assert_eq!(info["selected"], false);

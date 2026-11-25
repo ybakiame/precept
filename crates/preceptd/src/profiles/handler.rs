@@ -357,12 +357,13 @@ impl Profiles {
                 let mut s = self.state.lock().unwrap();
                 self.select_into(&mut s, &p.path, method == "profile.create")?;
                 s.startup_failure = None;
+                s.write_restore_failure = None;
                 // Remembering is part of the same explicit choice. If it cannot
                 // be saved, the selection stands and `remembered` says so.
                 if p.remember {
                     let path = s.selected.as_ref().map(|x| x.path().to_path_buf());
                     if let Some(path) = path {
-                        let _ = self.state_dir.save_startup(&path);
+                        let _ = self.state_dir.save_startup(&path, false);
                     }
                 }
                 self.info(&s)
@@ -401,26 +402,20 @@ impl Profiles {
                     return Err(Error::InvalidRequest);
                 }
                 let mut s = self.state.lock().unwrap();
-                if s.owner.is_some() {
-                    return Err(Error::Busy);
-                }
                 let selected = s.selected.as_ref().ok_or(Error::Unavailable)?;
                 let binding = selected.binding();
                 if binding.profile_id != p.profile_id || binding.generation != p.generation {
                     return Err(Error::Unauthorized);
                 }
-                let owner = selected.acquire().map_err(storage_error)?;
-                let b = owner.binding();
-                let grant = self.grants.issue(
-                    &self.location,
-                    Access::OperatorWrite {
-                        profile_id: b.profile_id,
-                        generation: b.generation,
-                        owner_epoch: b.owner_epoch,
-                    },
-                )?;
-                s.owner = Some(owner);
-                s.grant = Some(grant);
+                self.enable_selected(&mut s)?;
+                if let Err(error) = self.persist_write(&s, true) {
+                    let cleanup = self.grants.finish_revoke(&self.location);
+                    s.grant = None;
+                    s.owner = None;
+                    cleanup?;
+                    return Err(error);
+                }
+                s.write_restore_failure = None;
                 self.info(&s)
             }
             _ => Err(Error::Unsupported),
