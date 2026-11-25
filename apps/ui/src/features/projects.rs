@@ -125,8 +125,8 @@ fn choose(model: Signal<Model>) {
     });
 }
 
-/// Add; with writes off, the operator's one click turns them on for this run
-/// first (the label says so), then adds.
+/// Add; with writes off, the operator's one click turns them on first (the
+/// label says so), then adds.
 fn add(model: Signal<Model>) {
     if model.get().project_add.ready().is_none() {
         return;
@@ -167,7 +167,7 @@ fn add_now(model: Signal<Model>) {
 }
 
 /// Records a listed project in the selected Profile; with writes off, the
-/// one click turns them on for this run first, as Add does.
+/// one click turns them on first, as Add does.
 fn register(model: Signal<Model>, name: String) {
     if writes_on(model) {
         register_now(model, name);

@@ -210,8 +210,8 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
         false,
         "creation never enables writes"
     );
-    app.press("Writes for this daemon run").unwrap();
-    app.wait_for("Writes on for this daemon run").unwrap();
+    app.press("Writes").unwrap();
+    app.wait_for("Writes on").unwrap();
     assert_eq!(f.info()["write_enabled"], true);
     app.press_key("alt+o").unwrap();
     writes_on(&mut app);
@@ -336,7 +336,7 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     app.press("Runtime checks").unwrap();
     app.press("Profile").unwrap();
     assert_eq!(f.info()["write_enabled"], true);
-    app.press("Writes for this daemon run").unwrap();
+    app.press("Writes").unwrap();
     app.wait_for("Writes off").unwrap();
     assert_eq!(f.info()["write_enabled"], false);
     app.press_key("alt+o").unwrap();

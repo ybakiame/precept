@@ -252,8 +252,8 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
         false,
         "creation never enables writes"
     );
-    app.press("Writes for this daemon run").unwrap();
-    app.wait_for("Writes on for this daemon run").unwrap();
+    app.press("Writes").unwrap();
+    app.wait_for("Writes on").unwrap();
     assert_eq!(f.info()["write_enabled"], true);
     app.press_key("alt+o").unwrap();
     writes_on(&mut app);
@@ -480,8 +480,8 @@ fn keyboard_review_and_revoked_delete(f: &Fixture) {
     // A new grant from Runtime checks -> Profile, then back to the records.
     app.press("Runtime checks").unwrap();
     app.press("Profile").unwrap();
-    app.press("Writes for this daemon run").unwrap();
-    app.wait_for("Writes on for this daemon run").unwrap();
+    app.press("Writes").unwrap();
+    app.wait_for("Writes on").unwrap();
     manage_project(&mut app);
     open_row(&mut app, "#3 · keyboard-editor · deprecated · r3");
     app.press_key("alt+shift+q").unwrap();
