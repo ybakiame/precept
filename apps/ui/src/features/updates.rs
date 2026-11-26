@@ -154,7 +154,8 @@ fn install(state: Signal<Phase>, _: DownloadedUpdate) {
 }
 
 fn action(model: Signal<Model>, state: Signal<Phase>) -> impl IntoElement {
-    button(model, "updates.action")
+    button(model, "")
+        .test_id("updates.action")
         .label_fn(move || {
             let key = match state.get() {
                 Phase::Available(_) => Msg::DownloadUpdate,
