@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { binaries, binariesForTarget, checkElf, checkTarListing, gnuTarget, packageManagerFor, removable, target } from './linux-package.mjs';
+import { binaries, binariesForTarget, checkElf, checkTarListing, gnuTarget, libraryResolutions, packageManagerFor, removable, target } from './linux-package.mjs';
 import { digest, removeOwnedProduct } from './windows-package.mjs';
 
 test('Linux targets select their binary sets and package databases', () => {
@@ -12,6 +12,17 @@ test('Linux targets select their binary sets and package databases', () => {
   assert.equal(packageManagerFor({ ID: 'arch' }), 'pacman');
   assert.equal(packageManagerFor({ ID: 'linuxmint', ID_LIKE: 'ubuntu debian' }), 'dpkg');
   assert.throws(() => packageManagerFor({ ID: 'fedora' }));
+});
+
+test('ldd resolution names arrow and bare loaders by basename', () => {
+  const resolved = libraryResolutions([
+    '\tlibc.so.6 => /usr/lib/libc.so.6 (0x000070f9dac00000)',
+    '\t/lib64/ld-linux-x86-64.so.2 => /usr/lib64/ld-linux-x86-64.so.2 (0x000070f9db8d9000)',
+  ].join('\n'));
+  assert.equal(resolved['libc.so.6'], '/usr/lib/libc.so.6');
+  assert.equal(resolved['ld-linux-x86-64.so.2'], '/usr/lib64/ld-linux-x86-64.so.2');
+  const bare = libraryResolutions('\t/lib64/ld-linux-x86-64.so.2 (0x000070f9db8d9000)');
+  assert.equal(bare['ld-linux-x86-64.so.2'], '/lib64/ld-linux-x86-64.so.2');
 });
 
 test('ELF policy: system loader, glibc, and never RPATH/RUNPATH', () => {
