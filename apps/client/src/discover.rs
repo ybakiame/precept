@@ -33,8 +33,8 @@ mod host {
             PathBuf::from("/usr/lib/systemd/user").join(UNIT),
             PathBuf::from("/lib/systemd/user").join(UNIT),
         ];
-        if let Some(c) = crate::paths::config_dir() {
-            candidates.insert(0, c.join("systemd/user").join(UNIT));
+        if let Some(directory) = crate::paths::user_unit_dir() {
+            candidates.insert(0, directory.join(UNIT));
         }
         candidates.iter().any(|p| p.is_file())
     }

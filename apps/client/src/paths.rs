@@ -34,6 +34,18 @@ fn unix_config(xdg_config_home: Option<PathBuf>, home: Option<PathBuf>) -> Optio
 }
 
 #[cfg(unix)]
+#[cfg(unix)]
+fn unix_user_unit_dir(xdg_config_home: Option<PathBuf>, home: Option<PathBuf>) -> Option<PathBuf> {
+    xdg_config_home
+        .filter(|path| path.is_absolute())
+        .or_else(|| {
+            home.filter(|path| path.is_absolute())
+                .map(|path| path.join(".config"))
+        })
+        .map(|path| path.join("systemd/user"))
+}
+
+#[cfg(unix)]
 fn unix_state(xdg_state_home: Option<PathBuf>, home: Option<PathBuf>) -> Option<PathBuf> {
     let base = xdg_state_home
         .filter(|path| path.is_absolute())
@@ -53,6 +65,11 @@ pub(crate) fn config_dir() -> Option<PathBuf> {
     {
         unix_config(env_path("XDG_CONFIG_HOME"), env_path("HOME"))
     }
+}
+
+#[cfg(unix)]
+pub(crate) fn user_unit_dir() -> Option<PathBuf> {
+    unix_user_unit_dir(env_path("XDG_CONFIG_HOME"), env_path("HOME"))
 }
 
 pub(crate) fn state_dir() -> Option<PathBuf> {
@@ -111,6 +128,23 @@ mod tests {
             Some(PathBuf::from("/home/u/.config/precept"))
         );
         assert_eq!(unix_config(Some(PathBuf::from("relative")), None), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn user_units_live_in_the_config_root_not_the_app_directory() {
+        assert_eq!(
+            unix_user_unit_dir(Some(PathBuf::from("/xdg/config")), None),
+            Some(PathBuf::from("/xdg/config/systemd/user"))
+        );
+        assert_eq!(
+            unix_user_unit_dir(None, Some(PathBuf::from("/home/u"))),
+            Some(PathBuf::from("/home/u/.config/systemd/user"))
+        );
+        assert_eq!(
+            unix_user_unit_dir(None, Some(PathBuf::from("relative"))),
+            None
+        );
     }
 
     #[cfg(unix)]
