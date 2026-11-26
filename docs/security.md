@@ -56,6 +56,15 @@ separate design with its own threat model.
   config/state with `~/.config/precept` and `~/.local/state/precept` defaults,
   and runtime uses `state/runtime`. Roots must be absolute, durable state never
   uses a cache directory, and no old-name fallback or automatic data move is allowed.
+- A managed Windows portable Desktop updates only after an explicit Settings action.
+  Its compiled configuration names the GitHub repository and Ed25519 manifest key;
+  HTTPS redirects cannot downgrade, older/equal versions are refused, and archive
+  size and SHA-256 are verified before NSH stages the directory replacement. Downloads
+  stay in the private `state/updates` directory. The app refuses an installation with
+  unknown, unlisted or linked files rather than letting replacement remove them.
+  Failure during replacement keeps the old installation. Restart affects the Desktop,
+  not the WSL daemon, and gives no Profile or write authority. There is no automatic
+  startup check, background install, downgrade or caller-selected update URL.
 - Personal preference sync is manual encrypted file exchange, not a network
   service. Per-Profile identity secrets, trusted-device public keys, clocks,
   tombstones and recovery records live in an owner-only daemon sidecar capped at

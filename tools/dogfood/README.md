@@ -42,9 +42,6 @@ sudo pacman -U .tmp/artifacts/local-dogfood/dogfood-linux-01/precept-*.pkg.tar.z
 ./tools/dogfood/windows-deploy.ps1 -AttemptDir .tmp/artifacts/local-p1-m5/dogfood-windows-01 -Distribution <distro> -User <linux-user>
 ```
 
-`-Locale en|zh-CN` fixes the language in the shortcut; without it the Desktop uses
-the language saved in its settings.
-
 To update the Desktop later, close it, build a new attempt and rerun
 `windows-deploy.ps1 ... -Replace`. That removes only the files listed in the
 installed manifest, and keeps unknown files.
@@ -116,16 +113,17 @@ daemon, the Profile) and offers **Start** when the unit is installed but not
 running. **Connect** saves the choice (`%LOCALAPPDATA%/precept/config/connection.json`,
 owner-only) for the next launch. Explicit launch arguments always win.
 
-Start `%LOCALAPPDATA%\Programs\Precept\Precept Desktop (WSL).lnk`. It runs
-`bin\precept-desktop.exe` with `--wsl-distribution/--wsl-user/--wsl-bridge
-/usr/bin/precept-bridge/--wsl-runtime-dir/--wsl-endpoint` pointing at the paths above.
+Start `%LOCALAPPDATA%\Programs\Precept\bin\precept-desktop.exe`. It uses the saved
+connection; explicit `--wsl-distribution/--wsl-user/--wsl-bridge/--wsl-runtime-dir/
+--wsl-endpoint` launch arguments remain available for a non-standard installation.
 If the WSL distribution was stopped, the first connection starts it. If the daemon
 is not ready yet, the Desktop reports it as unreachable; retry from the Desktop.
 
 ## Remove
 
 - Windows: close the Desktop. Remove the files listed in `runtime\manifest.json`,
-  the manifest, the shortcut, then the empty directories.
+  the manifest, then the empty directories. A shortcut from an older deployment
+  can be removed with it.
 - WSL: `systemctl --user disable --now preceptd`, then `sudo pacman -R precept`.
   `~/.local/state/precept` and `~/.config/precept` (Profile and configuration) are kept;
   delete them only deliberately.
@@ -136,14 +134,14 @@ From WSL2 Arch, on a clean `dev` that is pushed, with the version set in
 `Cargo.toml` and a `## <version>` section in `CHANGELOG.md`:
 
 ```text
-tools/release.sh 0.4.0 --windows-clone /mnt/c/<path-to-windows-clone>            # build only
-tools/release.sh 0.4.0 --windows-clone /mnt/c/<path-to-windows-clone> --publish  # and publish
+tools/release.sh 0.4.0 --windows-clone /mnt/c/<path-to-windows-clone> --update-key <secret-file>            # build only
+tools/release.sh 0.4.0 --windows-clone /mnt/c/<path-to-windows-clone> --update-key <secret-file> --publish  # and publish
 ```
 
-It tags `v<version>` at HEAD (locally), runs every gate, builds the Arch package
-(`arch-package.sh --release`, pkgver = the version) and the Windows ZIP
-(`windows-package.ps1 -Release`, in a temporary worktree of the Windows clone),
-and writes them with `SHA256SUMS` and the changelog section to
-`.tmp/artifacts/release/v<version>/`. `--publish` then fast-forwards `main`,
-pushes the tag and creates the GitHub Release with those assets. The manual
-`Release` workflow builds the gates and the Windows ZIP on hosted runners instead.
+It tags `v<version>` at HEAD (locally), runs every gate, builds the musl Linux
+archive and the Windows ZIP directly in the Windows mirror, and writes them with
+`SHA256SUMS`, the signed Windows `latest.json`/`latest.json.sig` and the changelog
+section to `.tmp/artifacts/release/v<version>/`. The update key stays outside tracked
+source. `--publish` then fast-forwards `main`, pushes the tag and creates the GitHub
+Release with those assets. The manual `Release` workflow builds the gates and Windows
+assets on hosted runners; its updater secret is `PRECEPT_UPDATE_KEY`.

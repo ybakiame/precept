@@ -97,6 +97,14 @@ Organize navigation around three clear operational paths plus utilities:
 - **Foot:** **Diagnostics**, **Settings**, the persistent daemon status button
   (opens Runtime checks → Connection) and the keyboard shortcuts button.
 
+Settings includes **Software updates** for a managed Windows portable installation.
+Checking is always an explicit action; startup never checks or installs automatically.
+The fixed GitHub source and Ed25519 public key are compiled into the app. An available
+update is downloaded with progress, checked for size and SHA-256, then offered as
+**Install and restart**. Unknown or linked files in the installation refuse self-update;
+configuration, runtime state and the WSL daemon are not replaced. Development runs,
+system packages and non-Windows installations report self-update as unavailable.
+
 On Windows, selecting a WSL distribution probes the bridge, packaged unit and daemon.
 If the helper or unit is missing or incompatible, Connection offers **Install / Update
 daemon in WSL**. That explicit action downloads the current musl release archive from
