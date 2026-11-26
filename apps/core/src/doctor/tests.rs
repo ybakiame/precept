@@ -268,6 +268,21 @@ fn workspace_sharing_and_activity_name_the_break() {
 }
 
 #[test]
+fn profile_identity_mismatch_is_explained_as_read_only() {
+    let mut m = ready();
+    *m.profile_info = Some(crate::operator::ProfileInfo {
+        selected: true,
+        write_enabled: false,
+        remembered: true,
+        write_restore_failure: Some("identity_mismatch".into()),
+        ..Default::default()
+    });
+    let check = find(&checks(&m), Msg::DoctorWrites).clone();
+    assert_eq!(check.level, Level::Attention);
+    assert!(check.detail.contains("identity no longer matches"));
+}
+
+#[test]
 fn the_report_carries_no_paths() {
     let m = ready();
     let text = report(&m, &checks(&m));

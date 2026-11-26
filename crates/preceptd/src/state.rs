@@ -77,12 +77,18 @@ struct StartupFile {
     profile: PathBuf,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     write_enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    profile_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    generation: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StartupSelection {
     pub profile: PathBuf,
     pub write_enabled: bool,
+    pub profile_id: Option<String>,
+    pub generation: Option<String>,
 }
 
 pub struct StateDir {
@@ -240,12 +246,33 @@ impl StateDir {
         if file.format != 1 || !file.profile.is_absolute() {
             return Err(Error::InvalidRequest);
         }
+        let identity_valid = match (&file.profile_id, &file.generation) {
+            (Some(profile_id), Some(generation)) => [profile_id, generation].iter().all(|value| {
+                value.len() == 32
+                    && value
+                        .bytes()
+                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            }),
+            (None, None) => true,
+            _ => false,
+        };
+        if !identity_valid {
+            return Err(Error::InvalidRequest);
+        }
         Ok(Some(StartupSelection {
             profile: file.profile,
             write_enabled: file.write_enabled,
+            profile_id: file.profile_id,
+            generation: file.generation,
         }))
     }
-    pub fn save_startup(&self, profile: &Path, write_enabled: bool) -> Result<()> {
+    pub fn save_startup(
+        &self,
+        profile: &Path,
+        write_enabled: bool,
+        profile_id: Option<&str>,
+        generation: Option<&str>,
+    ) -> Result<()> {
         if !profile.is_absolute() {
             return Err(Error::InvalidRequest);
         }
@@ -253,6 +280,8 @@ impl StateDir {
             format: 1,
             profile: profile.to_path_buf(),
             write_enabled,
+            profile_id: profile_id.map(str::to_owned),
+            generation: generation.map(str::to_owned),
         };
         self.write(
             STARTUP,
@@ -329,13 +358,20 @@ mod tests {
             1,
             "no temporary left"
         );
-        s.save_startup(Path::new("/home/u/profile.sqlite3"), true)
-            .unwrap();
+        s.save_startup(
+            Path::new("/home/u/profile.sqlite3"),
+            true,
+            Some(&"a".repeat(32)),
+            Some(&"b".repeat(32)),
+        )
+        .unwrap();
         assert_eq!(
             s.load_startup().unwrap().unwrap(),
             StartupSelection {
                 profile: PathBuf::from("/home/u/profile.sqlite3"),
                 write_enabled: true,
+                profile_id: Some("a".repeat(32)),
+                generation: Some("b".repeat(32)),
             }
         );
         s.forget_startup().unwrap();

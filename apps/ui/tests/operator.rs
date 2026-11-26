@@ -107,6 +107,30 @@ impl Fixture {
     fn info(&self) -> Value {
         self.call("profile.info", json!({})).unwrap()
     }
+    fn restart(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        self.child = Command::new(bin("preceptd"))
+            .arg("--runtime-dir")
+            .arg(&self.location.runtime_dir)
+            .arg("--endpoint")
+            .arg(&self.location.endpoint)
+            .arg("--state-dir")
+            .arg(self.root.path().join("daemon-state"))
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let start = Instant::now();
+        loop {
+            if self.call("profile.info", json!({})).is_ok() {
+                break;
+            }
+            assert!(self.child.try_wait().unwrap().is_none());
+            assert!(start.elapsed() < Duration::from_secs(15));
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
     fn register(&self) {
         let info = self.info();
         let b = &info["binding"];
@@ -348,7 +372,18 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     app.wait_for("已确认的偏好与约定").unwrap();
     f.child.kill().unwrap();
     f.child.wait().unwrap();
+    let startup = f.root.path().join("daemon-state/startup.json");
+    let mut saved: Value = serde_json::from_slice(&std::fs::read(&startup).unwrap()).unwrap();
+    saved["generation"] = json!("0".repeat(32));
+    saved["write_enabled"] = json!(true);
+    std::fs::write(&startup, saved.to_string()).unwrap();
+    precept_ipc::transport::private_file(&startup).unwrap();
+    f.restart();
+    assert_eq!(f.info()["write_enabled"], false);
+    assert_eq!(f.info()["write_restore_failure"], "identity_mismatch");
     app.press_key("alt+o").unwrap();
-    contains(&mut app, "Unavailable");
+    app.press("id:nav.runtime-checks").unwrap();
+    app.press("Profile").unwrap();
+    contains(&mut app, "保存的 Profile 身份已不匹配");
     assert!(app.screen().clipboard().is_none());
 }

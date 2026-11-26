@@ -404,6 +404,8 @@ text_catalog! {
     DoctorProfileOk => "每次 daemon 启动时自动选择",
     DoctorProfileRunOnly => "仅本次运行已选择：daemon 重启后 Agent 将无法获得上下文", DoctorWrites => "写入",
     DoctorWritesOn => "已开启", DoctorWritesOff => "已关闭：审阅或修改接入方式前需开启",
+    DoctorWriteRestoreFailed => "已关闭：无法恢复保存的写授权，请显式开启写入",
+    DoctorWriteRestoreIdentityMismatch => "已关闭：保存的 Profile 身份已不匹配，请显式开启写入以授权当前 Profile",
     DoctorWorkspace => "工作区", DoctorNoWorkspace => "未选择工作区",
     DoctorUnregistered => "未登记到此 Profile：请登记", DoctorUnavailable => "其文件夹已不存在或已移动",
     DoctorShared => "向 Agent 共享", DoctorSharedOn => "Agent 可读取本项目",

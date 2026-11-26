@@ -264,7 +264,17 @@ impl Profiles {
             Err(_) => Some("startup_refused"),
         };
         s.startup_failure = failure;
-        if failure.is_none() && startup.write_enabled && self.enable_selected(&mut s).is_err() {
+        if failure.is_some() || !startup.write_enabled {
+            return;
+        }
+        let binding = s.selected.as_ref().map(|selected| selected.binding());
+        let identity_matches = binding.as_ref().is_some_and(|binding| {
+            startup.profile_id.as_deref() == Some(binding.profile_id.as_str())
+                && startup.generation.as_deref() == Some(binding.generation.as_str())
+        });
+        if !identity_matches {
+            s.write_restore_failure = Some("identity_mismatch");
+        } else if self.enable_selected(&mut s).is_err() {
             s.write_restore_failure = Some("write_restore_failed");
         }
     }

@@ -536,6 +536,17 @@ pub(crate) fn section(model: Signal<Model>, show_next: bool) -> impl IntoElement
                                 )),
                         )
                         .child(caption(model, |_| Some(Msg::WritesHelp)))
+                        .child(caption(model, |m| {
+                            m.profile_info.as_ref().and_then(|info| {
+                                info.write_restore_failure.as_ref().map(|reason| {
+                                    if reason == "identity_mismatch" {
+                                        Msg::DoctorWriteRestoreIdentityMismatch
+                                    } else {
+                                        Msg::DoctorWriteRestoreFailed
+                                    }
+                                })
+                            })
+                        }))
                         .child(error_note(model)),
                 ),
         )

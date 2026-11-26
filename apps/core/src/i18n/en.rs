@@ -509,6 +509,8 @@ text_catalog! {
     DoctorProfileRunOnly => "Selected for this run only: after a daemon restart agents get nothing",
     DoctorWrites => "Writes", DoctorWritesOn => "On",
     DoctorWritesOff => "Off: turn on to review or change integrations",
+    DoctorWriteRestoreFailed => "Off: the saved write authorization could not be restored; enable writes explicitly",
+    DoctorWriteRestoreIdentityMismatch => "Off: the saved Profile identity no longer matches; enable writes explicitly to authorize this Profile",
     DoctorWorkspace => "Workspace", DoctorNoWorkspace => "No workspace selected",
     DoctorUnregistered => "Not in this Profile: register it",
     DoctorUnavailable => "Its folder is gone or moved", DoctorShared => "Shared with agents",

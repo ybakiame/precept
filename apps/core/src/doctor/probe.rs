@@ -85,6 +85,18 @@ fn profile(m: &Model) -> Vec<Check> {
             m.word(Msg::DoctorWritesOn),
             None,
         )
+    } else if let Some(reason) = &info.write_restore_failure {
+        let message = if reason == "identity_mismatch" {
+            Msg::DoctorWriteRestoreIdentityMismatch
+        } else {
+            Msg::DoctorWriteRestoreFailed
+        };
+        check(
+            Msg::DoctorWrites,
+            Level::Attention,
+            m.word(message),
+            Some(Fix::Profile),
+        )
     } else {
         check(
             Msg::DoctorWrites,

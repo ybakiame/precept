@@ -363,7 +363,7 @@ impl Profiles {
                 if p.remember {
                     let path = s.selected.as_ref().map(|x| x.path().to_path_buf());
                     if let Some(path) = path {
-                        let _ = self.state_dir.save_startup(&path, false);
+                        let _ = self.state_dir.save_startup(&path, false, None, None);
                     }
                 }
                 self.info(&s)

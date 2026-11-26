@@ -153,6 +153,102 @@ fn legacy_entries_without_root_identity_are_unavailable_without_repair() {
 }
 
 #[test]
+fn startup_write_restoration_requires_the_exact_profile_identity() {
+    let mut f = Fixture::unselected();
+    let base = f.temp.path().to_path_buf();
+    f.daemon
+        .control("profile.create", json!({"path":f.db,"remember":true}))
+        .unwrap();
+    let original = f.daemon.enable();
+    f.daemon.kill();
+    fs::rename(&f.db, base.join("state/original.sqlite3")).unwrap();
+    precept_write::Profile::create(&f.db).unwrap();
+
+    f.daemon = Daemon::relaunch(&base, "run-b");
+    f.daemon.ready();
+    let info = f.daemon.control("profile.info", json!({})).unwrap();
+    assert_eq!(info["selected"], true);
+    assert_eq!(info["write_enabled"], false);
+    assert_eq!(info["write_restore_failure"], "identity_mismatch");
+    assert!(
+        !f.daemon
+            .location
+            .runtime_dir
+            .join("operator-write.cap")
+            .exists()
+    );
+
+    let rebound = f.daemon.enable();
+    assert_ne!(rebound.profile_id, original.profile_id);
+    f.daemon.kill();
+    f.daemon = Daemon::relaunch(&base, "run-c");
+    f.daemon.ready();
+    let info = f.daemon.control("profile.info", json!({})).unwrap();
+    assert_eq!(info["write_enabled"], true);
+    assert!(info["write_restore_failure"].is_null());
+
+    f.daemon
+        .control("profile.write.disable", json!({}))
+        .unwrap();
+    f.daemon.kill();
+    f.daemon = Daemon::relaunch(&base, "run-d");
+    f.daemon.ready();
+    let info = f.daemon.control("profile.info", json!({})).unwrap();
+    assert_eq!(info["write_enabled"], false);
+    assert!(
+        !f.daemon
+            .location
+            .runtime_dir
+            .join("operator-write.cap")
+            .exists()
+    );
+}
+
+#[test]
+fn startup_record_save_failure_never_grants_or_reports_writes() {
+    let mut f = Fixture::unselected();
+    let base = f.temp.path().to_path_buf();
+    fs::create_dir(base.join("daemon-state/startup.json")).unwrap();
+    let info = f
+        .daemon
+        .control("profile.create", json!({"path":f.db,"remember":true}))
+        .unwrap();
+    assert_eq!(info["selected"], true);
+    assert_eq!(info["remembered"], false);
+    let binding = &info["binding"];
+    assert!(
+        f.daemon
+            .control(
+                "profile.write.enable",
+                json!({
+                    "profile_id":binding["profile_id"],
+                    "generation":binding["generation"],
+                    "confirm":true,
+                }),
+            )
+            .is_err()
+    );
+    let info = f.daemon.control("profile.info", json!({})).unwrap();
+    assert_eq!(info["selected"], true);
+    assert_eq!(info["write_enabled"], false);
+    assert!(
+        !f.daemon
+            .location
+            .runtime_dir
+            .join("operator-write.cap")
+            .exists()
+    );
+
+    f.daemon.kill();
+    f.daemon = Daemon::relaunch(&base, "run-b");
+    f.daemon.ready();
+    let info = f.daemon.control("profile.info", json!({})).unwrap();
+    assert_eq!(info["selected"], false);
+    assert_eq!(info["write_enabled"], false);
+    assert_eq!(info["startup_failure"], "startup_unreadable");
+}
+
+#[test]
 fn a_replaced_root_is_unavailable_to_metadata_and_agent_reads_without_restart() {
     let f = Fixture::created();
     let binding = f.daemon.enable();

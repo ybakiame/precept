@@ -158,7 +158,13 @@ impl Profiles {
             return Ok(());
         };
         if startup.profile == selected.path() {
-            self.state_dir.save_startup(selected.path(), enabled)?;
+            let binding = selected.binding();
+            self.state_dir.save_startup(
+                selected.path(),
+                enabled,
+                Some(&binding.profile_id),
+                Some(&binding.generation),
+            )?;
         }
         Ok(())
     }
