@@ -17,6 +17,7 @@ pub(crate) mod sessions;
 pub(crate) mod settings;
 pub(crate) mod setup;
 pub(crate) mod tags;
+pub(crate) mod updates;
 
 use crate::*;
 use handoff::handoff;

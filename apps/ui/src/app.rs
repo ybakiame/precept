@@ -116,6 +116,7 @@ pub fn App() -> impl IntoElement {
         _ => Appearance::Dark,
     });
     let model = signal(initial);
+    features::updates::provide_state();
     // Save the settings (appearance, language, shortcuts) when they change,
     // never the values the app started with.
     #[cfg(all(feature = "ipc", not(test)))]

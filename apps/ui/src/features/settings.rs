@@ -169,4 +169,5 @@ pub(crate) fn appearance(model: Signal<Model>) -> impl IntoElement {
                     ),
                 ),
         )
+        .child(super::updates::updates(model))
 }

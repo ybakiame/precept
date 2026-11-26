@@ -466,6 +466,9 @@ work is called done. "RM" is what reduced motion does.
 | --- | --- | --- |
 | Theme card chosen | Colors switch at once; the chosen card's check pops in, `BASE` | Check appears |
 | Color mode or language segment | One selection fill slides to the chosen segment (NSH tabs indicator) | Instant |
+| Update check or download starts | The invoking button dims, holds its width and shows a turning spinner; the status stays beside it | Spinner rests |
+| Update check or install state arrives | The inline state fades in rising 4, `BASE`, once per phase; download percentages update in place without replaying motion | Appears |
+| Update actions arrive or leave | They stay in the same surface with the status; no popup, badge, layout shift or separate success toast | — |
 
 **Connection, Profile, Workspaces page, Agents**
 
