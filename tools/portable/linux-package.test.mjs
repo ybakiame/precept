@@ -3,8 +3,16 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { binaries, checkElf, checkTarListing, removable } from './linux-package.mjs';
+import { binaries, binariesForTarget, checkElf, checkTarListing, gnuTarget, packageManagerFor, removable, target } from './linux-package.mjs';
 import { digest, removeOwnedProduct } from './windows-package.mjs';
+
+test('Linux targets select their binary sets and package databases', () => {
+  assert.deepEqual(binariesForTarget(target), binaries.filter(binary => binary !== 'precept-desktop'));
+  assert.deepEqual(binariesForTarget(gnuTarget), binaries);
+  assert.equal(packageManagerFor({ ID: 'arch' }), 'pacman');
+  assert.equal(packageManagerFor({ ID: 'linuxmint', ID_LIKE: 'ubuntu debian' }), 'dpkg');
+  assert.throws(() => packageManagerFor({ ID: 'fedora' }));
+});
 
 test('ELF policy: system loader, glibc, and never RPATH/RUNPATH', () => {
   const ok = { interpreter: '/lib64/ld-linux-x86-64.so.2', rpath: [], needed: ['libc.so.6', 'libgtk-4.so.1'] };
