@@ -1,8 +1,7 @@
 #Requires -Version 7
 <#
 Deploys a locally built Precept Windows portable ZIP (tools/portable/windows-package.ps1)
-into a portable product directory for private dogfooding, and creates one shortcut
-inside it that starts the Desktop against the Precept daemon in WSL2.
+into a portable product directory for private dogfooding.
 
 Portable mode: no installer, service, PATH, registry, Start menu or startup entry.
 State stays in WSL (the daemon is the only Profile write owner); nothing here creates,
@@ -21,9 +20,6 @@ param(
   [string] $Destination = (Join-Path $env:LOCALAPPDATA 'Programs\Precept'),
   [string] $WslBridge = '/usr/bin/precept-bridge',
   [string] $WslStateDir,
-  # Optional: fixes the language at every launch. Absent, the Desktop uses
-  # the language saved in its settings.toml (English until one is chosen).
-  [ValidateSet('', 'en', 'zh-CN')] [string] $Locale = '',
   [switch] $Replace
 )
 $ErrorActionPreference = 'Stop'
@@ -98,21 +94,7 @@ try {
   if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
 }
 
-# 4. One shortcut inside the product directory (portable; nothing outside it).
-$arguments = @(
-  $(if ($Locale) { '--locale', $Locale })
-  '--wsl-distribution', $Distribution, '--wsl-user', $User, '--wsl-bridge', $WslBridge,
-  '--wsl-runtime-dir', "$WslStateDir/runtime", '--wsl-endpoint', "$WslStateDir/runtime/control.sock"
-) | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }
-$shell = New-Object -ComObject WScript.Shell
-$link = $shell.CreateShortcut((Join-Path $Destination 'Precept Desktop (WSL).lnk'))
-$link.TargetPath = Join-Path $Destination 'bin\precept-desktop.exe'
-$link.Arguments = $arguments -join ' '
-$link.WorkingDirectory = $Destination
-$link.Description = 'Precept Desktop connected to the Precept daemon in WSL2'
-$link.Save()
-
-# 5. Observe the deployed binaries and the explicitly selected WSL runtime.
+# 4. Observe the deployed binaries and the explicitly selected WSL runtime.
 # No daemon is started and no Profile or integration is changed. A stopped or
 # uninitialized daemon is reported as incomplete, not as successful verification.
 $doctorExit = 3
@@ -150,7 +132,6 @@ $deploymentStatus = if ($doctorExit -eq 2) { 'DEPLOYED_WITH_PROBLEM' } else { 'D
   destination_files = (Get-ChildItem -LiteralPath $Destination -Recurse -File).Count
   source_sha = $manifest.source_sha
   archive_sha256 = $result.archive_sha256
-  shortcut = 'Precept Desktop (WSL).lnk'
   status = $deploymentStatus
   doctor_status = $doctorStatus
   doctor_exit_code = $doctorExit
