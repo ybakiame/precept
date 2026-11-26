@@ -460,7 +460,14 @@ pub fn wsl_install_update(distribution: &str, user: &str) -> Result<Discovery, &
         distribution,
         user,
         "systemctl",
-        &["--user", "enable", "--now", "preceptd.service"],
+        &["--user", "enable", "preceptd.service"],
+        30,
+    )?;
+    install_command(
+        distribution,
+        user,
+        "systemctl",
+        &["--user", "restart", "preceptd.service"],
         45,
     )?;
     wsl_start_daemon(distribution, user, &user_helper(user))
