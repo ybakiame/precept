@@ -112,11 +112,13 @@ matrix, or upload the generated archive as a PR/Release asset.
 ## Linux x86_64 `.tar.gz` (M5/S1-C)
 
 Run on a clean committed checkout inside a native Linux x86_64 builder with the
-pinned stock toolchain, Node, and GTK 4 development headers. Precept uses no media
-playback, so NSH 0.7.1 does not require GStreamer development packages:
+pinned stock toolchain and Node. The default musl build ships only daemon/CLI/MCP
+binaries; pass `x86_64-unknown-linux-gnu` to include the GTK4 Desktop. Precept uses
+no media playback, so NSH 0.7.1 does not require GStreamer development packages:
 
 ```sh
-node tools/portable/linux-package.mjs "$PWD" "$PWD/.tmp/artifacts/local-p1-m5" s1c-attempt-01 "$HOME/.cargo/bin/cargo"
+node tools/portable/linux-package.mjs "$PWD" "$PWD/.tmp/artifacts/local-p1-m5" musl-attempt-01 "$HOME/.cargo/bin/cargo"
+node tools/portable/linux-package.mjs "$PWD" "$PWD/.tmp/artifacts/local-p1-m5" gnu-attempt-01 "$HOME/.cargo/bin/cargo" x86_64-unknown-linux-gnu
 ```
 
 The generated `.tar.gz`, inventory and checksum sidecars stay under the ignored local

@@ -9,6 +9,7 @@ import { digest, removeOwnedProduct } from './windows-package.mjs';
 test('ELF policy: system loader, glibc, and never RPATH/RUNPATH', () => {
   const ok = { interpreter: '/lib64/ld-linux-x86-64.so.2', rpath: [], needed: ['libc.so.6', 'libgtk-4.so.1'] };
   assert.equal(checkElf('x', ok), ok);
+  assert.equal(checkElf('musl', { interpreter: null, rpath: [], needed: [] }).needed.length, 0);
   assert.throws(() => checkElf('x', { ...ok, rpath: ['$ORIGIN/../lib'] }));
   assert.throws(() => checkElf('x', { ...ok, interpreter: '/tmp/ld.so' }));
   assert.throws(() => checkElf('x', { ...ok, needed: ['libgtk-4.so.1'] }));
