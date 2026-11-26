@@ -4,7 +4,9 @@
 //! it (`precept-bridge --discover`) and reports systemd, the packaged user unit,
 //! the daemon and the Profile. This computer uses the platform's conventional
 //! runtime and an explicit Start action: the systemd user unit on Linux, or the
-//! `preceptd.exe` beside the Desktop on Windows. The manual fields stay available
+//! `preceptd.exe` beside the Desktop on Windows. A missing or incompatible WSL
+//! daemon also offers an explicit install/update through the verified release archive.
+//! The manual fields stay available
 //! under Advanced for a non-standard install. The applied choice is saved privately
 //! for the next launch. No shell, TCP or credential crosses any boundary.
 use crate::*;
@@ -102,6 +104,31 @@ fn probe(draft: &Connection, start: bool) -> Result<Discovery, &'static str> {
         _ => Err(wsl_status::HOST_UNAVAILABLE),
     }
 }
+
+#[cfg(feature = "ipc")]
+fn install(model: Signal<Model>) {
+    let mut epoch = 0;
+    model.update(|m| epoch = m.begin_probe(true));
+    let draft = model.get().connection_draft.clone();
+    let user = draft.user.clone();
+    Owner::detached().run(|| {
+        spawn(async move {
+            let result = blocking(move || {
+                precept_ui_client::discover::wsl_install_update(&draft.distribution, &draft.user)
+            })
+            .await
+            .unwrap_or(Err(wsl_status::INSTALL_FAILED));
+            if result.is_ok() {
+                let helper = precept_ui_client::discover::user_helper(&user);
+                model.update(|m| m.connection_draft.helper = helper);
+            }
+            model.update(|m| m.finish_probe(epoch, result));
+        });
+    });
+}
+
+#[cfg(not(feature = "ipc"))]
+fn install(_: Signal<Model>) {}
 
 /// Whether this platform can check its target automatically.
 fn discoverable(target: Target) -> bool {
@@ -331,6 +358,17 @@ fn distributions(model: Signal<Model>) -> impl IntoElement {
         .child(list)
 }
 
+fn install_action(model: Signal<Model>, show: bool) -> Option<AnyElement> {
+    show.then(|| {
+        button(model, "")
+            .label_fn(word(model, Msg::InstallUpdateDaemon))
+            .variant(ButtonVariant::Primary)
+            .loading(move || matches!(model.get().probe, Probe::Starting))
+            .on_press(move || install(model))
+            .into_element()
+    })
+}
+
 /// One check: name, state badge, optional hint and optional action, on fixed lanes.
 fn row(
     model: Signal<Model>,
@@ -370,10 +408,23 @@ fn checks(model: Signal<Model>) -> impl IntoElement {
         // The probe is a snapshot; a Profile selected since it ran (observed
         // by the live `profile.info` read) must not still read "None selected".
         let selected = m.profile_info.as_ref().map(|i| i.selected);
-        (m.probe.clone(), unchosen, selected)
+        let installable = m.connection_draft.target == Target::Wsl
+            && match &m.probe {
+                Probe::Failed(reason) => [
+                    discovery_status::NO_UNIT,
+                    discovery_status::NO_EXECUTABLE,
+                    discovery_status::INVALID_REPORT,
+                    wsl_status::HELPER_MISSING,
+                    wsl_status::HELPER_INCOMPATIBLE,
+                ]
+                .contains(reason),
+                Probe::Found(discovery) => !discovery.unit_installed,
+                _ => false,
+            };
+        (m.probe.clone(), unchosen, selected, installable)
     });
     let rows = dynamic(move || {
-        let (probe, unchosen, selected) = state.get();
+        let (probe, unchosen, selected, installable) = state.get();
         // Each new outcome arrives (fades in rising), once.
         let reveal = ui::motion::reveal();
         let outcome = match &probe {
@@ -391,7 +442,11 @@ fn checks(model: Signal<Model>) -> impl IntoElement {
             }
             Probe::Found(d) => found(model, d, selected),
         };
-        view().bind_motion(&reveal).child(outcome).into_element()
+        view()
+            .bind_motion(&reveal)
+            .child(outcome)
+            .children(install_action(model, installable))
+            .into_element()
     });
     view().gap_2().child(heading(model, Msg::Checks)).child(
         view()
