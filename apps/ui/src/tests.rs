@@ -190,7 +190,8 @@ fn real_console_edits_connection_without_implicit_reads_and_localizes() {
     app.wait_for("Project: alpha").unwrap();
     app.press("Settings").unwrap();
     app.wait_for("Software updates").unwrap();
-    app.press("Check for updates").unwrap();
+    assert_eq!(app.screen().count("id:updates.action").unwrap(), 1);
+    app.press("id:updates.action").unwrap();
     app.wait_for("Self-update is not available for this installation.")
         .unwrap();
     app.press("Ledger").unwrap();
