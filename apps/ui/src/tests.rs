@@ -189,6 +189,10 @@ fn real_console_edits_connection_without_implicit_reads_and_localizes() {
     app.press_key("Escape").unwrap();
     app.wait_for("Project: alpha").unwrap();
     app.press("Settings").unwrap();
+    app.wait_for("Software updates").unwrap();
+    app.press("Check for updates").unwrap();
+    app.wait_for("Self-update is not available for this installation.")
+        .unwrap();
     app.press("Ledger").unwrap();
     app.press("Light").unwrap();
     app.press("简体中文").unwrap();
