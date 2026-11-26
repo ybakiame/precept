@@ -4,6 +4,14 @@ Precept follows [semantic versioning](https://semver.org/). While the version is
 0.x, a minor release may change the Profile schema or the local interfaces; move
 data between schemas with the versioned Profile export and import.
 
+## 0.4.7
+
+- **Desktop update connectivity:** enable the platform certificate verifier used
+  by the Rust update client and cover the live signed GitHub manifest with an
+  opt-in native test. The update action retains its stable automation identifier.
+  Version 0.4.6 cannot make update requests; install 0.4.7 manually once. Later
+  updates can use Settings → Software updates.
+
 ## 0.4.6
 
 - **Verified Desktop updates:** managed Windows portable installations can check

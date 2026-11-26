@@ -1051,7 +1051,7 @@ dependencies = [
 
 [[package]]
 name = "precept"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "clap",
  "precept-ipc",
@@ -1064,7 +1064,7 @@ dependencies = [
 
 [[package]]
 name = "precept-core"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "libc",
  "serde",
@@ -1077,7 +1077,7 @@ dependencies = [
 
 [[package]]
 name = "precept-ipc"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "clap",
  "getrandom 0.4.3",
@@ -1094,7 +1094,7 @@ dependencies = [
 
 [[package]]
 name = "precept-mcp"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "clap",
  "precept-core",
@@ -1109,7 +1109,7 @@ dependencies = [
 
 [[package]]
 name = "precept-store"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "precept-core",
  "precept-ipc",
@@ -1122,7 +1122,7 @@ dependencies = [
 
 [[package]]
 name = "precept-sync"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "age",
  "ed25519-dalek",
@@ -1135,7 +1135,7 @@ dependencies = [
 
 [[package]]
 name = "precept-write"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "getrandom 0.4.3",
  "libc",
@@ -1151,7 +1151,7 @@ dependencies = [
 
 [[package]]
 name = "preceptd"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "clap",
  "getrandom 0.4.3",
