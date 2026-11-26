@@ -302,6 +302,175 @@ pub fn wsl_start_daemon(_: &str, _: &str, _: &str) -> Result<Discovery, &'static
     Err("Windows WSL owner transport unavailable on this OS")
 }
 
+#[cfg(target_os = "windows")]
+const RELEASE_API: &str = "https://api.github.com/repos/ybakiame/precept/releases/latest";
+
+#[cfg(target_os = "windows")]
+fn install_command(
+    distribution: &str,
+    user: &str,
+    program: &str,
+    args: &[&str],
+    seconds: u64,
+) -> Result<Vec<u8>, &'static str> {
+    let mut command = vec![
+        "--distribution",
+        distribution,
+        "--user",
+        user,
+        "--exec",
+        program,
+    ];
+    command.extend(args.iter().copied());
+    let out = run_wsl(&command, std::time::Duration::from_secs(seconds))?;
+    if out.code == Some(0) {
+        Ok(out.stdout)
+    } else {
+        Err(status::INSTALL_FAILED)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn release_download(raw: &[u8]) -> Result<(String, String), &'static str> {
+    let release: serde_json::Value =
+        serde_json::from_slice(raw).map_err(|_| status::INSTALL_FAILED)?;
+    let assets = release["assets"].as_array().ok_or(status::INSTALL_FAILED)?;
+    let find = |name: &str| {
+        assets.iter().find_map(|asset| {
+            let url = asset["browser_download_url"].as_str()?;
+            (asset["name"].as_str()?.ends_with(name) && url.starts_with("https://github.com/"))
+                .then(|| url.to_owned())
+        })
+    };
+    let archive = find("-linux-x86_64-musl.tar.gz").ok_or(status::INSTALL_FAILED)?;
+    let checksums = find("SHA256SUMS").ok_or(status::INSTALL_FAILED)?;
+    Ok((archive, checksums))
+}
+
+pub fn user_helper(user: &str) -> String {
+    format!("/home/{user}/.local/bin/precept-bridge")
+}
+
+#[cfg(target_os = "windows")]
+pub fn wsl_install_update(distribution: &str, user: &str) -> Result<Discovery, &'static str> {
+    if !valid_inputs(distribution, Some(user), DEFAULT_HELPER) {
+        return Err("Invalid WSL connection inputs");
+    }
+    let latest = install_command(distribution, user, "curl", &["-fsSL", RELEASE_API], 45)?;
+    let (archive_url, sums_url) = release_download(&latest)?;
+    let state = format!("/home/{user}/.local/state/precept");
+    let downloads = format!("{state}/downloads");
+    let archive = format!("{downloads}/precept-linux.tar.gz");
+    let sums = format!("{downloads}/SHA256SUMS");
+    let library = format!("/home/{user}/.local/lib/precept");
+    let bin = format!("/home/{user}/.local/bin");
+    let unit = format!("/home/{user}/.config/systemd/user/preceptd.service");
+    install_command(
+        distribution,
+        user,
+        "install",
+        &["-d", "-m", "700", &downloads, &library, &bin],
+        15,
+    )?;
+    install_command(
+        distribution,
+        user,
+        "curl",
+        &["-fsSL", &archive_url, "-o", &archive],
+        180,
+    )?;
+    install_command(
+        distribution,
+        user,
+        "curl",
+        &["-fsSL", &sums_url, "-o", &sums],
+        45,
+    )?;
+    let observed = install_command(distribution, user, "sha256sum", &[&archive], 15)?;
+    let observed = String::from_utf8_lossy(&observed);
+    let observed = observed.split_whitespace().next().unwrap_or_default();
+    let expected =
+        String::from_utf8_lossy(&install_command(distribution, user, "cat", &[&sums], 15)?);
+    let matches = expected.lines().any(|line| {
+        let mut fields = line.split_whitespace();
+        fields.next() == Some(observed)
+            && fields
+                .next_back()
+                .is_some_and(|name| name.ends_with("-linux-x86_64-musl.tar.gz"))
+    });
+    if !matches {
+        return Err(status::INSTALL_FAILED);
+    }
+    install_command(
+        distribution,
+        user,
+        "tar",
+        &["-xzf", &archive, "-C", &library],
+        60,
+    )?;
+    install_command(
+        distribution,
+        user,
+        "cp",
+        &["-a", &format!("{library}/Precept/bin/."), &bin],
+        30,
+    )?;
+    install_command(
+        distribution,
+        user,
+        "install",
+        &[
+            "-d",
+            "-m",
+            "700",
+            &format!("/home/{user}/.config/systemd/user"),
+        ],
+        15,
+    )?;
+    install_command(
+        distribution,
+        user,
+        "sed",
+        &[
+            "-i",
+            &format!("s|/usr/bin/precept|/home/{user}/.local/bin/precept|"),
+            &format!("{library}/Precept/lib/systemd/user/preceptd.service"),
+        ],
+        15,
+    )?;
+    install_command(
+        distribution,
+        user,
+        "cp",
+        &[
+            &format!("{library}/Precept/lib/systemd/user/preceptd.service"),
+            &unit,
+        ],
+        15,
+    )?;
+    install_command(distribution, user, "chmod", &["600", &unit], 15)?;
+    install_command(
+        distribution,
+        user,
+        "systemctl",
+        &["--user", "daemon-reload"],
+        30,
+    )?;
+    install_command(
+        distribution,
+        user,
+        "systemctl",
+        &["--user", "enable", "--now", "preceptd.service"],
+        45,
+    )?;
+    wsl_start_daemon(distribution, user, &user_helper(user))
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn wsl_install_update(_: &str, _: &str) -> Result<Discovery, &'static str> {
+    Err("Windows WSL owner transport unavailable on this OS")
+}
+
 /// Distribution, user and helper pass the same validation as an applied WSL
 /// connection before any of them reaches `wsl.exe`.
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
@@ -432,6 +601,25 @@ mod tests {
             assert!(parse_report(junk, true).is_err());
         }
     }
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn release_download_selects_musl_and_checksum_assets_only_from_github() {
+        let release = serde_json::json!({"assets":[
+            {"name":"precept-0.4.5-linux-x86_64-musl.tar.gz","browser_download_url":"https://github.com/ybakiame/precept/releases/download/v0.4.5/precept-0.4.5-linux-x86_64-musl.tar.gz"},
+            {"name":"SHA256SUMS","browser_download_url":"https://github.com/ybakiame/precept/releases/download/v0.4.5/SHA256SUMS"}
+        ]});
+        let (archive, sums) = release_download(&serde_json::to_vec(&release).unwrap()).unwrap();
+        assert!(archive.ends_with("-linux-x86_64-musl.tar.gz"));
+        assert!(sums.ends_with("SHA256SUMS"));
+        release["assets"][0]["browser_download_url"] =
+            serde_json::json!("https://example.invalid/asset");
+        assert!(release_download(&serde_json::to_vec(&release).unwrap()).is_err());
+        assert_eq!(
+            user_helper("operator"),
+            "/home/operator/.local/bin/precept-bridge"
+        );
+    }
+
     #[test]
     fn wsl_inputs_are_validated_before_reaching_wsl_exe() {
         assert!(valid_inputs("archlinux", None, DEFAULT_HELPER));

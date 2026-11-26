@@ -716,6 +716,8 @@ text_catalog! {
     StateInstalled => "Installed", StateMissing => "Not installed", StateRunning => "Running",
     StateStopped => "Not running", StateRefused => "Access refused", StateSelected => "Selected",
     StateUnselected => "None selected", StateUnknown => "Unknown", StartDaemon => "Start",
+    InstallUpdateDaemon => "Install / Update daemon in WSL", InstallingDaemon => "Installing / updating daemon…",
+    InstallDaemonFailed => "Install or update failed. Check network and try again.",
     Connect => "Connect", Connected => "Connected", AdvancedFields => "Advanced",
     HintSystemd => "Enable systemd in /etc/wsl.conf ([boot] systemd=true), then run wsl --shutdown.",
     HintService => "Install the precept package in this distribution.",
