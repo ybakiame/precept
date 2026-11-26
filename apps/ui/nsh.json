@@ -3,6 +3,10 @@
   "id": "org.precept.operator",
   "version": "0.4.5",
   "build": 5,
+  "updater": {
+    "github": "ybakiame/precept",
+    "publicKey": "6Mi9PbM7j27SecCA8FoS8fiGioV+KsCT5gbSUxB7mG0="
+  },
   "rust": ".",
   "root": "App",
   "window": {

@@ -3042,6 +3042,7 @@ name = "precept-ui-client"
 version = "0.4.5"
 dependencies = [
  "clap",
+ "nsh-updater",
  "precept-core",
  "precept-ipc",
  "precept-sync",
@@ -3051,6 +3052,8 @@ dependencies = [
  "tempfile",
  "tokio",
  "toml 1.2.1+spec-1.1.0",
+ "ureq",
+ "url",
 ]
 
 [[package]]
