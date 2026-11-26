@@ -1,8 +1,8 @@
 {
   "name": "Precept Operator",
   "id": "org.precept.operator",
-  "version": "0.4.7",
-  "build": 7,
+  "version": "0.4.8",
+  "build": 8,
   "updater": {
     "github": "ybakiame/precept",
     "publicKey": "6Mi9PbM7j27SecCA8FoS8fiGioV+KsCT5gbSUxB7mG0="

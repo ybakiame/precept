@@ -4,6 +4,13 @@ Precept follows [semantic versioning](https://semver.org/). While the version is
 0.x, a minor release may change the Profile schema or the local interfaces; move
 data between schemas with the versioned Profile export and import.
 
+## 0.4.8
+
+- **User-local daemon discovery:** look for the systemd user unit in the XDG
+  configuration root rather than Precept's application configuration directory.
+  A musl installation now reports its installed unit correctly and can complete
+  Connection checks without a false missing-unit action.
+
 ## 0.4.7
 
 - **Desktop update connectivity:** enable the platform certificate verifier used
