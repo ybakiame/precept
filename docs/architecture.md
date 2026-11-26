@@ -121,9 +121,10 @@ versioned Profile export and import; imported rules still require exact review.
 Profile creation is explicit and never overwrites an existing file. Startup selects
 a Profile only when the operator requested that exact path. Write enablement is
 independent and bounded to the Profile/generation/owner epoch. The startup record
-remembers only the operator's explicit choice to restore writes for that Profile;
-each run issues a fresh credential, and disabling writes or forgetting startup
-clears restoration.
+remembers the operator's explicit choice to restore writes and binds it to the
+Profile id and generation; missing or changed identity stays read-only. Each run
+issues a fresh credential, and disabling writes or forgetting startup clears
+restoration.
 
 Only the daemon links and invokes `precept-write`. Operator read/control and write
 capabilities are separate. Transactions use exact typed commands, expected

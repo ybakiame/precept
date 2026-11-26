@@ -35,9 +35,10 @@ separate design with its own threat model.
 - CLI/UI never receive writable SQLite or fall back to a retired runtime. Startup
   selects a Profile only when the operator asked for that path and never adopts
   incompatible prototype profiles. Only the operator's explicit write enablement
-  for that remembered Profile is restored on later runs; a fresh epoch-bound
-  credential is issued each time, no token is persisted, and disabling writes or
-  forgetting startup clears restoration.
+  for that remembered Profile is restored on later runs, and only while its saved
+  profile_id and generation match exactly; otherwise the Profile stays read-only.
+  A fresh epoch-bound credential is issued each time, no token is persisted, and
+  disabling writes or forgetting startup clears restoration.
 - The daemon's project set and startup choice live in its private `--state-dir`
   (0700/0600, strict JSON, bounded to 256 projects, written atomically); a damaged
   file refuses start and is never repaired. Each project stores a persistent root

@@ -9,10 +9,12 @@ for current syntax. Operator control/read is distinct from the
 profile/generation/epoch-bound write credential. Only the daemon invokes the
 private writer. No SQL/JSON patch, default Profile, implicit grant,
 generic bridge forwarding or direct database fallback. A remembered startup
-Profile restores writes only after explicit operator enablement for that Profile;
-each run issues a fresh epoch-bound credential, and disable/forget clears
-restoration. `profile.info` reports `write_restore_failure` if restoration was
-requested but could not be issued.
+Profile restores writes only after explicit operator enablement for that Profile
+and only while its saved profile_id and generation match exactly; otherwise it
+stays read-only. Each run issues a fresh epoch-bound credential, and
+disable/forget clears restoration. `profile.info` reports
+`write_restore_failure: identity_mismatch` for an identity mismatch and
+`write_restore_failed` for other issuance failures.
 
 `precept setup` is a guided first-activation flow over those same methods. It
 checks one explicitly chosen checkout, then previews Profile creation/selection,

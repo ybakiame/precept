@@ -61,8 +61,9 @@ contracts. Code/contract disagreements require explicit human resolution.
   adopt, migrate, reset, delete or overwrite a Profile automatically. Startup
   selection occurs only for the explicitly requested path. Only an operator's
   explicit write enablement for that remembered Profile is restored on later
-  runs; disabling writes or forgetting startup clears restoration, and no write
-  token is persisted.
+  runs, and only while its saved profile_id and generation match exactly;
+  otherwise the Profile stays read-only. Disabling writes or forgetting startup
+  clears restoration, and no write token is persisted.
 - Projects live in daemon-private state and change only through operator-write
   `project.add` / `project.remove` after a daemon-side check of the chosen path.
   No GUI, bridge or agent scans directories.
