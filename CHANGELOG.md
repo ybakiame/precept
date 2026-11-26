@@ -4,6 +4,22 @@ Precept follows [semantic versioning](https://semver.org/). While the version is
 0.x, a minor release may change the Profile schema or the local interfaces; move
 data between schemas with the versioned Profile export and import.
 
+## 0.4.6
+
+- **Verified Desktop updates:** managed Windows portable installations can check
+  the fixed GitHub Release source on demand, verify the signed manifest and archive,
+  and install and restart from Settings. Unknown installation files refuse
+  self-update; configuration, Profile state and the WSL daemon stay outside the
+  replacement. Deployment no longer creates a shortcut.
+- **WSL daemon setup:** Connection offers an explicit install/update action when
+  the selected distribution has a missing or incompatible bridge or user unit.
+  The verified static musl archive installs user-local binaries and a systemd user
+  service without sudo, a package manager or a shell.
+- **Startup authority and release engineering:** restored writes require the exact
+  remembered Profile identity and generation. Windows and musl Linux release names
+  are consistent, GNU builds include the GTK4 Desktop on Arch, and CI caches Rust
+  builds with an optional macOS ARM64 headless check.
+
 ## 0.4.5
 
 - **Simpler personal sync:** Desktop exports and imports standard password-encrypted
