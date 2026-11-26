@@ -97,6 +97,14 @@ Organize navigation around three clear operational paths plus utilities:
 - **Foot:** **Diagnostics**, **Settings**, the persistent daemon status button
   (opens Runtime checks → Connection) and the keyboard shortcuts button.
 
+On Windows, selecting a WSL distribution probes the bridge, packaged unit and daemon.
+If the helper or unit is missing or incompatible, Connection offers **Install / Update
+daemon in WSL**. That explicit action downloads the current musl release archive from
+this repository's GitHub Release, verifies its SHA-256 against the published
+`SHA256SUMS`, installs user-local binaries and the user unit, then starts it. It never
+uses sudo, a package manager or a shell. The selected helper path is updated to the
+user-local bridge; no Profile is created or write-enabled.
+
 A persistent scope indicator identifies the applied daemon target and selected
 project/worktree, plus the task when relevant. Personal scope is
 explicit. Selecting a project never turns a personal action into a repository
