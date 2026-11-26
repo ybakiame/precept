@@ -8,10 +8,9 @@
 #    version must be the one in Cargo.toml. An annotated tag v<version> is made
 #    at HEAD when absent (local only until --publish).
 # 2. The gates of both workspaces and the source check (unless --skip-gates).
-# 3. The Arch package (`arch-package.sh --release`) and the Windows ZIP
-#    (`windows-package.ps1 -Release`, built in a temporary worktree of the
-#    Windows clone at the same commit), then SHA256SUMS, into
-#    .tmp/artifacts/release/v<version>/.
+# 3. The musl Linux portable archive and Windows ZIP, then SHA256SUMS, into
+#    .tmp/artifacts/release/v<version>/. The Windows clone builds directly in
+#    its checkout; no temporary worktree is created.
 # 4. With --publish only: `main` is fast-forwarded to HEAD, the tag is pushed
 #    and a GitHub Release is created with the assets and the version's
 #    CHANGELOG section as notes. Without it nothing leaves this machine.
@@ -69,24 +68,22 @@ if ((gates)); then
   ) >"$out/gates.log" 2>&1 || die "gates failed; see $out/gates.log"
 fi
 
-step "Arch package"
-tools/dogfood/arch-package.sh "release-$tag" --release >"$out/arch.log" 2>&1 \
-  || die "Arch package failed; see $out/arch.log"
-cp "$repo/.tmp/artifacts/local-dogfood/release-$tag/precept-$version-1-x86_64.pkg.tar.zst" "$out/"
+step "Linux musl portable"
+command -v musl-gcc >/dev/null || die "musl-gcc is required"
+CC=${CC:-/usr/bin/musl-gcc} node tools/portable/linux-package.mjs "$repo" "$out/linux" musl /usr/bin/cargo >"$out/linux.log" 2>&1 \
+  || die "Linux portable failed; see $out/linux.log"
+cp "$out/linux/precept-$version-linux-x86_64-musl.tar.gz" "$out/"
 
 step "Windows ZIP (clone → ${sha:0:12})"
 git -C "$clone" fetch -q origin dev
-build="$clone/.tmp/build/release-$tag"
-(cd "$clone" && git.exe worktree add --detach "$(wslpath -w "$build")" "$sha" >/dev/null)
-cleanup() { (cd "$clone" && git.exe worktree remove --force "$(wslpath -w "$build")" >/dev/null 2>&1) || true; }
-trap cleanup EXIT
+git -C "$clone" reset --hard "$sha" >/dev/null
 artifacts="$clone/.tmp/artifacts/release"
 mkdir -p "$artifacts"
 [[ ! -e $artifacts/$tag ]] || die "$artifacts/$tag exists; remove it to rebuild"
-(cd "$build" && pwsh.exe -NoProfile -File 'tools\portable\windows-package.ps1' \
+(cd "$clone" && pwsh.exe -NoProfile -File 'tools\portable\windows-package.ps1' \
   -OutputParent "$(wslpath -w "$artifacts")" -Name "$tag" -Release "$version") >"$out/windows.log" 2>&1 \
   || die "Windows package failed; see $out/windows.log"
-cp "$artifacts/$tag/precept-$version-windows-x64.zip" "$out/"
+cp "$artifacts/$tag/precept-$version-windows-x86_64.zip" "$out/"
 
 (cd "$out" && sha256sum precept-* >SHA256SUMS)
 awk -v v="## $version" '$0==v{on=1;next} on&&/^## /{exit} on' CHANGELOG.md >"$out/notes.md"
@@ -98,7 +95,7 @@ if ((publish)); then
   git push -q origin "$sha:refs/heads/main"
   git push -q origin "refs/tags/$tag"
   gh release create "$tag" --verify-tag --title "Precept $version" --notes-file "$out/notes.md" \
-    "$out"/precept-*.zip "$out"/precept-*.pkg.tar.zst "$out/SHA256SUMS"
+    "$out"/precept-*.zip "$out"/precept-*.tar.gz "$out/SHA256SUMS"
   step "published: $(gh release view "$tag" --json url --jq .url)"
 else
   step "not published (add --publish to push main, the tag and the Release)"
