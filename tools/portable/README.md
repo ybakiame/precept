@@ -112,8 +112,8 @@ matrix, or upload the generated archive as a PR/Release asset.
 ## Linux x86_64 `.tar.gz` (M5/S1-C)
 
 Run on a clean committed checkout inside a native Linux x86_64 builder with the
-pinned stock toolchain,
-Node, and GTK 4/GStreamer development headers:
+pinned stock toolchain, Node, and GTK 4 development headers. Precept uses no media
+playback, so NSH 0.7.1 does not require GStreamer development packages:
 
 ```sh
 node tools/portable/linux-package.mjs "$PWD" "$PWD/.tmp/artifacts/local-p1-m5" s1c-attempt-01 "$HOME/.cargo/bin/cargo"

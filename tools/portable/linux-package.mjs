@@ -5,7 +5,7 @@
 //   Precept/runtime/manifest.json   provenance, ELF facts, declared runtime packages, file hashes
 //   Precept/notices/                NOTICE.txt, dependency ledger, license texts
 //   Precept/README.txt, Precept/LICENSE.txt (Apache-2.0)
-// OS-owned libraries (glibc, loader, GTK, GStreamer, Mesa, fonts, D-Bus) are never
+// OS-owned libraries (glibc, loader, GTK, Mesa, fonts, D-Bus) are never
 // bundled: they are declared user-distro runtime dependencies.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -142,7 +142,7 @@ export function build(repo, parent, name, cargoProgram) {
   manifest.runtime = {
     minimum_symbol_versions: minimumVersions(manifest.binaries.map(b => ({ versions: Object.fromEntries(Object.entries(b.versions).map(([k, v]) => [k, [v]])) }))),
     packages: Object.keys(byPackage).sort().map(name => ({ name, builder_version: run('dpkg-query', ['-W', '-f=${Version}', name]), needed_by: [...byPackage[name]].sort() })),
-    note: 'Direct DT_NEEDED owners on the builder. Dynamic GTK/GIO/GStreamer modules, fonts and GPU/display integration are observed separately at runtime.'
+    note: 'Direct DT_NEEDED owners on the builder. Dynamic GTK/GIO modules, fonts and GPU/display integration are observed separately at runtime.'
   };
   // Notices: reviewed ledger for the shipped packages' normal-dependency closure.
   const noticeEntries = [];

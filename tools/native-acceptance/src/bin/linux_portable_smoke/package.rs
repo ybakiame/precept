@@ -26,7 +26,7 @@ impl Package {
     }
     /// Shared objects mapped by one owned process (`/proc/<pid>/maps`): every one
     /// must come from the user distribution, none from the archive or elsewhere.
-    /// Includes dynamic GTK/GIO/GStreamer modules and GPU/display integration that
+    /// Includes dynamic GTK/GIO modules and GPU/display integration that
     /// DT_NEEDED alone does not show.
     pub(super) fn modules(&self, pid: u32, out: &Path, surface: &str) -> Vec<String> {
         let maps = fs::read_to_string(format!("/proc/{pid}/maps")).unwrap();
