@@ -604,7 +604,7 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn release_download_selects_musl_and_checksum_assets_only_from_github() {
-        let release = serde_json::json!({"assets":[
+        let mut release = serde_json::json!({"assets":[
             {"name":"precept-0.4.5-linux-x86_64-musl.tar.gz","browser_download_url":"https://github.com/ybakiame/precept/releases/download/v0.4.5/precept-0.4.5-linux-x86_64-musl.tar.gz"},
             {"name":"SHA256SUMS","browser_download_url":"https://github.com/ybakiame/precept/releases/download/v0.4.5/SHA256SUMS"}
         ]});
