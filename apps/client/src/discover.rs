@@ -389,8 +389,8 @@ pub fn wsl_install_update(distribution: &str, user: &str) -> Result<Discovery, &
     let observed = install_command(distribution, user, "sha256sum", &[&archive], 15)?;
     let observed = String::from_utf8_lossy(&observed);
     let observed = observed.split_whitespace().next().unwrap_or_default();
-    let expected =
-        String::from_utf8_lossy(&install_command(distribution, user, "cat", &[&sums], 15)?);
+    let expected = install_command(distribution, user, "cat", &[&sums], 15)?;
+    let expected = String::from_utf8_lossy(&expected);
     let matches = expected.lines().any(|line| {
         let mut fields = line.split_whitespace();
         fields.next() == Some(observed)
