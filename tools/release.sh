@@ -70,6 +70,7 @@ fi
 
 step "Linux musl portable"
 command -v musl-gcc >/dev/null || die "musl-gcc is required"
+mkdir -p "$out/linux"
 CC=${CC:-/usr/bin/musl-gcc} node tools/portable/linux-package.mjs "$repo" "$out/linux" musl /usr/bin/cargo >"$out/linux.log" 2>&1 \
   || die "Linux portable failed; see $out/linux.log"
 cp "$out/linux/precept-$version-linux-x86_64-musl.tar.gz" "$out/"
