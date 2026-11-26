@@ -9,7 +9,8 @@ data between schemas with the versioned Profile export and import.
 - **User-local daemon discovery:** look for the systemd user unit in the XDG
   configuration root rather than Precept's application configuration directory.
   A musl installation now reports its installed unit correctly and can complete
-  Connection checks without a false missing-unit action.
+  Connection checks without a false missing-unit action. Install/update explicitly
+  restarts the enabled service so an existing daemon cannot keep running old code.
 
 ## 0.4.7
 
