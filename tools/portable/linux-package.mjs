@@ -63,17 +63,22 @@ function run(program, args, options = {}) {
 }
 function cargoHome() { return process.env.CARGO_HOME || path.join(os.homedir(), '.cargo'); }
 
-/// Direct DT_NEEDED name -> resolved path on the builder (ldd) -> owning package.
-function packagesFor(file, needed, manager) {
-  if (needed.length === 0) return [];
+export function libraryResolutions(output) {
   const resolved = {};
-  for (const line of run('ldd', [file]).split('\n')) {
+  for (const line of output.split('\n')) {
     // "libX.so.N => /path (0x..)", or the loader itself as "/lib64/ld-linux-x86-64.so.2 (0x..)".
     const arrow = /^\s*(\S+) => (\/\S+) \(0x/.exec(line);
     const bare = /^\s*(\/\S+) \(0x/.exec(line);
-    if (arrow) resolved[arrow[1]] = arrow[2];
+    if (arrow) resolved[path.basename(arrow[1])] = arrow[2];
     else if (bare) resolved[path.basename(bare[1])] = bare[1];
   }
+  return resolved;
+}
+
+/// Direct DT_NEEDED name -> resolved path on the builder (ldd) -> owning package.
+function packagesFor(file, needed, manager) {
+  if (needed.length === 0) return [];
+  const resolved = libraryResolutions(run('ldd', [file]));
   return needed.map(lib => {
     const where = resolved[lib];
     need(where, `${lib} not resolvable on the builder`);
@@ -135,7 +140,9 @@ export function build(repo, parent, name, cargoProgram, targetPlatform = target)
   for (const file of ['Cargo.lock', 'apps/Cargo.lock']) manifest.locks[file] = digest(fs.readFileSync(path.join(repo, file)));
   const workspaces = [
     ['core', 'Cargo.toml', ['preceptd', 'precept', 'precept-mcp'], []],
-    ...(target === gnuTarget ? [['operator', 'apps/Cargo.toml', ['precept-ui', 'precept-ui-client'], ['--features', 'precept-ui/native']]] : [])];
+    ['operator', 'apps/Cargo.toml',
+      target === gnuTarget ? ['precept-ui', 'precept-ui-client'] : ['precept-ui-client'],
+      target === gnuTarget ? ['--features', 'precept-ui/native'] : []]];
   for (const [label, manifestFile, packages, features] of workspaces) {
     const args = ['build', '--manifest-path', manifestFile, '--release', '--locked', '--target', target,
       '--target-dir', targetDir, '--message-format=json', ...packages.flatMap(p => ['-p', p]), '--bins', ...features];
