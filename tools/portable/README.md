@@ -65,7 +65,7 @@ Retain failed attempt directories; use a new name for the next run. Raw build lo
 and tool metadata can contain private developer paths and remain ignored. The ZIP
 contains only the explicit file inventory, provenance, notices and local instructions;
 no Node/PowerShell helper, Rust toolchain, snapshots, raw logs, credentials or data.
-Windows ZIP names use `x64`; a prototype also carries its source SHA suffix. The exact archive hash/file list live beside it.
+Windows ZIP names use `x86_64`; a prototype also carries its source SHA suffix. The exact archive hash/file list live beside it.
 `Precept/runtime/manifest.json` identifies clean source SHA/tree, both locks, target/flags,
 builder, VC++ redistributable version/signer and every other file's hash. This is a reproducible recipe,
 not a deterministic-output, signed, completed-SBOM or complete-license claim.
@@ -105,9 +105,9 @@ offline runtime closure or stable minimum Windows version gate. No VM availabili
 means BLOCKED/NOT_RUN, not installing a VM or changing the daily machine.
 
 Standalone Linux x86_64 native Wayland acceptance remains a separate future gate;
-WSLg does not satisfy it. S1-C validates the WSLg integration and a local-only Linux
-package recipe on Ubuntu 24.04 WSL2. Do not infer general Linux support, add a compositor
-matrix, or upload the generated archive as a PR/Release asset.
+WSLg does not satisfy it. A package built and checked on one distribution does not
+establish general Linux support or a compositor matrix. Upload archives only through
+an explicitly approved release stage.
 
 ## Linux x86_64 `.tar.gz` (M5/S1-C)
 
@@ -122,15 +122,16 @@ node tools/portable/linux-package.mjs "$PWD" "$PWD/.tmp/artifacts/local-p1-m5" g
 ```
 
 The generated `.tar.gz`, inventory and checksum sidecars stay under the ignored local
-artifact directory. Do not commit or upload them; formal distribution and signing are
-deferred until an explicitly approved release stage.
+artifact directory. Do not commit them; upload only through an explicitly approved
+release stage. Signing remains a separate release control.
 
-The same `Precept/{bin,runtime,notices}` layout ships six executables (including the S1-B
-`precept-bridge` helper). `elf.mjs` records the interpreter, DT_NEEDED, RPATH/RUNPATH
-(refused) and symbol-version needs; direct DT_NEEDED owners (`dpkg -S`) become the
-declared runtime packages written into the README `apt-get` line. OS-owned libraries
-are never bundled. The tar is sorted, owned 0:0 and timestamped at the commit; the
-listing policy refuses links, devices, traversal and unexpected modes.
+The same `Precept/{bin,runtime,notices}` layout ships five musl executables or six GNU
+executables (including `precept-bridge` and, for GNU, `precept-desktop`). `elf.mjs`
+records the interpreter, DT_NEEDED, RPATH/RUNPATH (refused) and symbol-version needs.
+Direct DT_NEEDED owners become declared runtime packages through `pacman -Qo` on Arch
+or `dpkg -S` on Debian/Ubuntu; the README receives the corresponding install command.
+OS-owned libraries are never bundled. The tar is sorted, owned 0:0 and timestamped at
+the commit; the listing policy refuses links, devices, traversal and unexpected modes.
 
 `precept-linux-portable-smoke` (tools/native-acceptance) runs in the target:
 `missing-deps BIN_DIR NEW_REPORT` before the packages are installed, the packaged
