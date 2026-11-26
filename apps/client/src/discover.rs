@@ -360,6 +360,7 @@ pub fn wsl_install_update(distribution: &str, user: &str) -> Result<Discovery, &
     let (archive_url, sums_url) = release_download(&latest)?;
     let state = format!("/home/{user}/.local/state/precept");
     let downloads = format!("{state}/downloads");
+    let staging = format!("{state}/install-bin");
     let archive = format!("{downloads}/precept-linux.tar.gz");
     let sums = format!("{downloads}/SHA256SUMS");
     let library = format!("/home/{user}/.local/lib/precept");
@@ -369,7 +370,7 @@ pub fn wsl_install_update(distribution: &str, user: &str) -> Result<Discovery, &
         distribution,
         user,
         "install",
-        &["-d", "-m", "700", &downloads, &library, &bin],
+        &["-d", "-m", "700", &downloads, &staging, &library, &bin],
         15,
     )?;
     install_command(
@@ -412,7 +413,22 @@ pub fn wsl_install_update(distribution: &str, user: &str) -> Result<Discovery, &
         distribution,
         user,
         "cp",
-        &["-a", &format!("{library}/Precept/bin/."), &bin],
+        &["-a", &format!("{library}/Precept/bin/."), &staging],
+        30,
+    )?;
+    install_command(
+        distribution,
+        user,
+        "mv",
+        &[
+            "-f",
+            &format!("{staging}/preceptd"),
+            &format!("{staging}/precept"),
+            &format!("{staging}/precept-mcp"),
+            &format!("{staging}/precept-hook"),
+            &format!("{staging}/precept-bridge"),
+            &bin,
+        ],
         30,
     )?;
     install_command(
