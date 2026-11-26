@@ -79,7 +79,7 @@ function packagesFor(file, needed) {
 }
 
 export function build(repo, parent, name, cargoProgram, targetPlatform = target) {
-  need([target, gnuTarget].includes(targetPlatform), 'Unsupported Linux target');
+  need([targetPlatform, gnuTarget].includes(targetPlatform), 'Unsupported Linux target');
   const target = targetPlatform;
   const shippingBinaries = binaries.filter(binary => target !== 'x86_64-unknown-linux-musl' || binary !== 'precept-desktop');
   need(process.platform === 'linux' && process.arch === 'x64', 'Native Linux x86_64 builder required');
