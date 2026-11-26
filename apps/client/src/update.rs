@@ -400,6 +400,17 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires live GitHub access"]
+    fn live_update_manifest_is_reachable() {
+        let config = config().unwrap();
+        let manifest = read_all(&config.manifest_url()).unwrap();
+        let signature = config.signature_url().map(|url| read_all(&url).unwrap());
+        let _ = config
+            .check(&manifest, signature.as_deref(), &nsh_updater::platform())
+            .unwrap();
+    }
+
+    #[test]
     fn archive_verification_checks_size_and_hash() {
         let directory = tempfile::tempdir().unwrap();
         let file = directory.path().join("archive");
