@@ -16,17 +16,17 @@ native = ["ipc", "dep:nsh-platform-linux", "dep:nsh-platform-macos", "dep:nsh-pl
 serde_json = "1"
 precept-ui-core = { path = "../core" }
 precept-ui-client = { path = "../client" }
-# NSH v0.7.0, immutable release revision. SVG rendering is gated behind the
+# NSH v0.7.1, immutable release revision. SVG rendering is gated behind the
 # native platform crates' `svg` feature; without it every icon draws nothing.
-nsh-core = { git = "https://github.com/longbridge/nsh", rev = "3f8ecd8b3c55ad6274c6babbf7ee55c4cd4ae359" }
-nsh-base = { git = "https://github.com/longbridge/nsh", rev = "3f8ecd8b3c55ad6274c6babbf7ee55c4cd4ae359", default-features = false, features = ["editor", "highlight", "rich-editor"] }
+nsh-core = { git = "https://github.com/longbridge/nsh", rev = "f78eace7af23a9c1c72605c7ee46204f57f3e8e6" }
+nsh-base = { git = "https://github.com/longbridge/nsh", rev = "f78eace7af23a9c1c72605c7ee46204f57f3e8e6", default-features = false, features = ["editor", "highlight", "rich-editor"] }
 
 [target.'cfg(target_os="linux")'.dependencies]
-nsh-platform-linux = { git = "https://github.com/longbridge/nsh", rev = "3f8ecd8b3c55ad6274c6babbf7ee55c4cd4ae359", default-features = false, features = ["svg"], optional = true }
+nsh-platform-linux = { git = "https://github.com/longbridge/nsh", rev = "f78eace7af23a9c1c72605c7ee46204f57f3e8e6", default-features = false, features = ["svg"], optional = true }
 [target.'cfg(target_os="macos")'.dependencies]
-nsh-platform-macos = { git = "https://github.com/longbridge/nsh", rev = "3f8ecd8b3c55ad6274c6babbf7ee55c4cd4ae359", default-features = false, features = ["svg"], optional = true }
+nsh-platform-macos = { git = "https://github.com/longbridge/nsh", rev = "f78eace7af23a9c1c72605c7ee46204f57f3e8e6", default-features = false, features = ["svg"], optional = true }
 [target.'cfg(target_os="windows")'.dependencies]
-nsh-platform-windows = { git = "https://github.com/longbridge/nsh", rev = "3f8ecd8b3c55ad6274c6babbf7ee55c4cd4ae359", default-features = false, features = ["svg"], optional = true }
+nsh-platform-windows = { git = "https://github.com/longbridge/nsh", rev = "f78eace7af23a9c1c72605c7ee46204f57f3e8e6", default-features = false, features = ["svg"], optional = true }
 
 
 [dev-dependencies]
@@ -34,8 +34,8 @@ tokio = { version = "1", features = ["rt","net","time"] }
 precept-ipc = { path = "../../crates/precept-ipc" }
 precept-core = { path = "../../crates/precept-core" }
 tempfile = "3"
-nsh-testing = { git = "https://github.com/longbridge/nsh", rev = "3f8ecd8b3c55ad6274c6babbf7ee55c4cd4ae359", default-features = false }
-nsh-engine = { git = "https://github.com/longbridge/nsh", rev = "3f8ecd8b3c55ad6274c6babbf7ee55c4cd4ae359", default-features = false }
+nsh-testing = { git = "https://github.com/longbridge/nsh", rev = "f78eace7af23a9c1c72605c7ee46204f57f3e8e6", default-features = false }
+nsh-engine = { git = "https://github.com/longbridge/nsh", rev = "f78eace7af23a9c1c72605c7ee46204f57f3e8e6", default-features = false }
 
 [[bin]]
 name = "precept-desktop"

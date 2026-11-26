@@ -16,7 +16,7 @@ import { noticeLedger, NoticeError } from './notices.mjs';
 
 export const binaries = ['preceptd.exe', 'precept.exe', 'precept-mcp.exe', 'precept-hook.exe', 'precept-desktop.exe'];
 export const product = 'Precept';
-export const pin = '3f8ecd8b3c55ad6274c6babbf7ee55c4cd4ae359';
+export const pin = 'f78eace7af23a9c1c72605c7ee46204f57f3e8e6';
 export const target = 'x86_64-pc-windows-msvc';
 // SHA-256 of the canonical https://www.apache.org/licenses/LICENSE-2.0.txt (11,358 bytes).
 export const apacheLicenseSha256 = 'cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30';
