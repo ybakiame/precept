@@ -11,6 +11,8 @@ data between schemas with the versioned Profile export and import.
   A musl installation now reports its installed unit correctly and can complete
   Connection checks without a false missing-unit action. Install/update explicitly
   restarts the enabled service so an existing daemon cannot keep running old code.
+  Binaries are moved into place from a private staging directory rather than
+  truncating executables that may still be running.
 
 ## 0.4.7
 
