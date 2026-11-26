@@ -113,7 +113,8 @@ export function build(repo, parent, name, cargoProgram, targetPlatform = target)
   const precept = freshDirectory(packageRoot, 'Precept');
   const bin = freshDirectory(precept, 'bin'), runtime = freshDirectory(precept, 'runtime'), notices = freshDirectory(precept, 'notices');
   const targetDir = path.join(report, 'build-target');
-  const remaps = [[repo, '/precept/source'], [cargoHome(), '/cargo'], [report, '/precept/build']];
+  const rustupHome = process.env.RUSTUP_HOME || path.join(os.homedir(), '.rustup');
+  const remaps = [[repo, '/precept/source'], [cargoHome(), '/cargo'], [rustupHome, '/rustup'], [report, '/precept/build']];
   const env = cargoEnvironment(process.env, remaps.map(([from, to]) => `--remap-path-prefix=${from}=${to}`));
   const osRelease = Object.fromEntries(fs.readFileSync('/etc/os-release', 'utf8').split('\n')
     .map(l => l.split('=')).filter(p => p.length === 2).map(([k, v]) => [k, v.replace(/^"|"$/g, '')]));
@@ -126,7 +127,7 @@ export function build(repo, parent, name, cargoProgram, targetPlatform = target)
     builder: { distribution: `${osRelease.NAME} ${osRelease.VERSION}`, kernel: os.release(), node: process.version,
       glibc: run('ldd', ['--version']).split('\n')[0], cargo: run(cargoProgram, ['--version'], { env }),
       rustc: run('rustc', ['-Vv'], { env }) },
-    rustflags: ['checkout', 'cargo-home', 'build-output'].map((k, i) => `--remap-path-prefix=<${k}>=${remaps[i][1]}`),
+    rustflags: ['checkout', 'cargo-home', 'rustup-home', 'build-output'].map((k, i) => `--remap-path-prefix=<${k}>=${remaps[i][1]}`),
     locks: {}, build_commands: [], binaries: [], runtime: {}, files: [],
     limitations: ['Unsigned; no reproducible-binary claim',
       `Built on ${osRelease.NAME}; runtime dependencies come from this builder; no cross-distro claim`,
