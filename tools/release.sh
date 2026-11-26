@@ -2,15 +2,15 @@
 # Builds and publishes a Precept release from this machine (WSL2 Arch Linux with
 # a Windows clone), without hosted CI:
 #
-#   tools/release.sh <version> --windows-clone <wsl path> [--skip-gates] [--publish]
+#   tools/release.sh <version> --windows-clone <wsl path> --update-key <secret> [--skip-gates] [--publish]
 #
 # 1. HEAD must be clean and on `dev`, `main` must be its ancestor, and the
 #    version must be the one in Cargo.toml. An annotated tag v<version> is made
 #    at HEAD when absent (local only until --publish).
 # 2. The gates of both workspaces and the source check (unless --skip-gates).
-# 3. The musl Linux portable archive and Windows ZIP, then SHA256SUMS, into
-#    .tmp/artifacts/release/v<version>/. The Windows clone builds directly in
-#    its checkout; no temporary worktree is created.
+# 3. The musl Linux portable archive and Windows ZIP, then SHA256SUMS and the
+#    signed Windows update manifest, into .tmp/artifacts/release/v<version>/.
+#    The Windows clone builds directly in its checkout; no temporary worktree.
 # 4. With --publish only: `main` is fast-forwarded to HEAD, the tag is pushed
 #    and a GitHub Release is created with the assets and the version's
 #    CHANGELOG section as notes. Without it nothing leaves this machine.
@@ -20,18 +20,20 @@ step() { echo "release: $*"; }
 
 repo=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
 version=${1:-}
-[[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "usage: $0 <version> --windows-clone DIR [--skip-gates] [--publish]"
+[[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "usage: $0 <version> --windows-clone DIR --update-key FILE [--skip-gates] [--publish]"
 shift
-clone="" gates=1 publish=0
+clone="" update_key="" gates=1 publish=0
 while (($#)); do
   case $1 in
     --windows-clone) clone=${2:-}; shift 2 ;;
+    --update-key) update_key=${2:-}; shift 2 ;;
     --skip-gates) gates=0; shift ;;
     --publish) publish=1; shift ;;
     *) die "unknown argument: $1" ;;
   esac
 done
 [[ -n $clone && -d $clone/.git ]] || die "--windows-clone must be a Windows-side git checkout"
+[[ -n $update_key && -f $update_key ]] || die "--update-key must be the updater secret key file"
 cd "$repo"
 [[ -z $(git status --porcelain --untracked-files=all) ]] || die "clean committed source required"
 [[ $(git rev-parse --abbrev-ref HEAD) == dev ]] || die "release from dev"
@@ -88,15 +90,20 @@ cp "$artifacts/$tag/precept-$version-windows-x86_64.zip" "$out/"
 
 (cd "$out" && sha256sum precept-* >SHA256SUMS)
 awk -v v="## $version" '$0==v{on=1;next} on&&/^## /{exit} on' CHANGELOG.md >"$out/notes.md"
+step "signed Windows update manifest"
+command -v nsh >/dev/null || die "nsh 0.7.1 is required"
+nsh update-manifest "$out/precept-$version-windows-x86_64.zip" \
+  --entry "$repo/apps/ui" --key "$update_key" --notes "$out/notes.md" --out "$out"
 step "assets in $out:"
-(cd "$out" && ls -l precept-* SHA256SUMS)
+(cd "$out" && ls -l precept-* SHA256SUMS latest.json latest.json.sig)
 
 if ((publish)); then
   step "publishing $tag"
   git push -q origin "$sha:refs/heads/main"
   git push -q origin "refs/tags/$tag"
   gh release create "$tag" --verify-tag --title "Precept $version" --notes-file "$out/notes.md" \
-    "$out"/precept-*.zip "$out"/precept-*.tar.gz "$out/SHA256SUMS"
+    "$out"/precept-*.zip "$out"/precept-*.tar.gz "$out/SHA256SUMS" \
+    "$out/latest.json" "$out/latest.json.sig"
   step "published: $(gh release view "$tag" --json url --jq .url)"
 else
   step "not published (add --publish to push main, the tag and the Release)"

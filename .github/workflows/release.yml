@@ -53,6 +53,8 @@ jobs:
         run: |
           cargo fetch --locked
           cargo fetch --locked --manifest-path apps/Cargo.toml
+      - name: NSH update manifest tool
+        run: cargo install nsh-cli --version 0.7.1 --locked
       - name: Windows ZIP
         shell: pwsh
         run: |
@@ -62,9 +64,15 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          PRECEPT_UPDATE_KEY: ${{ secrets.PRECEPT_UPDATE_KEY }}
         run: |
           $zip = "out/release/precept-${{ inputs.version }}-windows-x86_64.zip"
           $tag = 'v${{ inputs.version }}'
+          if (-not $env:PRECEPT_UPDATE_KEY) { throw 'PRECEPT_UPDATE_KEY secret is required' }
+          $key = Join-Path $env:RUNNER_TEMP 'precept-update.secret'
+          [IO.File]::WriteAllText($key, $env:PRECEPT_UPDATE_KEY)
+          nsh update-manifest $zip --entry apps/ui --key $key --out out/release
+          if ($LASTEXITCODE -ne 0) { throw 'Update manifest failed' }
           gh release view $tag *> $null
           if ($LASTEXITCODE -ne 0) { gh release create $tag --verify-tag --title "Precept ${{ inputs.version }}" --notes "See CHANGELOG.md." }
-          gh release upload $tag $zip --clobber
+          gh release upload $tag $zip out/release/latest.json out/release/latest.json.sig --clobber
