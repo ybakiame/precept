@@ -211,7 +211,8 @@ pub(crate) fn publish(source: &Path, target: &Path) -> Result<()> {
             .map_err(|_| Error::UnsafeWorkspace)?;
         let b = std::ffi::CString::new(target.as_os_str().as_bytes())
             .map_err(|_| Error::UnsafeWorkspace)?;
-        if unsafe {
+        #[cfg(not(target_env = "musl"))]
+        let published = unsafe {
             libc::renameat2(
                 libc::AT_FDCWD,
                 a.as_ptr(),
@@ -219,8 +220,20 @@ pub(crate) fn publish(source: &Path, target: &Path) -> Result<()> {
                 b.as_ptr(),
                 libc::RENAME_NOREPLACE,
             )
-        } != 0
-        {
+        };
+        // musl declares renameat2 in libc but does not export the wrapper.
+        #[cfg(target_env = "musl")]
+        let published = unsafe {
+            libc::syscall(
+                libc::SYS_renameat2,
+                libc::AT_FDCWD,
+                a.as_ptr(),
+                libc::AT_FDCWD,
+                b.as_ptr(),
+                libc::RENAME_NOREPLACE,
+            )
+        };
+        if published != 0 {
             return Err(
                 if std::io::Error::last_os_error().kind() == std::io::ErrorKind::AlreadyExists {
                     Error::Collision
