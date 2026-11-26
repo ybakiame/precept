@@ -1,7 +1,7 @@
 // Developer-only Linux x86_64 portable recipe. No install, activation or publish.
 //
 // Archive: one top-level Precept/ directory inside a .tar.gz
-//   Precept/bin/                    six product executables (0755)
+//   Precept/bin/                    target-specific product executables (0755)
 //   Precept/runtime/manifest.json   provenance, ELF facts, declared runtime packages, file hashes
 //   Precept/notices/                NOTICE.txt, dependency ledger, license texts
 //   Precept/README.txt, Precept/LICENSE.txt (Apache-2.0)
@@ -21,6 +21,13 @@ export const binaries = ['preceptd', 'precept', 'precept-mcp', 'precept-hook', '
 export const target = 'x86_64-unknown-linux-musl';
 export const gnuTarget = 'x86_64-unknown-linux-gnu';
 const need = (ok, message) => { if (!ok) throw new PolicyError(message); };
+export const binariesForTarget = targetPlatform => binaries.filter(binary => targetPlatform !== target || binary !== 'precept-desktop');
+export function packageManagerFor(osRelease) {
+  const ids = `${osRelease.ID ?? ''} ${osRelease.ID_LIKE ?? ''}`.split(/\s+/);
+  if (ids.includes('arch')) return 'pacman';
+  if (ids.includes('debian') || ids.includes('ubuntu')) return 'dpkg';
+  throw new PolicyError('Unsupported GNU package ownership database');
+}
 export const removable = /^Precept\/(bin\/(preceptd|precept|precept-(mcp|hook|bridge|desktop))|lib\/systemd\/user\/preceptd\.service|runtime\/manifest\.json|notices\/(NOTICE\.txt|dependency-notices\.json|[a-f0-9]{64}\.txt)|README\.txt|LICENSE\.txt)$/;
 
 /// Static musl binaries are self-contained. Dynamic builds still use the system
@@ -56,8 +63,8 @@ function run(program, args, options = {}) {
 }
 function cargoHome() { return process.env.CARGO_HOME || path.join(os.homedir(), '.cargo'); }
 
-/// Direct DT_NEEDED name -> resolved path on the builder (ldd) -> owning Debian package.
-function packagesFor(file, needed) {
+/// Direct DT_NEEDED name -> resolved path on the builder (ldd) -> owning package.
+function packagesFor(file, needed, manager) {
   if (needed.length === 0) return [];
   const resolved = {};
   for (const line of run('ldd', [file]).split('\n')) {
@@ -71,17 +78,27 @@ function packagesFor(file, needed) {
     const where = resolved[lib];
     need(where, `${lib} not resolvable on the builder`);
     const real = fs.realpathSync(where);
-    const owner = [real, where].map(p => spawnSync('dpkg', ['-S', p], { encoding: 'utf8' }))
-      .find(r => r.status === 0)?.stdout.split(':')[0].trim();
+    const owner = [real, where].map(p => {
+      if (manager === 'pacman') {
+        const result = spawnSync('pacman', ['-Qo', p], { encoding: 'utf8' });
+        return result.status === 0 ? / is owned by (\S+) \S+$/.exec(result.stdout.trim())?.[1] : null;
+      }
+      const result = spawnSync('dpkg', ['-S', p], { encoding: 'utf8' });
+      return result.status === 0 ? result.stdout.split(':')[0].trim() : null;
+    }).find(Boolean);
     need(owner, `${lib}: no owning package`);
     return { library: lib, package: owner };
   });
+}
+function packageVersion(manager, name) {
+  if (manager === 'pacman') return run('pacman', ['-Q', name]).split(/\s+/)[1];
+  return run('dpkg-query', ['-W', '-f=${Version}', name]);
 }
 
 export function build(repo, parent, name, cargoProgram, targetPlatform = target) {
   need([targetPlatform, gnuTarget].includes(targetPlatform), 'Unsupported Linux target');
   const target = targetPlatform;
-  const shippingBinaries = binaries.filter(binary => target !== 'x86_64-unknown-linux-musl' || binary !== 'precept-desktop');
+  const shippingBinaries = binariesForTarget(target);
   need(process.platform === 'linux' && process.arch === 'x64', 'Native Linux x86_64 builder required');
   need(!run('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: repo }), 'Clean committed source required');
   const sha = run('git', ['rev-parse', 'HEAD'], { cwd: repo }), tree = run('git', ['rev-parse', 'HEAD^{tree}'], { cwd: repo });
@@ -100,6 +117,7 @@ export function build(repo, parent, name, cargoProgram, targetPlatform = target)
   const env = cargoEnvironment(process.env, remaps.map(([from, to]) => `--remap-path-prefix=${from}=${to}`));
   const osRelease = Object.fromEntries(fs.readFileSync('/etc/os-release', 'utf8').split('\n')
     .map(l => l.split('=')).filter(p => p.length === 2).map(([k, v]) => [k, v.replace(/^"|"$/g, '')]));
+  const packageManager = target === gnuTarget ? packageManagerFor(osRelease) : null;
   const version = fs.readFileSync(path.join(repo, 'Cargo.toml'), 'utf8')
     .match(/\[workspace\.package\][\s\S]*?version = "([^"]+)"/)?.[1];
   need(version, 'Product version missing');
@@ -111,7 +129,7 @@ export function build(repo, parent, name, cargoProgram, targetPlatform = target)
     rustflags: ['checkout', 'cargo-home', 'build-output'].map((k, i) => `--remap-path-prefix=<${k}>=${remaps[i][1]}`),
     locks: {}, build_commands: [], binaries: [], runtime: {}, files: [],
     limitations: ['Unsigned; no reproducible-binary claim',
-      'Validated on Ubuntu 24.04 WSL2; no standalone Linux or cross-distro claim',
+      `Built on ${osRelease.NAME}; runtime dependencies come from this builder; no cross-distro claim`,
       'Third-party notices reviewed against a permissive-license policy; the ledger is not a linker-derived SBOM'] };
   for (const file of ['Cargo.lock', 'apps/Cargo.lock']) manifest.locks[file] = digest(fs.readFileSync(path.join(repo, file)));
   const workspaces = [
@@ -138,7 +156,7 @@ export function build(repo, parent, name, cargoProgram, targetPlatform = target)
       regular(out);
       const elf = checkElf(file, elfInfo(bytes));
       manifest.binaries.push({ file: `bin/${file}`, sha256: digest(bytes), size: bytes.length, interpreter: elf.interpreter,
-        needed: elf.needed, versions: minimumVersions([elf]), packages: packagesFor(out, elf.needed), builder_path_bytes: false });
+        needed: elf.needed, versions: minimumVersions([elf]), packages: packagesFor(out, elf.needed, packageManager), builder_path_bytes: false });
     }
   }
   need(JSON.stringify(manifest.binaries.map(b => path.basename(b.file)).sort()) === JSON.stringify([...shippingBinaries].sort()), 'Shipping binary set mismatch');
@@ -147,7 +165,7 @@ export function build(repo, parent, name, cargoProgram, targetPlatform = target)
   for (const b of manifest.binaries) for (const p of b.packages) (byPackage[p.package] ??= new Set()).add(b.file);
   manifest.runtime = {
     minimum_symbol_versions: minimumVersions(manifest.binaries.map(b => ({ versions: Object.fromEntries(Object.entries(b.versions).map(([k, v]) => [k, [v]])) }))),
-    packages: Object.keys(byPackage).sort().map(name => ({ name, builder_version: run('dpkg-query', ['-W', '-f=${Version}', name]), needed_by: [...byPackage[name]].sort() })),
+    packages: Object.keys(byPackage).sort().map(name => ({ name, builder_version: packageVersion(packageManager, name), needed_by: [...byPackage[name]].sort() })),
     note: 'Direct DT_NEEDED owners on the builder. Dynamic GTK/GIO modules, fonts and GPU/display integration are observed separately at runtime.'
   };
   // Notices: reviewed ledger for the shipped packages' normal-dependency closure.
@@ -165,8 +183,9 @@ export function build(repo, parent, name, cargoProgram, targetPlatform = target)
   const packageLine = manifest.runtime.packages.map(p => p.name).join(' ');
   const policy = target === gnuTarget ? 'daemon, CLI and GTK4 Desktop' : 'static musl daemon, CLI and MCP tools';
   const guiLayout = target === gnuTarget ? '  bin/precept-desktop native Desktop (GTK4)\n' : '';
+  const installCommand = packageManager === 'pacman' ? 'sudo pacman -S' : 'sudo apt-get install';
   const requirements = target === gnuTarget
-    ? `Runtime dependencies (not included): glibc plus these Ubuntu 24.04 packages:\n  sudo apt-get install ${packageLine}`
+    ? `Runtime dependencies (not included): glibc plus these ${osRelease.NAME} packages:\n  ${installCommand} ${packageLine}`
     : 'Runtime dependencies: an x86_64 Linux kernel. No additional distribution packages are required.';
   const guiDetails = target === gnuTarget ? '  ./bin/precept-desktop --runtime-dir <state>/runtime --endpoint <state>/runtime/control.sock --operator\n' : '';
   const readme = fs.readFileSync(path.join(repo, 'tools/portable/README-linux.txt'), 'utf8')
@@ -201,7 +220,7 @@ export function build(repo, parent, name, cargoProgram, targetPlatform = target)
   run('tar', ['-xzf', archive, '-C', extracted, '--no-same-owner']);
   const files = inventory(packageRoot);
   verifyInventory(extracted, files);
-  for (const b of binaries) need((fs.statSync(path.join(extracted, 'Precept/bin', b)).mode & 0o777) === 0o755, `${b} not executable after extraction`);
+  for (const b of shippingBinaries) need((fs.statSync(path.join(extracted, 'Precept/bin', b)).mode & 0o777) === 0o755, `${b} not executable after extraction`);
   fs.writeFileSync(path.join(report, 'archive-inventory.json'), JSON.stringify(files, null, 2) + '\n', { flag: 'wx' });
   const result = { archive: path.basename(archive), archive_sha256: digest(fs.readFileSync(archive)),
     archive_bytes: fs.statSync(archive).size, archive_entries: entries.length, extract_inventory: 'PASS', source_sha: sha };
