@@ -361,6 +361,7 @@ fn distributions(model: Signal<Model>) -> impl IntoElement {
 fn install_action(model: Signal<Model>, show: bool) -> Option<AnyElement> {
     show.then(|| {
         button(model, "")
+            .test_id("connection.install-daemon")
             .label_fn(word(model, Msg::InstallUpdateDaemon))
             .variant(ButtonVariant::Primary)
             .loading(move || matches!(model.get().probe, Probe::Starting))
