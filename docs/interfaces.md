@@ -224,6 +224,18 @@ last 7 days: `rule`, `count`, `last_ms`, most frequent first), which the
 session-start briefing renders as **Recently blocked**; `activity.list` events
 carry `rule`, and the Sessions page shows it beside a denial.
 
+Hook and MCP statuses also carry `broken` (the installed entry starts a program
+that no longer exists) and, for hooks, `installed_command`. Operator-only
+`integration.refresh {}` lists every Precept entry, across served projects,
+vendors and events, that is installed but not what this installation writes now
+(typically after the programs moved): hooks as `{vendor, project, event, file,
+from, to, broken}` with `hook_files` (each vendor file's digest) and MCP entries as
+`{client, file, broken, sha256}`. Operator-only `integration.refresh.apply {hooks:
+{vendor: sha256}, mcp: {client: sha256}}` rewrites exactly those entries, one
+write per file with `<file>.precept.bak`, if every file still has its previewed
+digest (otherwise `Conflict`), and answers `{updated}`. CLI: `precept
+agent-entries [--update]`.
+
 Operator-only `integration.mcp {}` reports, for Claude Code
 (`~/.claude.json`, `mcpServers`), Codex (`~/.codex/config.toml`,
 `[mcp_servers."precept"]`) in the daemon user's home:

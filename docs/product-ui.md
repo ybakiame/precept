@@ -161,7 +161,11 @@ fail), the **Pre-tool gate** (opt-in: the
 project's gate switch, then one gate-hook tile per agent; a tile installed while
 the gate is off says it asks nothing yet) and the **Repository pointer** (the
 project's AGENTS.md section, whose switch opens a dialog previewing the exact text
-before anything is written). Below the groups, one line says that other agents
+before anything is written). When entries in the agents' configuration still name an older Precept
+installation, a banner above the groups lists each one (agent, project, event and
+the old and new program) and offers **Update all**, which rewrites exactly that
+list; entries whose program is gone are marked as broken there and in Doctor.
+Below the groups, one line says that other agents
 connect themselves with the `precept-connect` skill (`precept skill`). Settings
 with only two states use switches, not
 button pairs. Manual setup, the configuration to paste for agents on Windows or

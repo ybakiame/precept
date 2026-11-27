@@ -4,6 +4,15 @@ Precept follows [semantic versioning](https://semver.org/). While the version is
 0.x, a minor release may change the Profile schema or the local interfaces; move
 data between schemas with the versioned Profile export and import.
 
+## Unreleased
+
+- **Agent entries follow a moved installation.** Hook and MCP entries written
+  by an earlier installation (for example the Arch package before the musl
+  install) are detected; entries whose program is gone are reported as broken
+  in Doctor. The Agents page lists them and **Update all** rewrites exactly
+  those entries, one write per settings file with a backup (`precept
+  agent-entries --update` from the CLI).
+
 ## 0.4.8
 
 - **User-local daemon discovery:** look for the systemd user unit in the XDG
