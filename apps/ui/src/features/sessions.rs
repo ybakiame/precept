@@ -281,24 +281,42 @@ fn row(model: Signal<Model>, index: usize, s: &WorkSession) -> AnyElement {
                 .count()
                 .to_string(),
         );
+    // The whole row opens the session; the goal is plain text that wraps
+    // inside the card (a button label does not wrap and overflowed it).
     view()
+        .role(AccessibilityRole::Button)
+        .label(s.goal.clone())
+        .on_press(move || model.update(|m| m.sessions.open = Some(id.clone())))
         .gap_1()
+        .px_2()
         .py_2()
+        .rounded(px(scale::radius::CONTROL))
+        .bg(move || palette(model).panel)
+        .hover(move |s| {
+            s.bg(ui::tokens::mix(
+                palette(model).panel,
+                palette(model).text,
+                0.06,
+            ))
+        })
+        .focus(move |s| {
+            s.ring(px(2.0))
+                .ring_color(palette(model).primary.opacity(0.55))
+        })
         .style_when(move || index > 0, |s| s.border_t_1())
         .border_color(move || palette(model).hairline)
         .child(
             view()
                 .flex_row()
-                .items_center()
+                .items_start()
                 .gap_2()
                 .child(
-                    view().flex_1().min_w_0().child(
-                        button(model, s.goal.clone())
-                            .variant(ButtonVariant::Ghost)
-                            .on_press(move || model.update(|m| m.sessions.open = Some(id.clone()))),
-                    ),
+                    text(s.goal.clone())
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .flex_1()
+                        .min_w_0(),
                 )
-                .child(status_badge(model, s)),
+                .child(view().flex_shrink_0().child(status_badge(model, s))),
         )
         .child(
             text(format!("{} · {counts}", byline(&m, s)))
@@ -374,8 +392,19 @@ fn detail(model: Signal<Model>) -> impl IntoElement {
         })
         .on_close(move || model.update(|m| m.sessions.open = None))
         .body(move || {
-            dynamic(move || {
+            // Rebuilt when the open session, its recorded calls or the
+            // language change only.
+            let shown = computed(move || {
                 let m = model.get();
+                (
+                    m.sessions.opened().cloned(),
+                    m.agents.activity.page.clone(),
+                    m.locale,
+                )
+            });
+            dynamic(move || {
+                let _ = shown.get();
+                let m = model.get_untracked();
                 let Some(s) = m.sessions.opened().cloned() else {
                     return view().into_element();
                 };
