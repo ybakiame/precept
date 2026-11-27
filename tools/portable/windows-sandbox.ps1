@@ -2,7 +2,10 @@
 # a local packaging attempt (-AttemptDir) or a ZIP downloaded from a Release
 # (-Zip, for example the CI-built draft). Host side: no install/uninstall, no
 # system change. Requires Windows Sandbox to be enabled already.
-param([string]$AttemptDir, [string]$Zip, [Parameter(Mandatory)][string]$Name, [int]$TimeoutMinutes = 25)
+# -Redist names a Microsoft-signed vc_redist.x64.exe (for example the current
+# one from https://aka.ms/vc14/vc_redist.x64.exe) when this machine's Visual
+# Studio lacks the redistributable of the toolset that built the ZIP.
+param([string]$AttemptDir, [string]$Zip, [Parameter(Mandatory)][string]$Name, [string]$Redist, [int]$TimeoutMinutes = 25)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if ($PSVersionTable.PSVersion.Major -lt 7 -or -not $IsWindows) { throw 'Native Windows PowerShell 7 required' }
@@ -39,15 +42,13 @@ if ($AttemptDir) {
 # The redistributable installer shipped with the same Visual Studio that built the binaries.
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-# The redistributable of the building toolset when this machine has it; else
-# the newest one here (a Release built elsewhere), recorded as not exact.
-$redist = Join-Path $vs "VC\Redist\MSVC\$($manifest.builder.vc_tools)\vc_redist.x64.exe"
-$redistExact = Test-Path -LiteralPath $redist
-if (-not $redistExact) {
-    $redist = Get-ChildItem -Path (Join-Path $vs 'VC\Redist\MSVC\*\vc_redist.x64.exe') |
-        Where-Object { $_.Directory.Name -match '^\d+\.\d+\.\d+$' } |
-        Sort-Object { [version]$_.Directory.Name } | Select-Object -Last 1 -ExpandProperty FullName
-    if (-not $redist) { throw 'No vc_redist.x64.exe in this Visual Studio' }
+# The redistributable of the building toolset, or the one given with -Redist;
+# the sandbox refuses one older than the toolset either way.
+if ($Redist) {
+    $redist = (Resolve-Path -LiteralPath $Redist).Path
+} else {
+    $redist = Join-Path $vs "VC\Redist\MSVC\$($manifest.builder.vc_tools)\vc_redist.x64.exe"
+    if (-not (Test-Path -LiteralPath $redist)) { throw "This Visual Studio lacks the $($manifest.builder.vc_tools) redistributable; pass -Redist (https://aka.ms/vc14/vc_redist.x64.exe)" }
 }
 $signature = Get-AuthenticodeSignature -LiteralPath $redist
 if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch '(^|, )O=Microsoft Corporation(,|$)') { throw 'vc_redist.x64.exe lacks a valid Microsoft signature' }
@@ -81,7 +82,7 @@ $wsb = Join-Path $exchange 'acceptance.wsb'
 "@ | Set-Content -LiteralPath $wsb -Encoding UTF8
 
 $run = [ordered]@{ tooling_sha = (& git -C $repo rev-parse HEAD); package_source_sha = $manifest.source_sha; archive_sha256 = $result.archive_sha256
-    vc_tools = $manifest.builder.vc_tools; vc_redist = Split-Path -Leaf (Split-Path -Parent $redist); vc_redist_exact = $redistExact; vc_redist_signer = $signature.SignerCertificate.Subject; networking = 'Disable'; host_os = [Environment]::OSVersion.Version.ToString() }
+    vc_tools = $manifest.builder.vc_tools; vc_redist = (Get-Item -LiteralPath $redist).VersionInfo.ProductVersion; vc_redist_signer = $signature.SignerCertificate.Subject; networking = 'Disable'; host_os = [Environment]::OSVersion.Version.ToString() }
 Start-Process -FilePath $sandboxExe -ArgumentList "`"$wsb`""
 $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
 $resultFile = Join-Path $outDir 'result.json'

@@ -147,9 +147,10 @@ not offered to Desktop updates or the WSL installer; accept the draft's assets b
 
 ```text
 gh release download v0.4.9 --dir <folder>
-pwsh tools/portable/windows-sandbox.ps1 -Zip <folder>\precept-0.4.9-windows-x86_64.zip -Name sandbox-01
+pwsh tools/portable/windows-sandbox.ps1 -Zip <folder>\precept-0.4.9-windows-x86_64.zip -Name sandbox-01 -Redist <vc_redist.x64.exe>
 ```
 
-A ZIP built elsewhere is accepted with this machine's newest VC redistributable when
-it lacks the exact one; the run records which. Running the workflow by hand is a dry
+The CI toolset is usually newer than a local Visual Studio: pass the current
+Microsoft redistributable (`https://aka.ms/vc14/vc_redist.x64.exe`) with `-Redist`;
+it must be Microsoft-signed and no older than the toolset that built the ZIP. Running the workflow by hand is a dry
 run that only uploads the assets as workflow artifacts.
