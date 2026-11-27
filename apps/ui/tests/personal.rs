@@ -218,7 +218,7 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     // No Profile summary here: Profile and writes live in Runtime checks.
     assert!(!app.screen().shows("Inspect Profile"));
     // Step one: Add preference saves a suggestion (prepared, then applied).
-    app.press("Add preference").unwrap();
+    press_add(&mut app, "Add preference");
     app.wait_for("Add a personal preference").unwrap();
     app.type_text("Preference key", "personal-editor").unwrap();
     app.type_text("id:preference-value", "Prefer **small** commits.")
@@ -492,4 +492,14 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
         &mut app,
         "Confirming replaces the confirmed rule with this version",
     );
+}
+
+/// Presses the add button once it is enabled: it waits for the connection,
+/// the read and the write grant, which can trail what the screen shows.
+fn press_add(app: &mut nsh_testing::Headless, label: &str) {
+    app.wait_until("add enabled", Duration::from_secs(10), |s| {
+        s.enabled("id:review.add").unwrap_or(false)
+    })
+    .unwrap();
+    app.press(label).unwrap();
 }

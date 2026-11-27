@@ -252,7 +252,7 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     app.press("Manage & add preferences").unwrap();
     writes_on(&mut app);
     let add = |app: &mut nsh_testing::Headless| {
-        app.press("Add convention").unwrap();
+        press_add(app, "Add convention");
         app.type_text("Preference key", "editor").unwrap();
         app.type_text("id:preference-value", "synthetic-value")
             .unwrap();
@@ -386,4 +386,14 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     app.press("Profile").unwrap();
     contains(&mut app, "保存的 Profile 身份已不匹配");
     assert!(app.screen().clipboard().is_none());
+}
+
+/// Presses the add button once it is enabled: it waits for the connection,
+/// the read and the write grant, which can trail what the screen shows.
+fn press_add(app: &mut nsh_testing::Headless, label: &str) {
+    app.wait_until("add enabled", Duration::from_secs(10), |s| {
+        s.enabled("id:review.add").unwrap_or(false)
+    })
+    .unwrap();
+    app.press(label).unwrap();
 }

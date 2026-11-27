@@ -396,7 +396,7 @@ fn manage_project(app: &mut nsh_testing::Headless) {
 }
 /// Add convention: saved as a suggestion (prepared; Apply commits it).
 fn add(app: &mut nsh_testing::Headless, key: &str, value: &str) {
-    app.press("Add convention").unwrap();
+    press_add(app, "Add convention");
     app.type_text("Preference key", key).unwrap();
     app.type_text("id:preference-value", value).unwrap();
     app.type_text("Tags", "review\n").unwrap();
@@ -542,4 +542,14 @@ fn changed_root_refuses_reviewed_apply(f: &Fixture) {
     assert_eq!(after["record"]["status"], "suggested");
     assert_eq!(after["commit_sequence"], 14);
     assert!(after["decisions"].as_array().unwrap().is_empty());
+}
+
+/// Presses the add button once it is enabled: it waits for the connection,
+/// the read and the write grant, which can trail what the screen shows.
+fn press_add(app: &mut nsh_testing::Headless, label: &str) {
+    app.wait_until("add enabled", Duration::from_secs(10), |s| {
+        s.enabled("id:review.add").unwrap_or(false)
+    })
+    .unwrap();
+    app.press(label).unwrap();
 }
