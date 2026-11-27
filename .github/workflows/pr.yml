@@ -55,7 +55,7 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Tests
-        run: cargo test --workspace --all-targets --locked
+        run: cargo test --workspace --all-targets --locked --no-fail-fast
 
   apps:
     name: Operator app (${{ matrix.os }})
@@ -84,8 +84,10 @@ jobs:
         run: cargo fmt --manifest-path apps/Cargo.toml --all -- --check
       - name: Clippy
         run: cargo clippy --manifest-path apps/Cargo.toml --workspace --all-targets --features precept-ui/native --locked -- -D warnings
+      - name: Product binaries for the process tests
+        run: cargo build --workspace --bins --locked
       - name: Tests
-        run: cargo test --manifest-path apps/Cargo.toml --workspace --all-targets --features precept-ui/native --locked
+        run: cargo test --manifest-path apps/Cargo.toml --workspace --all-targets --features precept-ui/native --locked --no-fail-fast
 
   macos-arm64:
     name: macOS ARM64 headless
