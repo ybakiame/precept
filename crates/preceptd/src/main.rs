@@ -325,6 +325,133 @@ impl Service {
     /// The project's `precept-mcp` entry in each client's user configuration in
     /// the daemon user's home: status, or one explicit add/remove guarded by
     /// the reported digest.
+    /// Every Precept hook and MCP entry in the agents' user configuration
+    /// that is not what this installation writes now (typically after the
+    /// programs moved): `integration.refresh` previews them with the old and
+    /// new commands and each file's digest; `integration.refresh.apply`
+    /// rewrites exactly those, one write per file, if no file changed since.
+    fn refresh(&self, method: &str, params: Value) -> precept_ipc::Result<Value> {
+        #[derive(Deserialize, Default)]
+        #[serde(deny_unknown_fields)]
+        struct P {
+            /// Apply: each changed file's previewed digest, by vendor/client.
+            #[serde(default)]
+            hooks: std::collections::BTreeMap<String, Option<String>>,
+            #[serde(default)]
+            mcp: std::collections::BTreeMap<String, Option<String>>,
+        }
+        let p: P = decode(params)?;
+        let home = scope::home().ok_or(Error::Unavailable)?;
+        let location = self.profiles.location();
+        // Hook entries: every served project, vendor and event.
+        let mut hook_entries: Vec<(integration::Vendor, String, integration::HookEvent, Value)> =
+            vec![];
+        let mut hook_files: std::collections::BTreeMap<String, Value> = Default::default();
+        if let Some(hook) = self.hook_path() {
+            let (_, roots) = self.profiles.read()?;
+            for (project, root) in roots.iter().filter(|(n, _)| self.profiles.allowed(n)) {
+                let launch = integration::HookLaunch {
+                    hook: hook.clone(),
+                    runtime_dir: location.runtime_dir.clone(),
+                    endpoint: location.endpoint.clone(),
+                    capability: location.credential_path(Some(project))?,
+                    root: root.clone(),
+                };
+                for vendor in integration::Vendor::ALL {
+                    for event in [
+                        integration::HookEvent::SessionStart,
+                        integration::HookEvent::PreTool,
+                        integration::HookEvent::PostRead,
+                        integration::HookEvent::PreCompact,
+                    ] {
+                        let cmd = integration::command(&launch, vendor, project, event);
+                        let st = integration::hook_status(&home, vendor, project, &cmd, event)?;
+                        hook_files.insert(vendor.name().into(), st["sha256"].clone());
+                        if st["installed"] == true
+                            && st["current"] != true
+                            && st["malformed"] != true
+                        {
+                            hook_entries.push((vendor, project.clone(), event, st));
+                        }
+                    }
+                }
+            }
+        }
+        // MCP entries: one per client.
+        let mut mcp_entries: Vec<(mcp_config::Client, Value)> = vec![];
+        let mcp_launch = self.mcp_path().map(|command| {
+            let path = |p: &std::path::Path| p.to_string_lossy().into_owned();
+            mcp_config::Launch {
+                command: path(&command),
+                args: vec![
+                    "--runtime-dir".into(),
+                    path(&location.runtime_dir),
+                    "--endpoint".into(),
+                    location.endpoint.clone(),
+                ],
+            }
+        });
+        if let Some(launch) = &mcp_launch {
+            for client in mcp_config::Client::ALL {
+                let st = mcp_config::status(&home, client, launch)?;
+                if st["installed"] == true && st["current"] != true && st["malformed"] != true {
+                    mcp_entries.push((client, st));
+                }
+            }
+        }
+        if method == "integration.refresh" {
+            let _ = p;
+            let hooks: Vec<Value> = hook_entries
+                .iter()
+                .map(|(_, project, _, st)| {
+                    json!({"vendor":st["vendor"],"project":project,"event":st["event"],
+                        "file":st["file"],"from":st["installed_command"],"to":st["command"],
+                        "broken":st["broken"]})
+                })
+                .collect();
+            let files: std::collections::BTreeMap<_, _> = hook_entries
+                .iter()
+                .map(|(v, ..)| (v.name().to_owned(), hook_files[v.name()].clone()))
+                .collect();
+            let mcp: Vec<Value> = mcp_entries
+                .iter()
+                .map(|(_, st)| {
+                    json!({"client":st["client"],"file":st["file"],"broken":st["broken"],
+                        "sha256":st["sha256"]})
+                })
+                .collect();
+            return Ok(json!({"hooks": hooks, "hook_files": files, "mcp": mcp}));
+        }
+        // Apply: the same entries, each file as previewed.
+        let mut changed = 0;
+        for vendor in integration::Vendor::ALL {
+            let entries: Vec<(String, integration::HookEvent, String)> = hook_entries
+                .iter()
+                .filter(|(v, ..)| *v == vendor)
+                .map(|(_, project, event, st)| {
+                    (
+                        project.clone(),
+                        *event,
+                        st["command"].as_str().unwrap_or("").to_owned(),
+                    )
+                })
+                .collect();
+            if entries.is_empty() {
+                continue;
+            }
+            let expected = p.hooks.get(vendor.name()).ok_or(Error::Conflict)?;
+            changed += integration::hook_refresh(&home, vendor, &entries, expected.as_deref())?;
+        }
+        if let Some(launch) = &mcp_launch {
+            for (client, st) in &mcp_entries {
+                let name = st["client"].as_str().unwrap_or("").to_owned();
+                let expected = p.mcp.get(&name).ok_or(Error::Conflict)?;
+                mcp_config::apply(&home, *client, launch, true, expected.as_deref())?;
+                changed += 1;
+            }
+        }
+        Ok(json!({"updated": changed}))
+    }
     fn mcp_entries(&self, method: &str, params: Value) -> precept_ipc::Result<Value> {
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]

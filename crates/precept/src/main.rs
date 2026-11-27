@@ -79,6 +79,13 @@ enum Query {
     },
     /// Previewed first activation: Profile, project, agent access and hooks.
     Setup(setup::Options),
+    /// Precept's entries in the agents' configuration that name an older
+    /// installation: previewed, or with --update rewritten exactly as
+    /// previewed (one write per file, with a backup).
+    AgentEntries {
+        #[arg(long)]
+        update: bool,
+    },
     Health,
     Projects,
     /// Recent agent activity (in memory since the daemon started; newest
@@ -153,6 +160,22 @@ async fn run(args: Args) -> precept_ipc::Result<serde_json::Value> {
     }
     let mut client = Client::connect(&args.location, &cap).await?;
     let (method, params) = match args.command {
+        Query::AgentEntries { update } => {
+            let preview = client.request("integration.refresh", json!({})).await?;
+            if !update {
+                return Ok(preview);
+            }
+            let mcp: serde_json::Map<String, serde_json::Value> = preview["mcp"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|e| Some((e["client"].as_str()?.to_owned(), e["sha256"].clone())))
+                .collect();
+            (
+                "integration.refresh.apply",
+                json!({"hooks":preview["hook_files"],"mcp":mcp}),
+            )
+        }
         Query::Health => ("daemon.health", json!({})),
         Query::Projects => ("project.list", json!({})),
         Query::LintRules { project } => ("rules.lint", json!({"project":project})),

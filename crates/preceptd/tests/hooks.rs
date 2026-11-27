@@ -557,3 +557,90 @@ fn integration_reads_find_the_windows_home_without_home_var() {
         .unwrap();
     assert_eq!(hooks["available"], true);
 }
+
+#[cfg(unix)]
+#[test]
+fn entries_left_by_a_moved_installation_are_previewed_and_refreshed_in_one_write() {
+    let f = Fixture::created();
+    let b = f.daemon.enable();
+    f.register(&b, "alpha");
+    // An entry written by an earlier installation whose programs are gone,
+    // beside a hook of another tool that must stay as it is.
+    let stale = "/old/usr/bin/precept-hook --vendor claude --project alpha --root /x --runtime-dir /x --endpoint /x --capability-file /x";
+    let settings = f.temp.path().join(".claude/settings.json");
+    fs::create_dir_all(settings.parent().unwrap()).unwrap();
+    fs::write(
+        &settings,
+        json!({"theme":"dark","hooks":{"SessionStart":[
+            {"hooks":[{"type":"command","command":"other-tool --start","timeout":5}]},
+            {"hooks":[{"type":"command","command":stale,"timeout":10}]}]}})
+        .to_string(),
+    )
+    .unwrap();
+    let preview = f.daemon.control("integration.refresh", json!({})).unwrap();
+    let hooks = preview["hooks"].as_array().unwrap();
+    assert_eq!(hooks.len(), 1, "{preview}");
+    assert_eq!(hooks[0]["project"], "alpha");
+    assert_eq!(hooks[0]["event"], "session_start");
+    assert_eq!(hooks[0]["broken"], true);
+    assert_eq!(hooks[0]["from"], stale);
+    let to = hooks[0]["to"].as_str().unwrap().to_owned();
+    // The single-entry status says the same.
+    let status = f
+        .daemon
+        .control("integration.hooks", json!({"project":"alpha"}))
+        .unwrap();
+    let claude = status["hooks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|h| h["vendor"] == "claude")
+        .unwrap()
+        .clone();
+    assert_eq!(
+        (
+            claude["installed"].clone(),
+            claude["current"].clone(),
+            claude["broken"].clone()
+        ),
+        (json!(true), json!(false), json!(true))
+    );
+    // Agents cannot; a changed file is refused.
+    let agent = f.daemon.credential("agent-alpha.cap");
+    assert_eq!(
+        f.daemon.call(&agent, "integration.refresh", json!({})),
+        Err(Error::Unauthorized)
+    );
+    let files = preview["hook_files"].clone();
+    assert_eq!(
+        f.daemon
+            .control(
+                "integration.refresh.apply",
+                json!({"hooks":{"claude":"0".repeat(64)}})
+            )
+            .err(),
+        Some(Error::Conflict)
+    );
+    let done = f
+        .daemon
+        .control("integration.refresh.apply", json!({"hooks":files}))
+        .unwrap();
+    assert_eq!(done["updated"], 1);
+    let v: Value = serde_json::from_str(&fs::read_to_string(&settings).unwrap()).unwrap();
+    assert_eq!(v["theme"], "dark");
+    let commands: Vec<&str> = v["hooks"]["SessionStart"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|g| g["hooks"].as_array().unwrap())
+        .filter_map(|h| h["command"].as_str())
+        .collect();
+    assert_eq!(commands, ["other-tool --start", to.as_str()]);
+    assert!(
+        settings
+            .with_file_name("settings.json.precept.bak")
+            .exists()
+    );
+    let again = f.daemon.control("integration.refresh", json!({})).unwrap();
+    assert!(again["hooks"].as_array().unwrap().is_empty());
+}

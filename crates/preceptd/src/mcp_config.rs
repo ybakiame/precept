@@ -169,6 +169,9 @@ pub fn status(home: &Path, client: Client, launch: &Launch) -> Result<Value, Err
         "malformed": state.is_none(),
         "installed": installed,
         "current": current_entry,
+        // The installed entry starts a program that is gone (a moved or
+        // removed installation).
+        "broken": matches!(&state, Some(Some(Some((c, _)))) if !Path::new(c).is_file()),
         "legacy": legacy(client, current.as_deref()).len(),
     }))
 }

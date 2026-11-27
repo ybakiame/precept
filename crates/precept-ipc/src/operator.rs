@@ -35,6 +35,8 @@ pub const CONTROL_METHODS: &[&str] = &[
     "integration.hooks.apply",
     "integration.mcp",
     "integration.mcp.apply",
+    "integration.refresh",
+    "integration.refresh.apply",
     "rules.export",
     "rules.export.apply",
     "rules.lint",

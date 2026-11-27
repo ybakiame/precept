@@ -170,7 +170,7 @@ impl Vendor {
             Vendor::Codex => (".codex", "hooks.json"),
         }
     }
-    fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             Vendor::Claude => "claude",
             Vendor::Codex => "codex",
@@ -358,6 +358,7 @@ pub fn hook_status(
         .iter()
         .filter(|c| ours(c, project, event))
         .collect();
+    let installed = !mine.is_empty();
     Ok(json!({
         "vendor": vendor,
         "event": event,
@@ -365,10 +366,61 @@ pub fn hook_status(
         "exists": current.is_some(),
         "sha256": digest(&current),
         "malformed": malformed,
-        "installed": !mine.is_empty(),
+        "installed": installed,
         "current": mine.len() == 1 && mine[0] == expected,
         "command": expected,
+        // What is installed now, and whether its program is gone (a moved
+        // or removed installation: the hook can no longer run at all).
+        "installed_command": mine.first().map(|c| c.as_str()),
+        "broken": installed && mine.iter().any(|c| !program_exists(c)),
     }))
+}
+
+/// Whether the program a command line starts (its first word, unquoted)
+/// exists as a file.
+pub(crate) fn program_exists(command: &str) -> bool {
+    let first = match command.chars().next() {
+        Some(q @ ('\'' | '"')) => command[1..].split(q).next().unwrap_or(""),
+        _ => command.split_whitespace().next().unwrap_or(""),
+    };
+    !first.is_empty() && Path::new(first).is_file()
+}
+
+/// Rewrites, in one write of `vendor`'s file, each listed Precept entry
+/// (project, event, current command) to its current command, if the file
+/// still has the previewed digest (`expected`). The previous file is kept as
+/// `<file>.precept.bak`.
+pub fn hook_refresh(
+    home: &Path,
+    vendor: Vendor,
+    entries: &[(String, HookEvent, String)],
+    expected: Option<&str>,
+) -> Result<usize, Error> {
+    use crate::ojson::J;
+    let path = config_file(home, vendor);
+    let current = read_config(&path)?;
+    let actual = current.as_ref().map(|t| pointer::digest(t.as_bytes()));
+    if actual.as_deref() != expected {
+        return Err(Error::Conflict);
+    }
+    let Some(text) = current else {
+        return Ok(0);
+    };
+    let mut config = crate::ojson::parse(&text).ok_or(Error::InvalidRequest)?;
+    if !matches!(config, J::Obj(_)) {
+        return Err(Error::InvalidRequest);
+    }
+    for (project, event, cmd) in entries {
+        edit_grouped(&mut config, vendor, project, cmd, true, *event)?;
+    }
+    let next = crate::ojson::pretty(&config);
+    if next == text {
+        return Ok(0);
+    }
+    let backup = path.with_file_name(format!("{}.precept.bak", vendor.file().1));
+    write_atomic(&backup, &text)?;
+    write_atomic(&path, &next)?;
+    Ok(entries.len())
 }
 
 /// A config file Precept may edit: absent, or bounded UTF-8 in a regular file.

@@ -260,6 +260,17 @@ impl Service {
             }
             return Ok(reply);
         }
+        // Every outdated Precept entry (a moved installation), previewed,
+        // then rewritten in one write per file.
+        if matches!(
+            request.method.as_str(),
+            "integration.refresh" | "integration.refresh.apply"
+        ) {
+            if access != Access::Operator {
+                return Err(Error::Unauthorized);
+            }
+            return self.refresh(&request.method, params);
+        }
         if matches!(
             request.method.as_str(),
             "integration.mcp" | "integration.mcp.apply"
