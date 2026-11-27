@@ -199,6 +199,8 @@ pub mod wsl_status {
     pub const BRIDGE_TIMEOUT: &str = "WSL bridge did not respond";
     pub const BRIDGE_DISCONNECTED: &str = "WSL bridge disconnected";
     pub const INSTALL_FAILED: &str = "WSL daemon install or update failed";
+    /// The release offers another daemon version than this Desktop's.
+    pub const INSTALL_VERSION_MISMATCH: &str = "WSL daemon release does not match this Desktop";
     pub const DAEMON_UNREACHABLE: &str = "WSL daemon not running or not reachable";
     pub const QUERY_TIMED_OUT: &str = "WSL query timed out";
     /// The runtime was refused (ownership/permissions); shared with local reads.
@@ -236,6 +238,7 @@ pub mod wsl_status {
             BRIDGE_TIMEOUT => Msg::WslBridgeTimeout,
             BRIDGE_DISCONNECTED => Msg::WslBridgeDisconnected,
             INSTALL_FAILED => Msg::InstallDaemonFailed,
+            INSTALL_VERSION_MISMATCH => Msg::InstallDaemonVersionMismatch,
             DAEMON_UNREACHABLE => Msg::WslDaemonUnreachable,
             QUERY_TIMED_OUT => Msg::WslQueryTimedOut,
             RUNTIME_REFUSED => Msg::WslRuntimeRefused,

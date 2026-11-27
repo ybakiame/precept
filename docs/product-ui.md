@@ -107,9 +107,11 @@ system packages and non-Windows installations report self-update as unavailable.
 
 On Windows, selecting a WSL distribution probes the bridge, packaged unit and daemon.
 If the helper or unit is missing or incompatible, Connection offers **Install / Update
-daemon in WSL**. That explicit action downloads the current musl release archive from
-this repository's GitHub Release, verifies its SHA-256 against the published
-`SHA256SUMS`, installs user-local binaries and the user unit, then starts it. It never
+daemon in WSL**. That explicit action reads the signed update manifest of this repository's GitHub
+Release, verifies its signature with the app's update key, and installs only the musl
+daemon archive of the Desktop's own version: a release of another version asks to
+update the Desktop first. The archive is downloaded in WSL and must match the signed
+SHA-256 before user-local binaries and the user unit are installed and started. It never
 uses sudo, a package manager or a shell. The selected helper path is updated to the
 user-local bridge; no Profile is created or write-enabled.
 

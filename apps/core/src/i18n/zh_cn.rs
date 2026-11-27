@@ -562,6 +562,7 @@ text_catalog! {
     StateUnselected => "未选择", StateUnknown => "未知", StartDaemon => "启动",
     InstallUpdateDaemon => "在 WSL 中安装 / 更新 daemon", InstallingDaemon => "正在安装 / 更新 daemon…",
     InstallDaemonFailed => "安装或更新失败。请检查网络后重试。",
+    InstallDaemonVersionMismatch => "最新发布版本与当前桌面端版本不一致。请先在“设置 → 软件更新”中更新 Precept 桌面端，再安装 daemon。",
     Connect => "连接", Connected => "已连接", AdvancedFields => "高级",
     HintSystemd => "在 /etc/wsl.conf 中启用 systemd（[boot] systemd=true），然后运行 wsl --shutdown。",
     HintService => "在该发行版中安装 precept 包。",

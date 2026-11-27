@@ -282,7 +282,7 @@ msg_keys! {
     CheckService, CheckDaemon, CheckProfile, StateEnabled,
     StateDisabled, StateInstalled, StateMissing, StateRunning,
     StateStopped, StateRefused, StateSelected, StateUnselected,
-    StateUnknown, StartDaemon, InstallUpdateDaemon, InstallingDaemon, InstallDaemonFailed,
+    StateUnknown, StartDaemon, InstallUpdateDaemon, InstallingDaemon, InstallDaemonFailed, InstallDaemonVersionMismatch,
     Connect, Connected,
     AdvancedFields, HintSystemd, HintService, HintDaemonExecutable,
     LocalStartFailed, CheckDaemonExecutable, HintStopped, HintStoppedLocal,

@@ -740,6 +740,7 @@ text_catalog! {
     StateUnselected => "None selected", StateUnknown => "Unknown", StartDaemon => "Start",
     InstallUpdateDaemon => "Install / Update daemon in WSL", InstallingDaemon => "Installing / updating daemon…",
     InstallDaemonFailed => "Install or update failed. Check network and try again.",
+    InstallDaemonVersionMismatch => "The latest release is a different version from this Desktop. Update Precept Desktop in Settings → Software updates first, then install the daemon.",
     Connect => "Connect", Connected => "Connected", AdvancedFields => "Advanced",
     HintSystemd => "Enable systemd in /etc/wsl.conf ([boot] systemd=true), then run wsl --shutdown.",
     HintService => "Install the precept package in this distribution.",

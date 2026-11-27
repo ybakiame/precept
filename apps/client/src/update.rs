@@ -22,6 +22,8 @@ pub enum UpdateError {
     Download,
     Install,
     UnsafeInstallation,
+    /// The release offers another version than this Desktop's.
+    VersionMismatch,
 }
 
 #[derive(Debug, Clone)]
@@ -183,6 +185,58 @@ pub fn check() -> Result<Option<Update>, UpdateError> {
         sha256: available.sha256.ok_or(UpdateError::Manifest)?,
         size: available.size,
     }))
+}
+
+/// The manifest platform of the Linux daemon archive (static musl).
+pub const DAEMON_PLATFORM: &str = "linux-x86_64-musl";
+
+/// The Linux daemon archive of this Desktop's own version, from the signed
+/// update manifest: its absolute URL and SHA-256.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DaemonArchive {
+    pub url: String,
+    pub sha256: String,
+}
+
+/// What the signed `manifest` offers as the daemon for this Desktop: only the
+/// archive of exactly `version` (a newer release needs the Desktop updated
+/// first; daemon and Desktop share one protocol version).
+fn daemon_from(
+    config: &Config,
+    manifest: &[u8],
+    signature: Option<&[u8]>,
+    version: &str,
+) -> Result<DaemonArchive, UpdateError> {
+    // `check` offers only versions newer than the configured one.
+    let mut any = config.clone();
+    any.version = "0.0.0".into();
+    let available = any
+        .check(manifest, signature, DAEMON_PLATFORM)
+        .map_err(|_| UpdateError::Manifest)?
+        .ok_or(UpdateError::Manifest)?;
+    if available.version != version {
+        return Err(UpdateError::VersionMismatch);
+    }
+    Ok(DaemonArchive {
+        url: available.url,
+        sha256: available.sha256.ok_or(UpdateError::Manifest)?,
+    })
+}
+
+/// The daemon archive matching this Desktop, verified against the app's key.
+pub fn daemon_archive() -> Result<DaemonArchive, UpdateError> {
+    let config = config()?;
+    let manifest = read_all(&config.manifest_url())?;
+    let signature = match config.signature_url() {
+        Some(url) => Some(read_all(&url)?),
+        None => return Err(UpdateError::Unavailable),
+    };
+    daemon_from(
+        &config,
+        &manifest,
+        signature.as_deref(),
+        env!("CARGO_PKG_VERSION"),
+    )
 }
 
 fn updates_dir() -> Result<PathBuf, UpdateError> {
@@ -408,6 +462,69 @@ mod tests {
         let _ = config
             .check(&manifest, signature.as_deref(), &nsh_updater::platform())
             .unwrap();
+    }
+
+    #[test]
+    fn the_daemon_archive_comes_only_from_a_signed_manifest_of_this_version() {
+        // A key pair for this test only (it signs nothing anywhere else).
+        let secret = "lphK1iQwLNEvsKZSoj2WV+OrLIYPCb/F1H3/fJl7YXY=";
+        let public = "JbN/jR582oamAInt9GlG44z3y3fZtTb3kNaAZ6jdR2c=".to_owned();
+        let mut config = config().unwrap();
+        config.public_key = Some(public);
+        let manifest = |version: &str| {
+            format!(
+                r#"{{"id":"org.precept.operator","version":"{version}","platforms":{{
+                "{DAEMON_PLATFORM}":{{"url":"precept-{version}-linux-x86_64-musl.tar.gz","sha256":"{}","size":2}},
+                "windows-x86_64":{{"url":"precept-{version}-windows-x86_64.zip","sha256":"{}","size":2}}}}}}"#,
+                "a".repeat(64),
+                "b".repeat(64)
+            )
+        };
+        let signed = manifest("0.9.1");
+        let signature = nsh_updater::sign(secret, signed.as_bytes()).unwrap();
+        let archive = daemon_from(
+            &config,
+            signed.as_bytes(),
+            Some(signature.as_bytes()),
+            "0.9.1",
+        )
+        .unwrap();
+        assert_eq!(archive.sha256, "a".repeat(64));
+        assert!(
+            archive
+                .url
+                .starts_with("https://github.com/ybakiame/precept/")
+        );
+        assert!(
+            archive
+                .url
+                .ends_with("/precept-0.9.1-linux-x86_64-musl.tar.gz")
+        );
+        // Another version than the Desktop's is refused.
+        assert_eq!(
+            daemon_from(
+                &config,
+                signed.as_bytes(),
+                Some(signature.as_bytes()),
+                "0.9.0"
+            ),
+            Err(UpdateError::VersionMismatch)
+        );
+        // A changed manifest, or none signed, is refused.
+        let changed = signed.replace(&"a".repeat(64), &"c".repeat(64));
+        assert_eq!(
+            daemon_from(
+                &config,
+                changed.as_bytes(),
+                Some(signature.as_bytes()),
+                "0.9.1"
+            ),
+            Err(UpdateError::Manifest)
+        );
+        assert_eq!(
+            daemon_from(&config, signed.as_bytes(), None, "0.9.1"),
+            Err(UpdateError::Manifest)
+        );
     }
 
     #[test]

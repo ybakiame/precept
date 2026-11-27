@@ -205,7 +205,10 @@ fn status(model: Signal<Model>, state: Signal<Phase>) -> impl IntoElement {
             Phase::Failed(error) => m
                 .word(match error {
                     UpdateError::Network => Msg::UpdateFailedNetwork,
-                    UpdateError::Manifest => Msg::UpdateFailedManifest,
+                    // Only the daemon lookup reports a version mismatch.
+                    UpdateError::Manifest | UpdateError::VersionMismatch => {
+                        Msg::UpdateFailedManifest
+                    }
                     UpdateError::Download => Msg::UpdateFailedDownload,
                     UpdateError::Install => Msg::UpdateFailedInstall,
                     UpdateError::UnsafeInstallation => Msg::UpdateFailedUnsafe,

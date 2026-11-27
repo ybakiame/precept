@@ -303,9 +303,6 @@ pub fn wsl_start_daemon(_: &str, _: &str, _: &str) -> Result<Discovery, &'static
 }
 
 #[cfg(target_os = "windows")]
-const RELEASE_API: &str = "https://api.github.com/repos/ybakiame/precept/releases/latest";
-
-#[cfg(target_os = "windows")]
 fn install_command(
     distribution: &str,
     user: &str,
@@ -330,23 +327,6 @@ fn install_command(
     }
 }
 
-#[cfg(target_os = "windows")]
-fn release_download(raw: &[u8]) -> Result<(String, String), &'static str> {
-    let release: serde_json::Value =
-        serde_json::from_slice(raw).map_err(|_| status::INSTALL_FAILED)?;
-    let assets = release["assets"].as_array().ok_or(status::INSTALL_FAILED)?;
-    let find = |name: &str| {
-        assets.iter().find_map(|asset| {
-            let url = asset["browser_download_url"].as_str()?;
-            (asset["name"].as_str()?.ends_with(name) && url.starts_with("https://github.com/"))
-                .then(|| url.to_owned())
-        })
-    };
-    let archive = find("-linux-x86_64-musl.tar.gz").ok_or(status::INSTALL_FAILED)?;
-    let checksums = find("SHA256SUMS").ok_or(status::INSTALL_FAILED)?;
-    Ok((archive, checksums))
-}
-
 pub fn user_helper(user: &str) -> String {
     format!("/home/{user}/.local/bin/precept-bridge")
 }
@@ -356,13 +336,16 @@ pub fn wsl_install_update(distribution: &str, user: &str) -> Result<Discovery, &
     if !valid_inputs(distribution, Some(user), DEFAULT_HELPER) {
         return Err("Invalid WSL connection inputs");
     }
-    let latest = install_command(distribution, user, "curl", &["-fsSL", RELEASE_API], 45)?;
-    let (archive_url, sums_url) = release_download(&latest)?;
+    // The archive and its SHA-256 come from the update manifest signed with
+    // the app's key, for exactly this Desktop's version.
+    let signed = crate::update::daemon_archive().map_err(|e| match e {
+        crate::update::UpdateError::VersionMismatch => status::INSTALL_VERSION_MISMATCH,
+        _ => status::INSTALL_FAILED,
+    })?;
     let state = format!("/home/{user}/.local/state/precept");
     let downloads = format!("{state}/downloads");
     let staging = format!("{state}/install-bin");
     let archive = format!("{downloads}/precept-linux.tar.gz");
-    let sums = format!("{downloads}/SHA256SUMS");
     let library = format!("/home/{user}/.local/lib/precept");
     let bin = format!("/home/{user}/.local/bin");
     let unit = format!("/home/{user}/.config/systemd/user/preceptd.service");
@@ -377,29 +360,12 @@ pub fn wsl_install_update(distribution: &str, user: &str) -> Result<Discovery, &
         distribution,
         user,
         "curl",
-        &["-fsSL", &archive_url, "-o", &archive],
+        &["-fsSL", &signed.url, "-o", &archive],
         180,
-    )?;
-    install_command(
-        distribution,
-        user,
-        "curl",
-        &["-fsSL", &sums_url, "-o", &sums],
-        45,
     )?;
     let observed = install_command(distribution, user, "sha256sum", &[&archive], 15)?;
     let observed = String::from_utf8_lossy(&observed);
-    let observed = observed.split_whitespace().next().unwrap_or_default();
-    let expected = install_command(distribution, user, "cat", &[&sums], 15)?;
-    let expected = String::from_utf8_lossy(&expected);
-    let matches = expected.lines().any(|line| {
-        let mut fields = line.split_whitespace();
-        fields.next() == Some(observed)
-            && fields
-                .next_back()
-                .is_some_and(|name| name.ends_with("-linux-x86_64-musl.tar.gz"))
-    });
-    if !matches {
+    if observed.split_whitespace().next() != Some(signed.sha256.as_str()) {
         return Err(status::INSTALL_FAILED);
     }
     install_command(
@@ -624,19 +590,8 @@ mod tests {
             assert!(parse_report(junk, true).is_err());
         }
     }
-    #[cfg(target_os = "windows")]
     #[test]
-    fn release_download_selects_musl_and_checksum_assets_only_from_github() {
-        let mut release = serde_json::json!({"assets":[
-            {"name":"precept-0.4.5-linux-x86_64-musl.tar.gz","browser_download_url":"https://github.com/ybakiame/precept/releases/download/v0.4.5/precept-0.4.5-linux-x86_64-musl.tar.gz"},
-            {"name":"SHA256SUMS","browser_download_url":"https://github.com/ybakiame/precept/releases/download/v0.4.5/SHA256SUMS"}
-        ]});
-        let (archive, sums) = release_download(&serde_json::to_vec(&release).unwrap()).unwrap();
-        assert!(archive.ends_with("-linux-x86_64-musl.tar.gz"));
-        assert!(sums.ends_with("SHA256SUMS"));
-        release["assets"][0]["browser_download_url"] =
-            serde_json::json!("https://example.invalid/asset");
-        assert!(release_download(&serde_json::to_vec(&release).unwrap()).is_err());
+    fn the_user_helper_lives_in_the_user_local_bin() {
         assert_eq!(
             user_helper("operator"),
             "/home/operator/.local/bin/precept-bridge"

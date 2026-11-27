@@ -9,7 +9,7 @@
 #    at HEAD when absent (local only until --publish).
 # 2. The gates of both workspaces and the source check (unless --skip-gates).
 # 3. The musl Linux portable archive and Windows ZIP, then SHA256SUMS and the
-#    signed Windows update manifest, into .tmp/artifacts/release/v<version>/.
+#    signed update manifest (Windows ZIP and musl archive), into .tmp/artifacts/release/v<version>/
 #    The Windows clone builds directly in its checkout; no temporary worktree.
 # 4. With --publish only: `main` is fast-forwarded to HEAD, the tag is pushed
 #    and a GitHub Release is created with the assets and the version's
@@ -90,9 +90,12 @@ cp "$artifacts/$tag/precept-$version-windows-x86_64.zip" "$out/"
 
 (cd "$out" && sha256sum precept-* >SHA256SUMS)
 awk -v v="## $version" '$0==v{on=1;next} on&&/^## /{exit} on' CHANGELOG.md >"$out/notes.md"
-step "signed Windows update manifest"
+step "signed update manifest"
 command -v nsh >/dev/null || die "nsh 0.7.1 is required"
+# One signed manifest covers the Windows Desktop and the WSL daemon archive,
+# which Connection's installer verifies before it installs anything.
 nsh update-manifest "$out/precept-$version-windows-x86_64.zip" \
+  "$out/precept-$version-linux-x86_64-musl.tar.gz" \
   --entry "$repo/apps/ui" --key "$update_key" --notes "$out/notes.md" --out "$out"
 step "assets in $out:"
 (cd "$out" && ls -l precept-* SHA256SUMS latest.json latest.json.sig)
