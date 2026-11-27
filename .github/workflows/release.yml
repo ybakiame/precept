@@ -1,48 +1,87 @@
-# The release build on hosted runners, run by hand for a pushed tag v<version>.
-# tools/release.sh does the same on the maintainer's machine (and also builds
-# the Arch Linux package); use either. Never triggered by a push.
+# Builds every release on hosted runners. Pushing the tag v<version> (made by
+# tools/release.sh on a commit already on main) runs the gates, builds the
+# musl Linux archive and the Windows ZIP, signs one update manifest for both
+# and creates a draft GitHub Release. The maintainer accepts the draft and
+# publishes it by hand; drafts are invisible to Desktop updates and the WSL
+# installer until then. Run by hand, it is a dry run: the same build, uploaded
+# as workflow artifacts, never released.
 name: Release
+
 on:
+  push:
+    tags: ['v*.*.*']
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to release (the tag v<version> must exist)'
-        required: true
+
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Version, changelog and tag agree
+        id: version
+        run: |
+          version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"$/\1/p' Cargo.toml)
+          [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Cargo.toml has no product version"; exit 1; }
+          grep -q "^## $version\$" CHANGELOG.md || { echo "::error::CHANGELOG.md has no '## $version' section"; exit 1; }
+          if [[ $GITHUB_REF_TYPE == tag ]]; then
+            [[ $GITHUB_REF_NAME == "v$version" ]] || { echo "::error::tag $GITHUB_REF_NAME does not match Cargo.toml $version"; exit 1; }
+            git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "::error::the tagged commit is not on main"; exit 1; }
+          fi
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+
   gates:
+    needs: version
+    uses: ./.github/workflows/pr.yml
+
+  linux:
+    needs: [version, gates]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: v${{ inputs.version }}
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: NSH build dependencies
+      - name: musl toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang libclang-dev cmake ninja-build pkg-config libgtk-4-dev libasound2-dev libssl-dev libxkbcommon-dev libwayland-dev
-      - name: Version matches the tag
-        run: grep -q '^version = "${{ inputs.version }}"$' Cargo.toml
-      - run: npm ci --prefix tools
-      - run: node tools/check_source.mjs
-      - run: cargo fmt --all -- --check
-      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - run: cargo test --workspace --all-targets --locked
-      - run: cargo fmt --manifest-path apps/Cargo.toml --all -- --check
-      - run: cargo clippy --manifest-path apps/Cargo.toml --workspace --all-targets --features precept-ui/native --locked -- -D warnings
-      - run: cargo test --manifest-path apps/Cargo.toml --workspace --all-targets --features precept-ui/native --locked
+          sudo apt-get install -y musl-tools
+          rustup toolchain install 1.99.1 --profile minimal --target x86_64-unknown-linux-musl
+      - name: Fetch dependencies (the packager builds offline)
+        run: |
+          cargo fetch --locked
+          cargo fetch --locked --manifest-path apps/Cargo.toml
+      - name: musl archive
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/linux" "$RUNNER_TEMP/dist"
+          CC=musl-gcc node tools/portable/linux-package.mjs "$PWD" "$RUNNER_TEMP/linux" musl "$(command -v cargo)"
+          cp "$RUNNER_TEMP/linux/musl/precept-$VERSION-linux-x86_64-musl.tar.gz" "$RUNNER_TEMP/dist/"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: ${{ runner.temp }}/dist/*
+          if-no-files-found: error
+
   windows:
-    needs: gates
+    needs: [version, gates]
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: v${{ inputs.version }}
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -53,26 +92,72 @@ jobs:
         run: |
           cargo fetch --locked
           cargo fetch --locked --manifest-path apps/Cargo.toml
-      - name: NSH update manifest tool
-        run: cargo install nsh-cli --version 0.7.1 --locked
       - name: Windows ZIP
         shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force out | Out-Null
-          ./tools/portable/windows-package.ps1 -OutputParent out -Name release -Release '${{ inputs.version }}'
-      - name: Upload to the Release
-        shell: pwsh
         env:
-          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          ./tools/portable/windows-package.ps1 -OutputParent $env:RUNNER_TEMP -Name release -Release $env:VERSION
+          if ($LASTEXITCODE -ne 0) { throw 'Windows package failed' }
+          New-Item -ItemType Directory -Force (Join-Path $env:RUNNER_TEMP 'dist') | Out-Null
+          Copy-Item (Join-Path $env:RUNNER_TEMP "release/precept-$env:VERSION-windows-x86_64.zip") (Join-Path $env:RUNNER_TEMP 'dist')
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: ${{ runner.temp }}/dist/*
+          if-no-files-found: error
+
+  publish:
+    needs: [version, linux, windows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: NSH 0.7.1 (pinned binary)
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/nsh.tar.gz" https://github.com/longbridge/nsh/releases/download/v0.7.1/nsh-linux-x86_64.tar.gz
+          echo "04457ad3a53c91b66efcee537968c5af7c90df25cf61c18d51135ecc051e22b3  $RUNNER_TEMP/nsh.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/nsh.tar.gz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/nsh/bin" >>"$GITHUB_PATH"
+      - name: Checksums, notes and the signed update manifest
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
           PRECEPT_UPDATE_KEY: ${{ secrets.PRECEPT_UPDATE_KEY }}
         run: |
-          $zip = "out/release/precept-${{ inputs.version }}-windows-x86_64.zip"
-          $tag = 'v${{ inputs.version }}'
-          if (-not $env:PRECEPT_UPDATE_KEY) { throw 'PRECEPT_UPDATE_KEY secret is required' }
-          $key = Join-Path $env:RUNNER_TEMP 'precept-update.secret'
-          [IO.File]::WriteAllText($key, $env:PRECEPT_UPDATE_KEY)
-          nsh update-manifest $zip --entry apps/ui --key $key --out out/release
-          if ($LASTEXITCODE -ne 0) { throw 'Update manifest failed' }
-          gh release view $tag *> $null
-          if ($LASTEXITCODE -ne 0) { gh release create $tag --verify-tag --title "Precept ${{ inputs.version }}" --notes "See CHANGELOG.md." }
-          gh release upload $tag $zip out/release/latest.json out/release/latest.json.sig --clobber
+          zip="dist/precept-$VERSION-windows-x86_64.zip"
+          musl="dist/precept-$VERSION-linux-x86_64-musl.tar.gz"
+          test -f "$zip" && test -f "$musl"
+          (cd dist && sha256sum precept-* >SHA256SUMS)
+          awk -v v="## $VERSION" '$0==v{on=1;next} on&&/^## /{exit} on' CHANGELOG.md >"$RUNNER_TEMP/notes.md"
+          if [[ -z $PRECEPT_UPDATE_KEY ]]; then
+            [[ $GITHUB_REF_TYPE != tag ]] || { echo "::error::the PRECEPT_UPDATE_KEY secret is required to release"; exit 1; }
+            echo "::warning::dry run without PRECEPT_UPDATE_KEY: no update manifest"
+            exit 0
+          fi
+          key="$RUNNER_TEMP/precept-update.secret"
+          (umask 077 && printf '%s\n' "$PRECEPT_UPDATE_KEY" >"$key")
+          # One manifest covers the Desktop ZIP and the WSL daemon archive;
+          # nsh refuses a key that is not the app's updater.publicKey.
+          nsh update-manifest "$zip" "$musl" --entry apps/ui --key "$key" --notes "$RUNNER_TEMP/notes.md" --out dist
+          rm -f "$key"
+          test -f dist/latest.json && test -f dist/latest.json.sig
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: dist/*
+          if-no-files-found: error
+      - name: Draft GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          gh release create "v$VERSION" --draft --verify-tag --title "Precept $VERSION" \
+            --notes-file "$RUNNER_TEMP/notes.md" dist/precept-* dist/SHA256SUMS dist/latest.json dist/latest.json.sig
+          echo "Draft: $(gh release view "v$VERSION" --json url --jq .url)"

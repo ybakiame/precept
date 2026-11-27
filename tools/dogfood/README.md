@@ -130,18 +130,18 @@ is not ready yet, the Desktop reports it as unreachable; retry from the Desktop.
 
 ## Release
 
-From WSL2 Arch, on a clean `dev` that is pushed, with the version set in
-`Cargo.toml` and a `## <version>` section in `CHANGELOG.md`:
+Releases are built only by the hosted `Release` workflow. From a clean, pushed `dev`
+whose `Gates` run passed, with the version set in `Cargo.toml` and a `## <version>`
+section in `CHANGELOG.md`:
 
 ```text
-tools/release.sh 0.4.0 --windows-clone /mnt/c/<path-to-windows-clone> --update-key <secret-file>            # build only
-tools/release.sh 0.4.0 --windows-clone /mnt/c/<path-to-windows-clone> --update-key <secret-file> --publish  # and publish
+tools/release.sh 0.4.9            # fast-forward main and push the tag v0.4.9
+tools/release.sh 0.4.9 --publish  # after accepting the draft, publish it
 ```
 
-It tags `v<version>` at HEAD (locally), runs every gate, builds the musl Linux
-archive and the Windows ZIP directly in the Windows mirror, and writes them with
-`SHA256SUMS`, the signed Windows `latest.json`/`latest.json.sig` and the changelog
-section to `.tmp/artifacts/release/v<version>/`. The update key stays outside tracked
-source. `--publish` then fast-forwards `main`, pushes the tag and creates the GitHub
-Release with those assets. The manual `Release` workflow builds the gates and Windows
-assets on hosted runners; its updater secret is `PRECEPT_UPDATE_KEY`.
+The tag runs the gates, builds the musl Linux archive and the Windows ZIP, signs one
+update manifest for both with the `PRECEPT_UPDATE_KEY` repository secret and creates
+a draft Release with `SHA256SUMS`, `latest.json` and `latest.json.sig`. Drafts are
+not offered to Desktop updates or the WSL installer; accept the draft's assets (for
+example in Windows Sandbox) before `--publish`. Running the workflow by hand is a dry
+run that only uploads the assets as workflow artifacts.

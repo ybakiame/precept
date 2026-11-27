@@ -40,6 +40,12 @@ for (const file of files) {
     const workflow = parsed.toJS();
     requireCheck(workflow?.on && workflow?.jobs, `Missing workflow jobs/triggers: ${file}`);
     for (const job of Object.values(workflow?.jobs || {})) {
+      // A job either has steps or calls a workflow of this repository.
+      if (typeof job.uses === 'string') {
+        const local = job.uses.match(/^\.\/(\.github\/workflows\/[\w.-]+\.ya?ml)$/)?.[1];
+        requireCheck(!!local && existsSync(local), `Workflow calls a missing or external workflow: ${file}`);
+        continue;
+      }
       requireCheck(Array.isArray(job.steps), `Missing workflow steps: ${file}`);
       for (const step of job.steps || []) {
         for (const match of (step.run || '').matchAll(/\bnode\s+(?:--test\s+)?((?:tools|spikes|apps)\/[\w./-]+\.mjs)/g)) {
@@ -75,7 +81,14 @@ if (existsSync(prWorkflow)) {
   requireCheck(false, 'Missing PR quality-gate workflow');
 }
 const releaseWorkflow = parseDocument(readFileSync('.github/workflows/release.yml', 'utf8'), { uniqueKeys: true }).toJS();
-requireCheck(Object.keys(releaseWorkflow?.on || {}).length === 1 && Object.hasOwn(releaseWorkflow.on, 'workflow_dispatch'), 'Release publication must remain manual');
+// Releases are built by CI from a pushed version tag, as drafts: publication
+// stays a manual maintainer action (tools/release.sh --publish).
+requireCheck(Object.keys(releaseWorkflow?.on || {}).sort().join() === 'push,workflow_dispatch'
+  && JSON.stringify(releaseWorkflow.on.push) === JSON.stringify({ tags: ['v*.*.*'] }),
+  'Release workflow runs only on version tags (and by hand as a dry run)');
+const releaseText = readFileSync('.github/workflows/release.yml', 'utf8');
+requireCheck(releaseText.includes('gh release create') && releaseText.includes('--draft'), 'CI creates releases only as drafts');
+requireCheck(!/--draft=false|gh release edit/.test(releaseText), 'CI never publishes a draft');
 
 // Cargo's core dependency is the authority; compare every active consumer.
 // This validates pins, never resolves them.

@@ -79,9 +79,11 @@ contracts. Code/contract disagreements require explicit human resolution.
 
 ## Engineering and validation
 
-Use the Rust workspaces and the gates below as the source of truth; they run on
-the maintainer's machine (`tools/release.sh` runs them all before a release), and
-the manual `Release` workflow repeats them on hosted runners when available. The
+Use the Rust workspaces and the gates below as the source of truth; run them on
+the maintainer's machine before pushing. The `Gates` workflow runs them on hosted
+runners for every pull request and every push to `dev` or `main`. Releases are
+built only by the `Release` workflow on a pushed `v<version>` tag, which creates a
+draft Release; publishing it stays a manual maintainer action. The
 root product crates and `apps/` are separate Cargo workspaces with separate
 lockfiles.
 

@@ -7,7 +7,7 @@
 #   tools/dogfood/arch-package.sh <new-attempt-name> [--release]
 #
 # --release builds the tagged version (HEAD must be tagged v<version>) for
-# tools/release.sh; otherwise a dogfood build named by commit.
+# platform validation; otherwise a dogfood build named by commit.
 # Output: .tmp/artifacts/local-dogfood/<name>/ (ignored; never commit).
 set -euo pipefail
 die() { echo "arch-package: $*" >&2; exit 1; }

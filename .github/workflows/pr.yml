@@ -1,7 +1,12 @@
-name: Pull request gates
+# The quality gates: every pull request, every push to dev or main, and the
+# Release workflow (called before it builds anything).
+name: Gates
 
 on:
   pull_request:
+  push:
+    branches: [dev, main]
+  workflow_call:
   workflow_dispatch:
     inputs:
       macos_arm64:
@@ -14,8 +19,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: pr-gates-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: gates-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   root:
@@ -84,7 +89,7 @@ jobs:
 
   macos-arm64:
     name: macOS ARM64 headless
-    if: github.event_name == 'pull_request' || inputs.macos_arm64
+    if: github.event_name != 'workflow_dispatch' || inputs.macos_arm64
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
