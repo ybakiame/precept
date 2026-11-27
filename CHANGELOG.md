@@ -6,6 +6,12 @@ data between schemas with the versioned Profile export and import.
 
 ## Unreleased
 
+- **The WSL daemon installer verifies a signature.** Install / Update daemon
+  in WSL now installs only the daemon archive named in the release's signed
+  update manifest, for exactly this Desktop's version; a newer release asks to
+  update the Desktop first. The unsigned `SHA256SUMS` is no longer trusted.
+- **Disabling writes always revokes them.** If the startup record cannot be
+  saved, writes are still turned off and startup restoration is forgotten.
 - **Agent entries follow a moved installation.** Hook and MCP entries written
   by an earlier installation (for example the Arch package before the musl
   install) are detected; entries whose program is gone are reported as broken
