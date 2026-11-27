@@ -1,6 +1,8 @@
-# Clean-target acceptance of an assembled ZIP inside a disposable Windows Sandbox.
-# Host side: no install/uninstall, no system change. Requires Windows Sandbox to be enabled already.
-param([Parameter(Mandatory)][string]$AttemptDir, [Parameter(Mandatory)][string]$Name, [int]$TimeoutMinutes = 25)
+# Clean-target acceptance of an assembled ZIP inside a disposable Windows Sandbox:
+# a local packaging attempt (-AttemptDir) or a ZIP downloaded from a Release
+# (-Zip, for example the CI-built draft). Host side: no install/uninstall, no
+# system change. Requires Windows Sandbox to be enabled already.
+param([string]$AttemptDir, [string]$Zip, [Parameter(Mandatory)][string]$Name, [int]$TimeoutMinutes = 25)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if ($PSVersionTable.PSVersion.Major -lt 7 -or -not $IsWindows) { throw 'Native Windows PowerShell 7 required' }
@@ -11,16 +13,42 @@ $sandboxExe = Join-Path $env:WINDIR 'System32\WindowsSandbox.exe'
 if (-not (Test-Path -LiteralPath $sandboxExe)) { throw 'Windows Sandbox is not enabled; nothing is installed by this script' }
 if (Get-Process -Name 'WindowsSandboxRemoteSession' -ErrorAction SilentlyContinue) { throw 'A Windows Sandbox is already running; only one may run' }
 
-$attempt = (Resolve-Path -LiteralPath $AttemptDir).Path
-$result = Get-Content -LiteralPath (Join-Path $attempt 'package-result.json') -Raw | ConvertFrom-Json
-$zip = Join-Path $attempt $result.archive
-if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $result.archive_sha256) { throw 'ZIP hash differs from package-result.json' }
-$manifest = Get-Content -LiteralPath (Join-Path $attempt 'package/Precept/runtime/manifest.json') -Raw | ConvertFrom-Json
+if ([string]::IsNullOrEmpty($AttemptDir) -eq [string]::IsNullOrEmpty($Zip)) { throw 'Give exactly one of -AttemptDir or -Zip' }
+if ($AttemptDir) {
+    $attempt = (Resolve-Path -LiteralPath $AttemptDir).Path
+    $result = Get-Content -LiteralPath (Join-Path $attempt 'package-result.json') -Raw | ConvertFrom-Json
+    $zip = Join-Path $attempt $result.archive
+    if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $result.archive_sha256) { throw 'ZIP hash differs from package-result.json' }
+    $manifest = Get-Content -LiteralPath (Join-Path $attempt 'package/Precept/runtime/manifest.json') -Raw | ConvertFrom-Json
+} else {
+    # A released ZIP: its hash is taken here (the Release's SHA256SUMS and signed
+    # manifest are checked by whoever downloaded it) and its own manifest read.
+    $zip = (Resolve-Path -LiteralPath $Zip).Path
+    $attempt = Split-Path -Parent $zip
+    $result = [pscustomobject]@{ archive_sha256 = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant() }
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [IO.Compression.ZipFile]::OpenRead($zip)
+    try {
+        $entry = $archive.GetEntry('Precept/runtime/manifest.json')
+        if (-not $entry) { throw 'ZIP has no Precept/runtime/manifest.json' }
+        $reader = [IO.StreamReader]::new($entry.Open())
+        try { $manifest = $reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose() }
+    } finally { $archive.Dispose() }
+}
 
 # The redistributable installer shipped with the same Visual Studio that built the binaries.
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+# The redistributable of the building toolset when this machine has it; else
+# the newest one here (a Release built elsewhere), recorded as not exact.
 $redist = Join-Path $vs "VC\Redist\MSVC\$($manifest.builder.vc_tools)\vc_redist.x64.exe"
+$redistExact = Test-Path -LiteralPath $redist
+if (-not $redistExact) {
+    $redist = Get-ChildItem -Path (Join-Path $vs 'VC\Redist\MSVC\*\vc_redist.x64.exe') |
+        Where-Object { $_.Directory.Name -match '^\d+\.\d+\.\d+$' } |
+        Sort-Object { [version]$_.Directory.Name } | Select-Object -Last 1 -ExpandProperty FullName
+    if (-not $redist) { throw 'No vc_redist.x64.exe in this Visual Studio' }
+}
 $signature = Get-AuthenticodeSignature -LiteralPath $redist
 if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch '(^|, )O=Microsoft Corporation(,|$)') { throw 'vc_redist.x64.exe lacks a valid Microsoft signature' }
 
@@ -53,7 +81,7 @@ $wsb = Join-Path $exchange 'acceptance.wsb'
 "@ | Set-Content -LiteralPath $wsb -Encoding UTF8
 
 $run = [ordered]@{ tooling_sha = (& git -C $repo rev-parse HEAD); package_source_sha = $manifest.source_sha; archive_sha256 = $result.archive_sha256
-    vc_redist = $manifest.builder.vc_tools; vc_redist_signer = $signature.SignerCertificate.Subject; networking = 'Disable'; host_os = [Environment]::OSVersion.Version.ToString() }
+    vc_tools = $manifest.builder.vc_tools; vc_redist = Split-Path -Leaf (Split-Path -Parent $redist); vc_redist_exact = $redistExact; vc_redist_signer = $signature.SignerCertificate.Subject; networking = 'Disable'; host_os = [Environment]::OSVersion.Version.ToString() }
 Start-Process -FilePath $sandboxExe -ArgumentList "`"$wsb`""
 $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
 $resultFile = Join-Path $outDir 'result.json'

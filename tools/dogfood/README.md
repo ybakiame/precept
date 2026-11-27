@@ -142,6 +142,14 @@ tools/release.sh 0.4.9 --publish  # after accepting the draft, publish it
 The tag runs the gates, builds the musl Linux archive and the Windows ZIP, signs one
 update manifest for both with the `PRECEPT_UPDATE_KEY` repository secret and creates
 a draft Release with `SHA256SUMS`, `latest.json` and `latest.json.sig`. Drafts are
-not offered to Desktop updates or the WSL installer; accept the draft's assets (for
-example in Windows Sandbox) before `--publish`. Running the workflow by hand is a dry
+not offered to Desktop updates or the WSL installer; accept the draft's assets before
+`--publish`, for example in Windows Sandbox from the Windows clone:
+
+```text
+gh release download v0.4.9 --dir <folder>
+pwsh tools/portable/windows-sandbox.ps1 -Zip <folder>\precept-0.4.9-windows-x86_64.zip -Name sandbox-01
+```
+
+A ZIP built elsewhere is accepted with this machine's newest VC redistributable when
+it lacks the exact one; the run records which. Running the workflow by hand is a dry
 run that only uploads the assets as workflow artifacts.
