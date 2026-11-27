@@ -2,8 +2,11 @@
 //! daemon: the preview, the write, and the dialog closing on success.
 //! Real NSH components and IPC; not native GUI/Wayland/TTY evidence.
 #![cfg(feature = "native")]
+#[path = "support/patience.rs"]
+mod patience;
 use nsh_core::prelude::*;
 use nsh_engine::{EngineConfig, Root};
+use patience::Patient;
 use precept_ipc::{Location, operator};
 use serde_json::{Value, json};
 use std::{
@@ -215,20 +218,20 @@ fn a_confirmed_convention_is_written_after_its_preview() {
     let mut cfg = EngineConfig::new(Root::of::<precept_ui::App>());
     cfg.viewport = Size::new(px(1080.0), px(1000.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
-    app.wait_for("Daemon status").unwrap();
-    app.press("Rules").unwrap();
-    app.press("Project conventions · alpha").unwrap();
+    app.sees("Daemon status").unwrap();
+    app.presses("Rules").unwrap();
+    app.presses("Project conventions · alpha").unwrap();
     app.wait_until("row listed", Duration::from_secs(10), |s| {
         s.count("role:button[#1 · commit-style · confirmed · r2]")
             .unwrap_or(0)
             > 0
     })
     .unwrap();
-    app.press("#1 · commit-style · confirmed · r2").unwrap();
-    app.wait_for("Write to repository…").unwrap();
-    app.press("Write to repository…").unwrap();
-    app.wait_for(".precept/rules/commit-style.md").unwrap();
-    app.press("Write file").unwrap();
+    app.presses("#1 · commit-style · confirmed · r2").unwrap();
+    app.sees("Write to repository…").unwrap();
+    app.presses("Write to repository…").unwrap();
+    app.sees(".precept/rules/commit-style.md").unwrap();
+    app.presses("Write file").unwrap();
     let file = f.root.path().join("alpha/.precept/rules/commit-style.md");
     app.wait_until(
         "dialog closed after the write",
@@ -246,21 +249,21 @@ fn a_confirmed_convention_is_written_after_its_preview() {
             > 0
     })
     .unwrap();
-    app.press("#1 · commit-style · confirmed · r2").unwrap();
-    app.wait_for("Write to repository…").unwrap();
-    app.press("Write to repository…").unwrap();
-    app.wait_for("This file is already in the repository with this text.")
+    app.presses("#1 · commit-style · confirmed · r2").unwrap();
+    app.sees("Write to repository…").unwrap();
+    app.presses("Write to repository…").unwrap();
+    app.sees("This file is already in the repository with this text.")
         .unwrap();
-    app.press("Close").unwrap();
+    app.presses("Close").unwrap();
     // The file drifted from the record: the preview offers an update.
     std::fs::write(&file, text.replace("Small commits.", "Big commits.")).unwrap();
-    app.press("Write to repository…").unwrap();
-    app.wait_for("Update file").unwrap();
+    app.presses("Write to repository…").unwrap();
+    app.sees("Update file").unwrap();
     contains_text(
         &mut app,
         "The file in the repository differs; this updates it.",
     );
-    app.press("Update file").unwrap();
+    app.presses("Update file").unwrap();
     app.wait_until("updated", Duration::from_secs(10), |s| {
         !s.shows("Update file")
     })

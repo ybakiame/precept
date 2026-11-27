@@ -1,8 +1,11 @@
 //! The Workspace page over a real daemon: check, add and remove a project.
 //! Real NSH components and IPC; not native GUI/Wayland/TTY evidence.
 #![cfg(feature = "native")]
+#[path = "support/patience.rs"]
+mod patience;
 use nsh_core::prelude::*;
 use nsh_engine::{EngineConfig, Root};
+use patience::Patient;
 use precept_ipc::{Location, operator};
 use serde_json::{Value, json};
 use std::{
@@ -175,20 +178,20 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
     // A fresh daemon has no usable project yet: Dashboard shows onboarding and
     // Daemon status, and Workspaces is reachable under Runtime checks (alt+2).
-    app.wait_for("Daemon status").unwrap();
+    app.sees("Daemon status").unwrap();
     app.press_key("alt+2").unwrap();
-    app.wait_for("Registered workspaces").unwrap();
+    app.sees("Registered workspaces").unwrap();
     // No legacy bottom summary card on Workspaces.
     assert!(
         !app.screen()
             .shows("Only the daemon's projects; switching clears the task lookup.")
     );
-    app.wait_for("Add project…").unwrap();
-    app.press("Add project…").unwrap();
+    app.sees("Add project…").unwrap();
+    app.presses("Add project…").unwrap();
     // A folder that is not a repository root is refused by the daemon.
     app.type_text("Folder", f.root.path().to_str().unwrap())
         .unwrap();
-    app.press("Check").unwrap();
+    app.presses("Check").unwrap();
     contains(
         &mut app,
         "Choose a repository inside your home, not the home itself.",
@@ -196,14 +199,14 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     app.clear("Folder").unwrap();
     app.type_text("Folder", gamma.canonicalize().unwrap().to_str().unwrap())
         .unwrap();
-    app.press("Check").unwrap();
+    app.presses("Check").unwrap();
     contains(&mut app, "This folder can be added.");
     assert_eq!(app.screen().input_text("Name").unwrap(), Some("gamma"));
     contains(&mut app, "Set up your Profile first");
     // Profile setup lives cleanly in the Profile tab of Runtime checks.
-    app.press("Go to Profile").unwrap();
-    app.wait_for("Set up your Profile").unwrap();
-    app.press("Create Profile").unwrap();
+    app.presses("Go to Profile").unwrap();
+    app.sees("Set up your Profile").unwrap();
+    app.presses("Create Profile").unwrap();
     let start = Instant::now();
     while f.info()["selected"] != true {
         assert!(start.elapsed() < Duration::from_secs(10));
@@ -219,13 +222,13 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         false,
         "creating never enables writes"
     );
-    app.press("Workspaces").unwrap();
+    app.presses("Workspaces").unwrap();
     // With writes off, the one explicit click enables them for this run and adds.
-    app.wait_for("Enable writes and add").unwrap();
+    app.sees("Enable writes and add").unwrap();
     // Register says so too while writes are off.
-    app.wait_for("Enable writes and register in this Profile: alpha")
+    app.sees("Enable writes and register in this Profile: alpha")
         .unwrap();
-    app.press("Enable writes and add").unwrap();
+    app.presses("Enable writes and add").unwrap();
     // The daemon's list now has gamma, ready, and its agent credential.
     contains(&mut app, "gamma");
     let start = Instant::now();
@@ -238,7 +241,7 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     // records it here, and only its row offers that.
     contains(&mut app, "Not in this Profile");
     assert!(!app.screen().shows("Register in this Profile: gamma"));
-    app.press("Register in this Profile: alpha").unwrap();
+    app.presses("Register in this Profile: alpha").unwrap();
     let start = Instant::now();
     while f.call("project.list", json!({})).unwrap()[0]["state"] != "ready" {
         assert!(start.elapsed() < Duration::from_secs(10));
@@ -246,9 +249,9 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     }
     contains(&mut app, "Registered in this Profile: alpha");
     // Each row's Remove names its project for screen readers.
-    app.press("Remove alpha").unwrap();
-    app.wait_for("Remove this project?").unwrap();
-    app.press("Remove").unwrap();
+    app.presses("Remove alpha").unwrap();
+    app.sees("Remove this project?").unwrap();
+    app.presses("Remove").unwrap();
     let start = Instant::now();
     while f.location.runtime_dir.join("agent-alpha.cap").exists() {
         assert!(start.elapsed() < Duration::from_secs(10));
@@ -266,12 +269,12 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     );
     // Agents (under Workspace): the switches by mechanism come first; the
     // manual launch line per client is folded under Advanced.
-    app.press("Agents").unwrap();
-    app.wait_for("MCP tools · on demand").unwrap();
+    app.presses("Agents").unwrap();
+    app.sees("MCP tools · on demand").unwrap();
     contains(&mut app, "Session-start briefing · automatic");
     assert!(!app.screen().shows("Configure · precept"), "folded");
-    app.press("Advanced: manual setup").unwrap();
-    app.wait_for("Configure · precept").unwrap();
+    app.presses("Advanced: manual setup").unwrap();
+    app.sees("Configure · precept").unwrap();
     contains(&mut app, "claude mcp add --scope user precept -- ");
     assert!(
         !app.screen()
@@ -288,23 +291,23 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
             .any(|t| t.contains(token.trim())),
         "never a token on screen"
     );
-    app.press("Codex").unwrap();
+    app.presses("Codex").unwrap();
     contains(&mut app, "[mcp_servers.\"precept\"]");
-    app.press("Copy").unwrap();
-    app.wait_for("Copied").unwrap();
+    app.presses("Copy").unwrap();
+    app.sees("Copied").unwrap();
     assert!(
         app.screen()
             .clipboard()
             .is_some_and(|c| c.contains("[mcp_servers.\"precept\"]"))
     );
-    app.press("Share gamma with agents").unwrap();
+    app.presses("Share gamma with agents").unwrap();
     let start = Instant::now();
     while f.location.runtime_dir.join("agent-gamma.cap").exists() {
         assert!(start.elapsed() < Duration::from_secs(10));
         std::thread::sleep(Duration::from_millis(20));
     }
     contains(&mut app, "This project is not shared");
-    app.press("Share gamma with agents").unwrap();
+    app.presses("Share gamma with agents").unwrap();
     let start = Instant::now();
     while !f.location.runtime_dir.join("agent-gamma.cap").exists() {
         assert!(start.elapsed() < Duration::from_secs(10));
@@ -313,7 +316,7 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     // Agent activity lives on Sessions now: empty until a client starts
     // precept-mcp and reads; the Agents page has setup only.
     assert!(!app.screen().shows("Recent agent activity"));
-    app.press("Sessions").unwrap();
+    app.presses("Sessions").unwrap();
     contains(&mut app, "No agent has used this project yet");
     {
         use std::io::{BufRead, BufReader, Write};
@@ -347,7 +350,7 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         let _ = mcp.kill();
         let _ = mcp.wait();
     }
-    app.press("Refresh activity").unwrap();
+    app.presses("Refresh activity").unwrap();
     contains(&mut app, "Last read ");
     contains(&mut app, "by headless-agent 2.0");
     contains(
@@ -356,11 +359,11 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     );
     contains(&mut app, "Started precept-mcp");
     contains(&mut app, "Chain intact · 2 entries");
-    app.press("Agents").unwrap();
+    app.presses("Agents").unwrap();
     // Agent suggestions: off until the operator's switch, then they land in
     // Review (writes are on in this run).
     contains(&mut app, "Agents cannot suggest rules");
-    app.press("Agents may suggest rules and record work for gamma")
+    app.presses("Agents may suggest rules and record work for gamma")
         .unwrap();
     let start = Instant::now();
     let proposes = |f: &Fixture| {
@@ -411,16 +414,16 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         let _ = mcp.kill();
         let _ = mcp.wait();
     }
-    app.press("Sessions").unwrap();
-    app.press("Refresh activity").unwrap();
+    app.presses("Sessions").unwrap();
+    app.presses("Refresh activity").unwrap();
     contains(&mut app, "Suggested a rule: it waits in Review");
     // A second project, then switch from the ONE sidebar workspace switcher:
     // the read it starts must finish after the menu closes (never stuck Reading).
     let delta = f.root.path().join("delta");
     std::fs::create_dir_all(delta.join(".git")).unwrap();
     app.press_key("alt+2").unwrap();
-    app.wait_for("Add project…").unwrap();
-    app.press("Add project…").unwrap();
+    app.sees("Add project…").unwrap();
+    app.presses("Add project…").unwrap();
     // The form may still be settling from the previous add: type until the
     // field holds the path.
     let path = delta.canonicalize().unwrap().to_str().unwrap().to_owned();
@@ -431,9 +434,9 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         app.type_text("Folder", &path).unwrap();
         std::thread::sleep(Duration::from_millis(100));
     }
-    app.press("Check").unwrap();
+    app.presses("Check").unwrap();
     contains(&mut app, "This folder can be added.");
-    app.press("Add").unwrap();
+    app.presses("Add").unwrap();
     contains(&mut app, "delta");
     // Workspace list rows are not clickable project-switch buttons.
     assert_eq!(app.screen().count("role:button[delta]").unwrap(), 0);
@@ -445,11 +448,11 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     };
     settled(&mut app);
     // The single sidebar switcher updates Dashboard and Agents cleanly.
-    app.press("Dashboard").unwrap();
-    app.wait_for("Project: gamma").unwrap();
+    app.presses("Dashboard").unwrap();
+    app.sees("Project: gamma").unwrap();
     for (from, to) in [("gamma", "delta"), ("delta", "gamma")] {
-        app.press(from).unwrap();
-        app.press(to).unwrap();
+        app.presses(from).unwrap();
+        app.presses(to).unwrap();
         settled(&mut app);
         assert_eq!(
             app.screen()
@@ -459,10 +462,10 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
                 .count(),
             0
         );
-        app.wait_for(&format!("Project: {to}")).unwrap();
+        app.sees(&format!("Project: {to}")).unwrap();
     }
     // The Agents page follows the same sidebar workspace switcher.
-    app.press("Agents").unwrap();
+    app.presses("Agents").unwrap();
     // The project row shows the selected workspace's root.
     let root_shown = |app: &mut nsh_testing::Headless, name: &str| {
         let suffix = format!("{}{name}", std::path::MAIN_SEPARATOR);
@@ -472,8 +475,8 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         .unwrap();
     };
     root_shown(&mut app, "gamma");
-    app.press("gamma").unwrap();
-    app.press("delta").unwrap();
+    app.presses("gamma").unwrap();
+    app.presses("delta").unwrap();
     settled(&mut app);
     root_shown(&mut app, "delta");
     // One switch adds the Claude Code hook to the user config (HOME is the
@@ -484,17 +487,17 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     contains(&mut app, "The hooks run:");
     // The page read the file before it existed: the first switch is refused
     // and says so; the file is read again, and the second one applies.
-    app.press("Claude Code session-start hook").unwrap();
+    app.presses("Claude Code session-start hook").unwrap();
     contains(&mut app, "The file changed since it was read");
     assert_eq!(
         std::fs::read_to_string(&settings).unwrap(),
         "{\n  \"model\": \"keep-me\"\n}\n"
     );
-    app.press("Claude Code session-start hook").unwrap();
+    app.presses("Claude Code session-start hook").unwrap();
     contains(&mut app, "Briefs each session · ~/.claude/settings.json");
     let text = std::fs::read_to_string(&settings).unwrap();
     assert!(text.contains("keep-me") && text.contains("--vendor claude --project delta"));
-    app.press("Claude Code session-start hook").unwrap();
+    app.presses("Claude Code session-start hook").unwrap();
     let start = Instant::now();
     while std::fs::read_to_string(&settings)
         .unwrap()
@@ -511,14 +514,14 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     // The MCP switch writes only Precept's server entry into ~/.claude.json.
     let claude_json = f.root.path().join(".claude.json");
     std::fs::write(&claude_json, "{\n  \"numStartups\": 7\n}\n").unwrap();
-    app.press("Claude Code MCP server").unwrap();
+    app.presses("Claude Code MCP server").unwrap();
     contains(&mut app, "The file changed since it was read");
-    app.press("Claude Code MCP server").unwrap();
+    app.presses("Claude Code MCP server").unwrap();
     contains(&mut app, "Listed in every session · ~/.claude.json");
     let v: Value = serde_json::from_str(&std::fs::read_to_string(&claude_json).unwrap()).unwrap();
     assert_eq!(v["numStartups"], 7);
     assert_eq!(v["mcpServers"]["precept"]["type"], "stdio");
-    app.press("Claude Code MCP server").unwrap();
+    app.presses("Claude Code MCP server").unwrap();
     let start = Instant::now();
     while std::fs::read_to_string(&claude_json)
         .unwrap()
@@ -530,18 +533,17 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     // The AGENTS.md switch: previewed before writing, removed at once.
     let agents_md = f.root.path().join("delta/AGENTS.md");
     assert!(!agents_md.exists());
-    app.press("Precept section in AGENTS.md").unwrap();
-    app.wait_for("Add the Precept section to AGENTS.md?")
-        .unwrap();
+    app.presses("Precept section in AGENTS.md").unwrap();
+    app.sees("Add the Precept section to AGENTS.md?").unwrap();
     contains(
         &mut app,
         "call `get_effective_context` on the `precept` MCP server",
     );
-    app.press("Write to AGENTS.md").unwrap();
+    app.presses("Write to AGENTS.md").unwrap();
     contains(&mut app, "In AGENTS.md · review and commit it");
     let written = std::fs::read_to_string(&agents_md).unwrap();
     assert!(written.starts_with("<!-- precept:begin v1 -->"));
-    app.press("Precept section in AGENTS.md").unwrap();
+    app.presses("Precept section in AGENTS.md").unwrap();
     let start = Instant::now();
     while agents_md.exists() {
         assert!(start.elapsed() < Duration::from_secs(10));

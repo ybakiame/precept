@@ -23,17 +23,17 @@ fn desktop_imports_without_pairing_or_replacing_the_receivers_identity() {
     let path = receiver.root.path().join("preferences.age");
     precept_ui_client::sync_files::write_envelope(&path, &exported).unwrap();
     let mut app = start_app(&receiver);
-    app.press("Personal sync").unwrap();
+    app.presses("Personal sync").unwrap();
     app.type_text("Encrypted file", &path.to_string_lossy())
         .unwrap();
     app.type_text("Decryption password", "desktop-test-passphrase")
         .unwrap();
-    app.press("Decrypt and preview").unwrap();
+    app.presses("Decrypt and preview").unwrap();
     contains(&mut app, "Conflict");
-    app.press("Accept remote").unwrap();
-    app.press("Apply…").unwrap();
+    app.presses("Accept remote").unwrap();
+    app.presses("Apply…").unwrap();
     contains(&mut app, "Apply selected preferences?");
-    app.press("Apply preferences").unwrap();
+    app.presses("Apply preferences").unwrap();
     contains(&mut app, "Applied 1 key(s); changed 1.");
     let after = receiver.call("profile.sync.status", json!({})).unwrap();
     assert_eq!(before["device_id"], after["device_id"]);

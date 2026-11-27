@@ -2,8 +2,11 @@
 //! operator reads and deletes it. Real NSH components and IPC; not native
 //! GUI/Wayland/TTY evidence.
 #![cfg(feature = "native")]
+#[path = "support/patience.rs"]
+mod patience;
 use nsh_core::prelude::*;
 use nsh_engine::{EngineConfig, Root};
+use patience::Patient;
 use precept_ipc::{Location, operator};
 use serde_json::{Value, json};
 use std::{
@@ -202,13 +205,13 @@ fn an_agents_work_session_is_shown_and_deleted() {
     let mut cfg = EngineConfig::new(Root::of::<precept_ui::App>());
     cfg.viewport = Size::new(px(1080.0), px(1000.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
-    app.wait_for("Daemon status").unwrap();
-    app.press("Sessions").unwrap();
+    app.sees("Daemon status").unwrap();
+    app.presses("Sessions").unwrap();
     contains(&mut app, "Add import from files");
     contains(&mut app, "claude-code 2.1 · updated ");
     contains(&mut app, "1 doing · 2 next · 1 done");
-    app.press("Add import from files").unwrap();
-    app.wait_for("Doing").unwrap();
+    app.presses("Add import from files").unwrap();
+    app.sees("Doing").unwrap();
     contains(&mut app, "• scan daemon scan · Owner: claude-code 2.1");
     contains(&mut app, "• dialog app dialog");
     contains(
@@ -222,13 +225,13 @@ fn an_agents_work_session_is_shown_and_deleted() {
     assert!(at("Deferred") < at("• later follow-up · Owner: claude-code 2.1"));
     assert!(at("• later follow-up · Owner: claude-code 2.1") < at("Done"));
     // The session becomes a Handoff, its task id taken from the goal.
-    app.press("Save as Handoff…").unwrap();
-    app.wait_for("Save this session as a Handoff").unwrap();
+    app.presses("Save as Handoff…").unwrap();
+    app.sees("Save this session as a Handoff").unwrap();
     assert_eq!(
         app.screen().input_text("Task id").unwrap(),
         Some("add-import-from-files")
     );
-    app.press("Save Handoff").unwrap();
+    app.presses("Save Handoff").unwrap();
     contains(&mut app, "Saved as Handoff add-import-from-files");
     let saved = f
         .call(
@@ -237,9 +240,9 @@ fn an_agents_work_session_is_shown_and_deleted() {
         )
         .unwrap();
     assert_eq!(saved["record"]["objective"], "Add import from files");
-    app.press("Delete session…").unwrap();
-    app.wait_for("Delete this work session?").unwrap();
-    app.press("Delete").unwrap();
+    app.presses("Delete session…").unwrap();
+    app.sees("Delete this work session?").unwrap();
+    app.presses("Delete").unwrap();
     let start = Instant::now();
     while !f.call("sessions.list", json!({"project":"alpha"})).unwrap()["sessions"]
         .as_array()
@@ -251,15 +254,15 @@ fn an_agents_work_session_is_shown_and_deleted() {
     }
     contains(&mut app, "No work sessions yet");
     // The Handoff page lists it; pressing it opens it, no task id typed.
-    app.press("Handoff").unwrap();
-    app.wait_for("Saved handoffs").unwrap();
+    app.presses("Handoff").unwrap();
+    app.sees("Saved handoffs").unwrap();
     app.wait_until("listed", Duration::from_secs(10), |s| {
         s.count("role:button[Open handoff add-import-from-files]")
             .unwrap_or(0)
             > 0
     })
     .unwrap();
-    app.press("Open handoff add-import-from-files").unwrap();
-    app.wait_for("Before you continue").unwrap();
+    app.presses("Open handoff add-import-from-files").unwrap();
+    app.sees("Before you continue").unwrap();
     contains(&mut app, "Handoff add-import-from-files · alpha");
 }

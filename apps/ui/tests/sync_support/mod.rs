@@ -1,4 +1,7 @@
 #![allow(dead_code)] // Shared by separate integration-test binaries.
+#[path = "../support/patience.rs"]
+mod patience;
+pub use patience::Patient;
 
 use nsh_core::prelude::*;
 use nsh_engine::{EngineConfig, Root};
@@ -160,7 +163,7 @@ pub fn contains(app: &mut nsh_testing::Headless, needle: &str) {
 pub fn press_when_ready(app: &mut nsh_testing::Headless, label: &str) {
     let start = Instant::now();
     loop {
-        match app.press(label) {
+        match app.presses(label) {
             Ok(()) => return,
             Err(error) => {
                 assert!(error.contains("disabled"), "{error}");
@@ -204,6 +207,6 @@ pub fn start_app(fixture: &Fixture) -> nsh_testing::Headless {
     let mut config = EngineConfig::new(Root::of::<precept_ui::App>());
     config.viewport = Size::new(px(1180.0), px(900.0));
     let mut app = nsh_testing::Headless::start(config).unwrap();
-    app.wait_for("Reconnect").unwrap();
+    app.sees("Reconnect").unwrap();
     app
 }

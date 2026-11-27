@@ -2,8 +2,11 @@
 //! the exact record (two explicit steps).
 //! Real NSH components and IPC; not native GUI/Wayland/TTY evidence.
 #![cfg(feature = "native")]
+#[path = "support/patience.rs"]
+mod patience;
 use nsh_core::prelude::*;
 use nsh_engine::{EngineConfig, Root};
+use patience::Patient;
 use precept_ipc::{Location, operator};
 use serde_json::{Value, json};
 use std::{
@@ -204,40 +207,39 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     let mut cfg = EngineConfig::new(Root::of::<precept_ui::App>());
     cfg.viewport = Size::new(px(1080.0), px(1000.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
-    app.wait_for("Daemon status").unwrap();
-    app.press("Rules").unwrap();
-    app.press("Personal").unwrap();
+    app.sees("Daemon status").unwrap();
+    app.presses("Rules").unwrap();
+    app.presses("Personal").unwrap();
     writes_on(&mut app);
     // A daemon read finishing afterwards keeps the chosen tab (it must not
     // revert Personal back to To review).
-    app.press("Reconnect").unwrap();
+    app.presses("Reconnect").unwrap();
     writes_on(&mut app);
-    app.wait_for("Add preference").unwrap();
+    app.sees("Add preference").unwrap();
     // The scope is fixed to personal (global): no inbox scope switch here.
     assert!(!app.screen().texts().contains(&"Global scope"));
     // No Profile summary here: Profile and writes live in Runtime checks.
     assert!(!app.screen().shows("Inspect Profile"));
     // Step one: Add preference saves a suggestion (prepared, then applied).
-    press_add(&mut app, "Add preference");
-    app.wait_for("Add a personal preference").unwrap();
+    app.presses("Add preference").unwrap();
+    app.sees("Add a personal preference").unwrap();
     app.type_text("Preference key", "personal-editor").unwrap();
     app.type_text("id:preference-value", "Prefer **small** commits.")
         .unwrap();
     // Saving needs a tag; an invalid one is refused in the help line first.
     assert!(app.screen().shows("Save as suggestion"));
     app.type_text("Tags", "a/b").unwrap();
-    app.wait_for("Letters, digits and hyphens only, up to 32 characters.")
+    app.sees("Letters, digits and hyphens only, up to 32 characters.")
         .unwrap();
     app.clear("Tags").unwrap();
     app.type_text("Tags", "git\n").unwrap();
-    app.press("An agent suggested it").unwrap();
+    app.presses("An agent suggested it").unwrap();
     // Rule options: only for Rust, priority 5, declared hard.
     app.type_text("Languages", "Rust").unwrap();
     app.type_text("Priority (-100 to 100)", "5").unwrap();
-    app.press("Hard").unwrap();
-    app.press("Save as suggestion").unwrap();
-    app.wait_for("Nothing is written until you apply it")
-        .unwrap();
+    app.presses("Hard").unwrap();
+    app.presses("Save as suggestion").unwrap();
+    app.sees("Nothing is written until you apply it").unwrap();
     app.press_key("alt+shift+v").unwrap();
     let start = Instant::now();
     while global(&f).as_array().is_none_or(|r| r.is_empty()) {
@@ -262,10 +264,7 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     let start = Instant::now();
     loop {
         app.press_key("alt+shift+y").unwrap();
-        if app
-            .wait_for("Nothing is written until you apply it")
-            .is_ok()
-        {
+        if app.sees("Nothing is written until you apply it").is_ok() {
             break;
         }
         assert!(start.elapsed() < Duration::from_secs(10), "confirm offered");
@@ -281,14 +280,15 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     // what agents receive without a new review.
     contains(&mut app, "Applies to languages rust");
     contains(&mut app, "priority 5");
-    app.press("#1 · personal-editor · confirmed · r2").unwrap();
+    app.presses("#1 · personal-editor · confirmed · r2")
+        .unwrap();
     app.wait_until("switch ready", Duration::from_secs(10), |s| {
         s.texts().contains(&"Delivered to agents")
     })
     .unwrap();
     let start = Instant::now();
     while global(&f)[0]["enabled"] != false {
-        let _ = app.press("Delivered to agents");
+        let _ = app.presses("Delivered to agents");
         assert!(start.elapsed() < Duration::from_secs(10), "switched off");
         std::thread::sleep(Duration::from_millis(200));
     }
@@ -315,28 +315,27 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     tokio_runtime(|| operator::mutate(&f.location, &mutation)).unwrap();
     app.press_key("escape").unwrap();
     // Refresh reads the list again even though the Profile did not change.
-    app.press("Refresh").unwrap();
+    app.presses("Refresh").unwrap();
     app.wait_until("row listed", Duration::from_secs(10), |s| {
         s.count("role:button[#2 · tone · suggested · r1]")
             .unwrap_or(0)
             > 0
     })
     .unwrap();
-    app.press("#2 · tone · suggested · r1").unwrap();
-    app.wait_for("Edit…").unwrap();
+    app.presses("#2 · tone · suggested · r1").unwrap();
+    app.sees("Edit…").unwrap();
     app.type_text("Note (optional)", "Key should say what it governs.")
         .unwrap();
-    app.press("Edit…").unwrap();
-    app.wait_for("Edit suggestion #2").unwrap();
+    app.presses("Edit…").unwrap();
+    app.sees("Edit suggestion #2").unwrap();
     assert_eq!(
         app.screen().input_text("Preference key").unwrap(),
         Some("tone")
     );
     app.clear("Preference key").unwrap();
     app.type_text("Preference key", "answer-length").unwrap();
-    app.press("Save as a new suggestion").unwrap();
-    app.wait_for("Nothing is written until you apply it")
-        .unwrap();
+    app.presses("Save as a new suggestion").unwrap();
+    app.sees("Nothing is written until you apply it").unwrap();
     app.press_key("alt+shift+v").unwrap();
     let record = |f: &Fixture, id: i64| {
         f.call(
@@ -387,9 +386,9 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     };
     tokio_runtime(|| operator::mutate(&f.location, &another)).unwrap();
     // The edit opened its replacement (#3) for confirmation; close it.
-    app.wait_for("#3 · answer-length").unwrap();
-    app.press("Close detail").unwrap();
-    app.press("Refresh").unwrap();
+    app.sees("#3 · answer-length").unwrap();
+    app.presses("Close detail").unwrap();
+    app.presses("Refresh").unwrap();
     app.wait_until("row listed", Duration::from_secs(10), |s| {
         s.count("role:button[#4 · review-style · suggested · r1]")
             .unwrap_or(0)
@@ -397,14 +396,13 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     })
     .unwrap();
     assert!(!app.screen().shows("Confirm 2…"));
-    app.press("Pick #3 for a batch decision").unwrap();
-    app.press("Pick #4 for a batch decision").unwrap();
-    app.wait_for("2 picked").unwrap();
+    app.presses("Pick #3 for a batch decision").unwrap();
+    app.presses("Pick #4 for a batch decision").unwrap();
+    app.sees("2 picked").unwrap();
     app.type_text("Note (optional)", "Both reviewed together.")
         .unwrap();
-    app.press("Confirm 2…").unwrap();
-    app.wait_for("Nothing is written until you apply it")
-        .unwrap();
+    app.presses("Confirm 2…").unwrap();
+    app.sees("Nothing is written until you apply it").unwrap();
     contains(&mut app, "Confirm 2 suggestions");
     app.press_key("alt+shift+v").unwrap();
     let start = Instant::now();
@@ -427,23 +425,22 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
 
     // A confirmed rule is edited in place of itself: the new version takes
     // effect at once, the earlier text stays in its history.
-    app.press("Refresh").unwrap();
+    app.presses("Refresh").unwrap();
     app.wait_until("confirmed row", Duration::from_secs(10), |s| {
         s.count("role:button[#4 · review-style · confirmed · r2]")
             .unwrap_or(0)
             > 0
     })
     .unwrap();
-    app.press("#4 · review-style · confirmed · r2").unwrap();
-    app.wait_for("Edit…").unwrap();
+    app.presses("#4 · review-style · confirmed · r2").unwrap();
+    app.sees("Edit…").unwrap();
     app.type_text("Note (optional)", "Smaller still.").unwrap();
-    app.press("Edit…").unwrap();
-    app.wait_for("Edit rule #4").unwrap();
+    app.presses("Edit…").unwrap();
+    app.sees("Edit rule #4").unwrap();
     app.clear("Preference key").unwrap();
     app.type_text("Preference key", "review-pace").unwrap();
-    app.press("Save the new version").unwrap();
-    app.wait_for("Nothing is written until you apply it")
-        .unwrap();
+    app.presses("Save the new version").unwrap();
+    app.sees("Nothing is written until you apply it").unwrap();
     app.press_key("alt+shift+v").unwrap();
     let start = Instant::now();
     while record(&f, 5).is_none() {
@@ -478,28 +475,18 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     };
     tokio_runtime(|| operator::mutate(&f.location, &update)).unwrap();
     // The edit opened the new version's detail; close it first.
-    app.press("Close detail").unwrap();
-    app.press("Refresh").unwrap();
+    app.presses("Close detail").unwrap();
+    app.presses("Refresh").unwrap();
     app.wait_until("update listed", Duration::from_secs(10), |s| {
         s.count("role:button[#6 · review-pace · suggested · r1]")
             .unwrap_or(0)
             > 0
     })
     .unwrap();
-    app.press("#6 · review-pace · suggested · r1").unwrap();
-    app.wait_for("Updates #5 · review-pace").unwrap();
+    app.presses("#6 · review-pace · suggested · r1").unwrap();
+    app.sees("Updates #5 · review-pace").unwrap();
     contains(
         &mut app,
         "Confirming replaces the confirmed rule with this version",
     );
-}
-
-/// Presses the add button once it is enabled: it waits for the connection,
-/// the read and the write grant, which can trail what the screen shows.
-fn press_add(app: &mut nsh_testing::Headless, label: &str) {
-    app.wait_until("add enabled", Duration::from_secs(10), |s| {
-        s.enabled("id:review.add").unwrap_or(false)
-    })
-    .unwrap();
-    app.press(label).unwrap();
 }

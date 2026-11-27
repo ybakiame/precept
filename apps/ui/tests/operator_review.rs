@@ -2,8 +2,11 @@
 //! native GUI/Wayland/TTY evidence. A separate integration binary so its global
 //! `INPUTS` grant never races the original operator integration test.
 #![cfg(feature = "ipc")]
+#[path = "support/patience.rs"]
+mod patience;
 use nsh_core::prelude::*;
 use nsh_engine::{EngineConfig, Root};
+use patience::Patient;
 use precept_ipc::{Location, operator};
 use serde_json::{Value, json};
 use std::{
@@ -224,12 +227,12 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     let mut cfg = EngineConfig::new(Root::of::<precept_ui::App>());
     cfg.viewport = Size::new(px(1080.0), px(760.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
-    app.wait_for("No Profile selected").unwrap();
+    app.sees("No Profile selected").unwrap();
     // Profile setup lives in Runtime checks -> Profile: the daemon suggests a
     // path in its private state folder; nothing exists until the operator's click.
-    app.press("Runtime checks").unwrap();
-    app.press("Profile").unwrap();
-    app.wait_for("Set up your Profile").unwrap();
+    app.presses("Runtime checks").unwrap();
+    app.presses("Profile").unwrap();
+    app.sees("Set up your Profile").unwrap();
     let suggested = app
         .screen()
         .input_text("Profile file")
@@ -239,8 +242,8 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     assert!(suggested.ends_with("profile.sqlite3"));
     assert!(!std::path::Path::new(&suggested).exists());
     assert_eq!(f.info()["selected"], false);
-    app.press("Create Profile").unwrap();
-    app.wait_for("Selected at every daemon start").unwrap();
+    app.presses("Create Profile").unwrap();
+    app.sees("Selected at every daemon start").unwrap();
     assert_eq!(f.info()["selected"], true);
     assert_eq!(
         f.info()["remembered"],
@@ -252,8 +255,8 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
         false,
         "creation never enables writes"
     );
-    app.press("Writes").unwrap();
-    app.wait_for("Writes on").unwrap();
+    app.presses("Writes").unwrap();
+    app.sees("Writes on").unwrap();
     assert_eq!(f.info()["write_enabled"], true);
     app.press_key("alt+o").unwrap();
     writes_on(&mut app);
@@ -261,8 +264,8 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     app.press_key("mod+r").unwrap();
     // The newly registered project becomes the current one; reviewed rules
     // are a separate destination from the pending queue.
-    app.press("Rules").unwrap();
-    app.wait_for("Project conventions · alpha").unwrap();
+    app.presses("Rules").unwrap();
+    app.sees("Project conventions · alpha").unwrap();
     writes_on(&mut app);
     // Project → Preferences → Manage project preferences: alpha's records.
     manage_project(&mut app);
@@ -270,14 +273,13 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     add(&mut app, "editor", "synthetic-value");
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 2");
-    app.wait_for("Show full digest").unwrap();
-    app.press("Show full digest").unwrap();
-    app.wait_for("Collapse digest").unwrap();
+    app.sees("Show full digest").unwrap();
+    app.presses("Show full digest").unwrap();
+    app.sees("Collapse digest").unwrap();
     // Confirm #1; it becomes a same-key confirmed peer for the next suggestion.
     let first = f.inspect(1, 1);
-    app.press("Confirm preference…").unwrap();
-    app.wait_for("Nothing is written until you apply it")
-        .unwrap();
+    app.presses("Confirm preference…").unwrap();
+    app.sees("Nothing is written until you apply it").unwrap();
     assert_eq!(f.inspect(1, 1)["record"]["status"], "suggested");
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 3");
@@ -286,19 +288,17 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     add(&mut app, "editor", "synthetic-value");
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 4");
-    app.wait_for("#2 · editor").unwrap();
-    app.wait_for("Show full digest").unwrap();
+    app.sees("#2 · editor").unwrap();
+    app.sees("Show full digest").unwrap();
     // The peer-demotion disclosure names the authoritative total and preview ids.
-    app.wait_for("Deprecates 1 same-key confirmed records (ids 1)")
+    app.sees("Deprecates 1 same-key confirmed records (ids 1)")
         .unwrap();
     // History for a never-decided suggestion is empty, never an error.
-    app.wait_for("No decisions recorded for this record")
-        .unwrap();
+    app.sees("No decisions recorded for this record").unwrap();
     // Confirm #2 (demotes #1), then read its decision history.
     let second = f.inspect(2, 1);
-    app.press("Confirm preference…").unwrap();
-    app.wait_for("Nothing is written until you apply it")
-        .unwrap();
+    app.presses("Confirm preference…").unwrap();
+    app.sees("Nothing is written until you apply it").unwrap();
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 5");
     let confirmed_second = f.assert_decision(&second, "confirm", "desktop", 2, 5);
@@ -306,44 +306,42 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     assert_eq!(demoted["record"]["status"], "deprecated");
     assert!(!app.screen().shows("#1 · editor · deprecated · r2"));
     open_row(&mut app, "#2 · editor · confirmed · r2");
-    app.wait_for("Channel is client-asserted").unwrap();
+    app.sees("Channel is client-asserted").unwrap();
     // Deprecate the confirmed #2 with its impact disclosure.
-    app.wait_for("Deprecation makes the record inactive in agent effective context.")
+    app.sees("Deprecation makes the record inactive in agent effective context.")
         .unwrap();
-    app.press("Deprecate preference…").unwrap();
-    app.wait_for("Nothing is written until you apply it")
-        .unwrap();
+    app.presses("Deprecate preference…").unwrap();
+    app.sees("Nothing is written until you apply it").unwrap();
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 6");
     let deprecated_second = f.assert_decision(&confirmed_second, "deprecate", "desktop", 3, 6);
     assert_eq!(deprecated_second["record"]["status"], "deprecated");
     // Deprecated rows stay hidden until the explicit status filter shows them.
-    app.press("Show deprecated").unwrap();
+    app.presses("Show deprecated").unwrap();
     // Delete #2 through the destructive tier: a wrong retype refuses, the exact
     // retype arms, and the receipt leaves identity-only proof.
     open_row(&mut app, "#2 · editor · deprecated · r3");
     app.press_key("alt+shift+q").unwrap();
-    app.wait_for("Delete project alpha preference #2?").unwrap();
-    app.wait_for("Preference ID: #2").unwrap();
-    app.wait_for("Copy ID").unwrap();
+    app.sees("Delete project alpha preference #2?").unwrap();
+    app.sees("Preference ID: #2").unwrap();
+    app.sees("Copy ID").unwrap();
     app.type_text("Retype the exact ID", "9").unwrap();
-    app.wait_for("The typed ID does not match").unwrap();
+    app.sees("The typed ID does not match").unwrap();
     app.press_key("Enter").unwrap();
     assert!(!app.screen().shows("Nothing is written until you apply it"));
     assert_eq!(f.inspect(2, 3)["record"]["status"], "deprecated");
-    app.press("Cancel").unwrap();
+    app.presses("Cancel").unwrap();
     app.wait_for_gone(
         "Delete project alpha preference #2?",
         Duration::from_secs(5),
     )
     .unwrap();
     app.press_key("alt+shift+q").unwrap();
-    app.wait_for("Delete project alpha preference #2?").unwrap();
+    app.sees("Delete project alpha preference #2?").unwrap();
     app.type_text("Retype the exact ID", "2").unwrap();
-    app.wait_for("Deletion armed; apply to commit").unwrap();
+    app.sees("Deletion armed; apply to commit").unwrap();
     app.press_key("Enter").unwrap();
-    app.wait_for("Nothing is written until you apply it")
-        .unwrap();
+    app.sees("Nothing is written until you apply it").unwrap();
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 7");
     assert_eq!(
@@ -374,13 +372,13 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     app.wait_for_gone("Show full digest", Duration::from_secs(5))
         .unwrap();
     // To review is empty: a valid pending-review state, never "unavailable".
-    app.press("Review").unwrap();
-    app.wait_for("No pending suggestions").unwrap();
+    app.presses("Review").unwrap();
+    app.sees("No pending suggestions").unwrap();
     assert!(!app.screen().shows("Unavailable"));
     // Both locales ship the review copy.
     app.press_key("mod+l").unwrap();
-    app.wait_for("审阅").unwrap();
-    app.wait_for("没有待审建议").unwrap();
+    app.sees("审阅").unwrap();
+    app.sees("没有待审建议").unwrap();
     drop(app);
     keyboard_review_and_revoked_delete(&f);
     changed_root_refuses_reviewed_apply(&f);
@@ -391,18 +389,17 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
 /// Workspace → Preferences → Manage & add preferences, read and writable.
 fn manage_project(app: &mut nsh_testing::Headless) {
     app.press_key("alt+3").unwrap();
-    app.press("Manage & add preferences").unwrap();
+    app.presses("Manage & add preferences").unwrap();
     writes_on(app);
 }
 /// Add convention: saved as a suggestion (prepared; Apply commits it).
 fn add(app: &mut nsh_testing::Headless, key: &str, value: &str) {
-    press_add(app, "Add convention");
+    app.presses("Add convention").unwrap();
     app.type_text("Preference key", key).unwrap();
     app.type_text("id:preference-value", value).unwrap();
     app.type_text("Tags", "review\n").unwrap();
-    app.press("Save as suggestion").unwrap();
-    app.wait_for("Nothing is written until you apply it")
-        .unwrap();
+    app.presses("Save as suggestion").unwrap();
+    app.sees("Nothing is written until you apply it").unwrap();
 }
 /// A record row in the scope's list opens its sheet with the exact record.
 fn open_row(app: &mut nsh_testing::Headless, row: &str) {
@@ -413,8 +410,8 @@ fn open_row(app: &mut nsh_testing::Headless, row: &str) {
         s.count(&selector).unwrap_or(0) > 0
     })
     .unwrap();
-    app.press(row).unwrap();
-    app.wait_for("Show full digest").unwrap();
+    app.presses(row).unwrap();
+    app.sees("Show full digest").unwrap();
 }
 
 fn keyboard_review_and_revoked_delete(f: &Fixture) {
@@ -427,12 +424,11 @@ fn keyboard_review_and_revoked_delete(f: &Fixture) {
     add(&mut app, "keyboard-editor", "keyboard-value");
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 8");
-    app.wait_for("#3 · keyboard-editor").unwrap();
-    app.wait_for("Show full digest").unwrap();
+    app.sees("#3 · keyboard-editor").unwrap();
+    app.sees("Show full digest").unwrap();
     let third = f.inspect(3, 1);
     app.press_key("alt+shift+y").unwrap();
-    app.wait_for("Nothing is written until you apply it")
-        .unwrap();
+    app.sees("Nothing is written until you apply it").unwrap();
     assert_eq!(f.inspect(3, 1)["record"]["status"], "suggested");
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 9");
@@ -440,8 +436,7 @@ fn keyboard_review_and_revoked_delete(f: &Fixture) {
     open_row(&mut app, "#3 · keyboard-editor · confirmed · r2");
     contains(&mut app, "confirm · r1→r2 · desktop");
     app.press_key("alt+shift+w").unwrap();
-    app.wait_for("Nothing is written until you apply it")
-        .unwrap();
+    app.sees("Nothing is written until you apply it").unwrap();
     assert_eq!(f.inspect(3, 2)["record"]["status"], "confirmed");
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 10");
@@ -449,25 +444,23 @@ fn keyboard_review_and_revoked_delete(f: &Fixture) {
     add(&mut app, "keyboard-editor", "keyboard-value");
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 11");
-    app.wait_for("#4 · keyboard-editor").unwrap();
-    app.wait_for("Show full digest").unwrap();
+    app.sees("#4 · keyboard-editor").unwrap();
+    app.sees("Show full digest").unwrap();
     let fourth = f.inspect(4, 1);
     app.press_key("alt+shift+n").unwrap();
-    app.wait_for("Nothing is written until you apply it")
-        .unwrap();
+    app.sees("Nothing is written until you apply it").unwrap();
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 12");
     f.assert_decision(&fourth, "reject", "desktop", 2, 12);
-    app.press("Show deprecated").unwrap();
+    app.presses("Show deprecated").unwrap();
     open_row(&mut app, "#3 · keyboard-editor · deprecated · r3");
     app.press_key("alt+shift+q").unwrap();
-    app.wait_for("Delete project alpha preference #3?").unwrap();
+    app.sees("Delete project alpha preference #3?").unwrap();
     app.type_text("Retype the exact ID", "3").unwrap();
     app.press_key("Enter").unwrap();
-    app.wait_for("Nothing is written until you apply it")
-        .unwrap();
+    app.sees("Nothing is written until you apply it").unwrap();
     // The exact request names the desktop channel.
-    app.press("Show request").unwrap();
+    app.presses("Show request").unwrap();
     contains(&mut app, "\"channel\":\"desktop\"");
     // Revoke externally between inspection/consent and submit. The real IPC
     // adapter/daemon must refuse rather than accept an obsolete UI grant.
@@ -476,18 +469,18 @@ fn keyboard_review_and_revoked_delete(f: &Fixture) {
     contains(&mut app, "Unauthorized");
     assert_eq!(f.inspect(3, 3)["record"]["status"], "deprecated");
     app.press_key("alt+shift+r").unwrap();
-    app.wait_for("Writes are off for this daemon run").unwrap();
+    app.sees("Writes are off for this daemon run").unwrap();
     // A new grant from Runtime checks -> Profile, then back to the records.
-    app.press("Runtime checks").unwrap();
-    app.press("Profile").unwrap();
-    app.press("Writes").unwrap();
-    app.wait_for("Writes on").unwrap();
+    app.presses("Runtime checks").unwrap();
+    app.presses("Profile").unwrap();
+    app.presses("Writes").unwrap();
+    app.sees("Writes on").unwrap();
     manage_project(&mut app);
     open_row(&mut app, "#3 · keyboard-editor · deprecated · r3");
     app.press_key("alt+shift+q").unwrap();
-    app.wait_for("Delete project alpha preference #3?").unwrap();
+    app.sees("Delete project alpha preference #3?").unwrap();
     // Revocation and the new grant must not retain the preceding exact text.
-    app.wait_for("Type the ID exactly to arm deletion").unwrap();
+    app.sees("Type the ID exactly to arm deletion").unwrap();
     app.press_key("alt+shift+v").unwrap();
     assert_eq!(f.inspect(3, 3)["record"]["status"], "deprecated");
     app.type_text("Retype the exact ID", "3").unwrap();
@@ -526,11 +519,10 @@ fn changed_root_refuses_reviewed_apply(f: &Fixture) {
     add(&mut app, "root-bound-review", "synthetic");
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 14");
-    app.wait_for("#5 · root-bound-review").unwrap();
-    app.wait_for("Show full digest").unwrap();
+    app.sees("#5 · root-bound-review").unwrap();
+    app.sees("Show full digest").unwrap();
     app.press_key("alt+shift+y").unwrap();
-    app.wait_for("Nothing is written until you apply it")
-        .unwrap();
+    app.sees("Nothing is written until you apply it").unwrap();
     let root = f.root.path().join("alpha");
     let moved = f.root.path().join("alpha-moved");
     std::fs::rename(&root, &moved).unwrap();
@@ -542,14 +534,4 @@ fn changed_root_refuses_reviewed_apply(f: &Fixture) {
     assert_eq!(after["record"]["status"], "suggested");
     assert_eq!(after["commit_sequence"], 14);
     assert!(after["decisions"].as_array().unwrap().is_empty());
-}
-
-/// Presses the add button once it is enabled: it waits for the connection,
-/// the read and the write grant, which can trail what the screen shows.
-fn press_add(app: &mut nsh_testing::Headless, label: &str) {
-    app.wait_until("add enabled", Duration::from_secs(10), |s| {
-        s.enabled("id:review.add").unwrap_or(false)
-    })
-    .unwrap();
-    app.press(label).unwrap();
 }

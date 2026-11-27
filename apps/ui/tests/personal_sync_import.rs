@@ -29,19 +29,19 @@ fn desktop_requires_an_explicit_conflict_choice_and_excludes_reapplied_entries()
     precept_ui_client::sync_files::write_envelope(&envelope, &exported).unwrap();
 
     let mut app = start_app(&receiver);
-    app.press("Personal sync").unwrap();
+    app.presses("Personal sync").unwrap();
     app.type_text("Encrypted file", &envelope.to_string_lossy())
         .unwrap();
     app.type_text("Decryption password", "desktop-test-passphrase")
         .unwrap();
-    app.press("Decrypt and preview").unwrap();
+    app.presses("Decrypt and preview").unwrap();
     contains(&mut app, "Conflict");
     contains(&mut app, "0 key(s) selected");
-    app.press("Accept remote").unwrap();
+    app.presses("Accept remote").unwrap();
     contains(&mut app, "1 key(s) selected");
-    app.press("Apply…").unwrap();
+    app.presses("Apply…").unwrap();
     contains(&mut app, "Apply selected preferences?");
-    app.press("Apply preferences").unwrap();
+    app.presses("Apply preferences").unwrap();
     contains(&mut app, "Applied 1 key(s); changed 1.");
     assert_eq!(app.screen().count("Apply…").unwrap(), 0);
 
@@ -59,7 +59,7 @@ fn desktop_requires_an_explicit_conflict_choice_and_excludes_reapplied_entries()
     );
     app.type_text("Decryption password", "desktop-test-passphrase")
         .unwrap();
-    app.press("Decrypt and preview").unwrap();
+    app.presses("Decrypt and preview").unwrap();
     contains(&mut app, "Already applied");
     contains(&mut app, "0 key(s) selected");
 }

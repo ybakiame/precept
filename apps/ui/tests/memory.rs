@@ -2,8 +2,11 @@
 //! reads, restores, pins and deletes them. Real NSH components and IPC; not native
 //! GUI/Wayland/TTY evidence.
 #![cfg(feature = "native")]
+#[path = "support/patience.rs"]
+mod patience;
 use nsh_core::prelude::*;
 use nsh_engine::{EngineConfig, Root};
+use patience::Patient;
 use precept_ipc::{Location, operator};
 use serde_json::{Value, json};
 use std::{
@@ -199,8 +202,8 @@ fn agents_notes_are_shown_restored_pinned_and_deleted() {
     let mut cfg = EngineConfig::new(Root::of::<precept_ui::App>());
     cfg.viewport = Size::new(px(1180.0), px(1000.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
-    app.wait_for("Daemon status").unwrap();
-    app.press("Memory").unwrap();
+    app.sees("Daemon status").unwrap();
+    app.presses("Memory").unwrap();
     contains(&mut app, "Environment · 1");
     contains(&mut app, "Cautions · 1");
     contains(&mut app, "Node 24 via mise");
@@ -208,9 +211,9 @@ fn agents_notes_are_shown_restored_pinned_and_deleted() {
     contains(&mut app, "Weight 100: Environment 100");
     // The detail keeps the earlier text; restoring it is the operator's
     // correction.
-    app.press("Open memory note Node").unwrap();
-    app.wait_for("Earlier versions").unwrap();
-    app.press("Restore version 1").unwrap();
+    app.presses("Open memory note Node").unwrap();
+    app.sees("Earlier versions").unwrap();
+    app.presses("Restore version 1").unwrap();
     let entries = |f: &Fixture| {
         f.call("memories.list", json!({"project":"alpha"})).unwrap()["entries"]
             .as_array()
@@ -229,17 +232,17 @@ fn agents_notes_are_shown_restored_pinned_and_deleted() {
             .any(|x| x["title"] == "Node" && x["body"] == "Node 22 via mise")
     });
     contains(&mut app, "Edited by you");
-    app.press("Pinned: always in the briefing").unwrap();
+    app.presses("Pinned: always in the briefing").unwrap();
     wait("pinned", &|e| {
         e.iter()
             .any(|x| x["title"] == "Node" && x["pinned"] == true)
     });
     // A note becomes a project convention to confirm; the note stays.
-    app.press("Propose as a rule…").unwrap();
-    app.wait_for("Add a project convention").unwrap();
-    app.press("Save as suggestion").unwrap();
-    app.wait_for("Check before writing").unwrap();
-    app.press("Apply").unwrap();
+    app.presses("Propose as a rule…").unwrap();
+    app.sees("Add a project convention").unwrap();
+    app.presses("Save as suggestion").unwrap();
+    app.sees("Check before writing").unwrap();
+    app.presses("Apply").unwrap();
     let start = Instant::now();
     loop {
         let page = f
@@ -258,11 +261,11 @@ fn agents_notes_are_shown_restored_pinned_and_deleted() {
         assert!(start.elapsed() < Duration::from_secs(10), "suggested");
         std::thread::sleep(Duration::from_millis(50));
     }
-    app.press("Memory").unwrap();
-    app.press("Open memory note Node").unwrap();
-    app.press("Delete…").unwrap();
-    app.wait_for("Delete this note?").unwrap();
-    app.press("Delete").unwrap();
+    app.presses("Memory").unwrap();
+    app.presses("Open memory note Node").unwrap();
+    app.presses("Delete…").unwrap();
+    app.sees("Delete this note?").unwrap();
+    app.presses("Delete").unwrap();
     wait("deleted", &|e| e.len() == 1 && e[0]["title"] == "WSL paths");
     contains(
         &mut app,

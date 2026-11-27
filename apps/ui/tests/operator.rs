@@ -1,7 +1,10 @@
 //! Real NSH components over real daemon IPC; not native GUI/Wayland/TTY evidence.
 #![cfg(feature = "native")]
+#[path = "support/patience.rs"]
+mod patience;
 use nsh_core::prelude::*;
 use nsh_engine::{EngineConfig, Root};
+use patience::Patient;
 use precept_ipc::{Location, operator};
 use serde_json::{Value, json};
 use std::{
@@ -206,12 +209,12 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     let mut cfg = EngineConfig::new(Root::of::<precept_ui::App>());
     cfg.viewport = Size::new(px(1080.0), px(760.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
-    app.wait_for("No Profile selected").unwrap();
+    app.sees("No Profile selected").unwrap();
     // Profile setup lives in Runtime checks -> Profile: the daemon suggests a
     // path in its private state folder; nothing exists until the operator's click.
-    app.press("Runtime checks").unwrap();
-    app.press("Profile").unwrap();
-    app.wait_for("Set up your Profile").unwrap();
+    app.presses("Runtime checks").unwrap();
+    app.presses("Profile").unwrap();
+    app.sees("Set up your Profile").unwrap();
     let suggested = app
         .screen()
         .input_text("Profile file")
@@ -221,8 +224,8 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     assert!(suggested.ends_with("profile.sqlite3"));
     assert!(!std::path::Path::new(&suggested).exists());
     assert_eq!(f.info()["selected"], false);
-    app.press("Create Profile").unwrap();
-    app.wait_for("Selected at every daemon start").unwrap();
+    app.presses("Create Profile").unwrap();
+    app.sees("Selected at every daemon start").unwrap();
     assert_eq!(f.info()["selected"], true);
     assert_eq!(
         f.info()["remembered"],
@@ -234,8 +237,8 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
         false,
         "creation never enables writes"
     );
-    app.press("Writes").unwrap();
-    app.wait_for("Writes on").unwrap();
+    app.presses("Writes").unwrap();
+    app.sees("Writes on").unwrap();
     assert_eq!(f.info()["write_enabled"], true);
     app.press_key("alt+o").unwrap();
     writes_on(&mut app);
@@ -243,26 +246,25 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     app.press_key("mod+r").unwrap();
     // The newly registered project becomes the current one; its reviewed rules
     // live separately from the pending Review queue.
-    app.press("Rules").unwrap();
-    app.wait_for("Project conventions · alpha").unwrap();
+    app.presses("Rules").unwrap();
+    app.sees("Project conventions · alpha").unwrap();
     writes_on(&mut app);
     // Workspace → Preferences → Manage & add preferences opens Rules on alpha;
     // Add preference saves a suggestion.
     app.press_key("alt+3").unwrap();
-    app.press("Manage & add preferences").unwrap();
+    app.presses("Manage & add preferences").unwrap();
     writes_on(&mut app);
     let add = |app: &mut nsh_testing::Headless| {
-        press_add(app, "Add convention");
+        app.presses("Add convention").unwrap();
         app.type_text("Preference key", "editor").unwrap();
         app.type_text("id:preference-value", "synthetic-value")
             .unwrap();
         // Tags are required: one suggestion button, one typed with a comma.
-        app.press("Add tag style").unwrap();
+        app.presses("Add tag style").unwrap();
         app.type_text("Tags", "Tooling,").unwrap();
-        app.wait_for("One to ten short labels, such as style or git. Press Enter or a comma to add one. · 2 of 10").unwrap();
-        app.press("Save as suggestion").unwrap();
-        app.wait_for("Nothing is written until you apply it")
-            .unwrap();
+        app.sees("One to ten short labels, such as style or git. Press Enter or a comma to add one. · 2 of 10").unwrap();
+        app.presses("Save as suggestion").unwrap();
+        app.sees("Nothing is written until you apply it").unwrap();
     };
     add(&mut app);
     assert!(
@@ -287,11 +289,10 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     waiting(&mut app, "Review, 1 waiting");
     // The saved suggestion opens as the exact record; confirming it is the
     // second explicit step.
-    app.wait_for("Show full digest").unwrap();
-    app.wait_for("#1 · editor").unwrap();
+    app.sees("Show full digest").unwrap();
+    app.sees("#1 · editor").unwrap();
     app.press_key("alt+shift+y").unwrap();
-    app.wait_for("Nothing is written until you apply it")
-        .unwrap();
+    app.sees("Nothing is written until you apply it").unwrap();
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 3");
     // Confirmed: nothing waits, and the count leaves rather than showing 0.
@@ -299,10 +300,9 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     add(&mut app);
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 4");
-    app.wait_for("#2 · editor").unwrap();
+    app.sees("#2 · editor").unwrap();
     app.press_key("alt+shift+n").unwrap();
-    app.wait_for("Nothing is written until you apply it")
-        .unwrap();
+    app.sees("Nothing is written until you apply it").unwrap();
     app.press_key("alt+shift+v").unwrap();
     contains(&mut app, "commit 5");
     let page = f
@@ -357,19 +357,19 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
             .any(|t| t.contains("Saved synthetic history"))
     );
     // Writes are turned off in Runtime checks -> Profile.
-    app.press("Runtime checks").unwrap();
-    app.press("Profile").unwrap();
+    app.presses("Runtime checks").unwrap();
+    app.presses("Profile").unwrap();
     assert_eq!(f.info()["write_enabled"], true);
-    app.press("Writes").unwrap();
-    app.wait_for("Writes off").unwrap();
+    app.presses("Writes").unwrap();
+    app.sees("Writes off").unwrap();
     assert_eq!(f.info()["write_enabled"], false);
     app.press_key("alt+o").unwrap();
-    app.wait_for("Writes are off for this daemon run").unwrap();
+    app.sees("Writes are off for this daemon run").unwrap();
     app.press_key("mod+l").unwrap();
-    app.wait_for("本次 daemon 运行未开启写入").unwrap();
+    app.sees("本次 daemon 运行未开启写入").unwrap();
     app.press_key("Escape").unwrap();
     app.press_key("alt+3").unwrap();
-    app.wait_for("已确认的偏好与约定").unwrap();
+    app.sees("已确认的偏好与约定").unwrap();
     f.child.kill().unwrap();
     f.child.wait().unwrap();
     let startup = f.root.path().join("daemon-state/startup.json");
@@ -382,18 +382,8 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     assert_eq!(f.info()["write_enabled"], false);
     assert_eq!(f.info()["write_restore_failure"], "identity_mismatch");
     app.press_key("alt+o").unwrap();
-    app.press("id:nav.runtime-checks").unwrap();
-    app.press("Profile").unwrap();
+    app.presses("id:nav.runtime-checks").unwrap();
+    app.presses("Profile").unwrap();
     contains(&mut app, "保存的 Profile 身份已不匹配");
     assert!(app.screen().clipboard().is_none());
-}
-
-/// Presses the add button once it is enabled: it waits for the connection,
-/// the read and the write grant, which can trail what the screen shows.
-fn press_add(app: &mut nsh_testing::Headless, label: &str) {
-    app.wait_until("add enabled", Duration::from_secs(10), |s| {
-        s.enabled("id:review.add").unwrap_or(false)
-    })
-    .unwrap();
-    app.press(label).unwrap();
 }

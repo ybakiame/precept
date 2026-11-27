@@ -2,8 +2,11 @@
 //! and explicit skips, picks become suggestions in one write. Real NSH
 //! components and IPC; not native GUI/Wayland/TTY evidence.
 #![cfg(feature = "native")]
+#[path = "support/patience.rs"]
+mod patience;
 use nsh_core::prelude::*;
 use nsh_engine::{EngineConfig, Root};
+use patience::Patient;
 use precept_ipc::{Location, operator};
 use serde_json::{Value, json};
 use std::{
@@ -232,11 +235,11 @@ fn rules_in_the_projects_files_are_picked_and_filed_as_suggestions() {
     let mut cfg = EngineConfig::new(Root::of::<precept_ui::App>());
     cfg.viewport = Size::new(px(1080.0), px(1000.0));
     let mut app = nsh_testing::Headless::start(cfg).unwrap();
-    app.wait_for("Daemon status").unwrap();
+    app.sees("Daemon status").unwrap();
     app.press_key("alt+o").unwrap();
     writes_on(&mut app);
-    app.press("Import rule files…").unwrap();
-    app.wait_for("Import rule files from alpha").unwrap();
+    app.presses("Import rule files…").unwrap();
+    app.sees("Import rule files from alpha").unwrap();
     contains(&mut app, "agents-commits");
     contains(&mut app, "AGENTS.md · Commits");
     contains(&mut app, "Cursor");
@@ -249,8 +252,8 @@ fn rules_in_the_projects_files_are_picked_and_filed_as_suggestions() {
     contains(&mut app, "applicability cannot be represented exactly");
     contains(&mut app, "src/**/*.rs");
 
-    app.press("Cancel").unwrap();
-    app.wait_for("Import rule files…").unwrap();
+    app.presses("Cancel").unwrap();
+    app.sees("Import rule files…").unwrap();
     for source in [".cursor", ".continue", ".github", ".claude", "CLAUDE.md"] {
         let path = f.root.path().join("alpha").join(source);
         if path.is_dir() {
@@ -259,15 +262,14 @@ fn rules_in_the_projects_files_are_picked_and_filed_as_suggestions() {
             std::fs::remove_file(path).unwrap();
         }
     }
-    app.press("Import rule files…").unwrap();
-    app.wait_for("Import rule files from alpha").unwrap();
+    app.presses("Import rule files…").unwrap();
+    app.sees("Import rule files from alpha").unwrap();
     contains(&mut app, "agents-commits");
     // New rules start picked; leave Testing out.
-    app.press("Import agents-testing").unwrap();
-    app.wait_for("Suggest 1…").unwrap();
-    app.press("Suggest 1…").unwrap();
-    app.wait_for("Nothing is written until you apply it")
-        .unwrap();
+    app.presses("Import agents-testing").unwrap();
+    app.sees("Suggest 1…").unwrap();
+    app.presses("Suggest 1…").unwrap();
+    app.sees("Nothing is written until you apply it").unwrap();
     contains(&mut app, "Suggest 1 imported rules as project conventions");
     app.press_key("alt+shift+v").unwrap();
     let queue = || {
@@ -291,7 +293,7 @@ fn rules_in_the_projects_files_are_picked_and_filed_as_suggestions() {
     assert_eq!(records[0]["status"], "suggested");
     assert_eq!(records[0]["value"], "Use conventional commits.");
     // A second scan marks it as already in Precept and leaves it unpicked.
-    app.press("Import rule files…").unwrap();
+    app.presses("Import rule files…").unwrap();
     contains(&mut app, "Already in Precept");
-    app.wait_for("Suggest 1…").unwrap();
+    app.sees("Suggest 1…").unwrap();
 }
