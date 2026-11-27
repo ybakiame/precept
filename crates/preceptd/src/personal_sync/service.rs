@@ -358,7 +358,7 @@ where
     if request_bytes.len() > precept_ipc::MAX_FRAME {
         return Err(Error::TooLarge);
     }
-    let request_digest = hex(&Sha256::digest(&request_bytes));
+    let request_digest = submission_digest(&submission)?;
     let mut state = state::load(state_dir, &binding.profile_id)?.ok_or(Error::NotFound)?;
     if let Some(operation) = state.operation(&submission.operation_id) {
         if operation.request_digest != request_digest {
@@ -531,6 +531,17 @@ fn pending_request(pending: &PendingApply, operation_id: &str) -> Result<precept
     })
     .map_err(|_| Error::InvalidRequest)?;
     precept_write::Request::from_sync_json(&raw).map_err(|_| Error::InvalidRequest)
+}
+
+/// The idempotency digest of an apply, which is persisted. It never covers
+/// the passphrase: a plain hash beside the (kept) ciphertext would let anyone
+/// with the state test guesses without scrypt. The passphrase only decrypts;
+/// the envelope, versions and selections bind the operation.
+fn submission_digest(submission: &PersonalSyncApplySubmission) -> Result<String> {
+    let mut bound = submission.clone();
+    bound.passphrase = bound.passphrase.map(|_| String::new());
+    let bytes = serde_json::to_vec(&bound).map_err(|_| Error::InvalidRequest)?;
+    Ok(hex(&Sha256::digest(&bytes)))
 }
 
 fn open_envelope(

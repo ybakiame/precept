@@ -262,3 +262,30 @@ fn an_uncommitted_pending_apply_rebinds_only_after_proving_no_receipt() {
     assert_eq!(result.commit_sequence, Some(1));
     assert_eq!(executed.lock().unwrap().as_ref(), Some(&next_binding));
 }
+
+#[test]
+fn the_persisted_apply_digest_never_covers_the_passphrase() {
+    let (_temp, _state, submission, _binding) = fixture();
+    let mut one = submission.clone();
+    one.passphrase = Some("correct horse battery staple".into());
+    let mut two = submission.clone();
+    two.passphrase = Some("another long passphrase".into());
+    assert_eq!(
+        submission_digest(&one).unwrap(),
+        submission_digest(&two).unwrap()
+    );
+    let plain = hex(&Sha256::digest(serde_json::to_vec(&one).unwrap()));
+    assert_ne!(submission_digest(&one).unwrap(), plain);
+    // A key import and a passphrase import of one envelope stay distinct.
+    assert_ne!(
+        submission_digest(&submission).unwrap(),
+        submission_digest(&one).unwrap()
+    );
+    // Everything else still binds the operation.
+    let mut other = one.clone();
+    other.expected_commit += 1;
+    assert_ne!(
+        submission_digest(&one).unwrap(),
+        submission_digest(&other).unwrap()
+    );
+}
