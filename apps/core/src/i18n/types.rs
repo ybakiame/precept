@@ -213,7 +213,7 @@ msg_keys! {
     DoctorRulesFailing, DoctorGate, DoctorGateNoGuards, DoctorGateOff,
     DoctorGateNoHook, DoctorGateOn, RuleGateOn, RuleGateOff,
     DoctorPreferencesCount, DoctorNoPreferences, TileAgentsMd, TileOff,
-    HookOn, HookOnCodex, HookOutdated, HookMalformed,
+    HookOn, HookOnCodex, HookOutdated, HookBroken, HookMalformed, RefreshTitle, RefreshBrokenTitle, RefreshBody, RefreshLine, RefreshMcpLine, RefreshApply, RefreshDone, RefreshChanged,
     HookUnavailable, HookChanged, PointerTileOn, PointerTileOutdated,
     PointerMalformed, PointerAddTitle, PointerAddBody, PointerApply,
     PointerRemoveTitle, PointerRemoveBody, PointerChanged, ToastPointerAdded,

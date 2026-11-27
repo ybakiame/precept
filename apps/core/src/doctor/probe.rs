@@ -229,6 +229,13 @@ fn hooks(m: &Model) -> Vec<Check> {
                     m.word(Msg::DoctorHookOff),
                     Some(Fix::Agents),
                 )
+            } else if h.broken {
+                check(
+                    *title,
+                    Level::Problem,
+                    m.word(Msg::HookBroken),
+                    Some(Fix::Agents),
+                )
             } else if !h.current {
                 check(
                     *title,
@@ -274,6 +281,12 @@ fn mcp(m: &Model) -> Vec<Check> {
                     Level::Problem,
                     m.word(Msg::HookMalformed).replace("{file}", &e.file),
                     None,
+                ),
+                Some(e) if e.installed && e.broken => check(
+                    *title,
+                    Level::Problem,
+                    m.word(Msg::HookBroken),
+                    Some(Fix::Agents),
                 ),
                 Some(e) if e.installed && !e.current => check(
                     *title,

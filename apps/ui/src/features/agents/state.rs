@@ -299,6 +299,66 @@ pub(super) fn apply_pointer(model: Signal<Model>, add: bool) {
     );
 }
 
+/// Reads every outdated Precept entry across projects (a moved installation).
+pub(super) fn load_refresh(model: Signal<Model>) {
+    crate::features::profile::call(
+        model,
+        "integration.refresh",
+        serde_json::json!({}),
+        |_, m, r| {
+            m.agents.refresh = r
+                .and_then(|v| {
+                    serde_json::from_value::<precept_ui_core::mcp::Refresh>(v)
+                        .map_err(|_| "Unavailable")
+                })
+                .ok();
+        },
+    );
+}
+
+/// Rewrites exactly the entries last read, each file guarded by its digest.
+pub(super) fn apply_refresh(model: Signal<Model>) {
+    let Some(r) = model.get().agents.refresh.clone() else {
+        return;
+    };
+    let mcp: serde_json::Map<String, serde_json::Value> = r
+        .mcp
+        .iter()
+        .map(|e| (e.client.clone(), serde_json::json!(e.sha256)))
+        .collect();
+    model.update(|m| {
+        m.agents.refresh_busy = true;
+        m.agents.refresh_error = None;
+    });
+    crate::features::profile::call(
+        model,
+        "integration.refresh.apply",
+        serde_json::json!({ "hooks": r.hook_files, "mcp": mcp }),
+        move |model, m, result| {
+            m.agents.refresh_busy = false;
+            match result {
+                Ok(v) => ui::notify(
+                    ui::Tone::Success,
+                    m.word(Msg::RefreshDone)
+                        .replace("{n}", &v["updated"].as_u64().unwrap_or(0).to_string()),
+                ),
+                Err("Conflict") => {
+                    m.agents.refresh_error = Some(m.word(Msg::RefreshChanged).into())
+                }
+                Err(code) => m.agents.refresh_error = Some(code.into()),
+            }
+            let project = m.agents.project.clone();
+            spawn(async move {
+                load_refresh(model);
+                if let Some(name) = project {
+                    load_hooks(model, name.clone());
+                    load_mcp(model, name);
+                }
+            });
+        },
+    );
+}
+
 pub(crate) fn fetch(model: Signal<Model>, name: String) {
     model.update(|m| {
         m.agents.project = Some(name.clone());
@@ -311,6 +371,7 @@ pub(crate) fn fetch(model: Signal<Model>, name: String) {
     model.update(|m| m.agents.hooks_error = None);
     load_hooks(model, name.clone());
     load_mcp(model, name.clone());
+    load_refresh(model);
     crate::features::profile::call(
         model,
         "project.mcp",

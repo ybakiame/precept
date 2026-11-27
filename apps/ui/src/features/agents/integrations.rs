@@ -1,6 +1,108 @@
 use super::configuration::{configure, gate_row, group, hook_tile, levels, pointer_tile};
-use super::state::{apply_pointer, caption, mcp_tile, word};
+use super::state::{apply_pointer, apply_refresh, caption, mcp_tile, word};
 use super::*;
+
+/// Entries in the agents' configuration that still name an older Precept
+/// installation: what changes, and one action that updates them all.
+fn refresh_banner(model: Signal<Model>) -> impl IntoElement {
+    dynamic(move || {
+        let m = model.get();
+        let Some(r) = m.agents.refresh.clone().filter(|r| r.count() > 0) else {
+            return view().into_element();
+        };
+        let agent = |v: &str| {
+            m.word(match v {
+                "codex" => Msg::TileCodex,
+                _ => Msg::TileClaude,
+            })
+            .to_owned()
+        };
+        let event = |e: &str| {
+            m.word(match e {
+                "pre_tool" => Msg::GateGroup,
+                "post_read" => Msg::ReadGroup,
+                "pre_compact" => Msg::CompactGroup,
+                _ => Msg::HookGroup,
+            })
+            .to_owned()
+        };
+        let title = m
+            .word(if r.broken() {
+                Msg::RefreshBrokenTitle
+            } else {
+                Msg::RefreshTitle
+            })
+            .replace("{n}", &r.count().to_string());
+        let mut lines = view().gap_1();
+        for h in &r.hooks {
+            let from = h
+                .from
+                .as_deref()
+                .map(precept_ui_core::mcp::Refresh::program)
+                .unwrap_or("?");
+            let line = m
+                .word(Msg::RefreshLine)
+                .replace("{agent}", &agent(&h.vendor))
+                .replace("{project}", &h.project)
+                .replace("{event}", &event(&h.event))
+                .replace("{from}", from)
+                .replace("{to}", precept_ui_core::mcp::Refresh::program(&h.to));
+            lines = lines.child(
+                text(line)
+                    .text_size(px(ui::scale::text::CAPTION))
+                    .text_color(move || palette(model).text),
+            );
+        }
+        for e in &r.mcp {
+            let line = m
+                .word(Msg::RefreshMcpLine)
+                .replace("{agent}", &agent(&e.client))
+                .replace("{file}", &e.file);
+            lines = lines.child(
+                text(line)
+                    .text_size(px(ui::scale::text::CAPTION))
+                    .text_color(move || palette(model).text),
+            );
+        }
+        let broken = r.broken();
+        view()
+            .gap_2()
+            .p_3()
+            .rounded(px(ui::scale::radius::CONTROL))
+            .border_1()
+            .border_color(move || {
+                if broken {
+                    palette(model).error
+                } else {
+                    palette(model).warning
+                }
+            })
+            .child(text(title).font_weight(FontWeight::SEMIBOLD))
+            .child(
+                text(m.word(Msg::RefreshBody))
+                    .text_size(px(ui::scale::text::CAPTION))
+                    .text_color(move || palette(model).muted),
+            )
+            .child(lines)
+            .child(
+                text(move || model.get().agents.refresh_error.clone().unwrap_or_default())
+                    .text_size(px(ui::scale::text::CAPTION))
+                    .text_color(move || palette(model).error),
+            )
+            .child(
+                view().flex_row().child(
+                    button(model, "")
+                        .label_fn(word(model, Msg::RefreshApply))
+                        .variant(ButtonVariant::Primary)
+                        .size(ui::ButtonSize::Small)
+                        .test_id("agents-refresh-apply")
+                        .loading(move || model.get().agents.refresh_busy)
+                        .on_press(move || apply_refresh(model)),
+                ),
+            )
+            .into_element()
+    })
+}
 
 /// The integrations, by mechanism: MCP tools, the session-start briefing and
 /// the AGENTS.md pointer. One switch per agent each.
@@ -10,6 +112,7 @@ pub(super) fn integrations(model: Signal<Model>) -> impl IntoElement {
         .title_fn(word(model, Msg::IntegrationsTitle))
         .child(caption(model, |_| Some(Msg::IntegrationsHelp)))
         .child(caption(model, |_| Some(Msg::OtherAgents)))
+        .child(refresh_banner(model))
         .child(levels(model))
         .child(group(
             model,

@@ -178,6 +178,12 @@ pub struct HookState {
     pub current: bool,
     /// The exact command the entry runs.
     pub command: String,
+    /// What is installed now (it may predate a move of the programs).
+    #[serde(default)]
+    pub installed_command: Option<String>,
+    /// The installed entry starts a program that is gone: it cannot run.
+    #[serde(default)]
+    pub broken: bool,
     #[serde(default)]
     pub action: Option<String>,
 }
@@ -232,8 +238,56 @@ pub struct McpEntry {
     pub installed: bool,
     /// Installed exactly as this daemon would write it.
     pub current: bool,
+    /// The installed entry starts a program that is gone.
+    #[serde(default)]
+    pub broken: bool,
     #[serde(default)]
     pub action: Option<String>,
+}
+
+/// One outdated hook entry (`integration.refresh`).
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+pub struct RefreshHook {
+    pub vendor: String,
+    pub project: String,
+    pub event: String,
+    pub file: String,
+    /// The installed command and the one this installation writes.
+    pub from: Option<String>,
+    pub to: String,
+    pub broken: bool,
+}
+/// One outdated MCP entry.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+pub struct RefreshMcp {
+    pub client: String,
+    pub file: String,
+    pub broken: bool,
+    pub sha256: Option<String>,
+}
+/// Every Precept entry in the agents' configuration that is not what this
+/// installation writes (typically after its programs moved).
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+pub struct Refresh {
+    pub hooks: Vec<RefreshHook>,
+    /// Each changed hook file's digest, by vendor.
+    pub hook_files: std::collections::BTreeMap<String, Option<String>>,
+    pub mcp: Vec<RefreshMcp>,
+}
+impl Refresh {
+    pub fn count(&self) -> usize {
+        self.hooks.len() + self.mcp.len()
+    }
+    pub fn broken(&self) -> bool {
+        self.hooks.iter().any(|h| h.broken) || self.mcp.iter().any(|m| m.broken)
+    }
+    /// The program a command starts (its first word, unquoted).
+    pub fn program(command: &str) -> &str {
+        match command.chars().next() {
+            Some(q @ ('\'' | '"')) => command[1..].split(q).next().unwrap_or(""),
+            _ => command.split_whitespace().next().unwrap_or(""),
+        }
+    }
 }
 
 /// Every client's entry for a project, or `available: false` without
@@ -304,6 +358,10 @@ pub struct AgentsPage {
     pub mcp_busy: Option<String>,
     /// Why the MCP entries could not be read (a fixed code).
     pub mcp_error: Option<String>,
+    /// Outdated Precept entries across projects (`integration.refresh`).
+    pub refresh: Option<Refresh>,
+    pub refresh_busy: bool,
+    pub refresh_error: Option<String>,
     /// The project's AGENTS.md pointer (`integration.pointer`).
     pub pointer: Option<Pointer>,
     /// The pointer dialog: `Some(true)` add/update, `Some(false)` remove.
