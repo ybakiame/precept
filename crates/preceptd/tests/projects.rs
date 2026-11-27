@@ -205,6 +205,35 @@ fn startup_write_restoration_requires_the_exact_profile_identity() {
 }
 
 #[test]
+fn disabling_writes_revokes_them_even_when_the_startup_record_is_damaged() {
+    let f = Fixture::unselected();
+    let base = f.temp.path().to_path_buf();
+    f.daemon
+        .control("profile.create", json!({"path":f.db,"remember":true}))
+        .unwrap();
+    f.daemon.enable();
+    let startup = base.join("daemon-state/startup.json");
+    fs::remove_file(&startup).unwrap();
+    fs::create_dir(&startup).unwrap();
+    // Revocation never depends on saving the startup record; the error is
+    // reported, but writes are off and the capability is gone.
+    assert!(
+        f.daemon
+            .control("profile.write.disable", json!({}))
+            .is_err()
+    );
+    let info = f.daemon.control("profile.info", json!({})).unwrap();
+    assert_eq!(info["write_enabled"], false);
+    assert!(
+        !f.daemon
+            .location
+            .runtime_dir
+            .join("operator-write.cap")
+            .exists()
+    );
+}
+
+#[test]
 fn startup_record_save_failure_never_grants_or_reports_writes() {
     let mut f = Fixture::unselected();
     let base = f.temp.path().to_path_buf();

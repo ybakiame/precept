@@ -172,13 +172,19 @@ impl Profiles {
         let _sync = self.sync_lock.lock().unwrap();
         self.grants.close(); // Close before waiting for already-admitted work.
         let mut s = self.state.lock().unwrap();
-        self.persist_write(&s, false)?;
         self.grants.close();
         let cleanup = self.grants.finish_revoke(&self.location);
         s.grant = None;
         s.owner = None; // Only after credential cleanup; no lock-file unlink.
-        cleanup?;
         s.write_restore_failure = None;
+        // Revocation never waits on the startup record. If it cannot record
+        // that writes are off, it forgets startup restoration altogether so a
+        // restart cannot restore them; either failure is still reported.
+        let persisted = self
+            .persist_write(&s, false)
+            .or_else(|e| self.state_dir.forget_startup().and(Err(e)));
+        cleanup?;
+        persisted?;
         Ok(json!({"write_enabled":false}))
     }
     /// The scope context for a candidate root: home, the daemon's directories,
