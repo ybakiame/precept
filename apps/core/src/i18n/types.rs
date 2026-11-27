@@ -175,7 +175,7 @@ msg_keys! {
     FolderKnown, ProjectReady, ProjectUnregistered, ProjectUnavailable,
     RemoveProject, RegisterProject, RegisterProjectSpoken, RemoveTitle,
     RemoveBody, RemoveConfirm, NeedsProfile, NeedsWrite,
-    EnableAndAdd, EnableAndRemove, SetupTitle, SetupBody,
+    EnableAndAdd, EnableAndRemove, EnableAndRegister, EnableAndRegisterSpoken, SetupTitle, SetupBody,
     ProfileFile, ProfileFileHelp, CreateProfileNow, UseExistingProfile,
     UseThisProfile, ProfileSection, SetupGroup, AgentsDestination,
     ProfileIntro, AgentsIntro, AgentsNeedsProject, AgentsShared,

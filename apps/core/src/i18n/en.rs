@@ -436,6 +436,7 @@ text_catalog! {
     NeedsProfile => "Set up your Profile first; projects are registered in it.",
     NeedsWrite => "Writes are off for this daemon run; adding turns them on.",
     EnableAndAdd => "Enable writes and add", EnableAndRemove => "Enable writes and remove",
+    EnableAndRegister => "Enable writes and register", EnableAndRegisterSpoken => "Enable writes and register in this Profile:",
     SetupTitle => "Set up your Profile",
     SetupBody => "Precept keeps your preferences, project registrations and Handoffs in one private Profile on the daemon's system. You create it once; every project uses it.",
     ProfileFile => "Profile file",

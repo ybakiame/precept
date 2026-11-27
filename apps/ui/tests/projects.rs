@@ -222,6 +222,9 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     app.press("Workspaces").unwrap();
     // With writes off, the one explicit click enables them for this run and adds.
     app.wait_for("Enable writes and add").unwrap();
+    // Register says so too while writes are off.
+    app.wait_for("Enable writes and register in this Profile: alpha")
+        .unwrap();
     app.press("Enable writes and add").unwrap();
     // The daemon's list now has gamma, ready, and its agent credential.
     contains(&mut app, "gamma");

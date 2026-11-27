@@ -353,6 +353,7 @@ text_catalog! {
     RemoveTitle => "移除此项目？", RemoveBody => "Agent 将失去对它的访问权限，其会话会停止。Profile 中的记录会保留，重新添加同一文件夹即可恢复。",
     RemoveConfirm => "移除", NeedsProfile => "请先在“Profile”标签页完成设置，项目会登记在其中。",
     NeedsWrite => "本次 daemon 运行未开启写入，添加时会一并开启。", EnableAndAdd => "开启写入并添加",
+    EnableAndRegister => "开启写入并登记", EnableAndRegisterSpoken => "开启写入并登记到此 Profile：",
     EnableAndRemove => "开启写入并移除", SetupTitle => "设置 Profile",
     SetupBody => "Precept 将你的偏好、项目注册与 Handoff 保存在 daemon 所在系统上的一个私有 Profile 中。只需创建一次，所有项目共用。",
     ProfileFile => "Profile 文件", ProfileFileHelp => "由 daemon 建议，位于其私有状态目录。点击之前不会创建任何内容。",

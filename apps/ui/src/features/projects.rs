@@ -336,15 +336,27 @@ fn list(model: Signal<Model>) -> impl IntoElement {
                         let name = entry.name.clone();
                         row = row.child(
                             button(model, "")
-                                .label_fn(word(model, Msg::RegisterProject))
+                                // Like Add, says when the press also turns writes on.
+                                .label_fn(move || {
+                                    model
+                                        .get()
+                                        .word(if writes_on(model) {
+                                            Msg::RegisterProject
+                                        } else {
+                                            Msg::EnableAndRegister
+                                        })
+                                        .into()
+                                })
                                 .spoken({
                                     let name = entry.name.clone();
                                     move || {
-                                        format!(
-                                            "{} {name}",
-                                            model.get().word(Msg::RegisterProjectSpoken)
-                                        )
-                                        .into()
+                                        let m = model.get();
+                                        let action = if writes_on(model) {
+                                            m.word(Msg::RegisterProjectSpoken)
+                                        } else {
+                                            m.word(Msg::EnableAndRegisterSpoken)
+                                        };
+                                        format!("{action} {name}").into()
                                     }
                                 })
                                 .size(ButtonSize::Small)
