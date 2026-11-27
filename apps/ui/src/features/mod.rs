@@ -28,8 +28,8 @@ use preferences::preferences;
 use shell::*;
 use tokens::compact;
 
-/// What the Rules page shows: it is rebuilt only when one of these changes.
-/// Other sections keep rebuilding on any change (they hold no long list).
+/// What the Rules and Handoff pages show: each is rebuilt only when one of
+/// these changes. Other sections keep rebuilding on any change (no long list).
 #[derive(Clone, PartialEq)]
 enum PageKey {
     Rules {
@@ -40,6 +40,24 @@ enum PageKey {
         tags: Vec<String>,
         locale: precept_ui_core::i18n::Locale,
         live: bool,
+    },
+    Handoff {
+        phase: Phase,
+        data: usize,
+        project: Option<String>,
+        task: String,
+        queried: String,
+        saved: Option<(String, Vec<precept_ui_core::operator::HandoffSummary>)>,
+        locale: precept_ui_core::i18n::Locale,
+        live: bool,
+        epoch: u64,
+        status: (
+            Option<u64>,
+            Option<u64>,
+            Option<&'static str>,
+            bool,
+            Option<&'static str>,
+        ),
     },
     Other(u64),
 }
@@ -71,6 +89,28 @@ pub(crate) fn section_page(model: Signal<Model>) -> impl IntoElement {
                 tags: m.tag_filter.clone(),
                 locale: m.locale,
                 live: m.live,
+            }
+        } else if m.section == Section::Handoff && m.phase == Phase::Ready {
+            PageKey::Handoff {
+                phase: m.phase.clone(),
+                data: m
+                    .data
+                    .as_ref()
+                    .map_or(0, |d| std::sync::Arc::as_ptr(d) as usize),
+                project: m.selected_project.clone(),
+                task: m.task_id.clone(),
+                queried: m.queried_task.clone(),
+                saved: m.handoff_list.clone(),
+                locale: m.locale,
+                live: m.live,
+                epoch: m.epoch,
+                status: (
+                    m.last_read_ms,
+                    m.last_duration_ms,
+                    m.read_failure,
+                    m.permission_denied,
+                    m.wsl_link,
+                ),
             }
         } else {
             other.set(other.get() + 1);

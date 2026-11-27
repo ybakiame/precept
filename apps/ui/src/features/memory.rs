@@ -214,6 +214,12 @@ fn byline(m: &Model, e: &Entry) -> String {
 
 /// One note, the whole row pressable (it opens the detail): its title, its
 /// badges, its first line, who and when, and its weight with the reasons.
+/// One line of the virtualized memory list.
+enum Item {
+    Heading(String),
+    Note(Entry),
+}
+
 fn row(model: Signal<Model>, e: &Entry) -> AnyElement {
     let m = model.get_untracked();
     let id = e.id.clone();
@@ -285,8 +291,14 @@ fn detail(model: Signal<Model>) -> impl IntoElement {
         })
         .on_close(move || model.update(|m| m.memory.open = None))
         .body(move || {
-            dynamic(move || {
+            // Rebuilt when the open note or the language changes only.
+            let shown = computed(move || {
                 let m = model.get();
+                (m.memory.opened().cloned(), m.locale)
+            });
+            dynamic(move || {
+                let _ = shown.get();
+                let m = model.get_untracked();
                 let Some(e) = m.memory.opened().cloned() else {
                     return view().into_element();
                 };
@@ -568,20 +580,38 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
                     )
                     .into_element();
             }
-            let mut groups = view().gap_6();
+            // One virtualized list (up to 300 notes): each kind's heading,
+            // then its notes, heaviest first; only visible rows are built.
+            let mut items: Vec<Item> = Vec::new();
             for kind in Kind::ALL {
                 let entries: Vec<&Entry> = list.iter().filter(|e| e.kind == kind).collect();
                 if entries.is_empty() {
                     continue;
                 }
-                let mut card =
-                    surface(model).title(format!("{} · {}", m.word(kind.heading()), entries.len()));
-                for e in entries {
-                    card = card.child(row(model, e));
-                }
-                groups = groups.child(card);
+                items.push(Item::Heading(format!(
+                    "{} · {}",
+                    m.word(kind.heading()),
+                    entries.len()
+                )));
+                items.extend(entries.into_iter().map(|e| Item::Note(e.clone())));
             }
-            groups.into_element()
+            let items = std::rc::Rc::new(items);
+            let count = items.len();
+            virtual_list(count, move |at: Position| {
+                let items = items.clone();
+                dynamic(move || match items.get(at.index()) {
+                    Some(Item::Heading(title)) => view()
+                        .pt_4()
+                        .pb_1()
+                        .child(text(title.clone()).font_weight(FontWeight::SEMIBOLD))
+                        .into_element(),
+                    Some(Item::Note(e)) => row(model, e),
+                    None => view().into_element(),
+                })
+            })
+            .viewport(ListViewport::Parent)
+            .estimated_item_size(px(72.0))
+            .into_element()
         }))
         .child(detail(model))
         // After the sheet, so the dialogs stack above it.

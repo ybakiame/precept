@@ -25,7 +25,7 @@ fn row(
     name: String,
     count: usize,
 ) -> AnyElement {
-    let m = model.get();
+    let m = model.get_untracked();
     let editing = m.tag_editing.as_deref() == Some(name.as_str());
     let chosen = m.tag_colors.contains_key(&name);
     let (dot, spoken, toggle, reset, picked, label, value, live, done) = (
@@ -172,18 +172,34 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
                         .text_size(px(ui::scale::text::CAPTION))
                         .text_color(move || palette(model).muted),
                 )
-                .child(dynamic(move || {
-                    let tags = model.get().known_tags();
-                    if tags.is_empty() {
-                        return ui::empty(model, model.get().word(Msg::TagColorsEmpty))
+                .child({
+                    // Rebuilt when the tags, their colours, the one being
+                    // edited or the language change; not on unrelated updates.
+                    let shown = computed(move || {
+                        let m = model.get();
+                        (
+                            m.known_tags(),
+                            m.tag_colors.clone(),
+                            m.tag_editing.clone(),
+                            m.locale,
+                        )
+                    });
+                    dynamic(move || {
+                        let (tags, ..) = shown.get();
+                        if tags.is_empty() {
+                            return ui::empty(
+                                model,
+                                model.get_untracked().word(Msg::TagColorsEmpty),
+                            )
                             .into_element();
-                    }
-                    let mut list = view();
-                    for (name, count) in tags {
-                        list = list.child(row(model, preview, name, count));
-                    }
-                    list.into_element()
-                }))
+                        }
+                        let mut list = view();
+                        for (name, count) in tags {
+                            list = list.child(row(model, preview, name, count));
+                        }
+                        list.into_element()
+                    })
+                })
                 .into_element()
         })
 }
