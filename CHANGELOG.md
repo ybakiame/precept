@@ -10,6 +10,12 @@ data between schemas with the versioned Profile export and import.
   in WSL now installs only the daemon archive named in the release's signed
   update manifest, for exactly this Desktop's version; a newer release asks to
   update the Desktop first. The unsigned `SHA256SUMS` is no longer trusted.
+- **`precept doctor` reports broken agent entries.** An installed hook or MCP
+  entry whose program is gone is a problem (`hook_broken`, `mcp_broken`) and
+  points to `precept agent-entries --update`.
+- **Personal sync keeps the passphrase out of daemon state.** The saved
+  digest of a passphrase import no longer covers the passphrase.
+- **Register says when it turns writes on**, as Add and Remove already did.
 - **Disabling writes always revokes them.** If the startup record cannot be
   saved, writes are still turned off and startup restoration is forgotten.
 - **Agent entries follow a moved installation.** Hook and MCP entries written
