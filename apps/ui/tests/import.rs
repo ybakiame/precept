@@ -101,7 +101,7 @@ impl Fixture {
                 break;
             }
             assert!(f.child.try_wait().unwrap().is_none());
-            assert!(start.elapsed() < Duration::from_secs(15));
+            assert!(start.elapsed() < patience::PATIENCE);
             std::thread::sleep(Duration::from_millis(20));
         }
         f
@@ -149,7 +149,7 @@ where
         .block_on(f())
 }
 fn contains(app: &mut nsh_testing::Headless, needle: &str) {
-    app.wait_until("sanitized result", Duration::from_secs(10), |s| {
+    app.wait_until("sanitized result", patience::PATIENCE, |s| {
         s.texts().iter().any(|t| t.contains(needle))
     })
     .unwrap();
@@ -157,19 +157,15 @@ fn contains(app: &mut nsh_testing::Headless, needle: &str) {
 /// The workspace has read the Profile and its list (the list loads only after
 /// the Profile reply), and writes are on: no "Writes are off" notice.
 fn writes_on(app: &mut nsh_testing::Headless) {
-    app.wait_until(
-        "workspace read with writes on",
-        Duration::from_secs(10),
-        |s| {
-            let t = s.texts().join("\n");
-            (t.contains("No pending suggestions")
-                || t.contains("No records in this exact scope")
-                || t.contains("No records match this filter")
-                || t.contains(" · r"))
-                && !t.contains("Writes are off for this daemon run")
-                && !t.contains("Waiting for Daemon acknowledgement")
-        },
-    )
+    app.wait_until("workspace read with writes on", patience::PATIENCE, |s| {
+        let t = s.texts().join("\n");
+        (t.contains("No pending suggestions")
+            || t.contains("No records in this exact scope")
+            || t.contains("No records match this filter")
+            || t.contains(" · r"))
+            && !t.contains("Writes are off for this daemon run")
+            && !t.contains("Waiting for Daemon acknowledgement")
+    })
     .unwrap();
 }
 #[test]
@@ -284,7 +280,7 @@ fn rules_in_the_projects_files_are_picked_and_filed_as_suggestions() {
     };
     let start = Instant::now();
     while queue().is_empty() {
-        assert!(start.elapsed() < Duration::from_secs(10), "import applied");
+        assert!(start.elapsed() < patience::PATIENCE, "import applied");
         std::thread::sleep(Duration::from_millis(20));
     }
     let records = queue();

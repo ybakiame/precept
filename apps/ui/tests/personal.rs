@@ -104,7 +104,7 @@ impl Fixture {
                 break;
             }
             assert!(f.child.try_wait().unwrap().is_none());
-            assert!(start.elapsed() < Duration::from_secs(15));
+            assert!(start.elapsed() < patience::PATIENCE);
             std::thread::sleep(Duration::from_millis(20));
         }
         f
@@ -153,7 +153,7 @@ where
         .block_on(f())
 }
 fn contains(app: &mut nsh_testing::Headless, needle: &str) {
-    app.wait_until("sanitized result", Duration::from_secs(10), |s| {
+    app.wait_until("sanitized result", patience::PATIENCE, |s| {
         s.texts().iter().any(|t| t.contains(needle))
     })
     .unwrap();
@@ -243,7 +243,7 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     app.press_key("alt+shift+v").unwrap();
     let start = Instant::now();
     while global(&f).as_array().is_none_or(|r| r.is_empty()) {
-        assert!(start.elapsed() < Duration::from_secs(10));
+        assert!(start.elapsed() < patience::PATIENCE);
         std::thread::sleep(Duration::from_millis(20));
     }
     assert_eq!(
@@ -280,7 +280,7 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     app.press_key("alt+shift+v").unwrap();
     let start = Instant::now();
     while global(&f)[0]["status"] != "confirmed" {
-        assert!(start.elapsed() < Duration::from_secs(10));
+        assert!(start.elapsed() < patience::PATIENCE);
         std::thread::sleep(Duration::from_millis(20));
     }
     // The confirmed rule shows its options, and its switch takes it out of
@@ -289,14 +289,14 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     contains(&mut app, "priority 5");
     app.presses("#1 · personal-editor · confirmed · r2")
         .unwrap();
-    app.wait_until("switch ready", Duration::from_secs(10), |s| {
+    app.wait_until("switch ready", patience::PATIENCE, |s| {
         s.texts().contains(&"Delivered to agents")
     })
     .unwrap();
     let start = Instant::now();
     while global(&f)[0]["enabled"] != false {
         let _ = app.presses("Delivered to agents");
-        assert!(start.elapsed() < Duration::from_secs(10), "switched off");
+        assert!(start.elapsed() < patience::PATIENCE, "switched off");
         std::thread::sleep(Duration::from_millis(200));
     }
     assert_eq!(global(&f)[0]["status"], "confirmed");
@@ -323,7 +323,7 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     app.press_key("escape").unwrap();
     // Refresh reads the list again even though the Profile did not change.
     app.presses("Refresh").unwrap();
-    app.wait_until("row listed", Duration::from_secs(10), |s| {
+    app.wait_until("row listed", patience::PATIENCE, |s| {
         s.count("role:button[#2 · tone · suggested · r1]")
             .unwrap_or(0)
             > 0
@@ -354,7 +354,7 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     };
     let start = Instant::now();
     while record(&f, 3).is_none() {
-        assert!(start.elapsed() < Duration::from_secs(10), "edit applied");
+        assert!(start.elapsed() < patience::PATIENCE, "edit applied");
         std::thread::sleep(Duration::from_millis(20));
     }
     let edited = record(&f, 3).unwrap();
@@ -396,7 +396,7 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     app.sees("#3 · answer-length").unwrap();
     app.presses("Close detail").unwrap();
     app.presses("Refresh").unwrap();
-    app.wait_until("row listed", Duration::from_secs(10), |s| {
+    app.wait_until("row listed", patience::PATIENCE, |s| {
         s.count("role:button[#4 · review-style · suggested · r1]")
             .unwrap_or(0)
             > 0
@@ -414,7 +414,7 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     app.press_key("alt+shift+v").unwrap();
     let start = Instant::now();
     while record(&f, 4).unwrap()["status"] != "confirmed" {
-        assert!(start.elapsed() < Duration::from_secs(10), "batch applied");
+        assert!(start.elapsed() < patience::PATIENCE, "batch applied");
         std::thread::sleep(Duration::from_millis(20));
     }
     assert_eq!(record(&f, 3).unwrap()["status"], "confirmed");
@@ -425,7 +425,7 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
         )
         .unwrap();
     assert_eq!(history["decisions"][0]["note"], "Both reviewed together.");
-    app.wait_until("selection cleared", Duration::from_secs(10), |s| {
+    app.wait_until("selection cleared", patience::PATIENCE, |s| {
         !s.shows("2 picked")
     })
     .unwrap();
@@ -433,7 +433,7 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     // A confirmed rule is edited in place of itself: the new version takes
     // effect at once, the earlier text stays in its history.
     app.presses("Refresh").unwrap();
-    app.wait_until("confirmed row", Duration::from_secs(10), |s| {
+    app.wait_until("confirmed row", patience::PATIENCE, |s| {
         s.count("role:button[#4 · review-style · confirmed · r2]")
             .unwrap_or(0)
             > 0
@@ -451,10 +451,7 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     app.press_key("alt+shift+v").unwrap();
     let start = Instant::now();
     while record(&f, 5).is_none() {
-        assert!(
-            start.elapsed() < Duration::from_secs(10),
-            "rule edit applied"
-        );
+        assert!(start.elapsed() < patience::PATIENCE, "rule edit applied");
         std::thread::sleep(Duration::from_millis(20));
     }
     let edited = record(&f, 5).unwrap();
@@ -484,7 +481,7 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     // The edit opened the new version's detail; close it first.
     app.presses("Close detail").unwrap();
     app.presses("Refresh").unwrap();
-    app.wait_until("update listed", Duration::from_secs(10), |s| {
+    app.wait_until("update listed", patience::PATIENCE, |s| {
         s.count("role:button[#6 · review-pace · suggested · r1]")
             .unwrap_or(0)
             > 0

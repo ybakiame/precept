@@ -104,7 +104,7 @@ impl Fixture {
                 break;
             }
             assert!(f.child.try_wait().unwrap().is_none());
-            assert!(start.elapsed() < Duration::from_secs(15));
+            assert!(start.elapsed() < patience::PATIENCE);
             std::thread::sleep(Duration::from_millis(20));
         }
         f
@@ -221,7 +221,7 @@ fn a_confirmed_convention_is_written_after_its_preview() {
     app.sees("Daemon status").unwrap();
     app.presses("Rules").unwrap();
     app.presses("Project conventions · alpha").unwrap();
-    app.wait_until("row listed", Duration::from_secs(10), |s| {
+    app.wait_until("row listed", patience::PATIENCE, |s| {
         s.count("role:button[#1 · commit-style · confirmed · r2]")
             .unwrap_or(0)
             > 0
@@ -233,17 +233,15 @@ fn a_confirmed_convention_is_written_after_its_preview() {
     app.sees(".precept/rules/commit-style.md").unwrap();
     app.presses("Write file").unwrap();
     let file = f.root.path().join("alpha/.precept/rules/commit-style.md");
-    app.wait_until(
-        "dialog closed after the write",
-        Duration::from_secs(10),
-        |s| !s.shows("Write file"),
-    )
+    app.wait_until("dialog closed after the write", patience::PATIENCE, |s| {
+        !s.shows("Write file")
+    })
     .unwrap();
     let text = std::fs::read_to_string(&file).unwrap();
     assert!(text.starts_with("+++\nkey = \"commit-style\"\n"));
     assert!(text.ends_with("Small commits.\n"));
     // Writing again offers nothing to overwrite.
-    app.wait_until("row listed again", Duration::from_secs(10), |s| {
+    app.wait_until("row listed again", patience::PATIENCE, |s| {
         s.count("role:button[#1 · commit-style · confirmed · r2]")
             .unwrap_or(0)
             > 0
@@ -264,14 +262,12 @@ fn a_confirmed_convention_is_written_after_its_preview() {
         "The file in the repository differs; this updates it.",
     );
     app.presses("Update file").unwrap();
-    app.wait_until("updated", Duration::from_secs(10), |s| {
-        !s.shows("Update file")
-    })
-    .unwrap();
+    app.wait_until("updated", patience::PATIENCE, |s| !s.shows("Update file"))
+        .unwrap();
     assert_eq!(std::fs::read_to_string(&file).unwrap(), text);
 }
 fn contains_text(app: &mut nsh_testing::Headless, needle: &str) {
-    app.wait_until(needle, Duration::from_secs(10), |s| {
+    app.wait_until(needle, patience::PATIENCE, |s| {
         s.texts().iter().any(|t| t.contains(needle))
     })
     .unwrap();

@@ -101,7 +101,7 @@ impl Fixture {
                 break;
             }
             assert!(f.child.try_wait().unwrap().is_none());
-            assert!(start.elapsed() < Duration::from_secs(15));
+            assert!(start.elapsed() < patience::PATIENCE);
             std::thread::sleep(Duration::from_millis(20));
         }
         f
@@ -149,7 +149,7 @@ where
         .block_on(f())
 }
 fn contains(app: &mut nsh_testing::Headless, needle: &str) {
-    app.wait_until("sanitized result", Duration::from_secs(10), |s| {
+    app.wait_until("sanitized result", patience::PATIENCE, |s| {
         s.texts().iter().any(|t| t.contains(needle))
     })
     .unwrap();
@@ -249,14 +249,14 @@ fn an_agents_work_session_is_shown_and_deleted() {
         .unwrap()
         .is_empty()
     {
-        assert!(start.elapsed() < Duration::from_secs(10), "deleted");
+        assert!(start.elapsed() < patience::PATIENCE, "deleted");
         std::thread::sleep(Duration::from_millis(20));
     }
     contains(&mut app, "No work sessions yet");
     // The Handoff page lists it; pressing it opens it, no task id typed.
     app.presses("Handoff").unwrap();
     app.sees("Saved handoffs").unwrap();
-    app.wait_until("listed", Duration::from_secs(10), |s| {
+    app.wait_until("listed", patience::PATIENCE, |s| {
         s.count("role:button[Open handoff add-import-from-files]")
             .unwrap_or(0)
             > 0

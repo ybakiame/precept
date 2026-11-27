@@ -103,7 +103,7 @@ impl Fixture {
                 break;
             }
             assert!(f.child.try_wait().unwrap().is_none());
-            assert!(start.elapsed() < Duration::from_secs(15));
+            assert!(start.elapsed() < patience::PATIENCE);
             std::thread::sleep(Duration::from_millis(20));
         }
         f
@@ -152,7 +152,7 @@ where
         .block_on(f())
 }
 fn contains(app: &mut nsh_testing::Headless, needle: &str) {
-    app.wait_until("sanitized result", Duration::from_secs(10), |s| {
+    app.wait_until("sanitized result", patience::PATIENCE, |s| {
         s.texts().iter().any(|t| t.contains(needle))
     })
     .unwrap();
@@ -209,7 +209,7 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     app.presses("Create Profile").unwrap();
     let start = Instant::now();
     while f.info()["selected"] != true {
-        assert!(start.elapsed() < Duration::from_secs(10));
+        assert!(start.elapsed() < patience::PATIENCE);
         std::thread::sleep(Duration::from_millis(20));
     }
     assert_eq!(
@@ -233,7 +233,7 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     contains(&mut app, "gamma");
     let start = Instant::now();
     while !f.location.runtime_dir.join("agent-gamma.cap").exists() {
-        assert!(start.elapsed() < Duration::from_secs(10));
+        assert!(start.elapsed() < patience::PATIENCE);
         std::thread::sleep(Duration::from_millis(20));
     }
     assert_eq!(f.info()["write_enabled"], true);
@@ -244,7 +244,7 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     app.presses("Register in this Profile: alpha").unwrap();
     let start = Instant::now();
     while f.call("project.list", json!({})).unwrap()[0]["state"] != "ready" {
-        assert!(start.elapsed() < Duration::from_secs(10));
+        assert!(start.elapsed() < patience::PATIENCE);
         std::thread::sleep(Duration::from_millis(20));
     }
     contains(&mut app, "Registered in this Profile: alpha");
@@ -254,7 +254,7 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     app.presses("Remove").unwrap();
     let start = Instant::now();
     while f.location.runtime_dir.join("agent-alpha.cap").exists() {
-        assert!(start.elapsed() < Duration::from_secs(10));
+        assert!(start.elapsed() < patience::PATIENCE);
         std::thread::sleep(Duration::from_millis(20));
     }
     let listed = f
@@ -303,14 +303,14 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     app.presses("Share gamma with agents").unwrap();
     let start = Instant::now();
     while f.location.runtime_dir.join("agent-gamma.cap").exists() {
-        assert!(start.elapsed() < Duration::from_secs(10));
+        assert!(start.elapsed() < patience::PATIENCE);
         std::thread::sleep(Duration::from_millis(20));
     }
     contains(&mut app, "This project is not shared");
     app.presses("Share gamma with agents").unwrap();
     let start = Instant::now();
     while !f.location.runtime_dir.join("agent-gamma.cap").exists() {
-        assert!(start.elapsed() < Duration::from_secs(10));
+        assert!(start.elapsed() < patience::PATIENCE);
         std::thread::sleep(Duration::from_millis(20));
     }
     // Agent activity lives on Sessions now: empty until a client starts
@@ -375,7 +375,7 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
             .any(|p| p["name"] == "gamma" && p["propose"] == true)
     };
     while !proposes(&f) {
-        assert!(start.elapsed() < Duration::from_secs(10));
+        assert!(start.elapsed() < patience::PATIENCE);
         std::thread::sleep(Duration::from_millis(20));
     }
     contains(
@@ -429,7 +429,7 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     let path = delta.canonicalize().unwrap().to_str().unwrap().to_owned();
     let start = Instant::now();
     while app.screen().input_text("Folder").unwrap() != Some(path.as_str()) {
-        assert!(start.elapsed() < Duration::from_secs(10), "folder typed");
+        assert!(start.elapsed() < patience::PATIENCE, "folder typed");
         app.clear("Folder").unwrap();
         app.type_text("Folder", &path).unwrap();
         std::thread::sleep(Duration::from_millis(100));
@@ -441,7 +441,7 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     // Workspace list rows are not clickable project-switch buttons.
     assert_eq!(app.screen().count("role:button[delta]").unwrap(), 0);
     let settled = |app: &mut nsh_testing::Headless| {
-        app.wait_until("read settled", Duration::from_secs(10), |s| {
+        app.wait_until("read settled", patience::PATIENCE, |s| {
             s.texts().iter().any(|t| t.starts_with("Connected · "))
         })
         .unwrap();
@@ -469,7 +469,7 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     // The project row shows the selected workspace's root.
     let root_shown = |app: &mut nsh_testing::Headless, name: &str| {
         let suffix = format!("{}{name}", std::path::MAIN_SEPARATOR);
-        app.wait_until(&format!("{name} on Agents"), Duration::from_secs(10), |s| {
+        app.wait_until(&format!("{name} on Agents"), patience::PATIENCE, |s| {
             s.texts().iter().any(|t| t.ends_with(&suffix))
         })
         .unwrap();
@@ -503,7 +503,7 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         .unwrap()
         .contains("precept-hook")
     {
-        assert!(start.elapsed() < Duration::from_secs(10));
+        assert!(start.elapsed() < patience::PATIENCE);
         std::thread::sleep(Duration::from_millis(20));
     }
     assert!(
@@ -527,7 +527,7 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         .unwrap()
         .contains("\"precept\"")
     {
-        assert!(start.elapsed() < Duration::from_secs(10));
+        assert!(start.elapsed() < patience::PATIENCE);
         std::thread::sleep(Duration::from_millis(20));
     }
     // The AGENTS.md switch: previewed before writing, removed at once.
@@ -546,7 +546,7 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
     app.presses("Precept section in AGENTS.md").unwrap();
     let start = Instant::now();
     while agents_md.exists() {
-        assert!(start.elapsed() < Duration::from_secs(10));
+        assert!(start.elapsed() < patience::PATIENCE);
         std::thread::sleep(Duration::from_millis(20));
     }
 }

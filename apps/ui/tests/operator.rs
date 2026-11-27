@@ -99,7 +99,7 @@ impl Fixture {
                 break;
             }
             assert!(f.child.try_wait().unwrap().is_none());
-            assert!(start.elapsed() < Duration::from_secs(15));
+            assert!(start.elapsed() < patience::PATIENCE);
             std::thread::sleep(Duration::from_millis(20));
         }
         f
@@ -130,7 +130,7 @@ impl Fixture {
                 break;
             }
             assert!(self.child.try_wait().unwrap().is_none());
-            assert!(start.elapsed() < Duration::from_secs(15));
+            assert!(start.elapsed() < patience::PATIENCE);
             std::thread::sleep(Duration::from_millis(20));
         }
     }
@@ -171,7 +171,7 @@ where
         .block_on(f())
 }
 fn contains(app: &mut nsh_testing::Headless, needle: &str) {
-    app.wait_until("sanitized result", Duration::from_secs(10), |s| {
+    app.wait_until("sanitized result", patience::PATIENCE, |s| {
         s.texts().iter().any(|t| t.contains(needle))
     })
     .unwrap();
@@ -179,19 +179,15 @@ fn contains(app: &mut nsh_testing::Headless, needle: &str) {
 /// The workspace has read the Profile and its list (the list loads only after
 /// the Profile reply), and writes are on: no "Writes are off" notice.
 fn writes_on(app: &mut nsh_testing::Headless) {
-    app.wait_until(
-        "workspace read with writes on",
-        Duration::from_secs(10),
-        |s| {
-            let t = s.texts().join("\n");
-            (t.contains("No pending suggestions")
-                || t.contains("No records in this exact scope")
-                || t.contains("No records match this filter")
-                || t.contains(" · r"))
-                && !t.contains("Writes are off for this daemon run")
-                && !t.contains("Waiting for Daemon acknowledgement")
-        },
-    )
+    app.wait_until("workspace read with writes on", patience::PATIENCE, |s| {
+        let t = s.texts().join("\n");
+        (t.contains("No pending suggestions")
+            || t.contains("No records in this exact scope")
+            || t.contains("No records match this filter")
+            || t.contains(" · r"))
+            && !t.contains("Writes are off for this daemon run")
+            && !t.contains("Waiting for Daemon acknowledgement")
+    })
     .unwrap();
 }
 #[test]
@@ -281,7 +277,7 @@ fn real_components_profile_grant_suggestion_confirm_reject_and_disconnect() {
     contains(&mut app, "commit 2");
     // The sidebar counts the suggestion the daemon now holds, exactly.
     let waiting = |app: &mut nsh_testing::Headless, label: &'static str| {
-        app.wait_until(label, std::time::Duration::from_secs(10), |s| {
+        app.wait_until(label, patience::PATIENCE, |s| {
             s.count(&format!("role:button[{label}]")).unwrap_or(0) == 1
         })
         .unwrap();

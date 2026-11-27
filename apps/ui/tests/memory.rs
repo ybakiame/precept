@@ -101,7 +101,7 @@ impl Fixture {
                 break;
             }
             assert!(f.child.try_wait().unwrap().is_none());
-            assert!(start.elapsed() < Duration::from_secs(15));
+            assert!(start.elapsed() < patience::PATIENCE);
             std::thread::sleep(Duration::from_millis(20));
         }
         f
@@ -149,7 +149,7 @@ where
         .block_on(f())
 }
 fn contains(app: &mut nsh_testing::Headless, needle: &str) {
-    app.wait_until("sanitized result", Duration::from_secs(10), |s| {
+    app.wait_until("sanitized result", patience::PATIENCE, |s| {
         s.texts().iter().any(|t| t.contains(needle))
     })
     .unwrap();
@@ -223,7 +223,7 @@ fn agents_notes_are_shown_restored_pinned_and_deleted() {
     let wait = |what: &str, ok: &dyn Fn(&[Value]) -> bool| {
         let start = Instant::now();
         while !ok(&entries(&f)) {
-            assert!(start.elapsed() < Duration::from_secs(10), "{what}");
+            assert!(start.elapsed() < patience::PATIENCE, "{what}");
             std::thread::sleep(Duration::from_millis(20));
         }
     };
@@ -258,7 +258,7 @@ fn agents_notes_are_shown_restored_pinned_and_deleted() {
             assert_eq!(r["tags"], json!(["environment"]));
             break;
         }
-        assert!(start.elapsed() < Duration::from_secs(10), "suggested");
+        assert!(start.elapsed() < patience::PATIENCE, "suggested");
         std::thread::sleep(Duration::from_millis(50));
     }
     app.presses("Memory").unwrap();

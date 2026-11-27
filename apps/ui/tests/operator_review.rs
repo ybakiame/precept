@@ -101,7 +101,7 @@ impl Fixture {
                 break;
             }
             assert!(f.child.try_wait().unwrap().is_none());
-            assert!(start.elapsed() < Duration::from_secs(15));
+            assert!(start.elapsed() < patience::PATIENCE);
             std::thread::sleep(Duration::from_millis(20));
         }
         f
@@ -185,7 +185,7 @@ where
 }
 fn contains(app: &mut nsh_testing::Headless, needle: &str) {
     let label = format!("sanitized result containing {needle:?}");
-    app.wait_until(&label, Duration::from_secs(10), |s| {
+    app.wait_until(&label, patience::PATIENCE, |s| {
         s.texts().iter().any(|t| t.contains(needle))
     })
     .unwrap();
@@ -197,19 +197,15 @@ fn contains(app: &mut nsh_testing::Headless, needle: &str) {
 /// The workspace has read the Profile and its list (the list loads only after
 /// the Profile reply), and writes are on: no "Writes are off" notice.
 fn writes_on(app: &mut nsh_testing::Headless) {
-    app.wait_until(
-        "workspace read with writes on",
-        Duration::from_secs(10),
-        |s| {
-            let t = s.texts().join("\n");
-            (t.contains("No pending suggestions")
-                || t.contains("No records in this exact scope")
-                || t.contains("No records match this filter")
-                || t.contains(" · r"))
-                && !t.contains("Writes are off for this daemon run")
-                && !t.contains("Waiting for Daemon acknowledgement")
-        },
-    )
+    app.wait_until("workspace read with writes on", patience::PATIENCE, |s| {
+        let t = s.texts().join("\n");
+        (t.contains("No pending suggestions")
+            || t.contains("No records in this exact scope")
+            || t.contains("No records match this filter")
+            || t.contains(" · r"))
+            && !t.contains("Writes are off for this daemon run")
+            && !t.contains("Waiting for Daemon acknowledgement")
+    })
     .unwrap();
 }
 #[test]
@@ -331,11 +327,8 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
     assert!(!app.screen().shows("Nothing is written until you apply it"));
     assert_eq!(f.inspect(2, 3)["record"]["status"], "deprecated");
     app.presses("Cancel").unwrap();
-    app.wait_for_gone(
-        "Delete project alpha preference #2?",
-        Duration::from_secs(5),
-    )
-    .unwrap();
+    app.wait_for_gone("Delete project alpha preference #2?", patience::PATIENCE)
+        .unwrap();
     app.press_key("alt+shift+q").unwrap();
     app.sees("Delete project alpha preference #2?").unwrap();
     app.type_text("Retype the exact ID", "2").unwrap();
@@ -369,7 +362,7 @@ fn real_components_review_queue_detail_history_deprecate_and_delete() {
         "Deleted. Content and decision history are gone; receipts remain identity-only.",
     );
     // A deleted record keeps no content or decision history snapshot.
-    app.wait_for_gone("Show full digest", Duration::from_secs(5))
+    app.wait_for_gone("Show full digest", patience::PATIENCE)
         .unwrap();
     // To review is empty: a valid pending-review state, never "unavailable".
     app.presses("Review").unwrap();
@@ -406,7 +399,7 @@ fn open_row(app: &mut nsh_testing::Headless, row: &str) {
     app.press_key("alt+shift+l").unwrap();
     // The row's full label is its title's accessible name.
     let selector = format!("role:button[{row}]");
-    app.wait_until(&format!("row {row}"), Duration::from_secs(10), |s| {
+    app.wait_until(&format!("row {row}"), patience::PATIENCE, |s| {
         s.count(&selector).unwrap_or(0) > 0
     })
     .unwrap();
