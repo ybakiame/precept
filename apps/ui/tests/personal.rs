@@ -264,10 +264,17 @@ fn a_personal_preference_is_saved_then_confirmed_as_the_exact_record() {
     let start = Instant::now();
     loop {
         app.press_key("alt+shift+y").unwrap();
-        if app.sees("Nothing is written until you apply it").is_ok() {
+        // Short waits: the shortcut is pressed again until the dialog shows.
+        if app
+            .wait_for_within(
+                "Nothing is written until you apply it",
+                Duration::from_secs(1),
+            )
+            .is_ok()
+        {
             break;
         }
-        assert!(start.elapsed() < Duration::from_secs(10), "confirm offered");
+        assert!(start.elapsed() < patience::PATIENCE, "confirm offered");
     }
     assert_eq!(global(&f)[0]["status"], "suggested");
     app.press_key("alt+shift+v").unwrap();
