@@ -44,7 +44,7 @@ pub(crate) fn open_relative(
 pub(crate) fn create_dir(parent: &File, name: &OsStr) -> Result<File, OpenError> {
     let name = CString::new(name.as_bytes()).map_err(|_| OpenError::Unsafe)?;
     if unsafe { libc::mkdirat(parent.as_raw_fd(), name.as_ptr(), 0o777) } < 0 {
-        let error = unsafe { libc::__errno_location().read() };
+        let error = errno();
         if error != libc::EEXIST {
             return Err(io_error());
         }
@@ -75,13 +75,11 @@ pub(crate) fn write_atomic(
         )
     };
     if fd < 0 {
-        return Err(
-            if unsafe { libc::__errno_location().read() } == libc::EEXIST {
-                OpenError::Collision
-            } else {
-                io_error()
-            },
-        );
+        return Err(if errno() == libc::EEXIST {
+            OpenError::Collision
+        } else {
+            io_error()
+        });
     }
     let mut file = unsafe { File::from_raw_fd(fd) };
     let result = (|| {
@@ -117,13 +115,11 @@ pub(crate) fn write_atomic(
                 )
             } < 0
             {
-                return Err(
-                    if unsafe { libc::__errno_location().read() } == libc::EEXIST {
-                        OpenError::Conflict
-                    } else {
-                        io_error()
-                    },
-                );
+                return Err(if errno() == libc::EEXIST {
+                    OpenError::Conflict
+                } else {
+                    io_error()
+                });
             }
             if unsafe { libc::unlinkat(parent.as_raw_fd(), temporary.as_ptr(), 0) } < 0 {
                 return Err(OpenError::Unavailable);
@@ -203,10 +199,10 @@ pub(crate) fn entries(
     let result = loop {
         // readdir returns null on both EOF and failure. Clear this thread's
         // errno so that only an error from this call is reported.
-        unsafe { libc::__errno_location().write(0) };
+        clear_errno();
         let entry = unsafe { libc::readdir(directory) };
         if entry.is_null() {
-            let error = unsafe { libc::__errno_location().read() };
+            let error = errno();
             break if error == 0 {
                 Ok(found)
             } else {
@@ -241,8 +237,30 @@ pub(crate) fn entries(
     result
 }
 
+/// Clears this thread's errno (for calls such as `readdir` that report
+/// failure only through it).
+fn clear_errno() {
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    unsafe {
+        libc::__errno_location().write(0)
+    };
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
+    unsafe {
+        libc::__error().write(0)
+    };
+    #[cfg(any(target_os = "netbsd", target_os = "openbsd"))]
+    unsafe {
+        libc::__errno().write(0)
+    };
+}
+
+/// The last OS error number (portable across Unix targets).
+fn errno() -> i32 {
+    std::io::Error::last_os_error().raw_os_error().unwrap_or(0)
+}
+
 fn io_error() -> OpenError {
-    match unsafe { libc::__errno_location().read() } {
+    match errno() {
         libc::ELOOP => OpenError::Unsafe,
         libc::ENOENT => OpenError::Missing,
         libc::ENOTDIR => OpenError::Unsafe,
