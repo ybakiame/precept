@@ -4,8 +4,22 @@ Precept follows [semantic versioning](https://semver.org/). While the version is
 0.x, a minor release may change the Profile schema or the local interfaces; move
 data between schemas with the versioned Profile export and import.
 
-## Unreleased
+## 0.4.9
 
+- **Long lists stay fast.** Preferences & contracts, Review, Handoff, the tag
+  colours dialog and the memory and session sheets rebuild only when what they
+  show changes; the memory list is virtualized. Switching project or context
+  with many rules no longer rebuilds the page dozens of times.
+- **Long work session goals wrap inside their card.**
+- **Windows MCP clients find projects in WSL.** A workspace folder named as
+  `file://wsl.localhost/<distribution>/...` binds to its project; another
+  machine's folder is ignored instead of unbinding the session.
+- **The activity log names the client that started an MCP server.**
+- **Read warnings recognize other spellings of a path.** A Windows short name,
+  a different case or a link to the checkout no longer hides a stale document.
+- **Releases are built in CI.** A version tag builds the musl archive and the
+  Windows ZIP, signs one update manifest for both and drafts the Release,
+  which is published after acceptance.
 - **The WSL daemon installer verifies a signature.** Install / Update daemon
   in WSL now installs only the daemon archive named in the release's signed
   update manifest, for exactly this Desktop's version; a newer release asks to

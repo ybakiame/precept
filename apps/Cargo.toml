@@ -5,7 +5,7 @@ resolver = "2"
 # The product version, one for every crate (semantic versioning; 0.x while
 # the Profile schema and interfaces may still change).
 [workspace.package]
-version = "0.4.8"
+version = "0.4.9"
 
 # Workspace-wide: Cargo ignores profiles declared in member manifests. This was
 # previously [profile.dev] in the ui manifest, before the crates became members.
