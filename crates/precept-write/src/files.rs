@@ -486,11 +486,20 @@ mod windows {
             if GetSecurityDescriptorDacl(sd.0, &mut present, &mut dacl, &mut defaulted) == 0 {
                 return Err(Error::UnsafeWorkspace);
             }
+            // The owner too: an elevated administrator's new objects default
+            // to the Administrators group, which `check` rightly refuses.
+            let mut owner = ptr::null_mut();
+            if GetSecurityDescriptorOwner(sd.0, &mut owner, &mut defaulted) == 0 || owner.is_null()
+            {
+                return Err(Error::UnsafeWorkspace);
+            }
             if SetNamedSecurityInfoW(
                 wide(path).as_ptr(),
                 SE_FILE_OBJECT,
-                DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
-                ptr::null_mut(),
+                OWNER_SECURITY_INFORMATION
+                    | DACL_SECURITY_INFORMATION
+                    | PROTECTED_DACL_SECURITY_INFORMATION,
+                owner,
                 ptr::null_mut(),
                 dacl,
                 ptr::null_mut(),
