@@ -97,6 +97,7 @@ pub(super) fn mcp_checks(mcp: &Option<Result<Value>>, blocker: Blocker) -> Vec<C
             Reason::McpCurrent,
             Reason::McpNotInstalled,
             Reason::McpOutdated,
+            Reason::McpBroken,
             Reason::McpMalformed,
             Reason::McpStateUnknown,
             Remediation::ReviewMcpIntegration,
@@ -138,6 +139,7 @@ pub(super) fn hook_checks(hooks: &Option<Result<Value>>, blocker: Blocker) -> Ve
                 Reason::HookCurrent,
                 Reason::HookNotInstalled,
                 Reason::HookOutdated,
+                Reason::HookBroken,
                 Reason::HookMalformed,
                 Reason::HookStateUnknown,
                 Remediation::ReviewHookIntegration,
@@ -158,6 +160,7 @@ pub(super) fn integration_entry_check(
     current: Reason,
     not_installed: Reason,
     outdated: Reason,
+    broken: Reason,
     malformed: Reason,
     unknown: Reason,
     remediation: Remediation,
@@ -209,9 +212,13 @@ pub(super) fn integration_entry_check(
     let malformed_value = entry.get("malformed").and_then(Value::as_bool);
     let installed = entry.get("installed").and_then(Value::as_bool);
     let current_value = entry.get("current").and_then(Value::as_bool);
+    let broken_value = entry.get("broken").and_then(Value::as_bool);
     let status = match (malformed_value, installed, current_value) {
         (Some(true), _, _) => (Status::Problem, malformed),
         (Some(false), Some(false), _) => (Status::Off, not_installed),
+        // Its program is gone (a moved or removed installation): it fails
+        // every time it runs.
+        (Some(false), Some(true), _) if broken_value == Some(true) => (Status::Problem, broken),
         (Some(false), Some(true), Some(false)) => (Status::Attention, outdated),
         (Some(false), Some(true), Some(true)) => (Status::Ok, current),
         _ => (Status::Problem, Reason::ResponseInvalid),
@@ -222,6 +229,9 @@ pub(super) fn integration_entry_check(
         status.1,
         if status.0 == Status::Ok {
             Remediation::None
+        } else if status.1 == broken || status.1 == outdated {
+            // `precept agent-entries --update` rewrites exactly these.
+            Remediation::UpdateAgentEntries
         } else {
             remediation
         },
@@ -231,6 +241,7 @@ pub(super) fn integration_entry_check(
         malformed: malformed_value,
         installed,
         current: current_value,
+        broken: broken_value,
         ..Facts::default()
     })
 }

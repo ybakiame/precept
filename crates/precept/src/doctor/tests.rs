@@ -394,7 +394,7 @@ fn integration_layers_cover_unavailable_off_outdated_malformed_and_unknown() {
         (false, false, true, Status::Problem, Reason::McpMalformed),
     ] {
         let value = Some(Ok(json!({"available":true,"clients":[
-            {"client":"claude","installed":installed,"current":current,"malformed":malformed},
+            {"client":"claude","installed":installed,"current":current,"malformed":malformed,"broken":false},
             {"client":"codex","installed":false,"current":false,"malformed":false}
         ]})));
         let checks = mcp_checks(&value, Blocker::None);
@@ -423,6 +423,10 @@ fn integration_layers_cover_unavailable_off_outdated_malformed_and_unknown() {
     })));
     let checks = hook_checks(&hooks, Blocker::None);
     assert_eq!(find(&checks, "integration.hooks.claude").status, Status::Ok);
+    assert_eq!(
+        find(&checks, "integration.hooks.codex").remediation,
+        Remediation::UpdateAgentEntries
+    );
     assert_eq!(
         find(&checks, "integration.hooks.codex").reason,
         Reason::HookOutdated
@@ -613,5 +617,31 @@ fn package_layers_are_bounded_redacted_and_do_not_claim_hash_verification() {
         !serde_json::to_string(&checks)
             .unwrap()
             .contains("SECRET-RAW-MANIFEST-CANARY")
+    );
+}
+
+#[test]
+fn an_entry_whose_program_is_gone_is_a_problem_with_one_remediation() {
+    let hooks = Some(Ok(json!({
+        "available":true,
+        "hooks":[
+            {"vendor":"claude","installed":true,"current":false,"malformed":false,"broken":true},
+            {"vendor":"codex","installed":true,"current":true,"malformed":false,"broken":false}
+        ],
+        "gate_hooks":[]
+    })));
+    let checks = hook_checks(&hooks, Blocker::None);
+    let claude = find(&checks, "integration.hooks.claude");
+    assert_eq!(claude.status, Status::Problem);
+    assert_eq!(claude.reason, Reason::HookBroken);
+    assert_eq!(claude.remediation, Remediation::UpdateAgentEntries);
+    assert_eq!(find(&checks, "integration.hooks.codex").status, Status::Ok);
+    let mcp = Some(Ok(json!({"available":true,"clients":[
+        {"client":"claude","installed":true,"current":false,"malformed":false,"broken":true}
+    ]})));
+    let checks = mcp_checks(&mcp, Blocker::None);
+    assert_eq!(
+        find(&checks, "integration.mcp.claude").reason,
+        Reason::McpBroken
     );
 }

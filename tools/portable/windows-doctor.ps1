@@ -50,8 +50,8 @@ foreach ($reason in ('executable_ok executable_missing executable_unavailable ex
   'propose_enabled propose_disabled propose_requires_writes propose_unknown gate_configured gate_disabled ' +
   'gate_unknown agent_credential_ok agent_credential_not_issued agent_credential_withheld agent_credential_invalid ' +
   'agent_credential_unsafe agent_credential_wrong_role agent_credential_unavailable mcp_available mcp_unavailable ' +
-  'mcp_current mcp_not_installed mcp_outdated mcp_malformed mcp_state_unknown hook_available hook_unavailable ' +
-  'hook_current hook_not_installed hook_outdated hook_malformed hook_state_unknown pointer_current ' +
+  'mcp_current mcp_not_installed mcp_outdated mcp_broken mcp_malformed mcp_state_unknown hook_available hook_unavailable ' +
+  'hook_current hook_not_installed hook_outdated hook_broken hook_malformed hook_state_unknown pointer_current ' +
   'pointer_outdated pointer_absent pointer_malformed pointer_state_unknown manifest_present manifest_absent ' +
   'manifest_unreadable manifest_invalid manifest_unavailable package_version_compatible ' +
   'package_version_incompatible package_version_unknown package_metadata_consistent package_inventory_mismatch ' +
@@ -64,7 +64,7 @@ foreach ($remediation in ('none reinstall_package use_absolute_private_runtime c
   'restart_daemon_explicitly repair_operator_credential reinstall_matching_release select_profile_explicitly ' +
   'review_startup_profile review_write_grant register_project_explicitly restore_project_path review_project ' +
   'review_project_mcp review_project_sharing review_propose review_gate review_agent_credential ' +
-  'review_mcp_integration review_hook_integration review_pointer reextract_package use_supported_profile ' +
+  'review_mcp_integration review_hook_integration update_agent_entries review_pointer reextract_package use_supported_profile ' +
   'review_installation') -split '\s+') {
   if ($remediation) { [void]$script:KnownRemediations.Add($remediation) }
 }

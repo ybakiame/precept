@@ -39,7 +39,9 @@ fields plus bounded diagnostic facts. Statuses are `ok`, `attention`, `problem`,
 errors, commands, Profile values, Handoff bodies and credentials are not emitted.
 Package inventory checks verify manifest metadata and file sizes, not content
 hashes. Hook and gate observations describe configuration, never achieved OS-level
-enforcement.
+enforcement. An installed hook or MCP entry whose program no longer exists is a
+problem (`hook_broken`, `mcp_broken`); it and an outdated entry name the
+`update_agent_entries` remediation (`precept agent-entries --update`).
 
 On Windows, `tools/portable/windows-doctor.ps1` validates one extracted package and
 optionally an explicitly addressed WSL distribution/user. It bounds subprocess time

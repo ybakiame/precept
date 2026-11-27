@@ -136,6 +136,7 @@ enum Reason {
     McpCurrent,
     McpNotInstalled,
     McpOutdated,
+    McpBroken,
     McpMalformed,
     McpStateUnknown,
     HookAvailable,
@@ -143,6 +144,7 @@ enum Reason {
     HookCurrent,
     HookNotInstalled,
     HookOutdated,
+    HookBroken,
     HookMalformed,
     HookStateUnknown,
     PointerCurrent,
@@ -190,6 +192,7 @@ enum Remediation {
     ReviewAgentCredential,
     ReviewMcpIntegration,
     ReviewHookIntegration,
+    UpdateAgentEntries,
     ReviewPointer,
     ReextractPackage,
     UseSupportedProfile,
@@ -207,6 +210,9 @@ struct Facts {
     current: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     malformed: Option<bool>,
+    /// An installed entry names a program that no longer exists.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    broken: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     selected: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
