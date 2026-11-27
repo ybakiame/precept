@@ -1,5 +1,5 @@
 use crate::{
-    binding::root_dirs,
+    binding::{root_dirs, root_dirs_in},
     protocol::{info, memory_reply, suggestion_reply, tools},
 };
 use precept_ipc::Error;
@@ -74,6 +74,30 @@ fn memory_replies_mark_notes_as_unreviewed_and_say_whether_to_retry() {
         assert_eq!(r["isError"], true);
         assert!(r["content"][0]["text"].as_str().unwrap().contains(needle));
     }
+}
+
+#[test]
+fn a_windows_client_names_this_wsl_distributions_folders() {
+    let roots = json!({"roots":[
+        {"uri":"file://wsl.localhost/archlinux/home/u/my%20repo"},
+        {"uri":"file://wsl%24/ArchLinux/home/u/other"},
+        {"uri":"file://wsl.localhost/ubuntu/home/u/elsewhere"},
+        {"uri":"file://server/share/repo"},
+        {"uri":"file://localhost/home/u/local"}
+    ]});
+    assert_eq!(
+        root_dirs_in(&roots, Some("archlinux")),
+        vec![
+            std::path::PathBuf::from("/home/u/my repo"),
+            std::path::PathBuf::from("/home/u/other"),
+            std::path::PathBuf::from("/home/u/local"),
+        ]
+    );
+    // Outside WSL a share is another machine's folder.
+    assert_eq!(
+        root_dirs_in(&roots, None),
+        vec![std::path::PathBuf::from("/home/u/local")]
+    );
 }
 
 #[test]

@@ -79,12 +79,36 @@ pub(super) async fn resolve(location: &Location, dirs: &[PathBuf]) -> Option<(St
 
 /// Local folders named by a `roots/list` result (`file://` URIs only).
 pub(super) fn root_dirs(result: &Value) -> Vec<PathBuf> {
+    let distribution = std::env::var("WSL_DISTRO_NAME").ok();
+    root_dirs_in(result, distribution.as_deref())
+}
+
+/// [`root_dirs`] for a server running in the WSL distribution `distribution`
+/// (if any). A URI names a local folder when its host is empty or
+/// `localhost`, or, inside WSL, when it is this distribution's share as a
+/// Windows client names it (`//wsl.localhost/<distribution>/...` or
+/// `//wsl$/<distribution>/...`). Any other host is another machine's folder
+/// and is skipped, never read as a relative path.
+pub(super) fn root_dirs_in(result: &Value, distribution: Option<&str>) -> Vec<PathBuf> {
     result["roots"]
         .as_array()
         .into_iter()
         .flatten()
         .filter_map(|r| r["uri"].as_str()?.strip_prefix("file://"))
         .map(percent_decode)
+        .filter_map(|s| {
+            let (host, path) = match s.find('/') {
+                Some(at) => (&s[..at], &s[at..]),
+                None => return None,
+            };
+            if host.is_empty() || host.eq_ignore_ascii_case("localhost") {
+                return Some(path.to_owned());
+            }
+            let share = host.eq_ignore_ascii_case("wsl.localhost") || host == "wsl$";
+            let (name, rest) = path[1..].split_once('/').unwrap_or((&path[1..], ""));
+            (share && distribution.is_some_and(|d| d.eq_ignore_ascii_case(name)))
+                .then(|| format!("/{rest}"))
+        })
         .map(|s| {
             // `file:///C:/...` leaves a leading slash before the drive letter;
             // Windows reads `/C:/...` as drive-relative and loses the folder.
