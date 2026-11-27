@@ -20,7 +20,7 @@ fn run_with(cmd: &str, input: &Value) -> String {
         .current_dir("/")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .unwrap();
     child
@@ -29,7 +29,14 @@ fn run_with(cmd: &str, input: &Value) -> String {
         .unwrap()
         .write_all(input.to_string().as_bytes())
         .unwrap();
-    String::from_utf8(child.wait_with_output().unwrap().stdout).unwrap()
+    let out = child.wait_with_output().unwrap();
+    // Shown with a failing test's output: why a hook said nothing.
+    eprintln!(
+        "hook exit: {:?}; stderr: {}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).unwrap()
 }
 
 #[cfg(unix)]
