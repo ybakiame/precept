@@ -20,6 +20,8 @@ pub(super) struct Bridge {
     bound: Option<(String, Credential)>,
     /// The client offered MCP roots in `initialize`.
     roots: bool,
+    /// The current binding's "started" evidence was recorded.
+    started: bool,
     initialized: bool,
     ready: bool,
     /// The client's self-reported `clientInfo` name and version, passed to
@@ -36,6 +38,7 @@ impl Bridge {
             location,
             bound: None,
             roots: false,
+            started: false,
             initialized: false,
             ready: false,
             client: None,
@@ -256,15 +259,37 @@ impl Bridge {
         if before != after {
             self.session = None;
             match &self.bound {
-                Some((_, credential)) => {
+                Some(_) => {
                     diagnose("serving the project of this session's folder");
-                    // Recorded as the project's "started" evidence.
-                    if let Ok(mut c) = Client::connect(&self.location, credential).await {
-                        let _ = c.request("daemon.health", json!({})).await;
+                    // Before `initialize` the client is unknown: "started" is
+                    // recorded once it has named itself, or at the first
+                    // tool call of a client that never initializes.
+                    self.started = false;
+                    if self.initialized {
+                        self.record_started().await;
                     }
                 }
                 None => diagnose("this folder is not a registered project; serving nothing"),
             }
+        }
+    }
+
+    /// The project's "started" evidence, with the client's own name, once
+    /// per binding.
+    async fn record_started(&mut self) {
+        let Some((_, credential)) = &self.bound else {
+            return;
+        };
+        if self.started {
+            return;
+        }
+        self.started = true;
+        let mut params = json!({});
+        if let Some(client) = &self.client {
+            params["client"] = json!(client);
+        }
+        if let Ok(mut c) = Client::connect(&self.location, credential).await {
+            let _ = c.request("daemon.health", params).await;
         }
     }
 
@@ -311,6 +336,10 @@ impl Bridge {
             .and_then(|v| v.get("io.modelcontextprotocol/protocolVersion"))
             == Some(&json!(STATELESS));
         let method = message.get("method").and_then(Value::as_str);
+        if method == Some("tools/call") && (stateless || self.ready) {
+            // A client that never initializes starts with its first call.
+            self.record_started().await;
+        }
         let mut result = match method {
             Some("initialize") => {
                 if !params.get("protocolVersion").is_some_and(Value::is_string) {
@@ -319,6 +348,7 @@ impl Bridge {
                 self.initialized = true;
                 self.ready = false;
                 self.client = client_label(&params);
+                self.record_started().await;
                 self.roots = params
                     .pointer("/capabilities/roots")
                     .is_some_and(Value::is_object);

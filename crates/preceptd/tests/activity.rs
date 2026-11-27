@@ -128,7 +128,8 @@ fn mcp_starts_reads_and_refusals_are_logged_by_count_for_the_operator_only() {
     assert_eq!(context["outcome"], "ok");
     assert_eq!(context["counts"]["preferences"], 1);
     assert_eq!(context["counts"]["contract_status"], "not_configured");
-    assert_eq!(alpha[3]["client"], Value::Null);
+    // "started" is recorded once the client has named itself.
+    assert_eq!(alpha[3]["client"], "synthetic-client 9.1");
     assert!(events(&f, json!({"project":"beta"})).len() == 1);
     let all = f.daemon.control("activity.list", json!({})).unwrap();
     let text = all.to_string();

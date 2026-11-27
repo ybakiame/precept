@@ -40,7 +40,16 @@ impl Service {
             return Err(Error::Unauthorized);
         }
         if request.method == "daemon.health" {
-            let _: Empty = decode(params)?;
+            // An MCP server's first health check names its client for the
+            // activity log ("started"); nothing else is accepted.
+            #[derive(serde::Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Health {
+                #[serde(default)]
+                #[allow(dead_code)]
+                client: Option<String>,
+            }
+            let _: Health = decode(params)?;
             let selected = self.profiles.selected();
             if !selected && access != Access::Operator {
                 return Err(Error::Unauthorized);
