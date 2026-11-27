@@ -238,8 +238,19 @@ fn compact_output(vendor: Vendor, note: &str) -> Option<Value> {
 }
 
 /// `path` relative to `root` (lexically: `.` and `..` resolved), or `None`
-/// when it is outside. A relative path is taken from `cwd`.
+/// when it is outside. A relative path is taken from `cwd`. A path that is
+/// lexically outside but names an existing file is compared again by its
+/// canonical form: another spelling of a path inside (a Windows short name or
+/// different case, a link to the checkout) is still inside. This only ever
+/// adds paths, so the gate never stops guarding one it guarded before.
 fn repo_relative(root: &std::path::Path, cwd: &std::path::Path, path: &str) -> Option<String> {
+    lexical_relative(root, cwd, path).or_else(|| {
+        let canonical = cwd.join(path).canonicalize().ok()?;
+        lexical_relative(root, std::path::Path::new(""), canonical.to_str()?)
+    })
+}
+
+fn lexical_relative(root: &std::path::Path, cwd: &std::path::Path, path: &str) -> Option<String> {
     use std::path::Component;
     // Windows canonicalize yields a \\?\ verbatim prefix; joining an absolute
     // input path drops it, so compare without it on both sides.
@@ -524,6 +535,30 @@ mod tests {
         assert_eq!(repo_relative(root, cwd, "../../other/x"), None);
         assert_eq!(repo_relative(root, cwd, "/etc/passwd"), None);
         assert_eq!(repo_relative(root, cwd, ".."), None);
+    }
+
+    /// Another spelling of an existing file inside the checkout (here a link
+    /// to it; on Windows also a short name or different case) is inside.
+    #[cfg(unix)]
+    #[test]
+    fn another_spelling_of_an_existing_file_is_inside() {
+        let temp = tempfile::tempdir().unwrap();
+        let real = temp.path().join("real");
+        std::fs::create_dir_all(real.join("docs")).unwrap();
+        std::fs::write(real.join("docs/a.md"), "x").unwrap();
+        std::os::unix::fs::symlink(&real, temp.path().join("alias")).unwrap();
+        let root = real.canonicalize().unwrap();
+        let alias = temp.path().join("alias/docs/a.md");
+        assert_eq!(
+            repo_relative(&root, Path::new("/"), alias.to_str().unwrap()).as_deref(),
+            Some("docs/a.md")
+        );
+        // A missing file keeps the lexical answer: outside.
+        let missing = temp.path().join("alias/docs/none.md");
+        assert_eq!(
+            repo_relative(&root, Path::new("/"), missing.to_str().unwrap()),
+            None
+        );
     }
 
     #[cfg(windows)]
