@@ -37,8 +37,34 @@ an MCP server, harness hooks and an NSH desktop operator app.
   cautions, lessons, attempts), unreviewed and below rules, which survives a
   change of agent, harness or model.
 - Historical Handoffs with revision, branch, worktree and content-drift warnings.
+- Repository-rule diagnostics with line/column positions and Rust, Git, security
+  and testing templates to copy for review.
+- Manual, encrypted personal preference sync between devices (one `.age` file,
+  previewed, with conflicts resolved explicitly).
+- Redacted, read-only diagnostics (`precept doctor` and the Desktop's
+  Diagnostics) and guided first activation with a preview of every change.
+- Agent entries that follow the installation: entries left by an older install
+  location are detected, reported as broken when their program is gone and
+  rewritten together from one preview.
 - A Windows desktop workflow that operates a daemon inside WSL2 through the typed
-  `precept-bridge` helper, without TCP or shell forwarding.
+  `precept-bridge` helper, without TCP or shell forwarding. Connection installs or
+  updates the user-local WSL daemon from the release (no sudo, no package
+  manager), and Settings installs signed Desktop updates; both verify the
+  release's signed update manifest.
+
+## Platforms and releases
+
+| Platform | Released | Contents |
+| --- | --- | --- |
+| Windows x86_64 | Portable ZIP | Desktop, daemon, CLI, MCP server, hooks |
+| Linux x86_64 | Static musl archive | Daemon, CLI, MCP server, hooks, WSL bridge (no Desktop) |
+| Linux Desktop | Build from source | GTK Desktop |
+| macOS | Not released | Compiles; no release, device or support claim |
+
+Releases are built by the `Release` workflow from a version tag and published
+after acceptance. The Desktop updates itself only to a release whose manifest
+verifies with its built-in key; the WSL installer installs only the daemon of the
+Desktop's own version.
 
 Recommended setup: the session-start hook and MCP together. The pre-tool gate, the
 AGENTS.md pointer and rules in Git are add-ons for specific needs; see
