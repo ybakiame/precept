@@ -246,7 +246,11 @@ fn compact_output(vendor: Vendor, note: &str) -> Option<Value> {
 fn repo_relative(root: &std::path::Path, cwd: &std::path::Path, path: &str) -> Option<String> {
     lexical_relative(root, cwd, path).or_else(|| {
         let canonical = cwd.join(path).canonicalize().ok()?;
-        lexical_relative(root, std::path::Path::new(""), canonical.to_str()?)
+        // Windows canonicalize yields a \\?\ verbatim prefix, which the
+        // lexical comparison drops from the root only.
+        let canonical = canonical.to_str()?;
+        let canonical = canonical.strip_prefix(r"\\?\").unwrap_or(canonical);
+        lexical_relative(root, std::path::Path::new(""), canonical)
     })
 }
 
@@ -558,6 +562,23 @@ mod tests {
         assert_eq!(
             repo_relative(&root, Path::new("/"), missing.to_str().unwrap()),
             None
+        );
+    }
+
+    /// Windows names one file in several spellings (case here; short names
+    /// on hosted runners); the canonical comparison accepts them all.
+    #[cfg(windows)]
+    #[test]
+    fn another_case_of_an_existing_file_is_inside() {
+        let temp = tempfile::tempdir().unwrap();
+        let real = temp.path().join("Repo");
+        std::fs::create_dir_all(real.join("docs")).unwrap();
+        std::fs::write(real.join("docs/a.md"), "x").unwrap();
+        let root = real.canonicalize().unwrap();
+        let other = temp.path().join("REPO").join("DOCS").join("a.md");
+        assert_eq!(
+            repo_relative(&root, Path::new("C:\\"), other.to_str().unwrap()).as_deref(),
+            Some("docs/a.md")
         );
     }
 
