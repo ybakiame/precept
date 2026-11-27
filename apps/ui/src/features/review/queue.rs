@@ -38,11 +38,8 @@ pub(super) fn queue_tab(model: Signal<Model>, delete_open: Signal<bool>) -> AnyE
     let records = std::rc::Rc::new(queue.records.clone());
     let selected_id = m.operator.selected_id;
     let more = queue.next_after_id.is_some();
-    if records.iter().enumerate().any(|(index, record)| {
-        records[index + 1..]
-            .iter()
-            .any(|other| same_review_content(record, other))
-    }) {
+    let duplicates = std::rc::Rc::new(duplicate_counts(&records));
+    if duplicates.iter().any(|&n| n > 0) {
         body = body.child(
             text(m.word(Msg::ReviewDuplicateHelp))
                 .text_size(px(ui::scale::text::CAPTION))
@@ -55,8 +52,13 @@ pub(super) fn queue_tab(model: Signal<Model>, delete_open: Signal<bool>) -> AnyE
         {
             let records = records.clone();
             move |index| {
-                let duplicates = duplicate_count(&records, &records[index]);
-                queue_row(model, delete_open, &records[index], duplicates, selected_id)
+                queue_row(
+                    model,
+                    delete_open,
+                    &records[index],
+                    duplicates[index],
+                    selected_id,
+                )
             }
         },
         more,
@@ -142,15 +144,28 @@ pub(super) fn queue_row(
         ))
         .into_element()
 }
-fn same_review_content(a: &PreferenceRecord, b: &PreferenceRecord) -> bool {
-    a.key == b.key && a.value == b.value && a.tags == b.tags && a.rule == b.rule
-}
-
-fn duplicate_count(records: &[PreferenceRecord], record: &PreferenceRecord) -> usize {
-    records
-        .iter()
-        .filter(|other| other.id != record.id && same_review_content(record, other))
-        .count()
+/// For each loaded record, how many others have the same content (key,
+/// value, tags and rule options). One pass with a hash of the content, then
+/// an exact comparison within each (small) group.
+pub(super) fn duplicate_counts(records: &[PreferenceRecord]) -> Vec<usize> {
+    let mut groups: std::collections::HashMap<(&str, &str, &[String]), Vec<usize>> =
+        std::collections::HashMap::new();
+    for (index, r) in records.iter().enumerate() {
+        groups
+            .entry((r.key.as_str(), r.value.as_str(), r.tags.as_slice()))
+            .or_default()
+            .push(index);
+    }
+    let mut counts = vec![0; records.len()];
+    for members in groups.values().filter(|m| m.len() > 1) {
+        for &a in members {
+            counts[a] = members
+                .iter()
+                .filter(|&&b| b != a && records[b].rule == records[a].rule)
+                .count();
+        }
+    }
+    counts
 }
 
 /// A record's row: its checkbox, its origin as an icon in a column of its

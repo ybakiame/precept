@@ -599,3 +599,26 @@ fn compact_delete_tier_keeps_retype_validation_and_explicit_apply() {
     app.wait_for_gone("Delete global preference #7?", Duration::from_secs(5))
         .unwrap();
 }
+
+#[test]
+fn duplicates_are_counted_by_exact_content() {
+    let same = |id: i64| {
+        let mut r = record(id, "suggested", 1);
+        r.key = "shared".into();
+        r
+    };
+    let mut other_tags = same(4);
+    other_tags.tags = vec!["other".into()];
+    let records = vec![
+        same(1),
+        record(2, "suggested", 1),
+        same(3),
+        other_tags,
+        same(5),
+    ];
+    assert_eq!(
+        super::queue::duplicate_counts(&records),
+        vec![2, 0, 2, 0, 2]
+    );
+    assert!(super::queue::duplicate_counts(&[]).is_empty());
+}
