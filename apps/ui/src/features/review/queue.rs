@@ -84,7 +84,7 @@ pub(super) fn queue_row(
     duplicates: usize,
     selected_id: Option<i64>,
 ) -> AnyElement {
-    let m = model.get();
+    let m = model.get_untracked();
     let id = r.id;
     let selected = selected_id == Some(id);
     let label = format!("#{} · {} · r{}", id, sanitize(&r.key, 120), r.revision);

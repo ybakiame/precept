@@ -28,8 +28,71 @@ use preferences::preferences;
 use shell::*;
 use tokens::compact;
 
+/// What the Rules page shows: it is rebuilt only when one of these changes.
+/// Other sections keep rebuilding on any change (they hold no long list).
+#[derive(Clone, PartialEq)]
+enum PageKey {
+    Rules {
+        phase: Phase,
+        data: usize,
+        project: Option<String>,
+        filter: String,
+        tags: Vec<String>,
+        locale: precept_ui_core::i18n::Locale,
+        live: bool,
+    },
+    Other(u64),
+}
+
+#[cfg(test)]
+mod page_tests;
+/// How often the section page was built, per UI thread (tests only: tests
+/// run in parallel, each app on its own engine thread).
+#[cfg(test)]
+pub(crate) static PAGE_BUILDS: std::sync::Mutex<std::collections::BTreeMap<String, usize>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+/// The current section's page, rebuilt only when what it shows changes. On
+/// the Rules page a status, a read finishing or any other unrelated update
+/// no longer rebuilds the page and its long, virtualized list.
+pub(crate) fn section_page(model: Signal<Model>) -> impl IntoElement {
+    let other = std::cell::Cell::new(0u64);
+    let key = computed(move || {
+        let m = model.get();
+        if m.section == Section::Rules && m.phase == Phase::Ready {
+            PageKey::Rules {
+                phase: m.phase.clone(),
+                data: m
+                    .data
+                    .as_ref()
+                    .map_or(0, |d| std::sync::Arc::as_ptr(d) as usize),
+                project: m.selected_project.clone(),
+                filter: m.filter.clone(),
+                tags: m.tag_filter.clone(),
+                locale: m.locale,
+                live: m.live,
+            }
+        } else {
+            other.set(other.get() + 1);
+            PageKey::Other(other.get())
+        }
+    });
+    dynamic(move || {
+        let _ = key.get();
+        untracked(|| page(model).into_element())
+    })
+}
+
 /// The current section's page (Dashboard, Preferences, Handoff, Diagnostics).
 pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
+    #[cfg(test)]
+    {
+        *PAGE_BUILDS
+            .lock()
+            .unwrap()
+            .entry(format!("{:?}", std::thread::current().id()))
+            .or_default() += 1;
+    }
     let current = model.get();
     let body = view()
         .flex_shrink_0()

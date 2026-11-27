@@ -232,37 +232,59 @@ pub(crate) fn panel(model: Signal<Model>) -> impl IntoElement {
                     move || model.get().operator.pane != Pane::Preferences,
                     |s| s.hidden().invisible(),
                 )
-                .child(dynamic(move || {
-                    let m = model.get();
-                    let mode = m.operator.mode;
-                    if mode == ReviewMode::Project && m.selected_project.is_none() {
-                        return ui::surface(model)
-                            .child(
-                                ui::empty(model, m.word(Msg::ReviewNeedsProjectTitle))
-                                    .icon(icons::section_path(precept_ui_core::Section::Projects))
-                                    .description(m.word(Msg::ReviewNeedsProjectBody))
-                                    .action(
-                                        ui::button(model, "")
-                                            .label_fn(move || {
-                                                model.get().word(Msg::GoToWorkspaces).into()
-                                            })
-                                            .variant(ui::ButtonVariant::Primary)
-                                            .on_press(move || {
-                                                shell::go_setup(
-                                                    model,
-                                                    precept_ui_core::SetupTab::Workspaces,
-                                                )
-                                            }),
-                                    ),
-                            )
-                            .into_element();
-                    }
-                    if mode == ReviewMode::Inbox {
-                        queue_tab(model, delete_open)
-                    } else {
-                        records_list(model, delete_open)
-                    }
-                })),
+                .child({
+                    // What the queue or record list shows: it is rebuilt only
+                    // when one of these changes, never by an unrelated update.
+                    let shown = computed(move || {
+                        let m = model.get();
+                        (
+                            m.operator.mode,
+                            m.selected_project.is_none(),
+                            m.operator.queue.clone(),
+                            m.operator.queue_watermark,
+                            m.operator.page.clone(),
+                            m.operator.show_deprecated,
+                            m.operator.selected_id,
+                            m.locale,
+                        )
+                    });
+                    dynamic(move || {
+                        let _ = shown.get();
+                        let m = model.get_untracked();
+                        let mode = m.operator.mode;
+                        if mode == ReviewMode::Project && m.selected_project.is_none() {
+                            return ui::surface(model)
+                                .child(
+                                    ui::empty(model, m.word(Msg::ReviewNeedsProjectTitle))
+                                        .icon(icons::section_path(
+                                            precept_ui_core::Section::Projects,
+                                        ))
+                                        .description(m.word(Msg::ReviewNeedsProjectBody))
+                                        .action(
+                                            ui::button(model, "")
+                                                .label_fn(move || {
+                                                    model.get().word(Msg::GoToWorkspaces).into()
+                                                })
+                                                .variant(ui::ButtonVariant::Primary)
+                                                .on_press(move || {
+                                                    shell::go_setup(
+                                                        model,
+                                                        precept_ui_core::SetupTab::Workspaces,
+                                                    )
+                                                }),
+                                        ),
+                                )
+                                .into_element();
+                        }
+                        untracked(|| {
+                            if mode == ReviewMode::Inbox {
+                                queue_tab(model, delete_open)
+                            } else {
+                                records_list(model, delete_open)
+                            }
+                        })
+                    })
+                }),
         )
         .child(
             view()

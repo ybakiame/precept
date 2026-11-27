@@ -144,7 +144,9 @@ pub(crate) fn detail_dialog(model: Signal<Model>) -> impl IntoElement {
 /// One confirmed row: key and Details, the value's first line, then where it
 /// applies and its tags.
 fn row(model: Signal<Model>, r: &Preference, index: usize) -> AnyElement {
-    let m = model.get();
+    // Untracked: a row is rebuilt with the page (locale, data), never by an
+    // unrelated update of the model.
+    let m = model.get_untracked();
     let key = sanitize(&r.key, 64);
     let spoken = format!("{} · {key}", m.word(Msg::Details));
     view()

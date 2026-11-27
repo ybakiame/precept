@@ -292,7 +292,7 @@ pub(super) fn record_row(
     delete_open: Signal<bool>,
     r: &PreferenceRecord,
 ) -> AnyElement {
-    let m = model.get();
+    let m = model.get_untracked();
     let id = r.id;
     let variant = match r.status.as_str() {
         "confirmed" => ui::BadgeVariant::Success,

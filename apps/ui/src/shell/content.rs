@@ -6,8 +6,7 @@ use super::{
 };
 use crate::*;
 use features::{
-    agents, doctor, memory, page, personal_sync, profile, projects, review, sessions, settings,
-    setup,
+    agents, doctor, memory, personal_sync, profile, projects, review, sessions, settings, setup,
 };
 use tokens::{compact, palette};
 
@@ -187,7 +186,7 @@ fn workspace_shell(
                                                             },
                                                             |s| s.hidden(),
                                                         )
-                                                        .child(dynamic(move || page(model))),
+                                                        .child(features::section_page(model)),
                                                 )
                                                 .child(
                                                     view()
