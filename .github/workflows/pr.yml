@@ -1,11 +1,12 @@
-# The quality gates: every pull request, every push to dev or main, and the
-# Release workflow (called before it builds anything).
+# The quality gates: every pull request, every push to dev, and the Release
+# workflow (called before it builds anything). main only fast-forwards to a dev
+# commit whose gates passed (tools/release.sh), so a push there runs nothing.
 name: Gates
 
 on:
   pull_request:
   push:
-    branches: [dev, main]
+    branches: [dev]
   workflow_call:
   workflow_dispatch:
     inputs:

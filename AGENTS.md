@@ -81,7 +81,7 @@ contracts. Code/contract disagreements require explicit human resolution.
 
 Use the Rust workspaces and the gates below as the source of truth; run them on
 the maintainer's machine before pushing. The `Gates` workflow runs them on hosted
-runners for every pull request and every push to `dev` or `main`. Releases are
+runners for every pull request and every push to `dev`. Releases are
 built only by the `Release` workflow on a pushed `v<version>` tag, which creates a
 draft Release; publishing it stays a manual maintainer action. The
 root product crates and `apps/` are separate Cargo workspaces with separate
