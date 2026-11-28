@@ -210,6 +210,21 @@ lists them under `gate_hooks`, with `gate`, the project's switch. Operator-only
 `project.gate {name, enabled}` turns the gate on or off (off by default; persisted
 in daemon state; a project rejoins with it off).
 
+A project's name is its identity: credentials, scoped preferences, Handoffs,
+work sessions, memory and evidence are keyed by it. Operator-write
+`project.relocate {name, root}` points a listed project (served or unavailable,
+typically after its folder moved) at another root, which must be the canonical
+root `project.check` returned and must not overlap another project. The selected
+Profile's record moves with it (`relocate_project`, CAS on the project's
+revision; `profile.mutate` refuses that command), then the daemon's set; an
+unavailable project is served again. Switches, the name and every scoped record
+stay. Integration entries still carry the old `--root`: `integration.refresh`
+reports them outdated until the operator applies it. Operator-only
+`project.label {name, label}` sets the display name `project.list` reports as
+`label` (1–64 characters, trimmed, no control characters; `null` or the name
+itself clears it). It is daemon-private presentation, never sent to agents or
+used as an identity, and it resets when the project is removed.
+
 Agent `gate.check {tool: "shell", command}` or `{tool: "write", paths}`
 (repository-relative, at most 32) answers `{decision: "allow", gate: "off"}`
 while the gate is off. Otherwise it reads the committed rule files and answers
@@ -750,7 +765,7 @@ explicit inputs; project, task and request data never appear in argv.
   `precept_ipc::operator::CONTROL_METHODS` Operator read/control allowlist, including
   Profile review, project/integration reads, `rules.lint`, import, personal-sync
   control/preview and session/memory reads), `mutate` (one OperatorWrite `Mutation`), `project_write`
-  (`project.add|register|remove`, `sessions.handoff`, and personal-sync
+  (`project.add|register|relocate|remove`, `sessions.handoff`, and personal-sync
   init/pair/trust/revoke/rotate/reset/export/abort/apply), `health` (daemon health with the Operator
   credential, for the GUI's live WSL status) or `cancel` (abandon an in-flight id;
   no reply of its own). Anything else is `Unsupported`/`InvalidRequest`. There is
