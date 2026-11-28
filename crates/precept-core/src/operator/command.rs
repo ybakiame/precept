@@ -109,6 +109,13 @@ pub enum Command {
         root: String,
         expected: Expected,
     },
+    /// Moves a registered project to another canonical root, keeping its
+    /// name and every record scoped to it (operator only, `project.relocate`).
+    RelocateProject {
+        name: String,
+        root: String,
+        expected: Expected,
+    },
     SuggestPreference {
         scope: Scope,
         key: String,

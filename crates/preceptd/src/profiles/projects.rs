@@ -14,6 +14,32 @@ impl Profiles {
         root: &Path,
         identity: &RootIdentity,
     ) -> Result<Value> {
+        let command = json!({"command":"register_project","name":name,"root":root,"expected":{"kind":"absent"}});
+        Self::write_root(s, grant, access, command, root, identity)
+    }
+    /// Records `name`'s new canonical `root` in the selected Profile, against
+    /// the revision read before (`relocate_project`).
+    fn relocate_root(
+        s: &State,
+        grant: &Grant,
+        access: &Access,
+        name: &str,
+        root: &Path,
+        identity: &RootIdentity,
+        revision: i64,
+    ) -> Result<Value> {
+        let command = json!({"command":"relocate_project","name":name,"root":root,
+            "expected":{"kind":"revision","revision":revision}});
+        Self::write_root(s, grant, access, command, root, identity)
+    }
+    fn write_root(
+        s: &State,
+        grant: &Grant,
+        access: &Access,
+        command: Value,
+        root: &Path,
+        identity: &RootIdentity,
+    ) -> Result<Value> {
         let Access::OperatorWrite {
             profile_id,
             generation,
@@ -27,7 +53,7 @@ impl Profiles {
                 "version": 2,
                 "binding": {"profile_id":profile_id,"generation":generation,"owner_epoch":owner_epoch},
                 "operation_id": precept_ipc::operator::operation_id()?,
-                "command": {"command":"register_project","name":name,"root":root,"expected":{"kind":"absent"}},
+                "command": command,
             }))
             .map_err(|_| Error::InvalidRequest)?,
         )
@@ -213,6 +239,149 @@ impl Profiles {
             return Err(Error::OutcomeUnknown);
         }
         Ok(json!({"added":p.name,"root":root,"registered":!registered,"receipt":receipt}))
+    }
+    /// `project.relocate`: an operator write. Points a listed project (served
+    /// or unavailable, typically after its folder moved) at another root,
+    /// checked like `project.add`. The name, its switches and every record
+    /// scoped to it stay; the selected Profile's record moves with it.
+    pub(super) fn relocate(
+        &self,
+        authority: &Peer,
+        params: Value,
+        hooks: &dyn Hooks,
+    ) -> Result<Value> {
+        let access = authority.access();
+        if !matches!(access, Access::OperatorWrite { .. }) {
+            return Err(Error::Unauthorized);
+        }
+        let p: AddParams = crate::decode(params)?;
+        let listed =
+            |s: &State| s.projects.contains_key(&p.name) || s.unavailable.contains_key(&p.name);
+        let s = self.state.lock().unwrap();
+        authority.check()?;
+        let grant = s.grant.as_ref().ok_or(Error::Unauthorized)?.clone();
+        if grant.access() != access || grant.check().is_err() {
+            return Err(Error::Unauthorized);
+        }
+        if !listed(&s) {
+            return Err(Error::NotFound);
+        }
+        let scope = self.scope_snapshot(&s);
+        drop(s);
+        let repository = scope.open(&p.root)?;
+        let root = repository.path().to_path_buf();
+        if root != p.root {
+            // Only the canonical root `project.check` returned.
+            return Err(Error::InvalidRequest);
+        }
+        let identity = repository.root_identity().clone();
+        let mut s = self.state.lock().unwrap();
+        authority.check()?;
+        let grant = s.grant.as_ref().ok_or(Error::Unauthorized)?.clone();
+        if grant.access() != access || grant.check().is_err() {
+            return Err(Error::Unauthorized);
+        }
+        if !listed(&s) {
+            return Err(Error::NotFound);
+        }
+        let others = s
+            .projects
+            .iter()
+            .chain(s.roots.iter())
+            .chain(s.unavailable.iter())
+            .filter(|(name, _)| **name != p.name)
+            .map(|(_, root)| root);
+        if others
+            .into_iter()
+            .any(|other| other.starts_with(&root) || root.starts_with(other))
+        {
+            return Err(Error::UnsafeRuntime);
+        }
+        let reader = s
+            .selected
+            .as_ref()
+            .ok_or(Error::Unavailable)?
+            .reader()
+            .map_err(storage_error)?;
+        // A Profile without the project moves nothing there; one already at
+        // this root (an interrupted earlier move) needs no second write.
+        // The owner is the only writer and this lock serializes project
+        // writes, so the two reads agree.
+        let (registered, receipt) = match reader.read_project(&p.name) {
+            Ok(current) if current.root == root => (true, Value::Null),
+            Ok(_) => {
+                let revision = reader
+                    .project_revision(&p.name)
+                    .map_err(|_| Error::Unavailable)?;
+                (
+                    true,
+                    Self::relocate_root(&s, &grant, &access, &p.name, &root, &identity, revision)?,
+                )
+            }
+            Err(precept_store::Error::UnknownProject) => (false, Value::Null),
+            Err(_) => return Err(Error::Unavailable),
+        };
+        let was_served = s.projects.contains_key(&p.name);
+        let mut projects = s.projects.clone();
+        projects.insert(p.name.clone(), root.clone());
+        let mut unavailable = s.unavailable.clone();
+        unavailable.remove(&p.name);
+        let mut identities = s.identities.clone();
+        identities.insert(p.name.clone(), identity);
+        let mut file = projects.clone();
+        file.extend(unavailable.clone());
+        self.state_dir
+            .save_projects(&file, &identities, &s.switches)
+            .map_err(|_| Error::OutcomeUnknown)?;
+        s.projects = projects;
+        s.unavailable = unavailable;
+        s.identities = identities;
+        if registered {
+            s.roots.insert(p.name.clone(), root.clone());
+        }
+        let shared = !s.switches.withheld.contains(&p.name);
+        drop(s);
+        // An unavailable project had no agent credential; it is served again.
+        if !was_served && shared && hooks.added(&p.name).is_err() {
+            return Err(Error::OutcomeUnknown);
+        }
+        Ok(json!({"relocated":p.name,"root":root,"receipt":receipt}))
+    }
+    /// `project.label`: the operator's display name for a listed project, or
+    /// none to show its name. Presentation only: no Profile write, and the
+    /// name stays the project's identity everywhere else.
+    pub(super) fn set_label(&self, params: Value) -> Result<Value> {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct LabelParams {
+            name: String,
+            label: Option<String>,
+        }
+        let p: LabelParams = crate::decode(params)?;
+        if p.label
+            .as_deref()
+            .is_some_and(|l| !crate::state::valid_label(l))
+        {
+            return Err(Error::InvalidRequest);
+        }
+        let mut s = self.state.lock().unwrap();
+        if !s.projects.contains_key(&p.name) && !s.unavailable.contains_key(&p.name) {
+            return Err(Error::NotFound);
+        }
+        let mut switches = s.switches.clone();
+        // The name itself is no display name.
+        match p.label.clone().filter(|l| *l != p.name) {
+            Some(label) => switches.labels.insert(p.name.clone(), label),
+            None => switches.labels.remove(&p.name),
+        };
+        if switches != s.switches {
+            let mut file = s.projects.clone();
+            file.extend(s.unavailable.clone());
+            self.state_dir
+                .save_projects(&file, &s.identities, &switches)?;
+            s.switches = switches;
+        }
+        Ok(json!({"name":p.name,"label":s.switches.labels.get(&p.name)}))
     }
     /// The operator turns external agent access to one project on or off: the
     /// daemon persists the choice, then publishes or withdraws that project's

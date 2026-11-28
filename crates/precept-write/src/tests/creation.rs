@@ -189,3 +189,94 @@ fn registration_uniqueness_and_expected_absence_are_atomic() {
     );
     assert_eq!(dump(&w.db), before);
 }
+#[test]
+fn relocation_moves_the_root_by_revision_and_keeps_scoped_records() {
+    let (_t, p) = ready();
+    let mut w = p.writer().unwrap();
+    w.execute(&request(&p, "scoped", suggest(project_scope("alpha"))))
+        .unwrap();
+    let dir = |name: &str| {
+        let root = p.path.parent().unwrap().join(name);
+        fs::create_dir_all(&root).unwrap();
+        root.canonicalize().unwrap().to_str().unwrap().to_owned()
+    };
+    let moved = dir("alpha-moved");
+    let beta = dir("beta");
+    let relocate = |id: &str, root: &str, expected: Expected| {
+        request(
+            &p,
+            id,
+            Command::RelocateProject {
+                name: "alpha".into(),
+                root: root.into(),
+                expected,
+            },
+        )
+    };
+    let before = dump(&w.db);
+    // Another project's root, a stale revision, an unknown project, an
+    // absent expectation or a non-canonical root change nothing.
+    for (id, request, error) in [
+        (
+            "onto-beta",
+            relocate("onto-beta", &beta, Expected::Revision(1)),
+            Error::Conflict,
+        ),
+        (
+            "stale",
+            relocate("stale", &moved, Expected::Revision(2)),
+            Error::Conflict,
+        ),
+        (
+            "absent",
+            relocate("absent", &moved, Expected::Absent),
+            Error::InvalidCommand,
+        ),
+        (
+            "dotted",
+            relocate("dotted", &format!("{moved}/."), Expected::Revision(1)),
+            Error::InvalidCommand,
+        ),
+        (
+            "unknown",
+            request(
+                &p,
+                "unknown",
+                Command::RelocateProject {
+                    name: "gamma".into(),
+                    root: moved.clone(),
+                    expected: Expected::Revision(1),
+                },
+            ),
+            Error::Conflict,
+        ),
+    ] {
+        assert_eq!(w.execute(&request), Err(error), "{id}");
+        assert_eq!(dump(&w.db), before, "{id}");
+    }
+    let receipt = w
+        .execute(&relocate("move", &moved, Expected::Revision(1)))
+        .unwrap();
+    assert_eq!(receipt.affected.len(), 1);
+    assert_eq!(receipt.affected[0].record_id, "alpha");
+    assert_eq!(receipt.affected[0].revision, 2);
+    // The identical retry replays; a new move needs the new revision.
+    assert_eq!(
+        w.execute(&relocate("move", &moved, Expected::Revision(1)))
+            .unwrap(),
+        receipt
+    );
+    let store = SqliteStore::open(&p.path).unwrap();
+    let project = store.read_project("alpha").unwrap();
+    assert_eq!(project.root.to_str().unwrap(), moved);
+    assert_eq!(store.project_revision("alpha").unwrap(), 2);
+    assert_eq!(
+        store.project_at_root(Path::new(&moved)).unwrap().as_deref(),
+        Some("alpha")
+    );
+    assert!(schema::verify(&w.db).is_ok());
+    let back = dir("alpha");
+    w.execute(&relocate("back", &back, Expected::Revision(2)))
+        .unwrap();
+    assert!(schema::verify(&w.db).is_ok());
+}

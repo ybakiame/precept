@@ -715,3 +715,204 @@ fn agent_access_is_switched_per_project_and_persists_without_touching_the_profil
         Err(Error::NotFound)
     );
 }
+
+fn relocate(f: &Fixture, cap: &str, name: &str, root: &str) -> precept_ipc::Result<Value> {
+    f.daemon.call(
+        &f.daemon.credential(cap),
+        "project.relocate",
+        json!({"name":name,"root":root}),
+    )
+}
+fn listed(f: &Fixture, name: &str) -> Value {
+    f.daemon
+        .control("project.list", json!({}))
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["name"] == name)
+        .cloned()
+        .unwrap()
+}
+
+#[test]
+fn a_moved_project_is_relocated_keeping_its_name_records_and_switches() {
+    let mut f = Fixture::created();
+    let base = f.temp.path().to_path_buf();
+    let gamma = repository(&base, "gamma");
+    let b = f.daemon.enable();
+    add(&f, "gamma", &gamma).unwrap();
+    f.daemon
+        .control("project.propose", json!({"name":"gamma","enabled":true}))
+        .unwrap();
+    let mut scoped = suggest();
+    if let Command::SuggestPreference { scope, .. } = &mut scoped {
+        *scope = precept_write::Scope::Project {
+            name: "gamma".into(),
+        };
+    }
+    f.daemon.mutate(&b, "gamma-rule", scoped).unwrap();
+    f.daemon.kill();
+    fs::rename(base.join("gamma"), base.join("gamma-moved")).unwrap();
+    let moved = base
+        .join("gamma-moved")
+        .canonicalize()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    f.daemon = Daemon::relaunch(&base, "run-b");
+    f.daemon.ready();
+    f.daemon
+        .control("profile.select", json!({"path":f.db}))
+        .unwrap();
+    assert_eq!(listed(&f, "gamma")["state"], "unavailable");
+    // Only the write credential moves a project, and only a listed one.
+    assert_eq!(
+        relocate(&f, "operator.cap", "gamma", &moved),
+        Err(Error::Unauthorized)
+    );
+    let b = f.daemon.enable();
+    assert_eq!(
+        relocate(&f, "operator-write.cap", "delta", &moved),
+        Err(Error::NotFound)
+    );
+    // The new root is checked like an added one: canonical, and no other
+    // project's folder or a folder inside one.
+    let alpha = base.join("alpha");
+    fs::create_dir_all(alpha.join("nested/.git")).unwrap();
+    assert_eq!(
+        relocate(
+            &f,
+            "operator-write.cap",
+            "gamma",
+            alpha.join("nested").to_str().unwrap()
+        ),
+        Err(Error::UnsafeRuntime)
+    );
+    assert_eq!(
+        relocate(
+            &f,
+            "operator-write.cap",
+            "gamma",
+            &format!("{moved}/../gamma-moved")
+        ),
+        Err(Error::InvalidRequest)
+    );
+    // A generic Profile mutation cannot move a project behind the set's back.
+    assert_eq!(
+        f.daemon.mutate(
+            &b,
+            "sneak",
+            Command::RelocateProject {
+                name: "gamma".into(),
+                root: moved.clone(),
+                expected: Expected::Revision(1),
+            }
+        ),
+        Err(Error::InvalidRequest)
+    );
+    let done = relocate(&f, "operator-write.cap", "gamma", &moved).unwrap();
+    assert_eq!(done["relocated"], "gamma");
+    assert_eq!(done["root"], moved.as_str());
+    assert!(done["receipt"]["commit_sequence"].is_number());
+    let entry = listed(&f, "gamma");
+    assert_eq!(entry["state"], "ready");
+    assert_eq!(entry["root"], moved.as_str());
+    assert_eq!(entry["propose"], true);
+    // Served again at once, with its scoped records.
+    assert!(
+        f.daemon
+            .location
+            .runtime_dir
+            .join("agent-gamma.cap")
+            .exists()
+    );
+    assert!(
+        f.daemon
+            .control("context.get", json!({"project":"gamma"}))
+            .is_ok()
+    );
+    let records = f
+        .daemon
+        .control(
+            "profile.preferences.list",
+            json!({"scope":{"kind":"project","name":"gamma"},"after_id":0}),
+        )
+        .unwrap()["records"]
+        .as_array()
+        .unwrap()
+        .len();
+    assert_eq!(records, 1);
+    // Its own current folder is a listed project's folder like any other.
+    assert_eq!(
+        relocate(&f, "operator-write.cap", "gamma", &moved),
+        Err(Error::UnsafeRuntime)
+    );
+    // The move survives a restart, and the Profile verifies.
+    f.daemon.kill();
+    f.daemon = Daemon::relaunch(&base, "run-c");
+    f.daemon.ready();
+    f.daemon
+        .control("profile.select", json!({"path":f.db}))
+        .unwrap();
+    assert_eq!(listed(&f, "gamma")["state"], "ready");
+    assert_eq!(listed(&f, "gamma")["root"], moved.as_str());
+}
+
+fn label(f: &Fixture, cap: &str, params: Value) -> precept_ipc::Result<Value> {
+    f.daemon
+        .call(&f.daemon.credential(cap), "project.label", params)
+}
+
+#[test]
+fn a_display_name_is_the_operators_presentation_only() {
+    let mut f = Fixture::created();
+    let base = f.temp.path().to_path_buf();
+    assert_eq!(
+        label(
+            &f,
+            "agent-alpha.cap",
+            json!({"name":"alpha","label":"Alpha"})
+        ),
+        Err(Error::Unauthorized)
+    );
+    for bad in ["", " padded", "line\nbreak", &"x".repeat(65)] {
+        assert_eq!(
+            label(&f, "operator.cap", json!({"name":"alpha","label":bad})),
+            Err(Error::InvalidRequest),
+            "{bad:?}"
+        );
+    }
+    assert_eq!(
+        label(&f, "operator.cap", json!({"name":"delta","label":"Delta"})),
+        Err(Error::NotFound)
+    );
+    let done = label(
+        &f,
+        "operator.cap",
+        json!({"name":"alpha","label":"Alpha · 主线"}),
+    )
+    .unwrap();
+    assert_eq!(done["label"], "Alpha · 主线");
+    assert_eq!(listed(&f, "alpha")["label"], "Alpha · 主线");
+    assert!(listed(&f, "beta")["label"].is_null());
+    // The name stays the identity: its agent credential is unchanged.
+    assert!(
+        f.daemon
+            .location
+            .runtime_dir
+            .join("agent-alpha.cap")
+            .exists()
+    );
+    f.daemon.kill();
+    f.daemon = Daemon::relaunch(&base, "run-b");
+    f.daemon.ready();
+    assert_eq!(listed(&f, "alpha")["label"], "Alpha · 主线");
+    // Clearing it (or naming it its own name) shows the name again.
+    label(&f, "operator.cap", json!({"name":"alpha","label":"alpha"})).unwrap();
+    assert!(listed(&f, "alpha")["label"].is_null());
+    label(&f, "operator.cap", json!({"name":"alpha","label":"A"})).unwrap();
+    label(&f, "operator.cap", json!({"name":"alpha","label":null})).unwrap();
+    assert!(listed(&f, "alpha")["label"].is_null());
+}

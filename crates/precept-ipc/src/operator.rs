@@ -27,6 +27,7 @@ pub const CONTROL_METHODS: &[&str] = &[
     "project.agents",
     "project.propose",
     "project.gate",
+    "project.label",
     "project.mcp",
     "activity.list",
     "integration.pointer",
@@ -54,6 +55,7 @@ pub const CONTROL_METHODS: &[&str] = &[
 pub const PROJECT_WRITES: &[&str] = &[
     "project.add",
     "project.register",
+    "project.relocate",
     "project.remove",
     "sessions.handoff",
     "profile.sync.init",

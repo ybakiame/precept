@@ -42,6 +42,9 @@ struct ProjectEntry {
     /// reads as off.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     gate: bool,
+    /// The operator's display name for it; absent shows the name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    label: Option<String>,
 }
 /// The operator's per-project switches kept with the project set.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -52,6 +55,8 @@ pub struct Switches {
     pub proposers: BTreeSet<String>,
     /// The pre-tool gate answers for the project's hard rules.
     pub gated: BTreeSet<String>,
+    /// Display names the operator gave (presentation only; never an identity).
+    pub labels: BTreeMap<String, String>,
 }
 impl Switches {
     /// A project (re)joins or leaves: shared with agents, no suggestions, no gate.
@@ -59,7 +64,17 @@ impl Switches {
         self.withheld.remove(name);
         self.proposers.remove(name);
         self.gated.remove(name);
+        self.labels.remove(name);
     }
+}
+/// The longest display name, in characters.
+pub const MAX_LABEL: usize = 64;
+/// A display name: trimmed, 1 to 64 characters, no control characters.
+pub fn valid_label(label: &str) -> bool {
+    let count = label.chars().count();
+    (1..=MAX_LABEL).contains(&count)
+        && label.trim() == label
+        && !label.chars().any(char::is_control)
 }
 fn shared() -> bool {
     true
@@ -201,6 +216,12 @@ impl StateDir {
             if entry.gate {
                 switches.gated.insert(entry.name.clone());
             }
+            if let Some(label) = entry.label {
+                if !valid_label(&label) {
+                    return Err(Error::InvalidRequest);
+                }
+                switches.labels.insert(entry.name.clone(), label);
+            }
             if let Some(identity) = entry.identity {
                 identities.insert(entry.name.clone(), identity);
             }
@@ -228,6 +249,7 @@ impl StateDir {
                     agents: !switches.withheld.contains(name),
                     propose: switches.proposers.contains(name),
                     gate: switches.gated.contains(name),
+                    label: switches.labels.get(name).cloned(),
                 })
                 .collect(),
         };
@@ -338,6 +360,7 @@ mod tests {
             withheld: all.clone(),
             proposers: all.clone(),
             gated: all,
+            labels: BTreeMap::from([("alpha".to_string(), "Alpha · 主线".to_string())]),
         };
         let identities = BTreeMap::from([("alpha".to_string(), identity())]);
         s.save_projects(&p, &identities, &switches).unwrap();
@@ -393,6 +416,8 @@ mod tests {
             r#"{"format":1,"projects":[{"name":"a","root":"relative"}]}"#,
             r#"{"format":1,"projects":[{"name":"../x","root":"/a"}]}"#,
             r#"{"format":1,"projects":[{"name":"a","root":"/a"},{"name":"A","root":"/b"}]}"#,
+            r#"{"format":1,"projects":[{"name":"a","root":"/a","label":" padded "}]}"#,
+            r#"{"format":1,"projects":[{"name":"a","root":"/a","label":""}]}"#,
         ] {
             put(bad);
             assert!(s.load_projects().is_err(), "{bad}");

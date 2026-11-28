@@ -35,7 +35,11 @@ impl Profiles {
             {
                 return Err(Error::Unauthorized);
             }
-            if matches!(request.command, Command::ApplyPersonalSync { .. }) {
+            // These change daemon state too: only their own methods send them.
+            if matches!(
+                request.command,
+                Command::ApplyPersonalSync { .. } | Command::RelocateProject { .. }
+            ) {
                 return Err(Error::InvalidRequest);
             }
             let mut s = self.state.lock().unwrap();
@@ -54,7 +58,7 @@ impl Profiles {
                     Some(name)
                 }
                 Command::PutHandoff { project, .. } => Some(project),
-                Command::ApplyPersonalSync { .. } => None,
+                Command::ApplyPersonalSync { .. } | Command::RelocateProject { .. } => None,
                 // Every item's project must be served; the first is the one
                 // whose root is rechecked at admission.
                 Command::DecideBatch { .. } | Command::SuggestBatch { .. } => {
@@ -158,6 +162,9 @@ impl Profiles {
         if method == "project.register" {
             return self.register(authority, params);
         }
+        if method == "project.relocate" {
+            return self.relocate(authority, params, hooks);
+        }
         if method == "project.remove" {
             // An operator write: the current Profile's write grant, exactly.
             if !matches!(access, Access::OperatorWrite { .. }) {
@@ -197,6 +204,9 @@ impl Profiles {
         }
         if method == "project.propose" {
             return self.set_propose(params);
+        }
+        if method == "project.label" {
+            return self.set_label(params);
         }
         if method == "project.gate" {
             return self.set_gate(params);

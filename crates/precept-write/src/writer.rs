@@ -90,11 +90,16 @@ impl Writer<'_> {
         self.profile.check()?;
         // All filesystem work is outside the write transaction. Registration is
         // storage data, not the later daemon's independent sharing allowlist.
-        let registration_valid = if let Command::RegisterProject { root, .. } = &request.command {
-            let p = std::path::Path::new(root);
-            p.is_dir() && p.canonicalize().ok().as_deref() == Some(p)
-        } else {
-            true
+        let registration_valid = match &request.command {
+            Command::RegisterProject { root, .. } | Command::RelocateProject { root, .. } => {
+                // The exact text: `Path` equality ignores `.` components.
+                let p = std::path::Path::new(root);
+                p.is_dir()
+                    && p.canonicalize()
+                        .ok()
+                        .is_some_and(|c| c.to_str() == Some(root.as_str()))
+            }
+            _ => true,
         };
         binding(&self.profile.binding, &request.binding)?;
         admit()?;
@@ -242,6 +247,38 @@ fn mutate(
             db.execute("INSERT INTO projects VALUES(?1,?2,1,?3)", (name, root, now))
                 .map_err(crate::sql_error)?;
             versions.insert(project_key(name), (1, false));
+        }
+        Command::RelocateProject {
+            name,
+            root,
+            expected,
+        } => {
+            let revision: Option<i64> = db
+                .query_row("SELECT revision FROM projects WHERE name=?1", [name], |r| {
+                    r.get(0)
+                })
+                .optional()
+                .map_err(crate::sql_error)?;
+            cas(revision, expected)?;
+            if db
+                .query_row(
+                    "SELECT 1 FROM projects WHERE root=?1 AND name<>?2",
+                    [root, name],
+                    |_| Ok(()),
+                )
+                .optional()
+                .map_err(crate::sql_error)?
+                .is_some()
+            {
+                return Err(Error::Conflict);
+            }
+            let next = next_revision(revision.ok_or(Error::Conflict)?)?;
+            db.execute(
+                "UPDATE projects SET root=?2, revision=?3 WHERE name=?1",
+                (name, root, next),
+            )
+            .map_err(crate::sql_error)?;
+            versions.insert(project_key(name), (next, false));
         }
         Command::SuggestPreference {
             scope: requested,

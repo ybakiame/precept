@@ -88,6 +88,20 @@ impl Request {
                 }
                 (expected, None)
             }
+            Command::RelocateProject {
+                name,
+                root,
+                expected,
+            } => {
+                if !name_valid(name)
+                    || !std::path::Path::new(root).is_absolute()
+                    || root.contains('\0')
+                    || !matches!(expected, Expected::Revision(_))
+                {
+                    return Err(Error::InvalidCommand);
+                }
+                (expected, None)
+            }
             Command::SuggestPreference {
                 scope,
                 key,

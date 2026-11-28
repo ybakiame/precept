@@ -382,11 +382,11 @@ impl Profiles {
                 } else {
                     "unregistered"
                 };
-                json!({"name":name,"root":root,"state":state,"agents":agents,"propose":propose,"gate":gate})
+                json!({"name":name,"label":switches.labels.get(name),"root":root,"state":state,"agents":agents,"propose":propose,"gate":gate})
             })
             .collect();
         out.extend(unavailable.iter().map(|(name, root)| {
-            json!({"name":name,"root":root,"state":"unavailable","agents":!switches.withheld.contains(name),"propose":switches.proposers.contains(name),"gate":switches.gated.contains(name)})
+            json!({"name":name,"label":switches.labels.get(name),"root":root,"state":"unavailable","agents":!switches.withheld.contains(name),"propose":switches.proposers.contains(name),"gate":switches.gated.contains(name)})
         }));
         Value::Array(out)
     }

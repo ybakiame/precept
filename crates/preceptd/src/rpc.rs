@@ -20,6 +20,8 @@ impl Service {
                 "project.check"
                     | "project.add"
                     | "project.register"
+                    | "project.relocate"
+                    | "project.label"
                     | "project.remove"
                     | "project.agents"
                     | "project.propose"
