@@ -6,6 +6,11 @@ data between schemas with the versioned Profile export and import.
 
 ## Unreleased
 
+- **Move a project without losing it.** After moving a project's folder, choose
+  its new location under Workspaces → Edit…. Its name, rules, memory, sessions
+  and history stay with it; then update its agent entries on the Agents page.
+- **Display names for projects.** Give a project a display name for Precept's
+  sidebar and pages; its name stays the identity agents and rules use.
 - **Connection offers the WSL daemon update.** The checks show the installed
   version, and Install / Update daemon in WSL appears when it is not this
   Desktop's. Before, an installed older daemon looked complete.
