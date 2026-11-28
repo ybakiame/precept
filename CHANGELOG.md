@@ -4,6 +4,12 @@ Precept follows [semantic versioning](https://semver.org/). While the version is
 0.x, a minor release may change the Profile schema or the local interfaces; move
 data between schemas with the versioned Profile export and import.
 
+## Unreleased
+
+- **Connection offers the WSL daemon update.** The checks show the installed
+  version, and Install / Update daemon in WSL appears when it is not this
+  Desktop's. Before, an installed older daemon looked complete.
+
 ## 0.4.9
 
 - **Long lists stay fast.** Preferences & contracts, Review, Handoff, the tag
