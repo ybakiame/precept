@@ -1,5 +1,5 @@
 use super::*;
-use connection::{DISCOVERY_VERSION, DaemonStatus, Discovery, Target};
+use connection::{DISCOVERY_VERSION, DaemonStatus, Discovery, RELEASE, Target};
 fn report() -> Discovery {
     Discovery {
         version: DISCOVERY_VERSION,
@@ -9,6 +9,7 @@ fn report() -> Discovery {
         endpoint: "/home/operator/.local/state/precept/runtime/control.sock".into(),
         systemd: true,
         unit_installed: true,
+        release: RELEASE.into(),
         daemon: DaemonStatus::Ready {
             profile_selected: false,
         },

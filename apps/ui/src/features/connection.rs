@@ -379,6 +379,19 @@ fn row(
     hint: Option<Msg>,
     action: Option<AnyElement>,
 ) -> AnyElement {
+    let state = model.get_untracked().word(state);
+    labeled_row(model, name, state.to_string(), variant, hint, action)
+}
+
+/// A check whose state is a literal (a version), not a localized word.
+fn labeled_row(
+    model: Signal<Model>,
+    name: Msg,
+    state: String,
+    variant: BadgeVariant,
+    hint: Option<Msg>,
+    action: Option<AnyElement>,
+) -> AnyElement {
     let mut line = view()
         .flex_row()
         .items_center()
@@ -390,7 +403,7 @@ fn row(
                 .text_size(px(scale::text::BODY))
                 .text_color(move || palette(model).text),
         )
-        .child(badge(model, model.get_untracked().word(state)).variant(variant));
+        .child(badge(model, state).variant(variant));
     if let Some(action) = action {
         line = line.child(action);
     }
@@ -419,7 +432,7 @@ fn checks(model: Signal<Model>) -> impl IntoElement {
                     wsl_status::HELPER_INCOMPATIBLE,
                 ]
                 .contains(reason),
-                Probe::Found(discovery) => !discovery.unit_installed,
+                Probe::Found(discovery) => discovery.needs_install(),
                 _ => false,
             };
         (m.probe.clone(), unchosen, selected, installable)
@@ -514,6 +527,19 @@ fn found(model: Signal<Model>, d: &Discovery, observed: Option<bool>) -> AnyElem
             None,
         )
     };
+    // The installed release, for a WSL installation (a local one is this build).
+    let release =
+        (model.get().connection_draft.target == Target::Wsl && d.unit_installed).then(|| {
+            let current = d.current();
+            labeled_row(
+                model,
+                Msg::CheckRelease,
+                format!("v{}", d.release),
+                if current { Success } else { Warning },
+                (!current).then_some(Msg::HintReleaseOutdated),
+                None,
+            )
+        });
     let startable = if windows_local {
         d.unit_installed
     } else {
@@ -602,6 +628,7 @@ fn found(model: Signal<Model>, d: &Discovery, observed: Option<bool>) -> AnyElem
         .gap_3()
         .children(systemd)
         .child(service)
+        .children(release)
         .child(daemon)
         .child(profile)
         .into_element()

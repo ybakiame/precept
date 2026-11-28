@@ -63,7 +63,10 @@ impl Connection {
     }
 }
 /// Version of the read-only discovery report (`precept-bridge --discover`).
-pub const DISCOVERY_VERSION: u32 = 1;
+pub const DISCOVERY_VERSION: u32 = 2;
+/// The package version of this build; an installation that answers discovery
+/// with another one is offered Install / Update.
+pub const RELEASE: &str = env!("CARGO_PKG_VERSION");
 
 /// Whether the daemon answered a health read through the host's operator
 /// credential. `Refused` is an ownership/permission refusal of the runtime.
@@ -93,6 +96,9 @@ pub struct Discovery {
     pub endpoint: String,
     pub systemd: bool,
     pub unit_installed: bool,
+    /// Package version of the installation that answered (its helper, or
+    /// this process locally).
+    pub release: String,
     pub daemon: DaemonStatus,
 }
 impl Discovery {
@@ -115,6 +121,14 @@ impl Discovery {
     pub fn ready(&self) -> bool {
         matches!(self.daemon, DaemonStatus::Ready { .. })
     }
+    /// Whether the installation is this Desktop's release.
+    pub fn current(&self) -> bool {
+        self.release == RELEASE
+    }
+    /// Whether Install / Update has something to do: no unit, or another release.
+    pub fn needs_install(&self) -> bool {
+        !self.unit_installed || !self.current()
+    }
     /// Structural check of a report received from another process.
     pub fn validate(&self, wsl: bool) -> bool {
         let mut probe = Connection::default();
@@ -123,8 +137,17 @@ impl Discovery {
         } else {
             self.fill_local(&mut probe);
         }
-        self.version == DISCOVERY_VERSION && probe.validate()
+        self.version == DISCOVERY_VERSION && valid_release(&self.release) && probe.validate()
     }
+}
+
+/// `major.minor.patch` digits only, so a report never carries free text.
+fn valid_release(release: &str) -> bool {
+    let parts: Vec<&str> = release.split('.').collect();
+    parts.len() == 3
+        && parts
+            .iter()
+            .all(|p| (1..=6).contains(&p.len()) && p.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// The connection kept between launches (`connection.json` in the private state
@@ -259,6 +282,7 @@ mod tests {
             endpoint: "/home/operator/.local/state/precept/runtime/control.sock".into(),
             systemd: true,
             unit_installed: true,
+            release: RELEASE.into(),
             daemon: DaemonStatus::Ready {
                 profile_selected: false,
             },
@@ -276,8 +300,21 @@ mod tests {
         assert!(draft.validate());
         assert_eq!(draft.wsl_endpoint, d.endpoint);
         for bad in [
+            // A helper from a release before the version was reported.
             Discovery {
-                version: 2,
+                version: 1,
+                ..report()
+            },
+            Discovery {
+                release: "0.4.9 or later".into(),
+                ..report()
+            },
+            Discovery {
+                release: String::new(),
+                ..report()
+            },
+            Discovery {
+                release: "1.2".into(),
                 ..report()
             },
             Discovery {
@@ -303,6 +340,24 @@ mod tests {
         ] {
             assert!(!bad.validate(true), "{bad:?}");
         }
+        // An installation of another release is offered Install / Update;
+        // so is one without its unit.
+        assert!(d.current() && !d.needs_install());
+        let older = Discovery {
+            release: "0.4.8".into(),
+            ..report()
+        };
+        assert!(older.validate(true) && !older.current() && older.needs_install());
+        let missing = Discovery {
+            unit_installed: false,
+            ..report()
+        };
+        assert!(missing.needs_install());
+        // A version-1 report (no release) from an older helper refuses to parse.
+        let mut v = serde_json::to_value(report()).unwrap();
+        v.as_object_mut().unwrap().remove("release");
+        v["version"] = 1.into();
+        assert!(serde_json::from_value::<Discovery>(v).is_err());
         // Unknown fields from a newer or hostile helper refuse to parse.
         let mut v = serde_json::to_value(report()).unwrap();
         v["token"] = "x".into();

@@ -279,7 +279,7 @@ msg_keys! {
     WslRuntime, WslEndpoint, ConnectionHelp, DistributionList,
     NoDistributions, Rescan, Checking, StartingDaemon,
     Checks, ChooseDistribution, CheckAgain, CheckSystemd,
-    CheckService, CheckDaemon, CheckProfile, StateEnabled,
+    CheckService, CheckRelease, HintReleaseOutdated, CheckDaemon, CheckProfile, StateEnabled,
     StateDisabled, StateInstalled, StateMissing, StateRunning,
     StateStopped, StateRefused, StateSelected, StateUnselected,
     StateUnknown, StartDaemon, InstallUpdateDaemon, InstallingDaemon, InstallDaemonFailed, InstallDaemonVersionMismatch,

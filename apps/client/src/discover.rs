@@ -24,7 +24,7 @@ pub use precept_ui_core::connection::discovery_status::{
 #[cfg(unix)]
 mod host {
     use super::*;
-    use precept_ui_core::connection::{DISCOVERY_VERSION, DaemonStatus};
+    use precept_ui_core::connection::{DISCOVERY_VERSION, DaemonStatus, RELEASE};
     use std::path::{Path, PathBuf};
 
     fn unit_installed() -> bool {
@@ -77,6 +77,7 @@ mod host {
             endpoint: endpoint.to_string_lossy().into_owned(),
             systemd: systemd(),
             unit_installed: unit_installed(),
+            release: RELEASE.into(),
             daemon,
         }
     }
@@ -126,7 +127,7 @@ pub use host::{report, start_daemon};
 #[cfg(target_os = "windows")]
 mod windows_host {
     use super::*;
-    use precept_ui_core::connection::{DISCOVERY_VERSION, DaemonStatus};
+    use precept_ui_core::connection::{DISCOVERY_VERSION, DaemonStatus, RELEASE};
     use std::path::PathBuf;
 
     const ENDPOINT: &str = "precept";
@@ -161,6 +162,7 @@ mod windows_host {
             endpoint: ENDPOINT.into(),
             systemd: false,
             unit_installed: executable().is_some(),
+            release: RELEASE.into(),
             daemon,
         }
     }
@@ -554,7 +556,7 @@ fn run_wsl(args: &[&str], timeout: std::time::Duration) -> Result<Output, &'stat
 #[cfg(test)]
 mod tests {
     use super::*;
-    use precept_ui_core::connection::{DISCOVERY_VERSION, DaemonStatus};
+    use precept_ui_core::connection::{DISCOVERY_VERSION, DaemonStatus, RELEASE};
     fn sample() -> Discovery {
         Discovery {
             version: DISCOVERY_VERSION,
@@ -564,6 +566,7 @@ mod tests {
             endpoint: "/home/operator/.local/state/precept/runtime/control.sock".into(),
             systemd: true,
             unit_installed: true,
+            release: RELEASE.into(),
             daemon: DaemonStatus::NotRunning,
         }
     }
