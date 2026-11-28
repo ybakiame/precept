@@ -790,15 +790,11 @@ fn a_moved_project_is_relocated_keeping_its_name_records_and_switches() {
         ),
         Err(Error::UnsafeRuntime)
     );
-    assert_eq!(
-        relocate(
-            &f,
-            "operator-write.cap",
-            "gamma",
-            &format!("{moved}/../gamma-moved")
-        ),
-        Err(Error::InvalidRequest)
-    );
+    // Only the canonical root `project.check` returns (the refusal differs
+    // by platform: Windows does not resolve `..` in a verbatim path).
+    let dotted = base.join("gamma-moved").join("..").join("gamma-moved");
+    assert!(relocate(&f, "operator-write.cap", "gamma", dotted.to_str().unwrap()).is_err());
+    assert_eq!(listed(&f, "gamma")["state"], "unavailable");
     // A generic Profile mutation cannot move a project behind the set's back.
     assert_eq!(
         f.daemon.mutate(

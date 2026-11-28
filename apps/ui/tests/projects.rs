@@ -549,9 +549,10 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         assert!(start.elapsed() < patience::PATIENCE);
         std::thread::sleep(Duration::from_millis(20));
     }
-    // Edit: a display name, then a moved folder. The name stays the identity.
+    // Edit: a display name, then a new folder (the daemon is running, so a
+    // copy stands in for a moved one). The name stays the identity.
     let moved = f.root.path().join("delta-moved");
-    std::fs::rename(&delta, &moved).unwrap();
+    std::fs::create_dir_all(moved.join(".git")).unwrap();
     let moved = moved.canonicalize().unwrap().to_str().unwrap().to_owned();
     app.press_key("alt+2").unwrap();
     app.presses("Edit project delta").unwrap();
