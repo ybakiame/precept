@@ -89,8 +89,10 @@ Organize navigation around three clear operational paths plus utilities:
   conventions** (active project scope), including hidden-by-default deprecated rows.
 - **Set up:** **Runtime checks** unites **Connection** and **Profile** as two step
   tabs with live completion indicators (`✓` or `n/2`). **Workspaces**
-  is a separate management page directly below it, strictly for registration and
-  removal; clicking a workspace row never switches the active project.
+  is a separate management page directly below it, strictly for registration,
+  editing (a display name, and the new folder of a moved project) and removal;
+  clicking a workspace row never switches the active project. A display name
+  leads wherever a project is shown; the row keeps the name beside its folder.
   **Agents** follows Workspaces and keeps the launch-guide order: its first section
   shares the workspace selected above, followed by MCP and hook integrations.
   **Personal sync** manages this Profile's manual encrypted file exchange.
