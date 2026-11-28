@@ -1,5 +1,6 @@
 //! The Workspace page's project management: the add draft (one chosen folder,
-//! checked by the daemon), the remove confirmation and the mapping from a
+//! checked by the daemon), the edit draft (display name and a moved folder),
+//! the remove confirmation and the mapping from a
 //! folder the Windows dialog returns to the WSL distribution's Linux path.
 //! Pure: no I/O. The daemon alone decides; nothing here grants anything.
 use serde_json::Value;
@@ -63,37 +64,18 @@ impl AddDraft {
         if epoch != self.epoch {
             return;
         }
-        self.check = match reply {
-            Err(e) => Check::Failed(e),
-            Ok(v) if v.get("ok").and_then(Value::as_bool) == Some(true) => {
-                let Some(root) = v.get("root").and_then(Value::as_str) else {
-                    self.check = Check::Failed("Invalid reply");
-                    return;
-                };
-                let name = v.get("name").and_then(Value::as_str).map(str::to_owned);
-                let known = v.get("known").and_then(Value::as_bool).unwrap_or(false);
-                // A Profile record's name wins over an edit: it is that project.
-                if (known || !self.name_edited)
-                    && let Some(n) = &name
-                {
-                    self.name = n.clone();
-                    self.name_edited = false;
-                }
-                Check::Ok {
-                    root: root.to_owned(),
-                    name,
-                    known,
-                }
-            }
-            Ok(v) => Check::Refused(
-                v.get("reason")
-                    .and_then(Value::as_str)
-                    .unwrap_or("refused")
-                    .chars()
-                    .take(32)
-                    .collect(),
-            ),
-        };
+        self.check = checked(reply);
+        // A Profile record's name wins over an edit: it is that project.
+        if let Check::Ok {
+            name: Some(n),
+            known,
+            ..
+        } = &self.check
+            && (*known || !self.name_edited)
+        {
+            self.name = n.clone();
+            self.name_edited = false;
+        }
     }
     /// The exact `project.add` parameters, once the daemon accepted the folder
     /// and the name is valid.
@@ -116,6 +98,130 @@ impl AddDraft {
             ..Self::default()
         };
     }
+}
+
+/// A `project.check` reply as a [`Check`].
+fn checked(reply: Result<Value, &'static str>) -> Check {
+    match reply {
+        Err(e) => Check::Failed(e),
+        Ok(v) if v.get("ok").and_then(Value::as_bool) == Some(true) => {
+            let Some(root) = v.get("root").and_then(Value::as_str) else {
+                return Check::Failed("Invalid reply");
+            };
+            Check::Ok {
+                root: root.to_owned(),
+                name: v.get("name").and_then(Value::as_str).map(str::to_owned),
+                known: v.get("known").and_then(Value::as_bool).unwrap_or(false),
+            }
+        }
+        Ok(v) => Check::Refused(
+            v.get("reason")
+                .and_then(Value::as_str)
+                .unwrap_or("refused")
+                .chars()
+                .take(32)
+                .collect(),
+        ),
+    }
+}
+
+/// Editing one listed project: its display name and, after its folder moved,
+/// its new folder (checked by the daemon like an added one).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EditDraft {
+    /// The project's name: its identity, never edited here.
+    pub name: String,
+    /// What the daemon reports now.
+    pub saved_label: Option<String>,
+    pub saved_root: String,
+    pub label: String,
+    /// The folder field; starts at the saved root.
+    pub path: String,
+    pub check: Check,
+    pub epoch: u64,
+    pub busy: bool,
+    /// The last refusal (a fixed code).
+    pub error: Option<String>,
+}
+
+impl EditDraft {
+    pub fn open(entry: &crate::ProjectEntry) -> Self {
+        Self {
+            name: entry.name.clone(),
+            saved_label: entry.label.clone(),
+            saved_root: entry.root.clone(),
+            label: entry.label.clone().unwrap_or_default(),
+            path: entry.root.clone(),
+            ..Self::default()
+        }
+    }
+    pub fn set_label(&mut self, label: String) {
+        self.label = label.chars().take(MAX_LABEL).collect();
+        self.error = None;
+    }
+    pub fn set_path(&mut self, path: String) {
+        self.path = path.chars().take(4096).collect();
+        self.epoch = self.epoch.wrapping_add(1);
+        self.check = Check::Idle;
+        self.error = None;
+    }
+    pub fn begin_check(&mut self) -> u64 {
+        self.epoch = self.epoch.wrapping_add(1);
+        self.check = Check::Checking;
+        self.epoch
+    }
+    /// The daemon's `project.check` reply; ignored if the path changed since.
+    pub fn finish_check(&mut self, epoch: u64, reply: Result<Value, &'static str>) {
+        if epoch == self.epoch {
+            self.check = checked(reply);
+        }
+    }
+    /// The folder field names another folder than the saved root.
+    pub fn moving(&self) -> bool {
+        self.path.trim() != self.saved_root
+    }
+    /// A folder the Profile already records for another project.
+    pub fn taken(&self) -> bool {
+        matches!(&self.check, Check::Ok { known: true, name, .. } if name.as_deref() != Some(&self.name))
+    }
+    /// The `project.label` value to send, if the display name changed: the
+    /// trimmed text, or `None` to show the name again.
+    pub fn label_change(&self) -> Option<Option<String>> {
+        let label = self.label.trim();
+        let next = (!label.is_empty() && label != self.name).then(|| label.to_owned());
+        (next != self.saved_label).then_some(next)
+    }
+    /// The `project.relocate` root, once the daemon accepted the new folder.
+    pub fn relocation(&self) -> Option<String> {
+        match &self.check {
+            Check::Ok { root, .. }
+                if self.moving() && !self.taken() && *root != self.saved_root =>
+            {
+                Some(root.clone())
+            }
+            _ => None,
+        }
+    }
+    /// Something to save, and nothing pending: a changed folder must be checked.
+    pub fn ready(&self) -> bool {
+        let label_ok = self
+            .label_change()
+            .is_none_or(|l| l.as_deref().is_none_or(valid_label));
+        !self.busy
+            && label_ok
+            && (!self.moving() || self.relocation().is_some())
+            && (self.label_change().is_some() || self.relocation().is_some())
+    }
+}
+
+/// The longest display name, in characters.
+pub const MAX_LABEL: usize = 64;
+/// The daemon's display-name rule: 1–64 characters, trimmed, no control
+/// characters.
+pub fn valid_label(label: &str) -> bool {
+    (1..=MAX_LABEL).contains(&label.chars().count())
+        && label.trim() == label
+        && !label.chars().any(char::is_control)
 }
 
 /// The daemon's project-name rule (1–64 of letters, digits, `-`, `_`, `.`).
@@ -276,5 +382,86 @@ mod tests {
         assert_eq!(d.ready(), None);
         d.set_name("../x".into());
         assert!(!valid_name(&d.name));
+    }
+    fn entry() -> crate::ProjectEntry {
+        crate::ProjectEntry {
+            name: "alpha".into(),
+            label: None,
+            root: "/home/u/alpha".into(),
+            state: "unavailable".into(),
+            agents: true,
+            propose: false,
+            gate: false,
+        }
+    }
+    #[test]
+    fn an_edit_saves_a_changed_display_name_and_only_a_checked_new_folder() {
+        let mut d = EditDraft::open(&entry());
+        assert_eq!(d.path, "/home/u/alpha");
+        assert!(!d.ready(), "nothing changed");
+        // The display name: trimmed; empty or the name itself shows the name.
+        d.set_label("  Alpha · 主线 ".into());
+        assert_eq!(d.label_change(), Some(Some("Alpha · 主线".into())));
+        assert!(d.ready());
+        d.set_label("alpha".into());
+        assert_eq!(d.label_change(), None);
+        d.set_label("x\ny".into());
+        assert!(!d.ready(), "control characters");
+        d.set_label(String::new());
+        // A moved folder must be checked before it can be saved.
+        d.set_path("/home/u/precept".into());
+        assert!(d.moving() && !d.ready());
+        let epoch = d.begin_check();
+        d.finish_check(
+            epoch,
+            Ok(json!({"ok":true,"root":"/home/u/precept","name":"precept","known":false})),
+        );
+        assert_eq!(d.relocation().as_deref(), Some("/home/u/precept"));
+        assert!(d.ready());
+        // A stale reply after another edit is ignored.
+        d.set_path("/home/u/other".into());
+        d.finish_check(
+            epoch,
+            Ok(json!({"ok":true,"root":"/home/u/other","name":"other","known":false})),
+        );
+        assert_eq!(d.check, Check::Idle);
+        assert!(!d.ready());
+        // A folder the Profile records for another project is not a move.
+        let epoch = d.begin_check();
+        d.finish_check(
+            epoch,
+            Ok(json!({"ok":true,"root":"/home/u/other","name":"beta","known":true})),
+        );
+        assert!(d.taken() && d.relocation().is_none() && !d.ready());
+        // Its own earlier record there is fine.
+        let epoch = d.begin_check();
+        d.finish_check(
+            epoch,
+            Ok(json!({"ok":true,"root":"/home/u/other","name":"alpha","known":true})),
+        );
+        assert!(d.ready());
+        // A refusal blocks the save; the folder back as it was saves the label alone.
+        let epoch = d.begin_check();
+        d.finish_check(epoch, Ok(json!({"ok":false,"reason":"not_git_root"})));
+        assert!(!d.ready());
+        d.set_path("/home/u/alpha".into());
+        d.set_label("Alpha".into());
+        assert!(d.ready() && d.relocation().is_none());
+        // Clearing a saved display name is a change.
+        let mut labelled = entry();
+        labelled.label = Some("Alpha".into());
+        let mut d = EditDraft::open(&labelled);
+        assert_eq!(d.label, "Alpha");
+        d.set_label(" ".into());
+        assert_eq!(d.label_change(), Some(None));
+        assert!(d.ready());
+    }
+    #[test]
+    fn display_names_follow_the_daemons_rule() {
+        assert!(valid_label("Precept · 主线"));
+        for bad in ["", " a", "a ", "a\tb", &"x".repeat(65)] {
+            assert!(!valid_label(bad), "{bad:?}");
+        }
+        assert!(valid_label(&"字".repeat(64)));
     }
 }

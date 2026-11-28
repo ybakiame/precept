@@ -139,7 +139,7 @@ pub(crate) fn handoff(model: Signal<Model>) -> impl IntoElement {
             .title(
                 m.word(Msg::HandoffTask)
                     .replace("{task}", &sanitize(&h.task_id, 120))
-                    .replace("{project}", &sanitize(&p.name, 64)),
+                    .replace("{project}", &sanitize(&m.display_name(&p.name), 64)),
             )
             .child(
                 ui::properties(model)

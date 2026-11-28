@@ -179,7 +179,10 @@ pub(crate) fn dashboard(model: Signal<Model>) -> impl IntoElement {
     let unknown = m.word(Msg::Unknown);
     let mut context = surface(model).title(m.word(Msg::EffectiveContext)).child(
         properties(model)
-            .row(m.word(Msg::Project), sanitize(&p.name, 120))
+            .row(
+                m.word(Msg::Project),
+                sanitize(&m.display_name(&p.name), 120),
+            )
             .row(
                 m.word(Msg::Branch),
                 sanitize(r.branch.as_deref().unwrap_or(unknown), 80),
@@ -334,6 +337,7 @@ mod tests {
         std::sync::Arc::make_mut(model.data.as_mut().unwrap()).directory =
             vec![precept_ui_core::ProjectEntry {
                 name: "alpha".into(),
+                label: None,
                 root: String::new(),
                 state: "ready".into(),
                 agents: true,

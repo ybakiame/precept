@@ -144,6 +144,9 @@ pub struct Snapshot {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ProjectEntry {
     pub name: String,
+    /// The operator's display name (`project.label`); `None` shows the name.
+    #[serde(default)]
+    pub label: Option<String>,
     pub root: String,
     pub state: String,
     /// Shared with external agents (MCP); the daemon always reports it.
@@ -163,6 +166,11 @@ impl Snapshot {
             || !self.health.ready
             || self.projects.len() > 256
             || self.directory.len() > 256
+            || self.directory.iter().any(|e| {
+                e.label
+                    .as_deref()
+                    .is_some_and(|l| !projects::valid_label(l))
+            })
             || serde_json::to_vec(self).map_or(true, |v| v.len() > 4 * 1024 * 1024)
         {
             return Err("Unsupported snapshot");
@@ -307,6 +315,7 @@ pub struct Model {
     /// Workspace page: adding a project, and the project armed for removal.
     pub project_add: projects::AddDraft,
     pub project_remove: Option<String>,
+    pub project_edit: Option<projects::EditDraft>,
     pub profile_setup: profile::ProfileDraft,
     /// The Profile state the Set-up pages and Workspaces read. Kept apart from
     /// `operator.info`, which fences the review workspace's own requests: a

@@ -10,6 +10,7 @@ fn ready() -> Model {
     let mut data = crate::Snapshot::fixture();
     data.directory = vec![crate::ProjectEntry {
         name: "alpha".into(),
+        label: None,
         root: "/home/u/alpha".into(),
         state: "ready".into(),
         agents: true,

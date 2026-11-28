@@ -103,6 +103,7 @@ fn workspace_shell(
                                 .child(preference_input(model, filter_ref))
                                 .child(review::panel(model))
                                 .child(projects::remove_dialog(model))
+                                .child(projects::edit_dialog(model))
                                 .child(features::preferences::detail_dialog(model))
                                 .child(features::rule_lint::templates_dialog(model))
                                 .child(personal_sync::dialogs(model))

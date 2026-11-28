@@ -484,6 +484,9 @@ work is called done. "RM" is what reduced motion does.
 | Agent activity empty | The empty state appears in place without an entrance | — |
 | A switch or quick tile turns on or off | The thumb slides and the track, icon well and edge cross-fade to `primary` (`FAST`); disabled while the daemon writes | Instant |
 | AGENTS.md tile switched on | The confirmation dialog opens as every dialog (scale and fade from 0.96, `BASE`), previewing the exact block; switching off removes at once | Appears |
+| Project Edit… pressed | The edit dialog opens as every dialog (scale and fade from 0.96, `BASE`) with the display name and folder fields | Appears |
+| A moved folder's check arrives | The badge under the fields fades in rising 4, `BASE`, once per new result; Save enables only after an accepted check | Appears |
+| Project saved or moved | The dialog closes as every dialog; the success toast names the display name; the row updates in place without an entrance | Disappears |
 
 **Personal sync**
 

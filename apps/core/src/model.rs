@@ -32,6 +32,7 @@ impl Model {
             connection_advanced: false,
             project_add: Default::default(),
             project_remove: None,
+            project_edit: None,
             profile_setup: Default::default(),
             profile_info: Default::default(),
             review_count: None,
@@ -295,6 +296,14 @@ impl Model {
                 self.phase = Phase::Unavailable;
             }
         }
+    }
+    /// How a project is shown: the operator's display name, else its name.
+    pub fn display_name(&self, name: &str) -> String {
+        self.data
+            .as_ref()
+            .and_then(|d| d.directory.iter().find(|e| e.name == name))
+            .and_then(|e| e.label.clone())
+            .unwrap_or_else(|| name.to_owned())
     }
     pub fn project(&self) -> Option<&Project> {
         if self.phase != Phase::Ready {

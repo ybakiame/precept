@@ -151,7 +151,14 @@ fn destination(model: Signal<Model>, item: Destination, path: &'static str) -> A
 /// with the active one checked, or guides the user straight to Runtime checks
 /// → Workspaces when none exist yet.
 fn workspace_switcher(model: Signal<Model>) -> impl IntoElement {
-    let names = computed(move || model.get().project_names.clone());
+    // The operator's display names, in the daemon's order of names.
+    let names = computed(move || {
+        let m = model.get();
+        m.project_names
+            .iter()
+            .map(|name| m.display_name(name))
+            .collect::<Vec<_>>()
+    });
     dynamic(move || {
         let names = names.get();
         if names.is_empty() {
@@ -188,6 +195,7 @@ fn current_project(model: Signal<Model>) -> String {
     m.selected_project
         .clone()
         .or_else(|| m.project().map(|p| p.name.clone()))
+        .map(|name| m.display_name(&name))
         .unwrap_or_else(|| m.word(Msg::ChooseProject).into())
 }
 

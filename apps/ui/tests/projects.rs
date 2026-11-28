@@ -549,4 +549,52 @@ fn workspace_adds_a_checked_repository_and_removes_a_project_with_confirmation()
         assert!(start.elapsed() < patience::PATIENCE);
         std::thread::sleep(Duration::from_millis(20));
     }
+    // Edit: a display name, then a moved folder. The name stays the identity.
+    let moved = f.root.path().join("delta-moved");
+    std::fs::rename(&delta, &moved).unwrap();
+    let moved = moved.canonicalize().unwrap().to_str().unwrap().to_owned();
+    app.press_key("alt+2").unwrap();
+    app.presses("Edit project delta").unwrap();
+    app.sees("Edit project").unwrap();
+    contains(&mut app, "Its name, delta, stays the project's identity");
+    app.type_text("id:project.edit.label", "Delta · 主线")
+        .unwrap();
+    app.clear("id:project.edit.folder").unwrap();
+    app.type_text("id:project.edit.folder", &moved).unwrap();
+    // A changed folder saves only once the daemon has checked it.
+    assert!(!app.screen().enabled("Save").unwrap());
+    app.presses("Check").unwrap();
+    contains(&mut app, "The project can move to this folder.");
+    app.presses("Save").unwrap();
+    contains(&mut app, "Project moved: Delta · 主线");
+    let start = Instant::now();
+    loop {
+        let list = f.call("project.list", json!({})).unwrap();
+        let entry = list
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["name"] == "delta")
+            .cloned()
+            .unwrap();
+        if entry["root"] == moved.as_str() && entry["state"] == "ready" {
+            assert_eq!(entry["label"], "Delta · 主线");
+            break;
+        }
+        assert!(start.elapsed() < patience::PATIENCE);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // The display name leads everywhere; the row keeps the name beside the folder.
+    contains(&mut app, &format!("delta · {moved}"));
+    app.sees("Delta · 主线").unwrap();
+    // Clearing it shows the name again, without touching the folder.
+    app.presses("Edit project Delta · 主线").unwrap();
+    app.clear("id:project.edit.label").unwrap();
+    app.presses("Save").unwrap();
+    contains(&mut app, "Project saved: delta");
+    let start = Instant::now();
+    while !f.call("project.list", json!({})).unwrap()[1]["label"].is_null() {
+        assert!(start.elapsed() < patience::PATIENCE);
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }

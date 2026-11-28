@@ -1,17 +1,19 @@
-//! Workspace: the daemon's projects, adding one and removing one.
+//! Workspace: the daemon's projects, adding, editing (display name, moved
+//! folder) and removing one.
 //!
 //! The folder is chosen with the operating system's own dialog (or typed) and
 //! checked by the daemon (`project.check`); the GUI never reads the filesystem.
 //! On Windows with a WSL daemon the dialog starts in the distribution's home and
 //! a returned `\\wsl.localhost\<distro>\…` path maps to its Linux path; anything
-//! else is refused before a request. Adding and removing need the Profile's
-//! write grant; the daemon checks it again.
+//! else is refused before a request. Adding, moving and removing need the
+//! Profile's write grant; the daemon checks it again. A display name is the
+//! operator's presentation only: the name stays the project's identity.
 use crate::*;
 use precept_ui_core::{
     ProjectEntry,
     connection::Target,
     i18n::Msg,
-    projects::{Check, refusal, wsl_home, wsl_path},
+    projects::{Check, EditDraft, refusal, valid_label, wsl_home, wsl_path},
 };
 use tokens::palette;
 use ui::{
@@ -41,6 +43,16 @@ fn call(
     params: serde_json::Value,
     done: impl FnOnce(&mut Model, Result<serde_json::Value, &'static str>) + 'static,
 ) {
+    calls(model, vec![(method, params)], done);
+}
+
+/// Project requests in order, stopping at the first refusal, which `done`
+/// receives; otherwise the last reply.
+fn calls(
+    model: Signal<Model>,
+    requests: Vec<(&'static str, serde_json::Value)>,
+    done: impl FnOnce(&mut Model, Result<serde_json::Value, &'static str>) + 'static,
+) {
     #[cfg(feature = "ipc")]
     {
         let inputs = precept_ui_client::native::Inputs::from_connection(&model.get().connection);
@@ -48,16 +60,23 @@ fn call(
         // closes (closing disposes the dialog's owner and its tasks).
         Owner::detached().run(|| {
             spawn(async move {
-                let result = blocking(move || inputs.and_then(|i| i.project_call(method, params)))
-                    .await
-                    .unwrap_or(Err("Unavailable"));
+                let result = blocking(move || {
+                    let inputs = inputs?;
+                    let mut last = Ok(serde_json::Value::Null);
+                    for (method, params) in requests {
+                        last = Ok(inputs.project_call(method, params)?);
+                    }
+                    last
+                })
+                .await
+                .unwrap_or(Err("Unavailable"));
                 model.update(|m| done(m, result));
             });
         });
     }
     #[cfg(not(feature = "ipc"))]
     {
-        let _ = (method, params);
+        let _ = requests;
         model.update(|m| done(m, Err("Unavailable")));
     }
 }
@@ -84,6 +103,24 @@ fn check(model: Signal<Model>) {
 
 /// Opens the system folder dialog where the daemon's home is, then checks.
 fn choose(model: Signal<Model>) {
+    pick_folder(model, |model, picked| match picked {
+        Ok(path) => {
+            model.update(|m| m.project_add.set_path(path));
+            check(model);
+        }
+        Err((picked, code)) => model.update(|m| {
+            m.project_add.set_path(picked);
+            m.project_add.check = Check::Refused(code.into());
+        }),
+    });
+}
+
+/// The system folder dialog, starting in the daemon's home. `done` gets the
+/// daemon-host path, or the picked path and why it cannot be one.
+fn pick_folder(
+    model: Signal<Model>,
+    done: impl FnOnce(Signal<Model>, Result<String, (String, &'static str)>) + 'static,
+) {
     let m = model.get();
     let wsl = m.connection.target == Target::Wsl;
     let distribution = m.connection.distribution.clone();
@@ -108,19 +145,15 @@ fn choose(model: Signal<Model>) {
                 } else {
                     Ok(picked.clone())
                 };
-                match mapped {
-                    Ok(path) => {
-                        model.update(|m| m.project_add.set_path(path));
-                        check(model);
-                    }
-                    Err(code) => model.update(|m| {
-                        m.project_add.set_path(picked);
-                        m.project_add.check = Check::Refused(code.into());
-                    }),
-                }
+                done(model, mapped.map_err(|code| (picked, code)));
             }
             Ok(None) => {}
-            Err(_) => model.update(|m| m.project_add.error = Some("dialog".into())),
+            Err(_) => model.update(|m| {
+                m.project_add.error = Some("dialog".into());
+                if let Some(edit) = m.project_edit.as_mut() {
+                    edit.error = Some("dialog".into());
+                }
+            }),
         }
     });
 }
@@ -232,13 +265,134 @@ fn remove_now(model: Signal<Model>) {
     reload_after(model);
 }
 
+/// Opens the edit dialog for one listed project.
+fn edit(model: Signal<Model>, entry: &ProjectEntry) {
+    let draft = EditDraft::open(entry);
+    model.update(|m| m.project_edit = Some(draft));
+}
+fn edit_update(model: Signal<Model>, f: impl FnOnce(&mut EditDraft)) {
+    model.update(|m| {
+        if let Some(edit) = m.project_edit.as_mut() {
+            f(edit);
+        }
+    });
+}
+fn edit_check(model: Signal<Model>) {
+    let Some(path) = model.get().project_edit.as_ref().map(|e| e.path.clone()) else {
+        return;
+    };
+    if path.trim().is_empty() {
+        return;
+    }
+    let mut epoch = 0;
+    edit_update(model, |e| epoch = e.begin_check());
+    call(
+        model,
+        "project.check",
+        serde_json::json!({"root": path.trim()}),
+        move |m, r| {
+            if let Some(e) = m.project_edit.as_mut() {
+                e.finish_check(epoch, r);
+            }
+        },
+    );
+}
+fn edit_choose(model: Signal<Model>) {
+    pick_folder(model, |model, picked| match picked {
+        Ok(path) => {
+            edit_update(model, |e| e.set_path(path));
+            edit_check(model);
+        }
+        Err((picked, code)) => edit_update(model, |e| {
+            e.set_path(picked);
+            e.check = Check::Refused(code.into());
+        }),
+    });
+}
+/// Whether saving moves the project (an operator write).
+fn edit_moves(model: Signal<Model>) -> bool {
+    model
+        .get()
+        .project_edit
+        .as_ref()
+        .is_some_and(|e| e.relocation().is_some())
+}
+/// Save; a move with writes off turns them on first (the label says so).
+fn save(model: Signal<Model>) {
+    if !model
+        .get()
+        .project_edit
+        .as_ref()
+        .is_some_and(EditDraft::ready)
+    {
+        return;
+    }
+    if edit_moves(model) && !writes_on(model) {
+        super::profile::enable_writes(model, save_now);
+    } else {
+        save_now(model);
+    }
+}
+fn save_now(model: Signal<Model>) {
+    let Some(draft) = model.get().project_edit.clone() else {
+        return;
+    };
+    let name = draft.name.clone();
+    let label = draft.label_change();
+    let root = draft.relocation();
+    let mut requests = Vec::new();
+    if let Some(label) = &label {
+        requests.push((
+            "project.label",
+            serde_json::json!({"name": name, "label": label}),
+        ));
+    }
+    if let Some(root) = &root {
+        requests.push((
+            "project.relocate",
+            serde_json::json!({"name": name, "root": root}),
+        ));
+    }
+    if requests.is_empty() {
+        return;
+    }
+    edit_update(model, |e| {
+        e.busy = true;
+        e.error = None;
+    });
+    let shown = label
+        .clone()
+        .unwrap_or_else(|| draft.saved_label.clone())
+        .unwrap_or_else(|| name.clone());
+    let moved = root.is_some();
+    calls(model, requests, move |m, r| match r {
+        Ok(_) => {
+            m.project_edit = None;
+            let key = if moved {
+                Msg::ToastProjectMoved
+            } else {
+                Msg::ToastProjectSaved
+            };
+            ui::notify(ui::Tone::Success, m.word(key).replace("{name}", &shown));
+        }
+        Err(code) => {
+            if let Some(e) = m.project_edit.as_mut() {
+                e.busy = false;
+                e.error = Some(code.into());
+            }
+        }
+    });
+    reload_after(model);
+}
+
 /// Re-reads once the change settled (the list comes from the daemon).
 fn reload_after(model: Signal<Model>) {
     // Detached for the same reason as `call`: Remove starts it from a dialog.
     Owner::detached().run(|| {
         spawn(async move {
             for _ in 0..100 {
-                if !model.get_untracked().project_add.busy {
+                let m = model.get_untracked();
+                if !m.project_add.busy && m.project_edit.as_ref().is_none_or(|e| !e.busy) {
                     break;
                 }
                 timer(std::time::Duration::from_millis(50)).await;
@@ -258,12 +412,23 @@ fn state_badge(model: Signal<Model>, state: &str) -> impl IntoElement {
 }
 
 /// Workspace names are management rows only; switching the active project
-/// lives solely in the sidebar workspace switcher.
+/// lives solely in the sidebar workspace switcher. The display name leads.
 fn name_cell(entry: &ProjectEntry) -> AnyElement {
-    text(precept_ui_core::presentation::sanitize(&entry.name, 64))
+    let shown = entry.label.as_deref().unwrap_or(&entry.name);
+    text(precept_ui_core::presentation::sanitize(shown, 64))
         .font_weight(FontWeight::SEMIBOLD)
         .text_size(px(scale::text::BODY))
         .into_element()
+}
+/// The name (when a display name hides it) and the folder.
+fn detail_line(entry: &ProjectEntry) -> Option<String> {
+    use precept_ui_core::presentation::sanitize;
+    let root = (!entry.root.is_empty()).then(|| sanitize(&entry.root, 512));
+    match (&entry.label, root) {
+        (Some(_), Some(root)) => Some(format!("{} · {root}", sanitize(&entry.name, 64))),
+        (Some(_), None) => Some(sanitize(&entry.name, 64)),
+        (None, root) => root,
+    }
 }
 
 /// The list of projects: name, root, state and Remove, on fixed lanes.
@@ -278,6 +443,7 @@ fn list(model: Signal<Model>) -> impl IntoElement {
                 .iter()
                 .map(|p| ProjectEntry {
                     name: p.name.clone(),
+                    label: None,
                     root: String::new(),
                     state: "ready".into(),
                     agents: true,
@@ -321,9 +487,9 @@ fn list(model: Signal<Model>) -> impl IntoElement {
                         .child({
                             let mut info =
                                 view().flex_1().min_w_0().gap_0p5().child(name_cell(&entry));
-                            if !entry.root.is_empty() {
+                            if let Some(detail) = detail_line(&entry) {
                                 info = info.child(
-                                    text(precept_ui_core::presentation::sanitize(&entry.root, 512))
+                                    text(detail)
                                         .font_family("monospace")
                                         .text_size(px(scale::text::CAPTION))
                                         .text_color(move || palette(model).muted),
@@ -365,6 +531,24 @@ fn list(model: Signal<Model>) -> impl IntoElement {
                         );
                     }
                     if live {
+                        let editing = entry.clone();
+                        row = row.child(
+                            button(model, "")
+                                .label_fn(word(model, Msg::EditProject))
+                                .spoken({
+                                    let shown =
+                                        entry.label.clone().unwrap_or_else(|| entry.name.clone());
+                                    move || {
+                                        format!(
+                                            "{} {shown}",
+                                            model.get().word(Msg::EditProjectSpoken)
+                                        )
+                                        .into()
+                                    }
+                                })
+                                .size(ButtonSize::Small)
+                                .on_press(move || edit(model, &editing)),
+                        );
                         row = row.child(
                             button(model, "")
                                 .label_fn(word(model, Msg::RemoveProject))
@@ -607,4 +791,140 @@ pub(crate) fn remove_dialog(model: Signal<Model>) -> impl IntoElement {
         .open(move || model.get().project_remove.is_some())
         .on_cancel(move || model.update(|m| m.project_remove = None))
         .on_confirm(move || remove(model))
+}
+
+/// The daemon's answer for a moved folder, as a badge.
+fn edit_status(model: Signal<Model>) -> AnyElement {
+    dynamic(move || {
+        let d = model.get().project_edit.clone().unwrap_or_default();
+        if !d.moving() {
+            return view().into_element();
+        }
+        let (key, variant) = match &d.check {
+            Check::Idle => return view().into_element(),
+            Check::Checking => (Msg::Checking, BadgeVariant::Neutral),
+            Check::Ok { .. } if d.taken() => (Msg::FolderTaken, BadgeVariant::Warning),
+            Check::Ok { .. } => (Msg::FolderMoveOk, BadgeVariant::Success),
+            Check::Refused(code) => (refusal(code), BadgeVariant::Warning),
+            Check::Failed(code) => (refusal(code), BadgeVariant::Danger),
+        };
+        let reveal = ui::motion::reveal();
+        view()
+            .items_start()
+            .bind_motion(&reveal)
+            .child(badge(model, model.get_untracked().word(key)).variant(variant))
+            .into_element()
+    })
+    .into_element()
+}
+
+/// Editing one project: its display name and, after its folder moved, the new
+/// folder. A sibling of the page's scroll region, like the removal dialog.
+pub(crate) fn edit_dialog(model: Signal<Model>) -> impl IntoElement {
+    let draft = move || model.get().project_edit.clone().unwrap_or_default();
+    ui::dialog(model, "")
+        .icon(
+            icons::section_path(precept_ui_core::Section::Projects),
+            ui::DialogTone::Accent,
+        )
+        .title_fn(word(model, Msg::EditProjectTitle))
+        .description_fn(move || {
+            let m = model.get();
+            let name = m
+                .project_edit
+                .as_ref()
+                .map(|e| e.name.clone())
+                .unwrap_or_default();
+            m.word(Msg::EditProjectBody)
+                .replace(
+                    "{name}",
+                    &precept_ui_core::presentation::sanitize(&name, 64),
+                )
+                .into()
+        })
+        .content_fn(move || {
+            let folder = view()
+                .flex_row()
+                .items_center()
+                .gap_2()
+                .child(
+                    view().flex_1().min_w_0().child(
+                        input(model, "")
+                            .test_id("project.edit.folder")
+                            .label_fn(word(model, Msg::ProjectFolder))
+                            .value(move || draft().path)
+                            .on_change(move |v: &str| edit_update(model, |e| e.set_path(v.into())))
+                            .on_submit(move |_: &str| edit_check(model)),
+                    ),
+                )
+                .child(
+                    button(model, "")
+                        .label_fn(word(model, Msg::ChooseFolder))
+                        .on_press(move || edit_choose(model)),
+                )
+                .child(
+                    button(model, "")
+                        .label_fn(word(model, Msg::CheckFolder))
+                        .disabled(move || !draft().moving())
+                        .loading(move || draft().check == Check::Checking)
+                        .on_press(move || edit_check(model)),
+                );
+            let body = view()
+                .w_full()
+                .gap_4()
+                .child(
+                    field(
+                        model,
+                        word(model, Msg::DisplayName),
+                        input(model, "")
+                            .test_id("project.edit.label")
+                            .label_fn(word(model, Msg::DisplayName))
+                            .max_length(precept_ui_core::projects::MAX_LABEL as u32)
+                            .value(move || draft().label)
+                            .invalid(move || {
+                                let l = draft().label;
+                                !l.trim().is_empty() && !valid_label(l.trim())
+                            })
+                            .on_change(move |v: &str| edit_update(model, |e| e.set_label(v.into())))
+                            .on_submit(move |_: &str| save(model)),
+                    )
+                    .help(word(model, Msg::DisplayNameHelp)),
+                )
+                .child(
+                    field(model, word(model, Msg::ProjectFolder), folder)
+                        .help(word(model, Msg::ProjectMoveHelp)),
+                );
+            body.child(edit_status(model))
+                .child(note(model, |m| {
+                    m.project_edit
+                        .as_ref()
+                        .and_then(|e| e.error.as_deref())
+                        .map(|e| {
+                            if e == "dialog" {
+                                Msg::DialogUnavailable
+                            } else {
+                                refusal(e)
+                            }
+                        })
+                }))
+                .into_element()
+        })
+        .cancel_fn(word(model, Msg::Cancel))
+        .confirm_fn(move || {
+            model
+                .get()
+                .word(if edit_moves(model) && !writes_on(model) {
+                    Msg::EnableAndSave
+                } else {
+                    Msg::SaveProject
+                })
+                .into()
+        })
+        .confirm_disabled(move || {
+            let m = model.get();
+            m.profile_setup.busy || !m.project_edit.as_ref().is_some_and(EditDraft::ready)
+        })
+        .open(move || model.get().project_edit.is_some())
+        .on_cancel(move || model.update(|m| m.project_edit = None))
+        .on_confirm(move || save(model))
 }

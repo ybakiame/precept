@@ -43,6 +43,7 @@ fn header_scope_badge(model: Signal<Model>) -> impl IntoElement {
             m.selected_project
                 .clone()
                 .or_else(|| m.project().map(|p| p.name.clone()))
+                .map(|name| m.display_name(&name))
         } else {
             None
         }

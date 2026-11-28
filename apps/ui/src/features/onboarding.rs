@@ -505,6 +505,7 @@ pub(crate) fn page(model: Signal<Model>) -> impl IntoElement {
                 .child(crate::shell::chrome::grip(model)),
         )
         .child(super::projects::remove_dialog(model))
+        .child(super::projects::edit_dialog(model))
         .child(crate::shortcuts::panel(model))
         .child(ui::toaster(model))
 }
@@ -527,6 +528,7 @@ mod tests {
         std::sync::Arc::make_mut(model.data.as_mut().unwrap()).directory =
             vec![precept_ui_core::ProjectEntry {
                 name: "alpha".into(),
+                label: None,
                 root: String::new(),
                 state: "ready".into(),
                 agents: true,

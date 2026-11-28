@@ -15,7 +15,7 @@ pub(super) fn project_access(model: Signal<Model>) -> impl IntoElement {
         let name = entry.name.clone();
         let shared = entry.agents;
         let toggle_name = name.clone();
-        let spoken_name = name.clone();
+        let spoken_name = entry.label.clone().unwrap_or_else(|| name.clone());
         surface(model)
             .title_fn(word(model, Msg::AgentsProjectStatus))
             .child(
@@ -30,7 +30,7 @@ pub(super) fn project_access(model: Signal<Model>) -> impl IntoElement {
                             .min_w(px(160.0))
                             .gap_0p5()
                             .child(
-                                text(precept_ui_core::presentation::sanitize(&name, 64))
+                                text(precept_ui_core::presentation::sanitize(&spoken_name, 64))
                                     .font_weight(FontWeight::SEMIBOLD),
                             )
                             .child(
@@ -73,7 +73,7 @@ pub(super) fn suggest_row(model: Signal<Model>, entry: &ProjectEntry) -> impl In
     let m = model.get_untracked();
     let on = entry.propose;
     let name = entry.name.clone();
-    let spoken = entry.name.clone();
+    let spoken = entry.label.clone().unwrap_or_else(|| entry.name.clone());
     view()
         .flex_row()
         .flex_wrap()

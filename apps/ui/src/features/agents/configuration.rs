@@ -203,7 +203,7 @@ pub(super) fn gate_row(model: Signal<Model>) -> impl IntoElement {
     };
     let on = entry.gate;
     let name = entry.name.clone();
-    let spoken = entry.name.clone();
+    let spoken = entry.label.clone().unwrap_or_else(|| entry.name.clone());
     view()
         .flex_row()
         .flex_wrap()
